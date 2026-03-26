@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
+import SourceLibrary from './pages/SourceLibrary';
 import SourceDetail from './pages/SourceDetail';
 import Review from './pages/Review';
 import Stories from './pages/Stories';
@@ -9,6 +10,7 @@ import EntityDetail from './pages/EntityDetail';
 import Graph from './pages/Graph';
 import Board from './pages/Board';
 import Upload from './pages/Upload';
+import Settings from './pages/Settings';
 
 export default function App() {
   return (
@@ -17,6 +19,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/upload" element={<Upload />} />
+          <Route path="/sources" element={<SourceLibrary />} />
           <Route path="/sources/:id" element={<SourceDetail />} />
           <Route path="/sources/:id/review/:storyId" element={<Review />} />
           <Route path="/stories" element={<Stories />} />
@@ -24,6 +27,7 @@ export default function App() {
           <Route path="/entities/:id" element={<EntityDetail />} />
           <Route path="/graph" element={<Graph />} />
           <Route path="/boards/:id" element={<Board />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </Layout>
     </BrowserRouter>

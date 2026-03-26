@@ -1,10 +1,10 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FileText, BookOpen, GitBranch, Kanban, Search, Moon, Sun, Command } from 'lucide-react';
+import { LayoutDashboard, FileText, BookOpen, GitBranch, Kanban, Search, Moon, Sun, Command, Settings } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/sources/1', label: 'Sources', icon: FileText },
+  { path: '/sources', label: 'Sources', icon: FileText },
   { path: '/stories', label: 'Stories', icon: BookOpen },
   { path: '/graph', label: 'Graph', icon: GitBranch },
   { path: '/boards/1', label: 'Boards', icon: Kanban },
@@ -76,6 +76,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             >
               {dark ? <Sun size={14} /> : <Moon size={14} />}
             </button>
+
+            <Link
+              to="/settings"
+              className={`flex h-8 w-8 items-center justify-center rounded-[var(--radius)] border transition-colors no-underline ${
+                location.pathname === '/settings'
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+              }`}
+            >
+              <Settings size={14} />
+            </Link>
 
             <div className="flex h-7 w-7 items-center justify-center rounded-full border bg-primary/10 font-mono text-xs font-medium text-primary">
               FL
