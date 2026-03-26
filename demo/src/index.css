@@ -1,0 +1,172 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: 0 0% 99%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 54 100% 81%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.35rem;
+
+    --entity-person: 221 83% 53%;
+    --entity-person-bg: 221 83% 90%;
+    --entity-organization: 24 95% 53%;
+    --entity-organization-bg: 24 95% 85%;
+    --entity-event: 280 65% 53%;
+    --entity-event-bg: 280 65% 90%;
+    --entity-location: 142 71% 40%;
+    --entity-location-bg: 142 71% 85%;
+
+    --shadow-hard: 4px 4px 0px 0px rgba(0,0,0,1);
+    --shadow-hard-sm: 2px 2px 0px 0px rgba(0,0,0,1);
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 5%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 5%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 142 71% 45%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 217.2 91.2% 59.8%;
+
+    --entity-person: 221 83% 65%;
+    --entity-person-bg: 221 83% 20%;
+    --entity-organization: 24 95% 65%;
+    --entity-organization-bg: 24 95% 20%;
+    --entity-event: 280 65% 65%;
+    --entity-event-bg: 280 65% 20%;
+    --entity-location: 142 71% 55%;
+    --entity-location-bg: 142 71% 15%;
+
+    --shadow-hard: 4px 4px 0px 0px rgba(255,255,255,0.08);
+    --shadow-hard-sm: 2px 2px 0px 0px rgba(255,255,255,0.08);
+  }
+}
+
+@theme {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-entity-person: hsl(var(--entity-person));
+  --color-entity-person-bg: hsl(var(--entity-person-bg));
+  --color-entity-organization: hsl(var(--entity-organization));
+  --color-entity-organization-bg: hsl(var(--entity-organization-bg));
+  --color-entity-event: hsl(var(--entity-event));
+  --color-entity-event-bg: hsl(var(--entity-event-bg));
+  --color-entity-location: hsl(var(--entity-location));
+  --color-entity-location-bg: hsl(var(--entity-location-bg));
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    margin: 0;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  ::selection {
+    background-color: hsl(var(--primary) / 0.25);
+  }
+}
+
+@utility font-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+}
+
+@utility shadow-hard {
+  box-shadow: var(--shadow-hard);
+}
+
+@utility shadow-hard-sm {
+  box-shadow: var(--shadow-hard-sm);
+}
+
+@utility entity-person {
+  background-color: hsl(var(--entity-person-bg));
+  color: hsl(var(--entity-person));
+}
+
+@utility entity-organization {
+  background-color: hsl(var(--entity-organization-bg));
+  color: hsl(var(--entity-organization));
+}
+
+@utility entity-event {
+  background-color: hsl(var(--entity-event-bg));
+  color: hsl(var(--entity-event));
+}
+
+@utility entity-location {
+  background-color: hsl(var(--entity-location-bg));
+  color: hsl(var(--entity-location));
+}
+
+/* Redacted loading bar */
+@keyframes redacted-reveal {
+  0% { width: 100%; }
+  100% { width: 0%; }
+}
+
+@keyframes pulse-bar {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: hsl(var(--muted)); }
+::-webkit-scrollbar-thumb { background: hsl(var(--muted-foreground) / 0.3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.5); }
+
+/* React Flow overrides */
+.react-flow__node { font-family: 'JetBrains Mono', monospace !important; }
+.react-flow__attribution { display: none !important; }
