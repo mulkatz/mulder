@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { AlertTriangle, CheckCircle2, XCircle, ChevronDown, ChevronUp, ArrowUpDown, Clock, MapPin, Zap, Sparkles, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, XCircle, ArrowUpDown, Clock, MapPin, Zap, Sparkles, ThumbsUp, ThumbsDown } from 'lucide-react';
 import EntityBadge from '../components/EntityBadge';
 import {
   contradictions,
@@ -208,10 +208,49 @@ function ContradictionsTab() {
 
 type SortField = 'corroborationScore' | 'sourceReliability' | 'independentSourceCount' | 'evidenceChainStrength';
 
+const sortLabels: Record<SortField, string> = {
+  corroborationScore: 'Corroboration',
+  sourceReliability: 'Reliability',
+  independentSourceCount: 'Source Count',
+  evidenceChainStrength: 'Evidence Chain',
+};
+
+function scoreColor(value: number): string {
+  if (value >= 0.8) return 'hsl(142, 71%, 45%)';
+  if (value >= 0.6) return 'hsl(45, 93%, 47%)';
+  return 'hsl(0, 84%, 60%)';
+}
+
+function scoreColorClass(value: number): string {
+  if (value >= 0.8) return 'text-[#15803d] border-[#22c55e] bg-[#dcfce7] dark:text-green-400 dark:border-green-600 dark:bg-green-900/30';
+  if (value >= 0.6) return 'text-[#92400e] border-[#f59e0b] bg-[#fef3c7] dark:text-amber-400 dark:border-amber-600 dark:bg-amber-900/30';
+  return 'text-[#991b1b] border-[#ef4444] bg-[#fee2e2] dark:text-red-400 dark:border-red-600 dark:bg-red-900/30';
+}
+
+function ScoreBar({ label, value, description, color }: { label: string; value: number; description: string; color?: string }) {
+  const pct = Math.round(value * 100);
+  const barColor = color ?? scoreColor(value);
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1.5">
+        <span className="font-mono text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</span>
+        <span className="font-mono text-sm font-bold text-foreground">{pct}%</span>
+      </div>
+      <div className="h-2 rounded-full bg-muted overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all"
+          style={{ width: `${pct}%`, backgroundColor: barColor }}
+        />
+      </div>
+      <p className="mt-1 text-[10px] text-muted-foreground">{description}</p>
+    </div>
+  );
+}
+
 function CorroborationTab() {
   const [sortBy, setSortBy] = useState<SortField>('corroborationScore');
   const [sortAsc, setSortAsc] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(corroborationEntries[0]?.id ?? null);
 
   const sorted = useMemo(() => {
     return [...corroborationEntries].sort((a, b) => {
@@ -229,145 +268,142 @@ function CorroborationTab() {
     }
   };
 
-  const SortButton = ({ field, label }: { field: SortField; label: string }) => (
-    <button
-      onClick={() => handleSort(field)}
-      className={`flex items-center gap-1 font-mono text-[10px] font-medium uppercase tracking-wider ${
-        sortBy === field ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-      }`}
-    >
-      {label}
-      <ArrowUpDown size={10} />
-    </button>
-  );
+  const selected = corroborationEntries.find(e => e.id === selectedId) ?? null;
 
   return (
-    <div className="space-y-3">
-      {/* Column Headers */}
-      <div className="hidden sm:grid grid-cols-[1fr_120px_80px_120px_120px_100px] gap-3 px-4 py-2 items-center">
-        <div className="font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Claim / Entity</div>
-        <SortButton field="corroborationScore" label="Corroboration" />
-        <SortButton field="independentSourceCount" label="Sources" />
-        <SortButton field="sourceReliability" label="Reliability" />
-        <SortButton field="evidenceChainStrength" label="Evidence" />
-        <div />
+    <div className="flex h-full min-h-0">
+      {/* Left Panel — Ranked Claim List */}
+      <div className="w-[380px] shrink-0 border-r flex flex-col min-h-0">
+        {/* Sort Controls */}
+        <div className="flex items-center gap-1.5 px-3 py-2.5 border-b flex-wrap">
+          <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mr-1">Sort</span>
+          {(Object.keys(sortLabels) as SortField[]).map(field => (
+            <button
+              key={field}
+              onClick={() => handleSort(field)}
+              className={`flex items-center gap-1 rounded-[var(--radius)] border px-2 py-1 text-[10px] font-medium transition-colors ${
+                sortBy === field
+                  ? 'bg-primary/10 text-primary border-primary/30'
+                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+              }`}
+            >
+              {sortLabels[field]}
+              {sortBy === field && <ArrowUpDown size={9} />}
+            </button>
+          ))}
+        </div>
+
+        {/* Scrollable List */}
+        <div className="flex-1 overflow-y-auto">
+          {sorted.map(entry => {
+            const isSelected = selectedId === entry.id;
+            const pct = Math.round(entry.corroborationScore * 100);
+
+            return (
+              <button
+                key={entry.id}
+                onClick={() => setSelectedId(entry.id)}
+                className={`w-full text-left px-3 py-3 border-b transition-colors flex items-start gap-3 ${
+                  isSelected ? 'bg-primary/5' : 'hover:bg-muted/30'
+                }`}
+              >
+                {/* Score Circle */}
+                <div
+                  className={`shrink-0 w-9 h-9 rounded-full border-2 flex items-center justify-center font-mono text-[11px] font-bold ${scoreColorClass(entry.corroborationScore)}`}
+                >
+                  {pct}
+                </div>
+
+                {/* Claim + Meta */}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] leading-relaxed text-foreground line-clamp-2 mb-1.5">{entry.claim}</p>
+                  <div className="flex items-center gap-2">
+                    <EntityBadge type={entry.entity.type} name={entry.entity.name} size="xs" />
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {entry.independentSourceCount} {entry.independentSourceCount === 1 ? 'source' : 'sources'}
+                    </span>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Entries */}
-      {sorted.map(entry => {
-        const isExpanded = expandedId === entry.id;
-
-        return (
-          <div
-            key={entry.id}
-            className="rounded-[var(--radius)] border bg-card shadow-hard"
-          >
-            <button
-              onClick={() => setExpandedId(isExpanded ? null : entry.id)}
-              className="w-full px-4 py-3 text-left"
-            >
-              <div className="sm:grid grid-cols-[1fr_120px_80px_120px_120px_100px] gap-3 items-center">
-                {/* Claim + Entity */}
-                <div className="min-w-0">
-                  <p className="text-xs leading-relaxed text-foreground line-clamp-2 mb-1">{entry.claim}</p>
-                  <EntityBadge type={entry.entity.type} name={entry.entity.name} size="xs" />
-                </div>
-
-                {/* Corroboration Score */}
-                <div className="mt-2 sm:mt-0">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-primary transition-all"
-                        style={{ width: `${entry.corroborationScore * 100}%` }}
-                      />
-                    </div>
-                    <span className="font-mono text-[11px] font-medium w-8 text-right">{(entry.corroborationScore * 100).toFixed(0)}%</span>
-                  </div>
-                </div>
-
-                {/* Source Count */}
-                <div className="hidden sm:block text-center">
-                  <span className="font-mono text-sm font-bold">{entry.independentSourceCount}</span>
-                </div>
-
-                {/* Source Reliability */}
-                <div className="hidden sm:block">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${entry.sourceReliability * 100}%`,
-                          backgroundColor: entry.sourceReliability >= 0.85
-                            ? 'hsl(142, 71%, 45%)'
-                            : entry.sourceReliability >= 0.7
-                            ? 'hsl(45, 93%, 47%)'
-                            : 'hsl(0, 84%, 60%)',
-                        }}
-                      />
-                    </div>
-                    <span className="font-mono text-[11px] font-medium w-8 text-right">{(entry.sourceReliability * 100).toFixed(0)}%</span>
-                  </div>
-                </div>
-
-                {/* Evidence Chain Strength */}
-                <div className="hidden sm:block">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-accent transition-all dark:bg-accent"
-                        style={{ width: `${entry.evidenceChainStrength * 100}%` }}
-                      />
-                    </div>
-                    <span className="font-mono text-[11px] font-medium w-8 text-right">{(entry.evidenceChainStrength * 100).toFixed(0)}%</span>
-                  </div>
-                </div>
-
-                {/* Expand */}
-                <div className="hidden sm:flex justify-end text-muted-foreground">
-                  {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                </div>
+      {/* Right Panel — Claim Detail */}
+      <div className="flex-1 min-h-0">
+        {selected ? (
+          <div className="p-5 space-y-5 overflow-y-auto h-full">
+            {/* Header: Claim + Entity */}
+            <div>
+              <div className="flex items-center gap-2.5 mb-3">
+                <EntityBadge type={selected.entity.type} name={selected.entity.name} size="sm" />
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  {selected.independentSourceCount} independent {selected.independentSourceCount === 1 ? 'source' : 'sources'}
+                </span>
               </div>
-            </button>
+              <p className="text-sm leading-[1.7] text-foreground">{selected.claim}</p>
+            </div>
 
-            {/* Expanded: Individual Sources */}
-            {isExpanded && (
-              <div className="border-t px-4 py-3">
-                <div className="font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                  Individual Sources
-                </div>
-                <div className="space-y-2">
-                  {entry.sources.map((src, i) => (
-                    <div key={i} className="flex items-center justify-between rounded-[var(--radius)] border bg-muted/30 px-3 py-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-medium">{src.storyTitle}</div>
-                        <div className="font-mono text-[10px] text-muted-foreground">{src.name}</div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0 ml-3">
-                        <div className="w-16 h-1.5 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${src.reliability * 100}%`,
-                              backgroundColor: src.reliability >= 0.85
-                                ? 'hsl(142, 71%, 45%)'
-                                : src.reliability >= 0.7
-                                ? 'hsl(45, 93%, 47%)'
-                                : 'hsl(0, 84%, 60%)',
-                            }}
-                          />
-                        </div>
-                        <span className="font-mono text-[10px] w-8 text-right">{(src.reliability * 100).toFixed(0)}%</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+            {/* Score Breakdown */}
+            <div className="rounded-[var(--radius)] border bg-card p-4 space-y-4">
+              <div className="font-mono text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                Score Breakdown
               </div>
-            )}
+              <ScoreBar
+                label="Corroboration Score"
+                value={selected.corroborationScore}
+                description="How well-supported this claim is across independent sources"
+                color="hsl(var(--primary))"
+              />
+              <ScoreBar
+                label="Source Reliability"
+                value={selected.sourceReliability}
+                description="Weighted PageRank of contributing sources"
+              />
+              <ScoreBar
+                label="Evidence Chain Strength"
+                value={selected.evidenceChainStrength}
+                description="Directness and quality of evidence linking sources to this claim"
+              />
+            </div>
+
+            {/* Individual Sources */}
+            <div>
+              <div className="font-mono text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                Contributing Sources
+              </div>
+              <div className="space-y-2">
+                {selected.sources.map((src, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-[var(--radius)] border bg-card px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-semibold text-foreground">{src.storyTitle}</div>
+                      <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{src.name}</div>
+                    </div>
+                    <div className="flex items-center gap-2.5 shrink-0 ml-4">
+                      <div className="w-20 h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${src.reliability * 100}%`,
+                            backgroundColor: scoreColor(src.reliability),
+                          }}
+                        />
+                      </div>
+                      <span className="font-mono text-[11px] font-medium w-9 text-right">{Math.round(src.reliability * 100)}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-        );
-      })}
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+            <ArrowUpDown size={32} className="mb-3 opacity-30" />
+            <p className="text-xs">Select a claim to see its corroboration details</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
