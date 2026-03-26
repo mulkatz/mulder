@@ -190,11 +190,11 @@ export default function Settings() {
 
               <div className="rounded-[var(--radius)] border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/10 p-4">
                 <div className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">Retroactive Application</div>
-                <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
+                <p className="text-[11px] text-[#92400e] dark:text-amber-400 leading-relaxed">
                   After changing the taxonomy, you can re-scan all existing stories with the updated entity types.
                   Estimated time: ~15 min for 1,284 stories. Previously confirmed entities will not be affected.
                 </p>
-                <button className="mt-2 rounded-[var(--radius)] border border-amber-400 dark:border-amber-600 px-3 py-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30">
+                <button className="mt-2 rounded-[var(--radius)] border border-amber-400 dark:border-amber-600 px-3 py-1.5 text-[11px] font-medium text-[#92400e] dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30">
                   Re-scan All Stories
                 </button>
               </div>

@@ -172,7 +172,7 @@ export default function EntityDetail() {
                 <div className="flex items-center gap-2 border-b border-amber-200 dark:border-amber-800 px-4 py-3 bg-amber-50/50 dark:bg-amber-900/10">
                   <Merge size={14} className="text-amber-600 dark:text-amber-400" />
                   <h2 className="text-sm font-semibold text-amber-800 dark:text-amber-300">Merge Candidates</h2>
-                  <span className="ml-auto rounded bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 font-mono text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                  <span className="ml-auto rounded bg-[#fef3c7] dark:bg-amber-900/30 px-2 py-0.5 font-mono text-[10px] font-medium text-[#92400e] dark:text-amber-400">
                     AI suggestion
                   </span>
                 </div>

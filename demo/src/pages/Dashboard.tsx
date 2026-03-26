@@ -131,21 +131,21 @@ export default function Dashboard() {
         {/* Right Column */}
         <div className="space-y-6">
           {/* Quick Actions */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3">
             <Link
               to="/upload"
-              className="flex items-center justify-center gap-2 rounded-[var(--radius)] border border-primary bg-primary px-4 py-2.5 text-xs font-medium text-primary-foreground shadow-hard-sm no-underline transition-transform hover:translate-y-[-1px]"
+              className="flex items-center justify-center gap-3 rounded-[var(--radius)] border border-primary bg-primary px-5 py-4 text-sm font-semibold text-primary-foreground shadow-hard-sm no-underline transition-transform hover:translate-y-[-1px]"
             >
-              <Upload size={14} />
+              <Upload size={18} />
               Upload Source
             </Link>
             <Link
               to="/sources/1/review/1"
-              className="flex items-center justify-center gap-2 rounded-[var(--radius)] border bg-card px-4 py-2.5 text-xs font-medium text-foreground shadow-hard-sm no-underline transition-transform hover:translate-y-[-1px]"
+              className="flex items-center justify-center gap-3 rounded-[var(--radius)] border bg-card px-5 py-4 text-sm font-semibold text-foreground shadow-hard-sm no-underline transition-transform hover:translate-y-[-1px]"
             >
-              <Eye size={14} />
+              <Eye size={18} />
               Start Review
-              <span className="ml-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-100 px-1 font-mono text-[10px] font-bold text-amber-700 dark:bg-amber-900/50 dark:text-amber-400">
+              <span className="ml-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#fef3c7] px-1.5 font-mono text-[11px] font-bold text-[#92400e] dark:bg-amber-900/50 dark:text-amber-400">
                 23
               </span>
             </Link>

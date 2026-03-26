@@ -1,6 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   :root {
     --background: 0 0% 99%;
@@ -24,14 +26,14 @@
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.35rem;
 
-    --entity-person: 221 83% 53%;
-    --entity-person-bg: 221 83% 90%;
-    --entity-organization: 24 95% 53%;
-    --entity-organization-bg: 24 95% 85%;
-    --entity-event: 280 65% 53%;
-    --entity-event-bg: 280 65% 90%;
-    --entity-location: 142 71% 40%;
-    --entity-location-bg: 142 71% 85%;
+    --entity-person: 221 83% 30%;
+    --entity-person-bg: 221 40% 95%;
+    --entity-organization: 24 95% 30%;
+    --entity-organization-bg: 24 50% 93%;
+    --entity-event: 280 65% 30%;
+    --entity-event-bg: 280 30% 95%;
+    --entity-location: 142 71% 25%;
+    --entity-location-bg: 142 30% 93%;
 
     --shadow-hard: 4px 4px 0px 0px rgba(0,0,0,1);
     --shadow-hard-sm: 2px 2px 0px 0px rgba(0,0,0,1);

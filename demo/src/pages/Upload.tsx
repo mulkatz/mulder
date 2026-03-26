@@ -180,7 +180,7 @@ export default function UploadPage() {
                     <div key={step} className="flex items-center gap-3">
                       <div className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-mono font-bold ${
                         isDone
-                          ? 'border-green-500 bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+                          ? 'border-[#86efac] bg-[#dcfce7] text-[#15803d] dark:bg-green-900/30 dark:text-green-400'
                           : isActive
                           ? 'border-primary bg-primary/10 text-primary'
                           : 'border-border text-muted-foreground'
