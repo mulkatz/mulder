@@ -52,7 +52,7 @@ Gemini's native `google_search_retrieval` tool via Vertex AI verifies and enrich
 Time and space as first-class dimensions. Temporal: normalized timestamps on events, fuzzy date normalization ("early 80s" → date range), temporal cluster detection. Geospatial: PostGIS for proximity queries, coordinates enriched via web grounding. Combined: graph algorithms (community detection, shortest path) filtered by time and space windows.
 
 #### 7. Evidence Scoring & Contradiction Detection
-Transforms the knowledge graph from a connection map into an assessment system. Corroboration scores count independent sources per claim (SQL aggregation). Contradiction detection via Gemini compares entity attributes across sources, modeled as `CONTRADICTS` edges with annotations. Weighted PageRank scores source reliability. Evidence chains trace paths through the graph supporting or refuting a thesis.
+Transforms the knowledge graph from a connection map into an assessment system. Two-phase contradiction detection: the Graph step flags potential contradictions immediately via attribute comparison (fast, no LLM — e.g., "March 1982" vs "July 1983" on the same event), then the Analyze step resolves them via Gemini semantic comparison (confirms real contradictions, dismisses precision differences like "early 1982" vs "March 1982"). Corroboration scores count independent sources per claim. Weighted PageRank scores source reliability. Evidence chains trace paths through the graph supporting or refuting a thesis.
 
 ## Quick Start
 
@@ -68,8 +68,8 @@ mulder processes documents through an eight-stage pipeline, orchestrated by Clou
 4. **Enrich** — Entities and relationships extracted based on your config ontology, normalized against the domain taxonomy, with cross-document entity resolution
 5. **Ground** — Web enrichment via Gemini `google_search_retrieval` — verifies and enriches entities with real-world data (coordinates, bios, descriptions)
 6. **Embed** — Semantic chunking with question generation, embedded via `gemini-embedding-001` (3072-dim, multilingual)
-7. **Graph** — Entities and relationships written to PostgreSQL relational tables; corroboration scoring (SQL aggregation)
-8. **Analyze** — Contradiction detection (Gemini-based attribute comparison), spatio-temporal clustering, source reliability scoring (weighted PageRank), evidence chain computation
+7. **Graph** — Entities and relationships written to PostgreSQL relational tables; corroboration scoring (SQL aggregation); flags potential contradictions via attribute diff (no LLM)
+8. **Analyze** — Resolves pending contradictions via Gemini (confirm or dismiss), spatio-temporal clustering, source reliability scoring (weighted PageRank), evidence chain computation
 
 Every step is idempotent and can be re-run individually. Ground can run independently when web data changes. Analyze can run after each new batch without retriggering the full pipeline.
 

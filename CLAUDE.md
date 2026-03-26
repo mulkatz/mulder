@@ -54,7 +54,7 @@ Baseline cost: ~30-40 EUR/mo for a small Cloud SQL instance. Scales with instanc
 
 5. **Web Grounding / Enrichment** — Gemini `google_search_retrieval` via Vertex AI verifies and enriches entities (locations → coordinates, persons → bio context, orgs → descriptions). Config controls which entity types get enriched. Three modes: `pipeline` (auto during ingestion), `on_demand` (via API/CLI per entity or batch), or `disabled`. Results cached with configurable TTL.
 6. **Spatio-Temporal Analysis** — PostGIS for proximity queries, normalized timestamps on events (fuzzy dates → ranges), temporal clustering, pattern detection via graph algorithms filtered by time and space.
-7. **Evidence Scoring & Contradiction Detection** — Corroboration scores (independent source count via SQL), contradiction detection via Gemini (attribute comparison across sources, modeled as `CONTRADICTS` edges), weighted PageRank for source reliability, evidence chains with aggregated strength scores.
+7. **Evidence Scoring & Contradiction Detection** — Two-phase contradiction detection: Graph step flags potential contradictions via attribute comparison (fast, no LLM), Analyze step resolves them via Gemini (semantic comparison, confirms or dismisses). Plus corroboration scores (independent source count via SQL), weighted PageRank for source reliability, evidence chains with aggregated strength scores.
 
 ## Pipeline Stages
 
@@ -64,8 +64,8 @@ Baseline cost: ~30-40 EUR/mo for a small Cloud SQL instance. Scales with instanc
 4. **Enrich** — Entity extraction from ontology config, normalization against taxonomy, entity resolution
 5. **Ground** — Web enrichment via Gemini `google_search_retrieval` (locations, persons, orgs, events)
 6. **Embed** — `gemini-embedding-001`, semantic chunking with question generation
-7. **Graph** — Entities + relationships → PostgreSQL relational tables, corroboration scoring (SQL aggregation)
-8. **Analyze** — Contradiction detection (Gemini-based attribute comparison), spatio-temporal clustering, source reliability scoring (weighted PageRank), evidence chain computation
+7. **Graph** — Entities + relationships → PostgreSQL relational tables, corroboration scoring (SQL aggregation), flag potential contradictions via attribute diff (no LLM)
+8. **Analyze** — Resolve pending contradictions via Gemini (confirm or dismiss), spatio-temporal clustering, source reliability scoring (weighted PageRank), evidence chain computation
 
 ## Code Conventions
 
@@ -127,7 +127,7 @@ mulder/
 - **PostgreSQL All-in-One**: Single Cloud SQL instance handles vector search, full-text search, geospatial queries, AND graph traversal (recursive CTEs). No separate graph database.
 - Taxonomy normalization happens IN the extraction pipeline (Enrich step), not as post-processing
 - Hybrid Retrieval combines three strategies (vector + BM25 + graph) in one query path, not as separate endpoints. RRF fusion in application memory (TypeScript), then Vertex AI Gemini for re-ranking.
-- Contradiction detection (Gemini-based) lives in Analyze step, not Graph. Graph does corroboration scoring (pure SQL aggregation). Analyze does all LLM-heavy assessment.
+- **Two-phase contradiction detection**: Graph step flags `POTENTIAL_CONTRADICTION` edges via simple attribute diff (fast, no LLM, in hot path). Analyze step resolves them via Gemini semantic comparison → `CONFIRMED` or `DISMISSED`. This ensures no silent gap where conflicting data sits untagged.
 - Evidence scoring is its own pipeline step (Analyze), not part of query-time logic
 - Pipeline workers run on Cloud Run, triggered by Pub/Sub messages
 - All GCP-native — no third-party services. LLM calls via Vertex AI SDK. Web Grounding via Gemini `google_search_retrieval`.
