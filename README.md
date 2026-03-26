@@ -16,7 +16,7 @@ There's no open-source tool that combines GCP-native Terraform deployment, a con
 ## Key Features
 
 - **Config-driven** — One YAML file defines your entire domain: entities, relationships, extraction rules
-- **Terraform-deployed** — Full GCP infrastructure from a single `terraform apply`, with three cost tiers
+- **Terraform-deployed** — Full GCP infrastructure from a single `terraform apply`
 - **Complex layout support** — Document AI Layout Parser + Gemini Vision fallback for magazines, newspapers, multi-column layouts
 - **Hybrid Retrieval** — Vector search (pgvector) + BM25 full-text (tsvector) + graph traversal, fused via RRF and LLM re-ranking
 - **Domain Taxonomy** — Auto-generated, incrementally growing taxonomy with human-in-the-loop curation for entity normalization
@@ -29,26 +29,30 @@ There's no open-source tool that combines GCP-native Terraform deployment, a con
 
 ## Core Capabilities
 
-### 1. Complex Layout Extraction
+### MVP (v1.0)
+
+#### 1. Complex Layout Extraction
 Document AI Layout Parser handles OCR and layout analysis for complex documents — magazines, newspapers, multi-column government correspondence. Gemini Vision falls back on pages where confidence is low, handling tables, sidebars, and mixed-layout content.
 
-### 2. Config-Driven Domain Ontology
+#### 2. Config-Driven Domain Ontology
 A single `mulder.config.yaml` defines entity types, relationships, attributes, and extraction strategy. Gemini structured output uses dynamically generated JSON Schema from this config. Switch domains by editing one file — no code changes.
 
-### 3. Domain Taxonomy with Auto-Normalization
-Solves the problem of entity matching across inconsistent terminology. After ~25 documents, Gemini bootstraps a taxonomy grouping entity variants under canonical terms. Each new document matches entities against the existing taxonomy. Auto-generated entries marked `auto`, manually confirmed entries marked `confirmed`. Curate via `taxonomy.curated.yaml` or the CLI.
+#### 3. Domain Taxonomy with Auto-Normalization
+Solves the problem of entity matching across inconsistent terminology. After ~25 documents, Gemini bootstraps a taxonomy grouping entity variants under canonical terms. Each new document matches entities against the existing taxonomy. Auto-generated entries marked `auto`, manually confirmed entries marked `confirmed`. Curate via `taxonomy.curated.yaml` or the CLI. Re-bootstrap via `mulder taxonomy re-bootstrap` when the collection grows significantly.
 
-### 4. Hybrid Retrieval with LLM Re-Ranking
+#### 4. Hybrid Retrieval with LLM Re-Ranking
 Three parallel retrieval strategies — vector search (pgvector cosine similarity), BM25 full-text search (PostgreSQL tsvector), and graph traversal (recursive CTEs) — fused via Reciprocal Rank Fusion (RRF). Gemini Flash re-ranks the fused results for final relevance in the query context.
 
-### 5. Web Grounding / Enrichment
-Pipeline step between Enrich and Embed. Gemini's native `google_search_retrieval` tool via Vertex AI verifies and enriches extracted entities: locations → GPS coordinates and type, persons → biographical context, organizations → descriptions, events → date verification. Config controls which entity types get enriched. Results cached with configurable TTL.
+### Full-Featured (v2.0)
 
-### 6. Spatio-Temporal Analysis
+#### 5. Web Grounding / Enrichment
+Gemini's native `google_search_retrieval` tool via Vertex AI verifies and enriches extracted entities: locations → GPS coordinates and type, persons → biographical context, organizations → descriptions, events → date verification. Three modes: `pipeline` (auto during ingestion), `on_demand` (enrich specific entities or batches via API/CLI), or `disabled`. Config controls which entity types get enriched. Results cached with configurable TTL.
+
+#### 6. Spatio-Temporal Analysis
 Time and space as first-class dimensions. Temporal: normalized timestamps on events, fuzzy date normalization ("early 80s" → date range), temporal cluster detection. Geospatial: PostGIS for proximity queries, coordinates enriched via web grounding. Combined: graph algorithms (community detection, shortest path) filtered by time and space windows.
 
-### 7. Evidence Scoring & Contradiction Detection
-Transforms the knowledge graph from a connection map into an assessment system. Corroboration scores count independent sources per claim, weighted by source diversity. Gemini compares entity attributes across sources to detect contradictions, modeled as `CONTRADICTS` edges with annotations. Weighted PageRank scores source reliability. Evidence chains trace paths through the graph supporting or refuting a thesis.
+#### 7. Evidence Scoring & Contradiction Detection
+Transforms the knowledge graph from a connection map into an assessment system. Corroboration scores count independent sources per claim (SQL aggregation). Contradiction detection via Gemini compares entity attributes across sources, modeled as `CONTRADICTS` edges with annotations. Weighted PageRank scores source reliability. Evidence chains trace paths through the graph supporting or refuting a thesis.
 
 ## Quick Start
 
@@ -64,8 +68,8 @@ mulder processes documents through an eight-stage pipeline, orchestrated by Clou
 4. **Enrich** — Entities and relationships extracted based on your config ontology, normalized against the domain taxonomy, with cross-document entity resolution
 5. **Ground** — Web enrichment via Gemini `google_search_retrieval` — verifies and enriches entities with real-world data (coordinates, bios, descriptions)
 6. **Embed** — Semantic chunking with question generation, embedded via `gemini-embedding-001` (3072-dim, multilingual)
-7. **Graph** — Entities and relationships written to PostgreSQL relational tables; corroboration scoring and contradiction detection
-8. **Analyze** — Spatio-temporal clustering, source reliability scoring (weighted PageRank), evidence chain computation
+7. **Graph** — Entities and relationships written to PostgreSQL relational tables; corroboration scoring (SQL aggregation)
+8. **Analyze** — Contradiction detection (Gemini-based attribute comparison), spatio-temporal clustering, source reliability scoring (weighted PageRank), evidence chain computation
 
 Every step is idempotent and can be re-run individually. Ground can run independently when web data changes. Analyze can run after each new batch without retriggering the full pipeline.
 
@@ -80,7 +84,6 @@ project:
   name: investigative-journalism
   gcp_project_id: my-gcp-project
   region: europe-west3
-  tier: standard
 
 ontology:
   entities:
@@ -160,6 +163,7 @@ extraction:
 taxonomy:
   auto_generate: true
   bootstrap_after_n_documents: 25
+  allow_re_bootstrap: true
   normalization_model: "gemini-2.5-flash"
   curated_file: "taxonomy.curated.yaml"
 
@@ -175,6 +179,7 @@ retrieval:
 
 enrichment:
   enabled: true
+  mode: "on_demand"  # "pipeline" | "on_demand" | "disabled"
   provider: "gemini_search_grounding"
   enrich_types: ["Location", "Person", "Organization", "Event"]
   skip_types: ["Phenomenon", "ObjectDescription"]
@@ -203,17 +208,22 @@ evidence:
     algorithm: "weighted_pagerank"
 ```
 
-## Infrastructure Tiers
+## Infrastructure & Cost
 
-All tiers run on a single Cloud SQL PostgreSQL instance (pgvector + tsvector + PostGIS) and include the full 8-stage pipeline, hybrid retrieval, taxonomy normalization, and web grounding.
+mulder runs on a minimal GCP footprint. All capabilities are feature-flagged — enable what you need, disable what you don't.
 
-| Tier | Monthly Cost | What's included |
-|---|---|---|
-| **budget** | ~37 EUR | Full pipeline, hybrid search (vector + BM25 + basic graph traversal), basic corroboration and contradiction detection via SQL |
-| **standard** | ~95 EUR | + Graph traversal algorithms (recursive CTEs), spatio-temporal clustering, evidence chains, full evidence scoring |
-| **advanced** | ~130+ EUR | + BigQuery Analytics, Vertex AI Search for managed retrieval |
+**Core (always deployed):**
+- Cloud SQL PostgreSQL (pgvector + tsvector + PostGIS) — single instance for all data
+- Cloud Storage — document storage
+- Cloud Run — API + pipeline workers
+- Pub/Sub + Eventarc — pipeline orchestration
+- Firestore — metadata
 
-The tier is set in `mulder.config.yaml` and controls which features are enabled and how compute resources are allocated.
+**Optional (enable via config):**
+- BigQuery — analytics and reporting
+- Vertex AI Search — managed retrieval alternative
+
+Baseline cost: **~30-40 EUR/mo** for a small Cloud SQL instance. Scales with instance size and Gemini API usage. All capabilities are included — you choose what to enable based on your needs and budget.
 
 ## Tech Stack
 
