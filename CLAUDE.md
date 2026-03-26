@@ -58,6 +58,19 @@ Baseline cost: ~30-40 EUR/mo for a small Cloud SQL instance. Scales with instanc
 
 ## Pipeline Stages
 
+### MVP (v1.0) — 6 steps
+
+1. **Ingest** — PDF → Cloud Storage → Eventarc → Pub/Sub
+2. **Extract** — Document AI Layout Parser, Gemini fallback on low confidence
+3. **Segment** — Gemini structured output: identify and isolate articles/stories
+4. **Enrich** — Entity extraction from ontology config, normalization against taxonomy, entity resolution
+5. **Embed** — `gemini-embedding-001`, semantic chunking with question generation
+6. **Graph** — Entities + relationships → PostgreSQL relational tables
+
+### Full Pipeline (v2.0) — 8 steps
+
+Adds **Ground** (between Enrich and Embed) and **Analyze** (after Graph). Graph gains corroboration scoring and contradiction flagging.
+
 1. **Ingest** — PDF → Cloud Storage → Eventarc → Pub/Sub
 2. **Extract** — Document AI Layout Parser, Gemini fallback on low confidence
 3. **Segment** — Gemini structured output: identify and isolate articles/stories

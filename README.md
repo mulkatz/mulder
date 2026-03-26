@@ -60,7 +60,18 @@ Transforms the knowledge graph from a connection map into an assessment system. 
 
 ## Architecture Overview
 
-mulder processes documents through an eight-stage pipeline, orchestrated by Cloud Workflows:
+### MVP Pipeline (v1.0) — 6 steps
+
+1. **Ingest** — PDFs land in Cloud Storage, triggering the pipeline via Eventarc + Pub/Sub
+2. **Extract** — Document AI Layout Parser handles OCR and layout analysis; Gemini Vision falls back on low-confidence pages
+3. **Segment** — Gemini structured output identifies and isolates individual articles/stories within a document
+4. **Enrich** — Entities and relationships extracted based on your config ontology, normalized against the domain taxonomy, with cross-document entity resolution
+5. **Embed** — Semantic chunking with question generation, embedded via `gemini-embedding-001` (3072-dim, multilingual)
+6. **Graph** — Entities and relationships written to PostgreSQL relational tables
+
+### Full Pipeline (v2.0) — 8 steps
+
+Adds **Ground** (between Enrich and Embed) and **Analyze** (after Graph). Graph gains corroboration scoring and contradiction flagging.
 
 1. **Ingest** — PDFs land in Cloud Storage, triggering the pipeline via Eventarc + Pub/Sub
 2. **Extract** — Document AI Layout Parser handles OCR and layout analysis; Gemini Vision falls back on low-confidence pages
@@ -77,7 +88,7 @@ Query via the API or CLI using hybrid retrieval (vector + full-text + graph), wi
 
 ## Configuration
 
-All domain-specific logic lives in `mulder.config.yaml`. Here's a trimmed example for investigative journalism research:
+All domain-specific logic lives in `mulder.config.yaml`. Here's a minimal example for investigative journalism research:
 
 ```yaml
 project:
@@ -92,10 +103,8 @@ ontology:
       attributes:
         - name: role
           type: string
-          description: Role or title (e.g., politician, whistleblower, journalist)
         - name: affiliation
           type: string
-          description: Organization or group affiliation
 
     - name: organization
       description: Company, agency, or institution
@@ -112,15 +121,6 @@ ontology:
         - name: location
           type: string
 
-    - name: document_ref
-      description: Reference to an external document, law, or filing
-      attributes:
-        - name: doc_type
-          type: enum
-          values: [court_filing, legislation, report, memo, correspondence]
-        - name: identifier
-          type: string
-
     - name: location
       description: Geographic place
       attributes:
@@ -132,81 +132,24 @@ ontology:
     - name: involved_in
       from: person
       to: event
-      attributes:
-        - name: role
-          type: string
-
     - name: affiliated_with
       from: person
       to: organization
-
-    - name: references
-      from: event
-      to: document_ref
-
     - name: occurred_at
       from: event
       to: location
 
 extraction:
   language: [en, de]
-  segmentation:
-    strategy: llm
-    model: gemini-2.5-flash
   entity_extraction:
     model: gemini-2.5-flash
     confidence_threshold: 0.8
-  entity_resolution:
-    enabled: true
-    similarity_threshold: 0.85
 
 taxonomy:
   auto_generate: true
-  bootstrap_after_n_documents: 25
-  allow_re_bootstrap: true
-  normalization_model: "gemini-2.5-flash"
-  curated_file: "taxonomy.curated.yaml"
-
-retrieval:
-  strategies:
-    vector: { weight: 0.4, top_k: 20 }
-    fulltext: { weight: 0.3, top_k: 20 }
-    graph: { weight: 0.3, max_hops: 2 }
-  reranker:
-    enabled: true
-    model: "gemini-2.5-flash"
-    top_k: 10
-
-enrichment:
-  enabled: true
-  mode: "on_demand"  # "pipeline" | "on_demand" | "disabled"
-  provider: "gemini_search_grounding"
-  enrich_types: ["Location", "Person", "Organization", "Event"]
-  skip_types: ["Phenomenon", "ObjectDescription"]
-  cache_ttl_days: 90
-
-analysis:
-  temporal:
-    enabled: true
-    cluster_window_days: 30
-    normalize_dates: true
-  geospatial:
-    enabled: true
-    proximity_default_km: 50
-    enrich_coordinates: true
-
-evidence:
-  corroboration:
-    enabled: true
-    min_independent_sources: 2
-  contradiction:
-    enabled: true
-    detection_model: "gemini-2.5-flash"
-    compare_attributes: ["date", "location", "description", "witness_count"]
-  source_scoring:
-    enabled: true
-    algorithm: "weighted_pagerank"
 ```
+
+This is enough to get started — sensible defaults handle the rest. See [`mulder.config.example.yaml`](mulder.config.example.yaml) for the full configuration including retrieval weights, web grounding, spatio-temporal analysis, and evidence scoring options.
 
 ## Infrastructure & Cost
 
