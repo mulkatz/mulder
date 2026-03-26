@@ -148,10 +148,10 @@ Read these files in order:
 3. `{SPEC_PATH}` — the specification you must implement
 
 IMPORTANT: Follow the implement.md workflow exactly, including Step 4 (Plan Before Code).
-You MUST plan before writing any code:
+You MUST use plan mode (EnterPlanMode tool) before writing any code:
 1. Study existing code patterns adjacent to what you're building
-2. Produce a full execution plan (file order, imports, integration points, commit sequence)
-3. Only then start implementing
+2. Enter plan mode and produce a full execution plan (file order, imports, integration points, commit sequence, risk check)
+3. Exit plan mode, then implement by following your plan step by step
 
 Your task:
 - Create branch: feat/GH-{ISSUE_NUMBER}-{kebab-from-spec-title}
@@ -184,11 +184,11 @@ This is iteration {ITERATION}. The previous implementation failed these QA condi
 
 {FAILURES — formatted as a numbered list with condition name, expected, actual, and evidence}
 
-IMPORTANT: Before fixing, plan your approach:
+IMPORTANT: Before fixing, use plan mode (EnterPlanMode tool) to plan your approach:
 1. Read each failure carefully — understand WHY it failed, not just WHAT failed
 2. Read the test file to understand exactly what's being asserted
-3. Plan the minimal set of changes needed to fix each failure
-4. Only then start fixing
+3. In plan mode, plan the minimal set of changes needed to fix each failure
+4. Exit plan mode, then apply your fixes
 
 Your task:
 - Check out the existing branch: {BRANCH_NAME}

@@ -64,13 +64,13 @@ git checkout -b feat/GH-42-entity-resolution
 
 If the branch already exists (partial implementation), check it out and continue from where it left off.
 
-### Step 4: Plan Before Code
+### Step 4: Plan Before Code (use /plan)
 
-**Do not write a single line of code before completing this step.** Enter plan mode and produce an execution plan. The spec tells you WHAT to build — this step figures out HOW to build it in the context of the actual codebase.
+**Do not write a single line of code before completing this step.** Use the `/plan` skill to enter plan mode. The spec tells you WHAT to build — planning figures out HOW to build it in the context of the actual codebase.
 
 #### 4.1 Study existing patterns
 
-Before planning, read the code that's adjacent to what you're building:
+Before entering plan mode, read the code adjacent to what you're building:
 - If adding a pipeline step: read an existing pipeline step to understand the pattern (file structure, exports, error handling, how it reads config, how it calls Gemini)
 - If adding an API route: read an existing route for the same patterns
 - If adding a CLI command: read an existing command
@@ -78,9 +78,9 @@ Before planning, read the code that's adjacent to what you're building:
 
 The goal is to match the codebase's existing style exactly — not invent your own approach.
 
-#### 4.2 Produce the execution plan
+#### 4.2 Enter plan mode
 
-Create a plan that covers:
+Enter plan mode by using the `EnterPlanMode` tool. In plan mode, produce an execution plan that covers:
 
 1. **File creation order** — sequence files so imports resolve at each step. Types and schemas first, then core logic, then integration points.
 2. **For each file:** what it exports, what it imports, which spec section it fulfills, and which existing file it mirrors in structure.
@@ -91,6 +91,8 @@ Create a plan that covers:
 7. **Risk check** — anything in the spec that conflicts with the current codebase state, missing dependencies, or ambiguities that need a decision.
 
 If the risk check surfaces blocking issues, stop and report them before writing code.
+
+Once the plan is complete and solid, exit plan mode with `ExitPlanMode` to begin implementation.
 
 ### Step 5: Implement
 
