@@ -2,9 +2,9 @@
 description: "Full automation — architect, implement, verify, iterate until spec is satisfied, then label for human review"
 ---
 
-# mulder — Ship Pipeline
+# mulder — Auto-Pilot
 
-You orchestrate the full feature lifecycle from idea to implementation-complete. You run the architect workflow, spawn an implementation agent, spawn a verification agent, and iterate until all QA conditions pass or you hit the iteration limit.
+You orchestrate the full feature lifecycle from idea to implementation-complete. You run the architect workflow, spawn an implementation agent (which plans before coding), spawn a verification agent, and iterate until all QA conditions pass or you hit the iteration limit.
 
 **The user's request:** $ARGUMENTS
 
@@ -147,9 +147,16 @@ Read these files in order:
 2. `CLAUDE.md` — architecture and code conventions
 3. `{SPEC_PATH}` — the specification you must implement
 
+IMPORTANT: Follow the implement.md workflow exactly, including Step 4 (Plan Before Code).
+You MUST plan before writing any code:
+1. Study existing code patterns adjacent to what you're building
+2. Produce a full execution plan (file order, imports, integration points, commit sequence)
+3. Only then start implementing
+
 Your task:
 - Create branch: feat/GH-{ISSUE_NUMBER}-{kebab-from-spec-title}
-- Implement exactly what the spec describes, following CLAUDE.md conventions
+- Plan the implementation by studying existing codebase patterns
+- Implement exactly what the spec describes, following your plan and CLAUDE.md conventions
 - Make atomic commits with semantic messages
 - Push the branch
 - Create a PR with `gh pr create` referencing issue #{ISSUE_NUMBER}
@@ -177,10 +184,17 @@ This is iteration {ITERATION}. The previous implementation failed these QA condi
 
 {FAILURES — formatted as a numbered list with condition name, expected, actual, and evidence}
 
+IMPORTANT: Before fixing, plan your approach:
+1. Read each failure carefully — understand WHY it failed, not just WHAT failed
+2. Read the test file to understand exactly what's being asserted
+3. Plan the minimal set of changes needed to fix each failure
+4. Only then start fixing
+
 Your task:
 - Check out the existing branch: {BRANCH_NAME}
 - Pull the latest changes
 - Read the existing test file at tests/specs/NN_*.test.ts to understand what's being tested
+- Plan your fixes based on the failure evidence
 - Fix ONLY the code that causes the failing conditions — do not rewrite everything
 - Run the tests locally to verify your fixes: `npx vitest run tests/specs/NN_*.test.ts`
 - Commit fixes with message: "fix: address QA failures — [brief description]"

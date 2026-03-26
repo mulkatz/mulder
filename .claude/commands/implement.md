@@ -64,19 +64,51 @@ git checkout -b feat/GH-42-entity-resolution
 
 If the branch already exists (partial implementation), check it out and continue from where it left off.
 
-### Step 4: Implement
+### Step 4: Plan Before Code
 
-Follow the spec's **Section 4: Implementation Blueprint** methodically:
+**Do not write a single line of code before completing this step.** Enter plan mode and produce an execution plan. The spec tells you WHAT to build — this step figures out HOW to build it in the context of the actual codebase.
+
+#### 4.1 Study existing patterns
+
+Before planning, read the code that's adjacent to what you're building:
+- If adding a pipeline step: read an existing pipeline step to understand the pattern (file structure, exports, error handling, how it reads config, how it calls Gemini)
+- If adding an API route: read an existing route for the same patterns
+- If adding a CLI command: read an existing command
+- If adding database tables: read existing migration files for naming conventions and structure
+
+The goal is to match the codebase's existing style exactly — not invent your own approach.
+
+#### 4.2 Produce the execution plan
+
+Create a plan that covers:
+
+1. **File creation order** — sequence files so imports resolve at each step. Types and schemas first, then core logic, then integration points.
+2. **For each file:** what it exports, what it imports, which spec section it fulfills, and which existing file it mirrors in structure.
+3. **Database migrations** — exact DDL from the spec, with migration file naming matching existing conventions.
+4. **Config additions** — exact YAML structure and Zod schema additions.
+5. **Integration wiring** — where the new code plugs into existing systems (route registration, pipeline step index, CLI command group).
+6. **Commit sequence** — one commit per logical phase, with planned commit messages.
+7. **Risk check** — anything in the spec that conflicts with the current codebase state, missing dependencies, or ambiguities that need a decision.
+
+If the risk check surfaces blocking issues, stop and report them before writing code.
+
+### Step 5: Implement
+
+Now execute the plan. Follow it step by step — the plan is your recipe.
+
+Follow the spec's **Section 4: Implementation Blueprint** as filtered through your execution plan:
 
 1. **Database changes first** — create migration files with the exact DDL from the spec. Place in `src/shared/migrations/` following existing naming conventions.
 
 2. **Types and schemas** — create TypeScript types and Zod schemas for new data structures. Follow CLAUDE.md: strict mode, no `any`, no `as` assertions.
 
-3. **Core logic** — implement the main functionality. Follow the data flow described in the spec. Use the file paths specified in the Blueprint.
+3. **Core logic** — implement the main functionality. Follow the data flow described in the spec. Use the file paths specified in the Blueprint. Mirror the patterns you studied from existing code.
 
 4. **Config changes** — add new config sections to `mulder.config.yaml`, `mulder.config.example.yaml`, and the Zod schema in `src/config/`.
 
 5. **Integration** — wire the new code into existing systems (pipeline step registration, API route mounting, etc.).
+
+If you discover something during implementation that contradicts your plan, update the plan first, then continue. Don't silently deviate.
 
 **Implementation rules from CLAUDE.md** (read fresh each time, but the critical ones are):
 - TypeScript strict mode, ESM only
@@ -89,7 +121,7 @@ Follow the spec's **Section 4: Implementation Blueprint** methodically:
 - Pipeline steps must be idempotent — upserts mandatory
 - Files: `kebab-case.ts`, Types: `PascalCase`, Functions: `camelCase`
 
-### Step 5: Commit
+### Step 6: Commit
 
 Make atomic commits following CLAUDE.md Git Conventions:
 
@@ -106,7 +138,7 @@ EOF
 
 One logical change per commit. If the implementation has natural phases (schema, types, logic, config, integration), commit each phase separately.
 
-### Step 6: Create Pull Request
+### Step 7: Create Pull Request
 
 ```bash
 gh pr create --title "[Prefix] Short description" --body "$(cat <<'EOF'
@@ -140,7 +172,7 @@ EOF
 )"
 ```
 
-### Step 7: Output Summary
+### Step 8: Output Summary
 
 ```
 Branch: `feat/GH-42-entity-resolution`
