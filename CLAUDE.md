@@ -49,6 +49,13 @@ Tier is set in `mulder.config.yaml`, controls which Terraform modules are deploy
 - Config always via the loader, never parse YAML directly
 - Prompts always from templates, never inline strings
 
+## Git Conventions
+
+- **Atomic commits** — one logical change per commit
+- **Semantic commit messages**: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `style:`, `ci:`
+- Examples: `feat: add entity extraction pipeline step`, `fix: handle corrupt PDF in ingest`, `chore: update dependencies`
+- Always include `Co-Authored-By` trailer when Claude contributes
+
 ## Naming Conventions
 
 - Files: `kebab-case.ts`
