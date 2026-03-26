@@ -29,29 +29,25 @@ There's no open-source tool that combines GCP-native Terraform deployment, a con
 
 ## Core Capabilities
 
-### MVP (v1.0)
-
-#### 1. Complex Layout Extraction
+### 1. Complex Layout Extraction
 Document AI Layout Parser handles OCR and layout analysis for complex documents — magazines, newspapers, multi-column government correspondence. Gemini Vision falls back on pages where confidence is low, handling tables, sidebars, and mixed-layout content.
 
-#### 2. Config-Driven Domain Ontology
+### 2. Config-Driven Domain Ontology
 A single `mulder.config.yaml` defines entity types, relationships, attributes, and extraction strategy. Gemini structured output uses dynamically generated JSON Schema from this config. Switch domains by editing one file — no code changes.
 
-#### 3. Domain Taxonomy with Auto-Normalization
+### 3. Domain Taxonomy with Auto-Normalization
 Solves the problem of entity matching across inconsistent terminology. After ~25 documents, Gemini bootstraps a taxonomy grouping entity variants under canonical terms. Each new document matches entities against the existing taxonomy. Auto-generated entries marked `auto`, manually confirmed entries marked `confirmed`. Curate via `taxonomy.curated.yaml` or the CLI. Re-bootstrap via `mulder taxonomy re-bootstrap` when the collection grows significantly.
 
-#### 4. Hybrid Retrieval with LLM Re-Ranking
+### 4. Hybrid Retrieval with LLM Re-Ranking
 Three parallel retrieval strategies — vector search (pgvector cosine similarity), BM25 full-text search (PostgreSQL tsvector), and graph traversal (recursive CTEs) — fused via Reciprocal Rank Fusion (RRF). Gemini Flash re-ranks the fused results for final relevance in the query context.
 
-### Full-Featured (v2.0)
-
-#### 5. Web Grounding / Enrichment
+### 5. Web Grounding / Enrichment
 Gemini's native `google_search_retrieval` tool via Vertex AI verifies and enriches extracted entities: locations → GPS coordinates and type, persons → biographical context, organizations → descriptions, events → date verification. Three modes: `pipeline` (auto during ingestion), `on_demand` (enrich specific entities or batches via API/CLI), or `disabled`. Config controls which entity types get enriched. Results cached with configurable TTL.
 
-#### 6. Spatio-Temporal Analysis
+### 6. Spatio-Temporal Analysis
 Time and space as first-class dimensions. Temporal: normalized timestamps on events, fuzzy date normalization ("early 80s" → date range), temporal cluster detection. Geospatial: PostGIS for proximity queries, coordinates enriched via web grounding. Combined: graph algorithms (community detection, shortest path) filtered by time and space windows.
 
-#### 7. Evidence Scoring & Contradiction Detection
+### 7. Evidence Scoring & Contradiction Detection
 Transforms the knowledge graph from a connection map into an assessment system. Two-phase contradiction detection: the Graph step flags potential contradictions immediately via attribute comparison (fast, no LLM — e.g., "March 1982" vs "July 1983" on the same event), then the Analyze step resolves them via Gemini semantic comparison (confirms real contradictions, dismisses precision differences like "early 1982" vs "March 1982"). Corroboration scores count independent sources per claim. Weighted PageRank scores source reliability. Evidence chains trace paths through the graph supporting or refuting a thesis.
 
 ## Quick Start
