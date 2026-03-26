@@ -103,7 +103,18 @@ describe('Spec 01: Entity Resolution in Enrich Step', () => {
 | **Error handling** | Provide invalid inputs, verify error codes and messages |
 | **Idempotency** | Run the same action twice, verify identical state (same row count, no duplicates) |
 
-### Step 4: Run Tests
+### Step 4: Install Test Dependencies
+
+Before running tests, ensure test dependencies are available:
+
+```bash
+# Check if vitest is installed, install if missing
+npx vitest --version 2>/dev/null || npm install -D vitest
+```
+
+If the tests need additional packages (e.g., `pg` for database assertions, `yaml` for YAML parsing), install them as dev dependencies.
+
+### Step 5: Run Tests
 
 ```bash
 npx vitest run tests/specs/NN_spec_name.test.ts --reporter=verbose
@@ -114,7 +125,22 @@ If tests require infrastructure that isn't available (database, running API):
 2. Distinguish between **test failures** (the system doesn't behave as specified) and **infrastructure gaps** (the test environment isn't set up)
 3. Report both clearly
 
-### Step 5: Generate Report
+### Step 6: Commit and Push Tests
+
+After writing (or modifying) test files, commit and push them so they appear in the PR:
+
+```bash
+git add tests/specs/NN_spec_name.test.ts
+git commit -m "$(cat <<'EOF'
+test: add black-box QA tests for spec NN
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+EOF
+)"
+git push
+```
+
+### Step 7: Generate Report
 
 After running tests, output a structured report:
 
@@ -149,7 +175,7 @@ After running tests, output a structured report:
 [PASS — all conditions met | FAIL — N conditions not met | PARTIAL — some conditions could not be verified]
 ```
 
-### Step 6: Output Summary
+### Step 8: Output Summary
 
 ```
 Tests: `tests/specs/01_enrich_entity_resolution.test.ts`

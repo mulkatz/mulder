@@ -38,6 +38,24 @@ Create a task list at the start to give the user visibility:
 
 ---
 
+## Phase 0: Pre-Flight Check
+
+Before starting, verify the environment is ready:
+
+```bash
+# Must be on main with clean working tree
+git status --porcelain  # should be empty
+git branch --show-current  # should be "main"
+git pull origin main  # ensure up to date
+gh auth status  # ensure GitHub CLI is authenticated
+```
+
+If the working tree is dirty, tell the user: "There are uncommitted changes. Please commit or stash them before running auto-pilot."
+
+If not on main, tell the user and ask if they want to switch.
+
+---
+
 ## Phase 1: Architect (inline)
 
 Run this phase yourself — not as a subagent. You need direct access to tools for file creation and `gh` commands.
@@ -103,16 +121,26 @@ git push
 
 ### 1.7 Update state and report
 
+**For Standard/Macro tasks:**
 ```
+SCALE = standard | macro
 SPEC_PATH = docs/specs/NN_component_feature.spec.md
+ISSUE_NUMBER = (from gh output)
+ISSUE_URL = (from gh output)
+```
+
+**For Micro tasks (no spec file):**
+```
+SCALE = micro
+SPEC_PATH = none
 ISSUE_NUMBER = (from gh output)
 ISSUE_URL = (from gh output)
 ```
 
 Tell the user:
 ```
-Phase 1 complete: Spec created + issue opened.
-Spec: docs/specs/NN_component_feature.spec.md
+Phase 1 complete: {Spec created + issue opened | Issue opened (Micro — no spec)}.
+{Spec: docs/specs/NN_component_feature.spec.md}  (omit for Micro)
 Issue: #N — <URL>
 Starting implementation...
 ```
@@ -137,7 +165,7 @@ Agent(
 
 Construct the prompt based on iteration number:
 
-**Iteration 1:**
+**Iteration 1 (Standard/Macro):**
 
 ```
 You are the implementation agent for mulder (mulkatz/mulder).
@@ -168,6 +196,36 @@ PR_URL: <the full PR URL>
 PR_NUMBER: <the PR number>
 FILES_CHANGED: <comma-separated list of created/modified files>
 DEVIATIONS: <any spec deviations, or "none">
+```
+
+**Iteration 1 (Micro — no spec, issue-only):**
+
+```
+You are the implementation agent for mulder (mulkatz/mulder).
+
+Read these files in order:
+1. `.claude/commands/implement.md` — your workflow instructions (see "Handling Micro Tasks" section)
+2. `CLAUDE.md` — architecture and code conventions
+3. The GitHub issue: `gh issue view {ISSUE_NUMBER}` — the issue body IS your implementation contract
+
+This is a Micro task — there is no spec file. The issue body contains:
+- **Scope section:** what to change and which files
+- **Verification section:** how to confirm the fix works
+
+Your task:
+- Create branch: fix/GH-{ISSUE_NUMBER}-{kebab-from-issue-title}
+- Read the issue body for the scope and verification criteria
+- Plan your approach (use EnterPlanMode), then implement
+- Make atomic commits with semantic messages
+- Push the branch
+- Create a PR with `gh pr create` referencing issue #{ISSUE_NUMBER}
+
+When done, report these values exactly in this format:
+BRANCH_NAME: <the branch name>
+PR_URL: <the full PR URL>
+PR_NUMBER: <the PR number>
+FILES_CHANGED: <comma-separated list of modified files>
+DEVIATIONS: none
 ```
 
 **Iteration 2+:**
@@ -231,7 +289,7 @@ Agent(
 
 ### Subagent prompt
 
-**Iteration 1** (tests don't exist yet):
+**Iteration 1 — Standard/Macro** (tests don't exist yet):
 
 ```
 You are the QA verification agent for mulder (mulkatz/mulder).
@@ -247,12 +305,48 @@ Make sure you are on branch {BRANCH_NAME}:
   git checkout {BRANCH_NAME} && git pull
 
 Your task:
+- Ensure test dependencies are installed (vitest, pg, yaml, etc.)
 - Write black-box tests to tests/specs/NN_spec_name.test.ts
 - One `it()` block per QA condition in Section 5
 - Tests interact with the system ONLY through: CLI commands, HTTP requests, direct SQL queries, filesystem checks
 - Run the tests: `npx vitest run tests/specs/NN_*.test.ts --reporter=verbose`
 - Commit the test file: "test: add black-box QA tests for spec NN"
 - Push to the same branch
+
+When done, report in this exact format:
+TOTAL: <number of conditions>
+PASSED: <count>
+FAILED: <count>
+SKIPPED: <count>
+VERDICT: PASS | FAIL | PARTIAL
+
+For each failure, include:
+FAILURE: <condition name>
+EXPECTED: <what should happen>
+ACTUAL: <what happened>
+EVIDENCE: <proof>
+```
+
+**Iteration 1 — Micro** (tests don't exist yet, no spec):
+
+```
+You are the QA verification agent for mulder (mulkatz/mulder).
+
+Read these files in order:
+1. `.claude/commands/verify.md` — your workflow instructions (see "Handling Micro Tasks" section)
+2. `CLAUDE.md` — ONLY the Testing section
+3. The GitHub issue: `gh issue view {ISSUE_NUMBER}` — read the **Verification** section
+
+CRITICAL: Do NOT read any files under src/. You are black-box only.
+
+Make sure you are on branch {BRANCH_NAME}:
+  git checkout {BRANCH_NAME} && git pull
+
+Your task:
+- Derive test conditions from the issue's Verification section
+- Write tests to tests/micro/GH-{ISSUE_NUMBER}_short_name.test.ts
+- Run the tests: `npx vitest run tests/micro/GH-{ISSUE_NUMBER}_*.test.ts --reporter=verbose`
+- Commit and push the test file
 
 When done, report in this exact format:
 TOTAL: <number of conditions>
@@ -276,17 +370,21 @@ You are the QA verification agent for mulder (mulkatz/mulder).
 Read these files in order:
 1. `.claude/commands/verify.md` — your workflow instructions
 2. `CLAUDE.md` — ONLY the Testing section
+3. `{SPEC_PATH}` — ONLY Sections 1, 2, and 5 (for diagnosing test bugs if needed)
+   {For Micro: `gh issue view {ISSUE_NUMBER}` instead}
 
 Make sure you are on branch {BRANCH_NAME}:
   git checkout {BRANCH_NAME} && git pull
 
-The implementation was updated to fix previous failures. The test file already exists at tests/specs/NN_*.test.ts.
+The implementation was updated to fix previous failures. The test file already exists.
 
 CRITICAL: Do NOT read any files under src/. You are black-box only.
 
 Your task:
 - Re-run the existing tests: `npx vitest run tests/specs/NN_*.test.ts --reporter=verbose`
+  {For Micro: `npx vitest run tests/micro/GH-{ISSUE_NUMBER}_*.test.ts --reporter=verbose`}
 - Do NOT modify the tests unless a test itself had a bug (not an implementation issue)
+- If you modify a test, commit and push the change
 - Report the results
 
 When done, report in this exact format:
@@ -423,14 +521,16 @@ Mark all tasks complete.
 
 If the architect classifies the request as Macro:
 
-1. Complete Phase 1 (architect) — create umbrella issue + all sub-task specs + issues
+1. Complete Phase 0 (pre-flight) and Phase 1 (architect) — create umbrella issue + all sub-task specs + issues
 2. For each sub-task in dependency order:
    - Run Phase 2 (implement) for this sub-task's spec
    - Run Phase 3 (verify) for this sub-task's spec
    - Iterate if needed (Phase 4)
-   - On pass: close the sub-task issue, move to next
-   - On needs-review: stop the pipeline, label umbrella as ai-needs-review
-3. When all sub-tasks pass: label umbrella issue as ai-done
+   - On pass: label the sub-task issue `ai-done`, move to next
+   - On needs-review: stop the pipeline, label sub-task AND umbrella as `ai-needs-review`
+3. When all sub-tasks pass: label umbrella issue as `ai-done`
+
+Do NOT close sub-task issues — they still need human review.
 
 Track each sub-task's state independently. Report progress to the user between sub-tasks.
 

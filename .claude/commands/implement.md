@@ -123,7 +123,7 @@ If you discover something during implementation that contradicts your plan, upda
 - Pipeline steps must be idempotent — upserts mandatory
 - Files: `kebab-case.ts`, Types: `PascalCase`, Functions: `camelCase`
 
-### Step 6: Commit
+### Step 6: Commit and Push
 
 Make atomic commits following CLAUDE.md Git Conventions:
 
@@ -139,6 +139,14 @@ EOF
 ```
 
 One logical change per commit. If the implementation has natural phases (schema, types, logic, config, integration), commit each phase separately.
+
+After all commits, push the branch to remote:
+
+```bash
+git push -u origin feat/GH-42-entity-resolution
+```
+
+The branch must exist on the remote before creating a PR.
 
 ### Step 7: Create Pull Request
 
