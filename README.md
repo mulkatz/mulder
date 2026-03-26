@@ -1,3 +1,5 @@
+<p align="center"><img src="./icon.png" width="120" /></p>
+
 # mulder
 
 **Config-driven Document Intelligence Platform on GCP.**
