@@ -11,17 +11,44 @@ Turn any document collection into a searchable knowledge base with a Knowledge G
 
 mulder transforms unstructured document collections — PDFs with complex layouts like magazines, newspapers, government correspondence — into structured, searchable knowledge. You define your domain ontology (entity types, relationships, extraction strategy) in a single `mulder.config.yaml`, run `terraform apply`, and get a fully deployed GCP pipeline that ingests, extracts, enriches, and connects your documents.
 
-There's no open-source tool that combines GCP-native Terraform deployment, a config-driven domain ontology, and unified Knowledge Graph + Vector Search. mulder fills that gap.
+There's no open-source tool that combines GCP-native Terraform deployment, a config-driven domain ontology, hybrid retrieval (vector + full-text + graph), web grounding, evidence scoring, and spatio-temporal analysis — all on a single PostgreSQL instance. mulder fills that gap.
 
 ## Key Features
 
 - **Config-driven** — One YAML file defines your entire domain: entities, relationships, extraction rules
 - **Terraform-deployed** — Full GCP infrastructure from a single `terraform apply`, with three cost tiers
 - **Complex layout support** — Document AI Layout Parser + Gemini Vision fallback for magazines, newspapers, multi-column layouts
-- **Knowledge Graph** — Spanner Graph with GQL queries over extracted entities and relationships
-- **Vector Search** — Semantic search via pgvector with multilingual Matryoshka embeddings
+- **Hybrid Retrieval** — Vector search (pgvector) + BM25 full-text (tsvector) + graph traversal, fused via RRF and LLM re-ranking
+- **Domain Taxonomy** — Auto-generated, incrementally growing taxonomy with human-in-the-loop curation for entity normalization
+- **Web Grounding** — Gemini verifies and enriches entities against live web data (coordinates, bios, org descriptions)
+- **Spatio-Temporal Analysis** — PostGIS proximity queries, temporal clustering, pattern detection across time and space
+- **Evidence Scoring** — Corroboration scores, contradiction detection, source reliability via weighted PageRank, evidence chains
+- **PostgreSQL All-in-One** — Single Cloud SQL instance handles vector search, full-text search, geospatial, and graph traversal (recursive CTEs)
 - **Multilingual** — German + English out of the box, extensible to any language
 - **CLI-first** — Ingest, query, export, and manage everything from the terminal
+
+## Core Capabilities
+
+### 1. Complex Layout Extraction
+Document AI Layout Parser handles OCR and layout analysis for complex documents — magazines, newspapers, multi-column government correspondence. Gemini Vision falls back on pages where confidence is low, handling tables, sidebars, and mixed-layout content.
+
+### 2. Config-Driven Domain Ontology
+A single `mulder.config.yaml` defines entity types, relationships, attributes, and extraction strategy. Gemini structured output uses dynamically generated JSON Schema from this config. Switch domains by editing one file — no code changes.
+
+### 3. Domain Taxonomy with Auto-Normalization
+Solves the problem of entity matching across inconsistent terminology. After ~25 documents, Gemini bootstraps a taxonomy grouping entity variants under canonical terms. Each new document matches entities against the existing taxonomy. Auto-generated entries marked `auto`, manually confirmed entries marked `confirmed`. Curate via `taxonomy.curated.yaml` or the CLI.
+
+### 4. Hybrid Retrieval with LLM Re-Ranking
+Three parallel retrieval strategies — vector search (pgvector cosine similarity), BM25 full-text search (PostgreSQL tsvector), and graph traversal (recursive CTEs) — fused via Reciprocal Rank Fusion (RRF). Gemini Flash re-ranks the fused results for final relevance in the query context.
+
+### 5. Web Grounding / Enrichment
+Pipeline step between Enrich and Embed. Gemini's native `google_search_retrieval` tool via Vertex AI verifies and enriches extracted entities: locations → GPS coordinates and type, persons → biographical context, organizations → descriptions, events → date verification. Config controls which entity types get enriched. Results cached with configurable TTL.
+
+### 6. Spatio-Temporal Analysis
+Time and space as first-class dimensions. Temporal: normalized timestamps on events, fuzzy date normalization ("early 80s" → date range), temporal cluster detection. Geospatial: PostGIS for proximity queries, coordinates enriched via web grounding. Combined: graph algorithms (community detection, shortest path) filtered by time and space windows.
+
+### 7. Evidence Scoring & Contradiction Detection
+Transforms the knowledge graph from a connection map into an assessment system. Corroboration scores count independent sources per claim, weighted by source diversity. Gemini compares entity attributes across sources to detect contradictions, modeled as `CONTRADICTS` edges with annotations. Weighted PageRank scores source reliability. Evidence chains trace paths through the graph supporting or refuting a thesis.
 
 ## Quick Start
 
@@ -29,16 +56,20 @@ There's no open-source tool that combines GCP-native Terraform deployment, a con
 
 ## Architecture Overview
 
-mulder processes documents through a six-stage pipeline, orchestrated by Cloud Workflows:
+mulder processes documents through an eight-stage pipeline, orchestrated by Cloud Workflows:
 
 1. **Ingest** — PDFs land in Cloud Storage, triggering the pipeline via Eventarc + Pub/Sub
 2. **Extract** — Document AI Layout Parser handles OCR and layout analysis; Gemini Vision falls back on low-confidence pages
 3. **Segment** — Gemini structured output identifies and isolates individual articles/stories within a document
-4. **Enrich** — Entities and relationships are extracted based on the ontology defined in your config, with cross-document entity resolution
-5. **Embed** — Semantic chunking with question generation, embedded via `gemini-embedding-001` (3072-dim, multilingual)
-6. **Graph** — Entities and relationships are written to Spanner Graph; schema is auto-generated from your config
+4. **Enrich** — Entities and relationships extracted based on your config ontology, normalized against the domain taxonomy, with cross-document entity resolution
+5. **Ground** — Web enrichment via Gemini `google_search_retrieval` — verifies and enriches entities with real-world data (coordinates, bios, descriptions)
+6. **Embed** — Semantic chunking with question generation, embedded via `gemini-embedding-001` (3072-dim, multilingual)
+7. **Graph** — Entities and relationships written to PostgreSQL relational tables; corroboration scoring and contradiction detection
+8. **Analyze** — Spatio-temporal clustering, source reliability scoring (weighted PageRank), evidence chain computation
 
-Query via the API or CLI to search semantically, traverse the knowledge graph, or combine both.
+Every step is idempotent and can be re-run individually. Ground can run independently when web data changes. Analyze can run after each new batch without retriggering the full pipeline.
+
+Query via the API or CLI using hybrid retrieval (vector + full-text + graph), with LLM re-ranking for optimal results.
 
 ## Configuration
 
@@ -125,17 +156,64 @@ extraction:
   entity_resolution:
     enabled: true
     similarity_threshold: 0.85
+
+taxonomy:
+  auto_generate: true
+  bootstrap_after_n_documents: 25
+  normalization_model: "gemini-2.5-flash"
+  curated_file: "taxonomy.curated.yaml"
+
+retrieval:
+  strategies:
+    vector: { weight: 0.4, top_k: 20 }
+    fulltext: { weight: 0.3, top_k: 20 }
+    graph: { weight: 0.3, max_hops: 2 }
+  reranker:
+    enabled: true
+    model: "gemini-2.5-flash"
+    top_k: 10
+
+enrichment:
+  enabled: true
+  provider: "gemini_search_grounding"
+  enrich_types: ["Location", "Person", "Organization", "Event"]
+  skip_types: ["Phenomenon", "ObjectDescription"]
+  cache_ttl_days: 90
+
+analysis:
+  temporal:
+    enabled: true
+    cluster_window_days: 30
+    normalize_dates: true
+  geospatial:
+    enabled: true
+    proximity_default_km: 50
+    enrich_coordinates: true
+
+evidence:
+  corroboration:
+    enabled: true
+    min_independent_sources: 2
+  contradiction:
+    enabled: true
+    detection_model: "gemini-2.5-flash"
+    compare_attributes: ["date", "location", "description", "witness_count"]
+  source_scoring:
+    enabled: true
+    algorithm: "weighted_pagerank"
 ```
 
 ## Infrastructure Tiers
 
+All tiers run on a single Cloud SQL PostgreSQL instance (pgvector + tsvector + PostGIS) and include the full 8-stage pipeline, hybrid retrieval, taxonomy normalization, and web grounding.
+
 | Tier | Monthly Cost | What's included |
 |---|---|---|
-| **budget** | ~37 EUR | Cloud SQL (pgvector), entities as relational tables, full pipeline, semantic search |
-| **standard** | ~162 EUR | + Spanner Graph for native graph queries (GQL), cross-entity traversal |
-| **advanced** | ~183+ EUR | + BigQuery Analytics, Vertex AI Search for managed retrieval |
+| **budget** | ~37 EUR | Full pipeline, hybrid search (vector + BM25 + basic graph traversal), basic corroboration and contradiction detection via SQL |
+| **standard** | ~95 EUR | + Graph traversal algorithms (recursive CTEs), spatio-temporal clustering, evidence chains, full evidence scoring |
+| **advanced** | ~130+ EUR | + BigQuery Analytics, Vertex AI Search for managed retrieval |
 
-All tiers include the complete ingest-to-query pipeline. The tier is set in `mulder.config.yaml` and controls which Terraform modules are deployed.
+The tier is set in `mulder.config.yaml` and controls which features are enabled and how compute resources are allocated.
 
 ## Tech Stack
 
@@ -146,9 +224,9 @@ All tiers include the complete ingest-to-query pipeline. The tier is set in `mul
 | Infrastructure | Terraform (modular) |
 | OCR | Document AI Layout Parser |
 | LLM | Gemini 2.5 Flash via Vertex AI |
+| Web Grounding | Gemini `google_search_retrieval` (Vertex AI) |
 | Embeddings | gemini-embedding-001 (3072-dim) |
-| Vector DB | Cloud SQL PostgreSQL + pgvector |
-| Graph DB | Spanner Graph |
+| Database | Cloud SQL PostgreSQL (pgvector + tsvector + PostGIS) |
 | Metadata | Firestore |
 | Orchestration | Cloud Workflows + Cloud Run Jobs |
 | API | Cloud Run Service |
