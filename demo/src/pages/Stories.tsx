@@ -109,7 +109,7 @@ export default function Stories() {
           {stories.map((story) => (
             <Link
               key={story.id}
-              to="/sources/1/review/1"
+              to={`/stories/${story.id}`}
               className="block px-6 py-4 hover:bg-muted/30 transition-colors no-underline"
             >
               <div className="flex items-start justify-between gap-4">

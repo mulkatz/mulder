@@ -212,6 +212,102 @@ export const entityTypeLabels: Record<EntityType, string> = {
   location: 'Location',
 };
 
+// Related stories with similarity scores for Story Detail page
+export interface RelatedStory {
+  story: Story;
+  similarity: number;
+  sharedEntities: Entity[];
+  reason: string;
+}
+
+export function getRelatedStories(storyId: string): RelatedStory[] {
+  const story = stories.find(s => s.id === storyId);
+  if (!story) return [];
+
+  const related: RelatedStory[] = [];
+  for (const other of stories) {
+    if (other.id === storyId) continue;
+    const shared = story.entities.filter(e => other.entities.some(oe => oe.id === e.id));
+    if (shared.length > 0) {
+      related.push({
+        story: other,
+        similarity: 0.6 + shared.length * 0.08 + Math.random() * 0.05,
+        sharedEntities: shared,
+        reason: shared.length >= 3
+          ? `${shared.length} shared entities — strong overlap`
+          : shared.length === 2
+          ? 'Multiple shared entities'
+          : `Both mention ${shared[0].name}`,
+      });
+    }
+  }
+  return related.sort((a, b) => b.similarity - a.similarity).slice(0, 5);
+}
+
+// Entity timeline for Entity Detail page
+export interface TimelineEntry {
+  date: string;
+  storyId: string;
+  storyTitle: string;
+  source: string;
+  excerpt: string;
+}
+
+export function getEntityTimeline(entityId: string): TimelineEntry[] {
+  const dates = ['2019-03-12', '2020-07-22', '2021-01-15', '2021-11-03', '2022-05-18', '2022-09-30', '2023-02-14', '2023-08-07'];
+  const entityStories = stories.filter(s => s.entities.some(e => e.id === entityId));
+  return entityStories.map((s, i) => ({
+    date: dates[i % dates.length],
+    storyId: s.id,
+    storyTitle: s.title,
+    source: s.source,
+    excerpt: s.excerpt.slice(0, 120) + '...',
+  })).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Entities connected to a given entity
+export function getConnectedEntities(entityId: string): { entity: Entity; sharedStories: number; strength: number }[] {
+  const entityStories = stories.filter(s => s.entities.some(e => e.id === entityId));
+  const counts = new Map<string, { entity: Entity; count: number }>();
+
+  for (const s of entityStories) {
+    for (const e of s.entities) {
+      if (e.id === entityId) continue;
+      const existing = counts.get(e.id);
+      if (existing) existing.count++;
+      else counts.set(e.id, { entity: e, count: 1 });
+    }
+  }
+
+  return Array.from(counts.values())
+    .map(({ entity, count }) => ({ entity, sharedStories: count, strength: count / entityStories.length }))
+    .sort((a, b) => b.sharedStories - a.sharedStories);
+}
+
+// Merge candidates for Entity Detail page
+export const mergeCandidates: Record<string, { name: string; similarity: number; mentions: number }[]> = {
+  e1: [{ name: 'E. Richter', similarity: 0.92, mentions: 3 }, { name: 'Dr. E. Richter', similarity: 0.88, mentions: 5 }],
+  e4: [{ name: 'Meridian Cap. Group', similarity: 0.95, mentions: 2 }, { name: 'Meridian Capital', similarity: 0.91, mentions: 7 }],
+  e12: [{ name: 'V. Dragan', similarity: 0.89, mentions: 4 }],
+};
+
+// Story full text with entity markup for Story Detail page
+export const storyFullTexts: Record<string, string> = {
+  s1: `A complex web of shell companies spanning <entity-location>Hamburg</entity-location>, <entity-location>Zürich</entity-location>, and <entity-location>Luxembourg</entity-location> has been quietly funneling billions through what investigators now call the "Meridian Pipeline."
+
+At its center: <entity-person>Dr. Elena Richter</entity-person>, a former <entity-organization>Deutsche Bank</entity-organization> compliance officer turned whistleblower, whose testimony before the <entity-event>Senate Hearing 2023</entity-event> sent shockwaves through European financial regulation.
+
+The investigation began when internal documents surfaced showing that <entity-organization>Meridian Capital Group</entity-organization> had established a network of 47 shell companies across three jurisdictions. The primary hub operated out of <entity-location>Hamburg</entity-location>'s HafenCity district, with subsidiary operations in <entity-location>Zürich</entity-location> and <entity-location>Luxembourg</entity-location>.
+
+"The scale of the operation was breathtaking," says <entity-person>Marcus Webb</entity-person>, the British financial analyst who first raised concerns. "We're talking about €2.3 billion in suspicious transactions over a four-year period."
+
+<entity-organization>BKA</entity-organization> investigators, working alongside <entity-organization>Europol</entity-organization>'s financial crimes unit, have since identified <entity-person>Viktor Dragan</entity-person> as a key figure in the network. Dragan, a <entity-location>Cyprus</entity-location>-based financier, is believed to have orchestrated the layering stage of the laundering process.
+
+The <entity-event>Meridian Audit</entity-event>, conducted by an independent forensic accounting firm, revealed systematic manipulation of compliance reports dating back to 2019. The audit found that over 200 individual transactions had been deliberately miscategorized to avoid triggering regulatory thresholds.
+
+Sources close to the investigation suggest that the full scope of the network may extend well beyond what has been publicly disclosed. "What we've uncovered so far," one senior investigator told Der Spiegel on condition of anonymity, "is likely just the tip of the iceberg."`,
+};
+
 export const reviewText = `A complex web of shell companies spanning Hamburg, Zürich, and Luxembourg has been quietly funneling billions through what investigators now call the "Meridian Pipeline."
 
 At its center: <entity-person>Dr. Elena Richter</entity-person>, a former <entity-organization>Deutsche Bank</entity-organization> compliance officer turned whistleblower, whose testimony before the <entity-event>Senate Hearing 2023</entity-event> sent shockwaves through European financial regulation.

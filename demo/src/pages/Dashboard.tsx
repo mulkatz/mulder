@@ -132,10 +132,13 @@ export default function Dashboard() {
         <div className="space-y-6">
           {/* Quick Actions */}
           <div className="grid grid-cols-2 gap-3">
-            <button className="flex items-center justify-center gap-2 rounded-[var(--radius)] border border-primary bg-primary px-4 py-2.5 text-xs font-medium text-primary-foreground shadow-hard-sm transition-transform hover:translate-y-[-1px]">
+            <Link
+              to="/upload"
+              className="flex items-center justify-center gap-2 rounded-[var(--radius)] border border-primary bg-primary px-4 py-2.5 text-xs font-medium text-primary-foreground shadow-hard-sm no-underline transition-transform hover:translate-y-[-1px]"
+            >
               <Upload size={14} />
               Upload Source
-            </button>
+            </Link>
             <Link
               to="/sources/1/review/1"
               className="flex items-center justify-center gap-2 rounded-[var(--radius)] border bg-card px-4 py-2.5 text-xs font-medium text-foreground shadow-hard-sm no-underline transition-transform hover:translate-y-[-1px]"
