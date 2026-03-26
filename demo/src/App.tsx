@@ -8,6 +8,7 @@ import Stories from './pages/Stories';
 import StoryDetail from './pages/StoryDetail';
 import EntityDetail from './pages/EntityDetail';
 import Graph from './pages/Graph';
+import Evidence from './pages/Evidence';
 import Board from './pages/Board';
 import Upload from './pages/Upload';
 import Settings from './pages/Settings';
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/stories/:id" element={<StoryDetail />} />
           <Route path="/entities/:id" element={<EntityDetail />} />
           <Route path="/graph" element={<Graph />} />
+          <Route path="/evidence" element={<Evidence />} />
           <Route path="/boards/:id" element={<Board />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>

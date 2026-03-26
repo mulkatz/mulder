@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FileText, BookOpen, GitBranch, Kanban, Search, Moon, Sun, Command, Settings } from 'lucide-react';
+import { LayoutDashboard, FileText, BookOpen, GitBranch, Shield, Kanban, Search, Moon, Sun, Command, Settings } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 const navItems = [
@@ -7,6 +7,7 @@ const navItems = [
   { path: '/sources', label: 'Sources', icon: FileText },
   { path: '/stories', label: 'Stories', icon: BookOpen },
   { path: '/graph', label: 'Graph', icon: GitBranch },
+  { path: '/evidence', label: 'Evidence', icon: Shield },
   { path: '/boards/1', label: 'Boards', icon: Kanban },
 ];
 
