@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { AlertTriangle, CheckCircle2, XCircle, ChevronDown, ChevronUp, ArrowUpDown, Clock, MapPin } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, XCircle, ChevronDown, ChevronUp, ArrowUpDown, Clock, MapPin, Zap, Sparkles, ThumbsUp, ThumbsDown } from 'lucide-react';
 import EntityBadge from '../components/EntityBadge';
 import {
   contradictions,
@@ -7,7 +7,7 @@ import {
   spatioTemporalEvents,
   temporalClusters,
 } from '../data/mock';
-import type { ContradictionStatus, SpatioTemporalEvent } from '../data/mock';
+import type { ContradictionStatus, Contradiction, SpatioTemporalEvent } from '../data/mock';
 
 // --- Contradictions Tab ---
 
@@ -32,13 +32,88 @@ const statusConfig: Record<ContradictionStatus, { label: string; icon: React.Ele
   },
 };
 
+const statusBorderColor: Record<ContradictionStatus, string> = {
+  POTENTIAL: 'border-l-[#f59e0b] dark:border-l-amber-500',
+  CONFIRMED: 'border-l-[#ef4444] dark:border-l-red-500',
+  DISMISSED: 'border-l-[#22c55e] dark:border-l-green-500',
+};
+
+function ContradictionDetail({ contradiction }: { contradiction: Contradiction }) {
+  const cfg = statusConfig[contradiction.status];
+  const StatusIcon = cfg.icon;
+
+  return (
+    <div className="p-5 space-y-5 overflow-y-auto h-full">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className={`inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-2 py-1 text-xs font-medium ${cfg.badgeClass}`}>
+            <StatusIcon size={12} />
+            {cfg.label}
+          </span>
+          <EntityBadge type={contradiction.entity.type} name={contradiction.entity.name} size="sm" />
+        </div>
+        {contradiction.status === 'POTENTIAL' && (
+          <div className="flex items-center gap-1.5">
+            <button className="flex items-center gap-1.5 rounded-[var(--radius)] border border-red-300 dark:border-red-700 px-2.5 py-1.5 text-[11px] font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
+              <ThumbsDown size={11} /> Confirm
+            </button>
+            <button className="flex items-center gap-1.5 rounded-[var(--radius)] border border-green-300 dark:border-green-700 px-2.5 py-1.5 text-[11px] font-medium text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20">
+              <ThumbsUp size={11} /> Dismiss
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Claim A */}
+      <div className="rounded-[var(--radius)] border-l-[3px] border-l-primary border border-border bg-card p-4">
+        <div className="flex items-baseline justify-between gap-2 mb-2">
+          <div className="text-xs font-semibold text-foreground">{contradiction.storyA}</div>
+          <div className="font-mono text-[10px] text-muted-foreground shrink-0">{contradiction.sourceA}</div>
+        </div>
+        <p className="text-xs leading-[1.7] text-foreground">{contradiction.claimA}</p>
+      </div>
+
+      {/* Conflict Divider */}
+      <div className="flex items-center gap-3 px-2">
+        <div className="flex-1 h-px bg-border" />
+        <span className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-destructive dark:text-red-400">
+          <Zap size={11} />
+          contradicts
+        </span>
+        <div className="flex-1 h-px bg-border" />
+      </div>
+
+      {/* Claim B */}
+      <div className="rounded-[var(--radius)] border-l-[3px] border-l-destructive dark:border-l-red-500 border border-border bg-card p-4">
+        <div className="flex items-baseline justify-between gap-2 mb-2">
+          <div className="text-xs font-semibold text-foreground">{contradiction.storyB}</div>
+          <div className="font-mono text-[10px] text-muted-foreground shrink-0">{contradiction.sourceB}</div>
+        </div>
+        <p className="text-xs leading-[1.7] text-foreground">{contradiction.claimB}</p>
+      </div>
+
+      {/* Gemini Analysis */}
+      <div className="rounded-[var(--radius)] border bg-muted/30 p-4">
+        <div className="flex items-center gap-1.5 mb-2">
+          <Sparkles size={12} className="text-accent-foreground dark:text-accent" />
+          <span className="font-mono text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Gemini Analysis</span>
+        </div>
+        <p className="text-xs leading-[1.8] text-foreground">{contradiction.geminiAnalysis}</p>
+      </div>
+    </div>
+  );
+}
+
 function ContradictionsTab() {
   const [filter, setFilter] = useState<ContradictionStatus | 'ALL'>('ALL');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(contradictions[0]?.id ?? null);
 
   const filtered = filter === 'ALL'
     ? contradictions
     : contradictions.filter(c => c.status === filter);
+
+  const selected = contradictions.find(c => c.id === selectedId) ?? null;
 
   const counts = {
     ALL: contradictions.length,
@@ -48,105 +123,82 @@ function ContradictionsTab() {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Filter Buttons */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {(['ALL', 'POTENTIAL', 'CONFIRMED', 'DISMISSED'] as const).map(status => {
-          const isActive = filter === status;
-          const label = status === 'ALL' ? 'All' : statusConfig[status].label;
-          const count = counts[status];
-          return (
-            <button
-              key={status}
-              onClick={() => setFilter(status)}
-              className={`flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-xs font-medium transition-colors ${
-                isActive
-                  ? 'bg-primary/10 text-primary border-primary/30'
-                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-              }`}
-            >
-              {status !== 'ALL' && (() => {
-                const Icon = statusConfig[status].icon;
-                return <Icon size={12} />;
-              })()}
-              {label}
-              <span className="ml-1 font-mono text-[10px]">{count}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Contradiction Cards */}
-      <div className="space-y-3">
-        {filtered.map(c => {
-          const cfg = statusConfig[c.status];
-          const StatusIcon = cfg.icon;
-          const isExpanded = expandedId === c.id;
-
-          return (
-            <div
-              key={c.id}
-              className="rounded-[var(--radius)] border bg-card shadow-hard"
-            >
-              {/* Header */}
+    <div className="flex h-full min-h-0">
+      {/* Left Panel — Contradiction List */}
+      <div className="w-[380px] shrink-0 border-r flex flex-col min-h-0">
+        {/* Filter Buttons */}
+        <div className="flex items-center gap-1.5 px-3 py-2.5 border-b flex-wrap">
+          {(['ALL', 'POTENTIAL', 'CONFIRMED', 'DISMISSED'] as const).map(status => {
+            const isActive = filter === status;
+            const label = status === 'ALL' ? 'All' : statusConfig[status].label;
+            const count = counts[status];
+            return (
               <button
-                onClick={() => setExpandedId(isExpanded ? null : c.id)}
-                className="w-full px-4 py-3 text-left"
+                key={status}
+                onClick={() => setFilter(status)}
+                className={`flex items-center gap-1 rounded-[var(--radius)] border px-2 py-1 text-[11px] font-medium transition-colors ${
+                  isActive
+                    ? 'bg-primary/10 text-primary border-primary/30'
+                    : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                }`}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`inline-flex items-center gap-1 rounded-[var(--radius)] border px-1.5 py-0.5 text-[11px] font-medium ${cfg.badgeClass}`}>
-                        <StatusIcon size={11} />
-                        {cfg.label}
-                      </span>
-                      <EntityBadge type={c.entity.type} name={c.entity.name} size="xs" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-[var(--radius)] border bg-muted/30 p-2.5">
-                        <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Claim A</div>
-                        <p className="text-xs leading-relaxed text-foreground line-clamp-2">{c.claimA}</p>
-                        <div className="mt-1 font-mono text-[10px] text-muted-foreground">{c.sourceA}</div>
-                      </div>
-                      <div className="rounded-[var(--radius)] border bg-muted/30 p-2.5">
-                        <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Claim B</div>
-                        <p className="text-xs leading-relaxed text-foreground line-clamp-2">{c.claimB}</p>
-                        <div className="mt-1 font-mono text-[10px] text-muted-foreground">{c.sourceB}</div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="shrink-0 mt-1 text-muted-foreground">
-                    {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                  </div>
+                {status !== 'ALL' && (() => {
+                  const Icon = statusConfig[status].icon;
+                  return <Icon size={10} />;
+                })()}
+                {label}
+                <span className="font-mono text-[10px]">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Scrollable List */}
+        <div className="flex-1 overflow-y-auto">
+          {filtered.map(c => {
+            const cfg = statusConfig[c.status];
+            const isSelected = selectedId === c.id;
+
+            return (
+              <button
+                key={c.id}
+                onClick={() => setSelectedId(c.id)}
+                className={`w-full text-left px-3 py-3 border-b border-l-[3px] transition-colors ${statusBorderColor[c.status]} ${
+                  isSelected
+                    ? 'bg-primary/5'
+                    : 'hover:bg-muted/30'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className={`inline-flex items-center gap-1 rounded-[var(--radius)] border px-1.5 py-0.5 text-[10px] font-medium ${cfg.badgeClass}`}>
+                    {cfg.label}
+                  </span>
+                  <EntityBadge type={c.entity.type} name={c.entity.name} size="xs" />
+                </div>
+                <p className="text-[11px] leading-relaxed text-foreground line-clamp-2 mb-1.5">
+                  {c.claimA.slice(0, 80)}...
+                </p>
+                <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+                  <span>{c.sourceA.split(',')[0]}</span>
+                  <span className="text-muted-foreground/50">vs</span>
+                  <span>{c.sourceB.split(',')[0]}</span>
                 </div>
               </button>
+            );
+          })}
+        </div>
+      </div>
 
-              {/* Expanded Detail */}
-              {isExpanded && (
-                <div className="border-t px-4 py-3 space-y-3">
-                  <div>
-                    <div className="font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">
-                      Gemini Analysis
-                    </div>
-                    <p className="text-xs leading-relaxed text-foreground">{c.geminiAnalysis}</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Source A</div>
-                      <div className="text-xs font-medium">{c.storyA}</div>
-                      <div className="font-mono text-[10px] text-muted-foreground">{c.sourceA}</div>
-                    </div>
-                    <div>
-                      <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Source B</div>
-                      <div className="text-xs font-medium">{c.storyB}</div>
-                      <div className="font-mono text-[10px] text-muted-foreground">{c.sourceB}</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
+      {/* Right Panel — Detail */}
+      <div className="flex-1 min-h-0">
+        {selected ? (
+          <ContradictionDetail contradiction={selected} />
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+            <AlertTriangle size={32} className="mb-3 opacity-30" />
+            <p className="text-xs">Select a contradiction to compare claims</p>
+          </div>
+        )}
       </div>
     </div>
   );
