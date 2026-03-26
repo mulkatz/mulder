@@ -38,37 +38,48 @@
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 5%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 5%;
-    --popover-foreground: 0 0% 98%;
+    --background: 220 10% 12%;
+    --foreground: 220 10% 85%;
+
+    --card: 220 10% 15%;
+    --card-foreground: 220 10% 90%;
+
+    --popover: 220 10% 15%;
+    --popover-foreground: 220 10% 90%;
+
     --primary: 217.2 91.2% 59.8%;
     --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
+
+    --secondary: 220 10% 20%;
+    --secondary-foreground: 220 10% 90%;
+
+    --muted: 220 10% 18%;
+    --muted-foreground: 220 10% 65%;
+
     --accent: 142 71% 45%;
     --accent-foreground: 0 0% 98%;
+
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
+
+    --border: 220 10% 22%;
+    --input: 220 10% 22%;
     --ring: 217.2 91.2% 59.8%;
 
-    --entity-person: 221 83% 65%;
+    --entity-person: 221 83% 75%;
     --entity-person-bg: 221 83% 20%;
-    --entity-organization: 24 95% 65%;
-    --entity-organization-bg: 24 95% 20%;
-    --entity-event: 280 65% 65%;
-    --entity-event-bg: 280 65% 20%;
-    --entity-location: 142 71% 55%;
-    --entity-location-bg: 142 71% 15%;
 
-    --shadow-hard: 4px 4px 0px 0px rgba(255,255,255,0.08);
-    --shadow-hard-sm: 2px 2px 0px 0px rgba(255,255,255,0.08);
+    --entity-organization: 24 95% 75%;
+    --entity-organization-bg: 24 95% 20%;
+
+    --entity-event: 280 65% 75%;
+    --entity-event-bg: 280 65% 20%;
+
+    --entity-location: 142 71% 70%;
+    --entity-location-bg: 142 71% 16%;
+
+    --shadow-hard: 4px 4px 0px 0px rgba(255,255,255,0.04);
+    --shadow-hard-sm: 2px 2px 0px 0px rgba(255,255,255,0.04);
   }
 }
 
@@ -101,10 +112,17 @@
   --color-entity-location-bg: hsl(var(--entity-location-bg));
 }
 
+
 @layer base {
   * {
     border-color: hsl(var(--border));
   }
+
+
+  html {
+    font-size: 125%;
+  }
+
   body {
     margin: 0;
     background-color: hsl(var(--background));
@@ -116,6 +134,7 @@
   ::selection {
     background-color: hsl(var(--primary) / 0.25);
   }
+
 }
 
 @utility font-mono {

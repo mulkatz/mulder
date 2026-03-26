@@ -33,7 +33,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-background">
       {/* Top Navigation */}
       <nav className="sticky top-0 z-50 border-b bg-card/95 backdrop-blur-sm">
-        <div className="mx-auto flex h-12 max-w-[1440px] items-center px-4">
+        <div className="mx-auto flex h-12 max-w-full items-center px-4">
           {/* Logo */}
           <Link to="/" className="mr-8 flex items-center gap-2 no-underline">
             <div className="flex h-7 w-7 items-center justify-center rounded-[var(--radius)] border bg-primary text-primary-foreground">
@@ -96,7 +96,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </nav>
 
       {/* Main Content */}
-      <main className="mx-auto max-w-[1440px]">
+      <main className="mx-auto max-w-full">
         {children}
       </main>
     </div>
