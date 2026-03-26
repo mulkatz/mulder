@@ -1,7 +1,8 @@
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Upload, Search, FileText, SlidersHorizontal } from 'lucide-react';
+import { Upload, Search, FileText, SlidersHorizontal, LayoutGrid, List, ArrowUpDown, ChevronUp, ChevronDown } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
-import { sources } from '../data/mock';
+import { sources, type Source } from '../data/mock';
 
 const allSources = [
   ...sources,
@@ -29,7 +30,160 @@ const coverColors = [
   'from-fuchsia-600 to-fuchsia-800',
 ];
 
+type SortField = 'title' | 'issue' | 'pages' | 'stories' | 'status' | 'uploadDate';
+
+const statusOrder: Record<Source['status'], number> = {
+  error: 0,
+  queued: 1,
+  processing: 2,
+  processed: 3,
+};
+
+const statusFilters: { label: string; value: Source['status'] | 'all' }[] = [
+  { label: 'All', value: 'all' },
+  { label: 'Processed', value: 'processed' },
+  { label: 'Processing', value: 'processing' },
+  { label: 'Error', value: 'error' },
+];
+
+function compareSources(a: Source, b: Source, field: SortField): number {
+  switch (field) {
+    case 'pages':
+    case 'stories':
+      return a[field] - b[field];
+    case 'status':
+      return statusOrder[a.status] - statusOrder[b.status];
+    case 'title':
+    case 'issue':
+    case 'uploadDate':
+      return a[field].localeCompare(b[field]);
+  }
+}
+
+function sourceHref(source: Source): string {
+  if (source.status !== 'processed') return '#';
+  return `/sources/${source.id === 'src1' ? '1' : source.id}`;
+}
+
+// --- Table internals ---
+
+const columns: { field: SortField; label: string; className: string; align?: 'right' }[] = [
+  { field: 'title', label: 'Title', className: 'flex-1 min-w-0' },
+  { field: 'issue', label: 'Issue', className: 'w-28' },
+  { field: 'pages', label: 'Pages', className: 'w-16', align: 'right' },
+  { field: 'stories', label: 'Stories', className: 'w-20', align: 'right' },
+  { field: 'status', label: 'Status', className: 'w-24' },
+  { field: 'uploadDate', label: 'Uploaded', className: 'w-28', align: 'right' },
+];
+
+function SortIcon({ field, sortBy, sortAsc }: { field: SortField; sortBy: SortField; sortAsc: boolean }) {
+  if (field !== sortBy) return <ArrowUpDown size={10} className="text-muted-foreground/40 shrink-0" />;
+  return sortAsc
+    ? <ChevronUp size={10} className="text-primary shrink-0" />
+    : <ChevronDown size={10} className="text-primary shrink-0" />;
+}
+
+function SourceTable({
+  sources: data,
+  sortBy,
+  sortAsc,
+  onSort,
+}: {
+  sources: Source[];
+  sortBy: SortField;
+  sortAsc: boolean;
+  onSort: (field: SortField) => void;
+}) {
+  return (
+    <div className="rounded-[var(--radius)] border bg-card overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-4 px-4 py-2 border-b bg-muted/30">
+        {columns.map(col => (
+          <button
+            key={col.field}
+            onClick={() => onSort(col.field)}
+            className={`flex items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors ${col.className} ${
+              col.align === 'right' ? 'justify-end' : ''
+            } ${col.field === sortBy ? 'text-foreground' : ''}`}
+          >
+            {col.label}
+            <SortIcon field={col.field} sortBy={sortBy} sortAsc={sortAsc} />
+          </button>
+        ))}
+      </div>
+
+      {/* Rows */}
+      <div className="divide-y">
+        {data.map(source => (
+          <Link
+            key={source.id}
+            to={sourceHref(source)}
+            className={`flex items-center gap-4 px-4 py-2.5 no-underline transition-colors hover:bg-muted/30 ${
+              source.status === 'error' ? 'opacity-60' : ''
+            }`}
+          >
+            <div className="flex-1 min-w-0">
+              <span className="text-xs font-semibold text-foreground truncate block" title={source.title}>
+                {source.title}
+              </span>
+            </div>
+            <div className="w-28 font-mono text-xs text-muted-foreground truncate">
+              {source.issue}
+            </div>
+            <div className="w-16 font-mono text-xs text-muted-foreground text-right">
+              {source.pages}
+            </div>
+            <div className="w-20 font-mono text-xs text-muted-foreground text-right">
+              {source.stories > 0 ? source.stories : '\u2014'}
+            </div>
+            <div className="w-24">
+              <StatusBadge status={source.status} />
+            </div>
+            <div className="w-28 font-mono text-[11px] text-muted-foreground text-right">
+              {source.uploadDate}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// --- Main component ---
+
 export default function SourceLibrary() {
+  const [view, setView] = useState<'grid' | 'table'>('grid');
+  const [sortBy, setSortBy] = useState<SortField>('uploadDate');
+  const [sortAsc, setSortAsc] = useState(false);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<Source['status'] | 'all'>('all');
+
+  const filtered = useMemo(() => {
+    let result: Source[] = allSources;
+    if (statusFilter !== 'all') {
+      result = result.filter(s => s.status === statusFilter);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(s =>
+        s.title.toLowerCase().includes(q) || s.issue.toLowerCase().includes(q)
+      );
+    }
+    return [...result].sort((a, b) => {
+      const diff = compareSources(a, b, sortBy);
+      return sortAsc ? diff : -diff;
+    });
+  }, [statusFilter, search, sortBy, sortAsc]);
+
+  const handleSort = (field: SortField) => {
+    if (sortBy === field) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortBy(field);
+      setSortAsc(false);
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -37,7 +191,8 @@ export default function SourceLibrary() {
         <div>
           <h1 className="text-xl font-semibold">Sources</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            <span className="font-mono font-medium text-foreground">{allSources.length}</span> documents uploaded ·{' '}
+            <span className="font-mono font-medium text-foreground">{filtered.length}</span>{' '}
+            {filtered.length !== allSources.length ? `of ${allSources.length} ` : ''}documents ·{' '}
             <span className="font-mono font-medium text-foreground">{allSources.filter(s => s.status === 'processed').length}</span> processed
           </p>
         </div>
@@ -56,87 +211,126 @@ export default function SourceLibrary() {
           <input
             type="text"
             placeholder="Search sources..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
             className="w-full rounded-[var(--radius)] border bg-card py-2 pl-9 pr-3 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
         <div className="flex items-center gap-1 rounded-[var(--radius)] border bg-card p-0.5">
-          <button className="rounded px-2.5 py-1 text-[11px] font-medium bg-primary/10 text-primary">All</button>
-          <button className="rounded px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted">Processed</button>
-          <button className="rounded px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted">Processing</button>
-          <button className="rounded px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted">Error</button>
+          {statusFilters.map(sf => (
+            <button
+              key={sf.value}
+              onClick={() => setStatusFilter(sf.value)}
+              className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                statusFilter === sf.value
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              {sf.label}
+            </button>
+          ))}
         </div>
         <button className="flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-xs text-muted-foreground hover:bg-secondary">
           <SlidersHorizontal size={12} /> Filters
         </button>
-      </div>
 
-      {/* Source Grid */}
-      <div className="grid grid-cols-4 gap-4">
-        {allSources.map((source, i) => (
-          <Link
-            key={source.id}
-            to={source.status === 'processed' ? `/sources/${source.id === 'src1' ? '1' : source.id}` : '#'}
-            className={`group rounded-[var(--radius)] border bg-card no-underline transition-all hover:shadow-hard ${
-              source.status === 'error' ? 'opacity-70' : ''
+        {/* View toggle */}
+        <div className="flex items-center gap-1 rounded-[var(--radius)] border bg-card p-0.5">
+          <button
+            onClick={() => setView('grid')}
+            className={`flex items-center justify-center rounded p-1.5 transition-colors ${
+              view === 'grid'
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-muted'
             }`}
+            title="Grid view"
           >
-            {/* Cover thumbnail */}
-            <div className={`relative h-36 rounded-t-[var(--radius)] bg-gradient-to-br ${coverColors[i % coverColors.length]} overflow-hidden`}>
-              {/* Simulated magazine cover */}
-              <div className="absolute inset-0 p-4 flex flex-col justify-between">
-                <div>
-                  <div className="h-1.5 w-16 rounded bg-white/30 mb-1.5" />
-                  <div className="h-2.5 w-28 rounded bg-white/60 mb-1" />
-                  <div className="h-2.5 w-20 rounded bg-white/40" />
-                </div>
-                <div className="flex items-end justify-between">
-                  <div className="font-mono text-[10px] text-white/50">{source.issue}</div>
-                  <div className="font-mono text-[10px] text-white/50">{source.pages}p</div>
-                </div>
-              </div>
-              {/* Status overlay for non-processed */}
-              {source.status === 'processing' && (
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                  <div className="rounded bg-black/60 px-3 py-1.5 text-[11px] font-medium text-white">Processing...</div>
-                </div>
-              )}
-              {source.status === 'queued' && (
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                  <div className="rounded bg-black/60 px-3 py-1.5 text-[11px] font-medium text-white">Queued</div>
-                </div>
-              )}
-              {source.status === 'error' && (
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                  <div className="rounded bg-red-600/80 px-3 py-1.5 text-[11px] font-medium text-white">Error</div>
-                </div>
-              )}
-            </div>
-
-            {/* Info */}
-            <div className="p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors">
-                    {source.title}
-                  </div>
-                  <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{source.issue}</div>
-                </div>
-                <StatusBadge status={source.status} />
-              </div>
-              <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
-                <div className="flex items-center gap-1">
-                  <FileText size={10} />
-                  <span>{source.stories > 0 ? `${source.stories} stories` : 'No stories'}</span>
-                </div>
-                <span className="font-mono">{source.pages} pages</span>
-              </div>
-              <div className="mt-1 font-mono text-[9px] text-muted-foreground/60">
-                Uploaded {source.uploadDate}
-              </div>
-            </div>
-          </Link>
-        ))}
+            <LayoutGrid size={14} />
+          </button>
+          <button
+            onClick={() => setView('table')}
+            className={`flex items-center justify-center rounded p-1.5 transition-colors ${
+              view === 'table'
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-muted'
+            }`}
+            title="Table view"
+          >
+            <List size={14} />
+          </button>
+        </div>
       </div>
+
+      {/* Content */}
+      {view === 'grid' ? (
+        <div className="grid grid-cols-4 gap-4">
+          {filtered.map((source, i) => (
+            <Link
+              key={source.id}
+              to={sourceHref(source)}
+              className={`group rounded-[var(--radius)] border bg-card no-underline transition-all hover:shadow-hard ${
+                source.status === 'error' ? 'opacity-70' : ''
+              }`}
+            >
+              {/* Cover thumbnail */}
+              <div className={`relative h-36 rounded-t-[var(--radius)] bg-gradient-to-br ${coverColors[i % coverColors.length]} overflow-hidden`}>
+                <div className="absolute inset-0 p-4 flex flex-col justify-between">
+                  <div>
+                    <div className="h-1.5 w-16 rounded bg-white/30 mb-1.5" />
+                    <div className="h-2.5 w-28 rounded bg-white/60 mb-1" />
+                    <div className="h-2.5 w-20 rounded bg-white/40" />
+                  </div>
+                  <div className="flex items-end justify-between">
+                    <div className="font-mono text-[10px] text-white/50">{source.issue}</div>
+                    <div className="font-mono text-[10px] text-white/50">{source.pages}p</div>
+                  </div>
+                </div>
+                {source.status === 'processing' && (
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                    <div className="rounded bg-black/60 px-3 py-1.5 text-[11px] font-medium text-white">Processing...</div>
+                  </div>
+                )}
+                {source.status === 'queued' && (
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                    <div className="rounded bg-black/60 px-3 py-1.5 text-[11px] font-medium text-white">Queued</div>
+                  </div>
+                )}
+                {source.status === 'error' && (
+                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                    <div className="rounded bg-red-600/80 px-3 py-1.5 text-[11px] font-medium text-white">Error</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Info */}
+              <div className="p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+                      {source.title}
+                    </div>
+                    <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{source.issue}</div>
+                  </div>
+                  <StatusBadge status={source.status} />
+                </div>
+                <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
+                  <div className="flex items-center gap-1">
+                    <FileText size={10} />
+                    <span>{source.stories > 0 ? `${source.stories} stories` : 'No stories'}</span>
+                  </div>
+                  <span className="font-mono">{source.pages} pages</span>
+                </div>
+                <div className="mt-1 font-mono text-[9px] text-muted-foreground/60">
+                  Uploaded {source.uploadDate}
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <SourceTable sources={filtered} sortBy={sortBy} sortAsc={sortAsc} onSort={handleSort} />
+      )}
     </div>
   );
 }
