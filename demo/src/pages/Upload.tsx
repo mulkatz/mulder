@@ -5,13 +5,13 @@ import { Upload as UploadIcon, FileText, X, Sparkles, Check, ChevronRight, Loade
 type UploadStage = 'idle' | 'dropped' | 'analyzing' | 'metadata' | 'processing';
 
 const autoFilledFields = [
-  { label: 'Source Type', value: 'Magazine', filled: true },
-  { label: 'Title', value: 'Der Spiegel', filled: true },
-  { label: 'Issue', value: '42/2023', filled: true },
-  { label: 'Publisher', value: 'SPIEGEL-Verlag', filled: true },
-  { label: 'Date', value: '2023-10-16', filled: true },
-  { label: 'Language', value: 'German', filled: true },
-  { label: 'Pages', value: '84', filled: true },
+  { label: 'Quellentyp', value: 'Fachzeitschrift', filled: true },
+  { label: 'Titel', value: 'MUFON UFO Journal', filled: true },
+  { label: 'Ausgabe', value: '03/2017', filled: true },
+  { label: 'Herausgeber', value: 'MUFON Inc.', filled: true },
+  { label: 'Datum', value: '2017-03-01', filled: true },
+  { label: 'Sprache', value: 'Englisch', filled: true },
+  { label: 'Seiten', value: '96', filled: true },
 ];
 
 export default function UploadPage() {
@@ -40,14 +40,14 @@ export default function UploadPage() {
     <div className="p-6 max-w-3xl mx-auto">
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-6">
-        <Link to="/" className="hover:text-foreground no-underline text-muted-foreground">Dashboard</Link>
+        <Link to="/" className="hover:text-foreground no-underline text-muted-foreground">Übersicht</Link>
         <ChevronRight size={12} />
-        <span className="text-foreground font-medium">Upload Source</span>
+        <span className="text-foreground font-medium">Quelle hochladen</span>
       </div>
 
-      <h1 className="text-xl font-semibold mb-1">Upload Source Document</h1>
+      <h1 className="text-xl font-semibold mb-1">Quelldokument hochladen</h1>
       <p className="text-sm text-muted-foreground mb-6">
-        Upload a PDF and the AI will automatically extract metadata, identify articles, and connect entities.
+        Laden Sie ein PDF hoch — die KI extrahiert automatisch Metadaten, identifiziert Artikel und verknüpft Akteure.
       </p>
 
       {stage === 'idle' && (
@@ -56,8 +56,8 @@ export default function UploadPage() {
           className="w-full rounded-[var(--radius)] border-2 border-dashed border-primary/40 bg-primary/5 p-12 text-center transition-colors hover:border-primary hover:bg-primary/10 cursor-pointer"
         >
           <UploadIcon size={40} className="mx-auto mb-4 text-primary/60" />
-          <div className="text-sm font-medium text-foreground">Drop PDF files here or click to browse</div>
-          <div className="mt-1 text-xs text-muted-foreground">Supports single files or batch upload · PDF only · Max 500MB</div>
+          <div className="text-sm font-medium text-foreground">PDF-Dateien hierher ziehen oder klicken zum Durchsuchen</div>
+          <div className="mt-1 text-xs text-muted-foreground">Einzeldateien oder Stapel-Upload · Nur PDF · Max 500 MB</div>
         </button>
       )}
 
@@ -68,8 +68,8 @@ export default function UploadPage() {
               <FileText size={20} className="text-muted-foreground" />
             </div>
             <div className="flex-1">
-              <div className="text-sm font-medium">Der_Spiegel_42_2023.pdf</div>
-              <div className="text-xs text-muted-foreground">24.7 MB · Uploading...</div>
+              <div className="text-sm font-medium">MUFON_UFO_Journal_03_2017.pdf</div>
+              <div className="text-xs text-muted-foreground">18.4 MB · Wird hochgeladen...</div>
             </div>
             <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
               <div className="h-full w-3/4 rounded-full bg-primary animate-pulse" />
@@ -87,8 +87,8 @@ export default function UploadPage() {
                 <FileText size={20} className="text-primary" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium">Der_Spiegel_42_2023.pdf</div>
-                <div className="text-xs text-muted-foreground">24.7 MB · 84 pages</div>
+                <div className="text-sm font-medium">MUFON_UFO_Journal_03_2017.pdf</div>
+                <div className="text-xs text-muted-foreground">18.4 MB · 96 Seiten</div>
               </div>
               {stage !== 'processing' && (
                 <button className="text-muted-foreground hover:text-foreground">
@@ -97,7 +97,7 @@ export default function UploadPage() {
               )}
               {stage === 'processing' && (
                 <span className="flex items-center gap-1.5 text-xs font-medium text-primary">
-                  <Check size={14} /> Uploaded
+                  <Check size={14} /> Hochgeladen
                 </span>
               )}
             </div>
@@ -107,8 +107,8 @@ export default function UploadPage() {
           {stage === 'analyzing' && (
             <div className="rounded-[var(--radius)] border border-primary/30 bg-primary/5 p-6 text-center">
               <Loader2 size={24} className="mx-auto mb-3 text-primary animate-spin" />
-              <div className="text-sm font-medium">AI is analyzing the document...</div>
-              <div className="mt-1 text-xs text-muted-foreground">Reading cover page and table of contents to extract metadata</div>
+              <div className="text-sm font-medium">KI analysiert das Dokument...</div>
+              <div className="mt-1 text-xs text-muted-foreground">Liest Titelseite und Inhaltsverzeichnis zur Metadaten-Extraktion</div>
             </div>
           )}
 
@@ -117,7 +117,7 @@ export default function UploadPage() {
             <div className="rounded-[var(--radius)] border bg-card">
               <div className="flex items-center gap-2 border-b px-4 py-3">
                 <Sparkles size={14} className="text-accent dark:text-accent" />
-                <h2 className="text-sm font-semibold">Metadata — auto-filled by AI</h2>
+                <h2 className="text-sm font-semibold">Metadaten — automatisch von KI ausgefüllt</h2>
                 <span className="ml-auto rounded bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-medium text-primary">
                   Gemini 2.5 Flash
                 </span>
@@ -152,13 +152,13 @@ export default function UploadPage() {
               {stage === 'metadata' && visibleFields >= autoFilledFields.length && (
                 <div className="border-t px-4 py-3 flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">
-                    Review and correct if needed. AI confidence: <span className="font-mono font-medium text-green-600 dark:text-green-400">94%</span>
+                    Prüfen und bei Bedarf korrigieren. KI-Konfidenz: <span className="font-mono font-medium text-green-600 dark:text-green-400">94%</span>
                   </span>
                   <button
                     onClick={handleConfirm}
                     className="flex items-center gap-1.5 rounded-[var(--radius)] border border-primary bg-primary px-4 py-2 text-xs font-medium text-primary-foreground"
                   >
-                    <Check size={14} /> Confirm & Start Processing
+                    <Check size={14} /> Bestätigen & Verarbeitung starten
                   </button>
                 </div>
               )}
@@ -169,11 +169,11 @@ export default function UploadPage() {
           {stage === 'processing' && (
             <div className="rounded-[var(--radius)] border bg-card">
               <div className="border-b px-4 py-3">
-                <h2 className="text-sm font-semibold">Processing Pipeline</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">Estimated time: 3–5 minutes</p>
+                <h2 className="text-sm font-semibold">Verarbeitungs-Pipeline</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">Geschätzte Dauer: 3–5 Minuten</p>
               </div>
               <div className="p-4 space-y-3">
-                {['OCR & Layout Analysis', 'Story Segmentation', 'Entity Extraction', 'Embedding Generation', 'Graph Update'].map((step, i) => {
+                {['OCR & Layout-Analyse', 'Berichts-Segmentierung', 'Akteur-Extraktion', 'Embedding-Generierung', 'Netzwerk-Aktualisierung'].map((step, i) => {
                   const isActive = i === 1;
                   const isDone = i === 0;
                   return (
@@ -197,12 +197,12 @@ export default function UploadPage() {
                               <div className="h-full w-2/5 rounded-full bg-primary transition-all animate-pulse" />
                             </div>
                             <div className="mt-1 font-mono text-[10px] text-muted-foreground">
-                              Identifying articles and story boundaries... 12 stories found so far
+                              Identifiziere Artikel und Berichtsgrenzen... 12 Berichte bisher gefunden
                             </div>
                           </div>
                         )}
                         {isDone && (
-                          <div className="text-[10px] text-muted-foreground">84 pages analyzed · 342 text blocks · 47 images detected</div>
+                          <div className="text-[10px] text-muted-foreground">96 Seiten analysiert · 387 Textblöcke · 52 Bilder erkannt</div>
                         )}
                       </div>
                       {isActive && <Loader2 size={14} className="text-primary animate-spin" />}
@@ -212,10 +212,10 @@ export default function UploadPage() {
               </div>
               <div className="border-t px-4 py-3 flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">
-                  You can leave this page — processing continues in the background.
+                  Sie können diese Seite verlassen — die Verarbeitung läuft im Hintergrund weiter.
                 </span>
                 <Link to="/" className="text-xs text-primary hover:underline no-underline">
-                  Back to Dashboard
+                  Zurück zur Übersicht
                 </Link>
               </div>
             </div>

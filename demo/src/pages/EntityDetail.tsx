@@ -20,9 +20,9 @@ export default function EntityDetail() {
         <div className="max-w-4xl mx-auto px-6 py-6">
           {/* Breadcrumb */}
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-4">
-            <Link to="/" className="hover:text-foreground no-underline text-muted-foreground">Dashboard</Link>
+            <Link to="/" className="hover:text-foreground no-underline text-muted-foreground">Übersicht</Link>
             <ChevronRight size={12} />
-            <span className="text-muted-foreground">Entities</span>
+            <span className="text-muted-foreground">Akteure</span>
             <ChevronRight size={12} />
             <span className="text-foreground font-medium">{entity.name}</span>
           </div>
@@ -38,10 +38,10 @@ export default function EntityDetail() {
                 </div>
                 {entity.id === 'e1' && (
                   <div className="text-xs text-muted-foreground mb-2">
-                    <span className="font-mono text-muted-foreground/70">Aliases:</span>{' '}
-                    <span className="font-mono">E. Richter</span>{' · '}
-                    <span className="font-mono">Dr. E. Richter</span>{' · '}
-                    <span className="font-mono">Elena Richter</span>
+                    <span className="font-mono text-muted-foreground/70">Aliase:</span>{' '}
+                    <span className="font-mono">Cmdr. Fravor</span>{' · '}
+                    <span className="font-mono">Commander Fravor</span>{' · '}
+                    <span className="font-mono">Dave Fravor</span>
                   </div>
                 )}
                 <ConfidenceBadge value={entity.confidence} />
@@ -51,7 +51,7 @@ export default function EntityDetail() {
                   to="/graph"
                   className="flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-xs text-muted-foreground no-underline hover:bg-secondary"
                 >
-                  <GitBranch size={12} /> Show in Graph
+                  <GitBranch size={12} /> Im Netzwerk zeigen
                 </Link>
               </div>
             </div>
@@ -59,26 +59,26 @@ export default function EntityDetail() {
             {/* Stats row */}
             <div className="grid grid-cols-4 gap-3 mt-4">
               <div className="rounded-[var(--radius)] border p-3">
-                <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Mentions</div>
+                <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Erwähnungen</div>
                 <div className="font-mono text-2xl font-bold mt-1">{entity.mentions}</div>
-                <div className="text-[10px] text-muted-foreground">across all stories</div>
+                <div className="text-[10px] text-muted-foreground">über alle Berichte</div>
               </div>
               <div className="rounded-[var(--radius)] border p-3">
-                <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Stories</div>
+                <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Berichte</div>
                 <div className="font-mono text-2xl font-bold mt-1">{entityStories.length}</div>
-                <div className="text-[10px] text-muted-foreground">containing this entity</div>
+                <div className="text-[10px] text-muted-foreground">mit diesem Akteur</div>
               </div>
               <div className="rounded-[var(--radius)] border p-3">
-                <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Connections</div>
+                <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Verbindungen</div>
                 <div className="font-mono text-2xl font-bold mt-1">{entity.connections}</div>
-                <div className="text-[10px] text-muted-foreground">to other entities</div>
+                <div className="text-[10px] text-muted-foreground">zu anderen Akteuren</div>
               </div>
               <div className="rounded-[var(--radius)] border p-3">
-                <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Sources</div>
+                <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">Quellen</div>
                 <div className="font-mono text-2xl font-bold mt-1">
                   {new Set(entityStories.map(s => s.source)).size}
                 </div>
-                <div className="text-[10px] text-muted-foreground">independent documents</div>
+                <div className="text-[10px] text-muted-foreground">unabhängige Dokumente</div>
               </div>
             </div>
           </div>
@@ -89,8 +89,8 @@ export default function EntityDetail() {
             <div className="rounded-[var(--radius)] border bg-card">
               <div className="flex items-center gap-2 border-b px-4 py-3">
                 <BookOpen size={14} className="text-muted-foreground" />
-                <h2 className="text-sm font-semibold">Stories Mentioning {entity.name}</h2>
-                <span className="ml-auto font-mono text-xs text-muted-foreground">{entityStories.length} stories</span>
+                <h2 className="text-sm font-semibold">Berichte mit {entity.name}</h2>
+                <span className="ml-auto font-mono text-xs text-muted-foreground">{entityStories.length} Berichte</span>
               </div>
               <div className="divide-y">
                 {entityStories.map((story) => (
@@ -126,9 +126,9 @@ export default function EntityDetail() {
             <div className="rounded-[var(--radius)] border bg-card">
               <div className="flex items-center gap-2 border-b px-4 py-3">
                 <Calendar size={14} className="text-muted-foreground" />
-                <h2 className="text-sm font-semibold">Timeline</h2>
+                <h2 className="text-sm font-semibold">Zeitverlauf</h2>
                 <span className="ml-auto text-[10px] text-muted-foreground">
-                  Appearances across time
+                  Auftreten im Zeitverlauf
                 </span>
               </div>
               <div className="p-4">
@@ -171,22 +171,22 @@ export default function EntityDetail() {
               <div className="rounded-[var(--radius)] border border-amber-300 dark:border-amber-700 bg-card">
                 <div className="flex items-center gap-2 border-b border-amber-200 dark:border-amber-800 px-4 py-3 bg-amber-50/50 dark:bg-amber-900/10">
                   <Merge size={14} className="text-amber-600 dark:text-amber-400" />
-                  <h2 className="text-sm font-semibold text-amber-800 dark:text-amber-300">Merge Candidates</h2>
+                  <h2 className="text-sm font-semibold text-amber-800 dark:text-amber-300">Zusammenführungs-Kandidaten</h2>
                   <span className="ml-auto rounded bg-[#fef3c7] dark:bg-amber-900/30 px-2 py-0.5 font-mono text-[10px] font-medium text-[#92400e] dark:text-amber-400">
-                    AI suggestion
+                    KI-Vorschlag
                   </span>
                 </div>
                 <div className="p-4">
                   <p className="text-[11px] text-muted-foreground mb-3 leading-relaxed">
-                    These entities may refer to the same {entityTypeLabels[entity.type].toLowerCase()} as <strong>{entity.name}</strong>.
-                    Merging consolidates all mentions and connections.
+                    Diese Akteure könnten sich auf dieselbe {entityTypeLabels[entity.type]} beziehen wie <strong>{entity.name}</strong>.
+                    Zusammenführen konsolidiert alle Erwähnungen und Verbindungen.
                   </p>
                   <div className="space-y-2">
                     {merges.map((m, i) => (
                       <div key={i} className="flex items-center justify-between rounded-[var(--radius)] border p-3">
                         <div className="flex items-center gap-3">
                           <span className="font-mono text-sm font-medium">{m.name}</span>
-                          <span className="font-mono text-[10px] text-muted-foreground">{m.mentions} mentions</span>
+                          <span className="font-mono text-[10px] text-muted-foreground">{m.mentions} Erwähnungen</span>
                           <div className="flex items-center gap-1">
                             <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
                               <div className="h-full rounded-full bg-amber-400" style={{ width: `${m.similarity * 100}%` }} />
@@ -196,10 +196,10 @@ export default function EntityDetail() {
                         </div>
                         <div className="flex items-center gap-1.5">
                           <button className="flex items-center gap-1 rounded-[var(--radius)] border border-green-300 dark:border-green-700 px-2.5 py-1 text-[11px] font-medium text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20">
-                            <CheckCircle size={10} /> Merge
+                            <CheckCircle size={10} /> Zusammenführen
                           </button>
                           <button className="flex items-center gap-1 rounded-[var(--radius)] border px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted">
-                            <XCircle size={10} /> Not Same
+                            <XCircle size={10} /> Nicht identisch
                           </button>
                         </div>
                       </div>
@@ -217,10 +217,10 @@ export default function EntityDetail() {
         <div className="p-4">
           <div className="flex items-center gap-2 mb-4">
             <GitBranch size={14} className="text-muted-foreground" />
-            <h2 className="text-sm font-semibold">Connected Entities</h2>
+            <h2 className="text-sm font-semibold">Verbundene Akteure</h2>
           </div>
           <p className="text-[11px] text-muted-foreground mb-4 leading-relaxed">
-            Entities that frequently appear alongside <strong>{entity.name}</strong> — sorted by co-occurrence strength.
+            Akteure, die häufig zusammen mit <strong>{entity.name}</strong> auftreten — sortiert nach Kookkurrenz-Stärke.
           </p>
 
           <div className="space-y-2">
@@ -242,7 +242,7 @@ export default function EntityDetail() {
                     />
                   </div>
                   <span className="font-mono text-[10px] text-muted-foreground shrink-0">
-                    {sharedStories} shared {sharedStories === 1 ? 'story' : 'stories'}
+                    {sharedStories} gemeinsame{sharedStories === 1 ? 'r Bericht' : ' Berichte'}
                   </span>
                 </div>
               </Link>
@@ -252,19 +252,19 @@ export default function EntityDetail() {
           {/* Co-occurrence insight */}
           <div className="mt-6 rounded-[var(--radius)] border bg-muted/30 p-3">
             <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-2">
-              Co-occurrence Pattern
+              Kookkurrenz-Muster
             </div>
             <p className="text-[11px] leading-relaxed text-foreground">
-              <strong>{entity.name}</strong> most frequently co-occurs with{' '}
-              <strong>{connected[0]?.entity.name}</strong> ({connected[0]?.sharedStories} stories).
-              This {connected[0]?.entity.type === 'organization' ? 'organizational' : connected[0]?.entity.type === 'location' ? 'geographic' : 'personal'} connection
-              appears across <strong>{new Set(entityStories.map(s => s.source)).size} independent sources</strong>.
+              <strong>{entity.name}</strong> tritt am häufigsten zusammen mit{' '}
+              <strong>{connected[0]?.entity.name}</strong> auf ({connected[0]?.sharedStories} Berichte).
+              Diese {connected[0]?.entity.type === 'organization' ? 'organisatorische' : connected[0]?.entity.type === 'location' ? 'geografische' : 'persönliche'} Verbindung
+              erstreckt sich über <strong>{new Set(entityStories.map(s => s.source)).size} unabhängige Quellen</strong>.
             </p>
             <Link
               to="/graph"
               className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-primary no-underline hover:underline"
             >
-              Explore in Graph <ChevronRight size={10} />
+              Im Netzwerk erkunden <ChevronRight size={10} />
             </Link>
           </div>
         </div>

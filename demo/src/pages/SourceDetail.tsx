@@ -5,7 +5,7 @@ import ConfidenceBadge from '../components/ConfidenceBadge';
 import StatusBadge from '../components/StatusBadge';
 import { stories } from '../data/mock';
 
-const sourceStories = stories.filter(s => s.source === 'Der Spiegel 42/2023');
+const sourceStories = stories.filter(s => s.source === 'MUFON UFO Journal 03/2017');
 
 const storyOverlayColors = [
   'border-blue-400 bg-blue-400/15',
@@ -20,30 +20,30 @@ export default function SourceDetail() {
       {/* Source Header */}
       <div className="border-b px-6 py-3">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
-          <Link to="/" className="hover:text-foreground no-underline text-muted-foreground">Dashboard</Link>
+          <Link to="/" className="hover:text-foreground no-underline text-muted-foreground">Übersicht</Link>
           <ChevronRight size={12} />
-          <span>Sources</span>
+          <span>Quellen</span>
           <ChevronRight size={12} />
-          <span className="text-foreground font-medium">Der Spiegel 42/2023</span>
+          <span className="text-foreground font-medium">MUFON UFO Journal 03/2017</span>
         </div>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h1 className="text-lg font-semibold">Der Spiegel</h1>
+            <h1 className="text-lg font-semibold">MUFON UFO Journal</h1>
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span className="font-mono">Issue: 42/2023</span>
-              <span className="font-mono">84 pages</span>
+              <span className="font-mono">Ausgabe: 03/2017</span>
+              <span className="font-mono">96 Seiten</span>
               <StatusBadge status="processed" />
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button className="flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary">
-              <Download size={12} /> Download PDF
+              <Download size={12} /> PDF herunterladen
             </button>
             <Link
               to="/sources/1/review/1"
               className="flex items-center gap-1.5 rounded-[var(--radius)] border border-primary bg-primary px-3 py-1.5 text-xs text-primary-foreground no-underline"
             >
-              <Eye size={12} /> Review Stories
+              <Eye size={12} /> Berichte prüfen
             </Link>
           </div>
         </div>
@@ -89,7 +89,7 @@ export default function SourceDetail() {
               {/* Story overlays */}
               <div className={`relative rounded border-2 border-dashed p-3 space-y-1.5 ${storyOverlayColors[0]}`}>
                 <div className="absolute -top-2.5 left-2 bg-card px-1.5 text-[9px] font-mono font-medium text-blue-600 dark:text-blue-400">
-                  Story 1: Shadow Networks
+                  Bericht 1: Tic-Tac-Objekt
                 </div>
                 <div className="h-2 w-full rounded bg-foreground/10" />
                 <div className="h-2 w-full rounded bg-foreground/10" />
@@ -103,7 +103,7 @@ export default function SourceDetail() {
 
               <div className={`relative rounded border-2 border-dashed p-3 space-y-1.5 ${storyOverlayColors[1]}`}>
                 <div className="absolute -top-2.5 left-2 bg-card px-1.5 text-[9px] font-mono font-medium text-orange-600 dark:text-orange-400">
-                  Story 2: The Hamburg Connection
+                  Bericht 2: Phoenix Lights
                 </div>
                 <div className="h-2 w-full rounded bg-foreground/10" />
                 <div className="h-2 w-full rounded bg-foreground/10" />
@@ -114,12 +114,12 @@ export default function SourceDetail() {
 
               {/* Image placeholder */}
               <div className="h-24 rounded border-2 border-dashed border-muted-foreground/20 flex items-center justify-center">
-                <span className="font-mono text-[10px] text-muted-foreground/40">[IMAGE: Financial network diagram]</span>
+                <span className="font-mono text-[10px] text-muted-foreground/40">[BILD: Radaraufzeichnung FLIR1]</span>
               </div>
 
               <div className={`relative rounded border-2 border-dashed p-3 space-y-1.5 ${storyOverlayColors[2]}`}>
                 <div className="absolute -top-2.5 left-2 bg-card px-1.5 text-[9px] font-mono font-medium text-purple-600 dark:text-purple-400">
-                  Story 3: Europol Investigation
+                  Bericht 3: USS Roosevelt
                 </div>
                 <div className="h-2 w-full rounded bg-foreground/10" />
                 <div className="h-2 w-full rounded bg-foreground/10" />
@@ -132,7 +132,7 @@ export default function SourceDetail() {
         {/* Right: Story List */}
         <div className="w-80 border-l overflow-y-auto">
           <div className="border-b px-4 py-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Stories ({sourceStories.length})</h3>
+            <h3 className="text-sm font-semibold">Berichte ({sourceStories.length})</h3>
             <FileText size={14} className="text-muted-foreground" />
           </div>
           <div className="divide-y">

@@ -6,13 +6,13 @@ import { sources, type Source } from '../data/mock';
 
 const allSources = [
   ...sources,
-  { id: 'src6', title: 'Stern Investigativ', issue: '08/2023', pages: 52, status: 'processed' as const, stories: 6, uploadDate: '2024-01-10' },
-  { id: 'src7', title: 'Die ZEIT', issue: '38/2023', pages: 44, status: 'processed' as const, stories: 4, uploadDate: '2024-01-05' },
-  { id: 'src8', title: 'Panorama Transcript', issue: 'Nov 2023', pages: 18, status: 'processed' as const, stories: 2, uploadDate: '2023-12-20' },
-  { id: 'src9', title: 'EU Parliament Report', issue: 'Q3/2023', pages: 128, status: 'processed' as const, stories: 11, uploadDate: '2023-12-15' },
-  { id: 'src10', title: 'BaFin Internal Memo', issue: '2023-09', pages: 8, status: 'error' as const, stories: 0, uploadDate: '2024-02-05' },
-  { id: 'src11', title: 'Reuters Wire Archive', issue: 'Oct 2023', pages: 36, status: 'processed' as const, stories: 8, uploadDate: '2024-01-22' },
-  { id: 'src12', title: 'Le Monde Diplomatique', issue: '11/2023', pages: 48, status: 'processed' as const, stories: 5, uploadDate: '2024-01-25' },
+  { id: 'src9', title: 'Ancient Aliens Magazin', issue: '15/2023', pages: 44, status: 'processed' as const, stories: 1, uploadDate: '2024-09-15' },
+  { id: 'src10', title: 'Bild der Wissenschaft', issue: '02/2018', pages: 52, status: 'processed' as const, stories: 1, uploadDate: '2024-09-18' },
+  { id: 'src11', title: 'FAZ Wochenendbeilage', issue: 'Jan 2024', pages: 40, status: 'processed' as const, stories: 1, uploadDate: '2024-09-25' },
+  { id: 'src12', title: 'Magazin 2000', issue: 'Ausgabe 395', pages: 68, status: 'processed' as const, stories: 2, uploadDate: '2024-08-28' },
+  { id: 'src13', title: 'Navy Times', issue: 'Nov 2004', pages: 32, status: 'error' as const, stories: 0, uploadDate: '2024-10-08' },
+  { id: 'src14', title: 'Stern', issue: '48/2017', pages: 76, status: 'processed' as const, stories: 3, uploadDate: '2024-08-12' },
+  { id: 'src15', title: 'New York Times (Reprint)', issue: 'Dez 2017', pages: 24, status: 'processed' as const, stories: 1, uploadDate: '2024-09-20' },
 ];
 
 const coverColors = [
@@ -40,10 +40,10 @@ const statusOrder: Record<Source['status'], number> = {
 };
 
 const statusFilters: { label: string; value: Source['status'] | 'all' }[] = [
-  { label: 'All', value: 'all' },
-  { label: 'Processed', value: 'processed' },
-  { label: 'Processing', value: 'processing' },
-  { label: 'Error', value: 'error' },
+  { label: 'Alle', value: 'all' },
+  { label: 'Verarbeitet', value: 'processed' },
+  { label: 'In Bearbeitung', value: 'processing' },
+  { label: 'Fehler', value: 'error' },
 ];
 
 function compareSources(a: Source, b: Source, field: SortField): number {
@@ -68,12 +68,12 @@ function sourceHref(source: Source): string {
 // --- Table internals ---
 
 const columns: { field: SortField; label: string; className: string; align?: 'right' }[] = [
-  { field: 'title', label: 'Title', className: 'flex-1 min-w-0' },
-  { field: 'issue', label: 'Issue', className: 'w-28' },
-  { field: 'pages', label: 'Pages', className: 'w-16', align: 'right' },
-  { field: 'stories', label: 'Stories', className: 'w-20', align: 'right' },
+  { field: 'title', label: 'Titel', className: 'flex-1 min-w-0' },
+  { field: 'issue', label: 'Ausgabe', className: 'w-28' },
+  { field: 'pages', label: 'Seiten', className: 'w-16', align: 'right' },
+  { field: 'stories', label: 'Berichte', className: 'w-20', align: 'right' },
   { field: 'status', label: 'Status', className: 'w-24' },
-  { field: 'uploadDate', label: 'Uploaded', className: 'w-28', align: 'right' },
+  { field: 'uploadDate', label: 'Hochgeladen', className: 'w-28', align: 'right' },
 ];
 
 function SortIcon({ field, sortBy, sortAsc }: { field: SortField; sortBy: SortField; sortAsc: boolean }) {
@@ -189,18 +189,18 @@ export default function SourceLibrary() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Sources</h1>
+          <h1 className="text-xl font-semibold">Quellen</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             <span className="font-mono font-medium text-foreground">{filtered.length}</span>{' '}
-            {filtered.length !== allSources.length ? `of ${allSources.length} ` : ''}documents ·{' '}
-            <span className="font-mono font-medium text-foreground">{allSources.filter(s => s.status === 'processed').length}</span> processed
+            {filtered.length !== allSources.length ? `von ${allSources.length} ` : ''}Dokumente ·{' '}
+            <span className="font-mono font-medium text-foreground">{allSources.filter(s => s.status === 'processed').length}</span> verarbeitet
           </p>
         </div>
         <Link
           to="/upload"
           className="flex items-center gap-1.5 rounded-[var(--radius)] border border-primary bg-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-hard-sm no-underline"
         >
-          <Upload size={14} /> Upload Source
+          <Upload size={14} /> Quelle hochladen
         </Link>
       </div>
 
@@ -210,7 +210,7 @@ export default function SourceLibrary() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search sources..."
+            placeholder="Quellen durchsuchen..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full rounded-[var(--radius)] border bg-card py-2 pl-9 pr-3 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -232,7 +232,7 @@ export default function SourceLibrary() {
           ))}
         </div>
         <button className="flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-xs text-muted-foreground hover:bg-secondary">
-          <SlidersHorizontal size={12} /> Filters
+          <SlidersHorizontal size={12} /> Filter
         </button>
 
         {/* View toggle */}
@@ -244,7 +244,7 @@ export default function SourceLibrary() {
                 ? 'bg-primary/10 text-primary'
                 : 'text-muted-foreground hover:bg-muted'
             }`}
-            title="Grid view"
+            title="Kachelansicht"
           >
             <LayoutGrid size={14} />
           </button>
@@ -255,7 +255,7 @@ export default function SourceLibrary() {
                 ? 'bg-primary/10 text-primary'
                 : 'text-muted-foreground hover:bg-muted'
             }`}
-            title="Table view"
+            title="Tabellenansicht"
           >
             <List size={14} />
           </button>
@@ -288,17 +288,17 @@ export default function SourceLibrary() {
                 </div>
                 {source.status === 'processing' && (
                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                    <div className="rounded bg-black/60 px-3 py-1.5 text-[11px] font-medium text-white">Processing...</div>
+                    <div className="rounded bg-black/60 px-3 py-1.5 text-[11px] font-medium text-white">In Bearbeitung...</div>
                   </div>
                 )}
                 {source.status === 'queued' && (
                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                    <div className="rounded bg-black/60 px-3 py-1.5 text-[11px] font-medium text-white">Queued</div>
+                    <div className="rounded bg-black/60 px-3 py-1.5 text-[11px] font-medium text-white">Wartend</div>
                   </div>
                 )}
                 {source.status === 'error' && (
                   <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                    <div className="rounded bg-red-600/80 px-3 py-1.5 text-[11px] font-medium text-white">Error</div>
+                    <div className="rounded bg-red-600/80 px-3 py-1.5 text-[11px] font-medium text-white">Fehler</div>
                   </div>
                 )}
               </div>
@@ -317,12 +317,12 @@ export default function SourceLibrary() {
                 <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <FileText size={10} />
-                    <span>{source.stories > 0 ? `${source.stories} stories` : 'No stories'}</span>
+                    <span>{source.stories > 0 ? `${source.stories} Berichte` : 'Keine Berichte'}</span>
                   </div>
-                  <span className="font-mono">{source.pages} pages</span>
+                  <span className="font-mono">{source.pages} Seiten</span>
                 </div>
                 <div className="mt-1 font-mono text-[9px] text-muted-foreground/60">
-                  Uploaded {source.uploadDate}
+                  Hochgeladen {source.uploadDate}
                 </div>
               </div>
             </Link>

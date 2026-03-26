@@ -3,11 +3,11 @@ import { LayoutDashboard, FileText, BookOpen, GitBranch, Shield, Kanban, Search,
 import { useState, useEffect } from 'react';
 
 const navItems = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/sources', label: 'Sources', icon: FileText },
-  { path: '/stories', label: 'Stories', icon: BookOpen },
-  { path: '/graph', label: 'Graph', icon: GitBranch },
-  { path: '/evidence', label: 'Evidence', icon: Shield },
+  { path: '/', label: 'Übersicht', icon: LayoutDashboard },
+  { path: '/sources', label: 'Quellen', icon: FileText },
+  { path: '/stories', label: 'Berichte', icon: BookOpen },
+  { path: '/graph', label: 'Netzwerk', icon: GitBranch },
+  { path: '/evidence', label: 'Beweislage', icon: Shield },
   { path: '/boards/1', label: 'Boards', icon: Kanban },
 ];
 
@@ -65,7 +65,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div className="ml-auto flex items-center gap-2">
             <button className="flex items-center gap-2 rounded-[var(--radius)] border bg-secondary/50 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-secondary">
               <Search size={12} />
-              <span>Search...</span>
+              <span>Suchen...</span>
               <kbd className="ml-2 flex items-center gap-0.5 rounded border bg-background px-1 py-0.5 font-mono text-[10px]">
                 <Command size={9} />K
               </kbd>

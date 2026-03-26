@@ -5,19 +5,19 @@ import ConfidenceBadge from '../components/ConfidenceBadge';
 import { discoveries, processingQueue, recentActivity, entities } from '../data/mock';
 
 const stats = [
-  { label: 'Sources', value: '47', icon: FileText, change: '+3 this week' },
-  { label: 'Stories', value: '1,284', icon: BookOpen, change: '+42 this week' },
-  { label: 'Entities', value: '3,891', icon: GitBranch, change: '+127 this week' },
-  { label: 'Open Reviews', value: '23', icon: AlertCircle, change: '4 flagged', highlight: true },
+  { label: 'Quellen', value: '38', icon: FileText, change: '+2 diese Woche' },
+  { label: 'Berichte', value: '847', icon: BookOpen, change: '+23 diese Woche' },
+  { label: 'Akteure', value: '2.156', icon: GitBranch, change: '+84 diese Woche' },
+  { label: 'Offene Prüfungen', value: '14', icon: AlertCircle, change: '3 markiert', highlight: true },
 ];
 
 const activityIcons: Record<string, React.ElementType> = {
-  'Story approved': CheckCircle,
-  'Entity confirmed': CheckCircle,
-  'Source uploaded': Upload,
-  'Merge completed': Layers,
-  'Board updated': Layers,
-  'Story flagged': Flag,
+  'Bericht freigegeben': CheckCircle,
+  'Akteur bestätigt': CheckCircle,
+  'Quelle hochgeladen': Upload,
+  'Zusammenführung': Layers,
+  'Board aktualisiert': Layers,
+  'Bericht markiert': Flag,
 };
 
 export default function Dashboard() {
@@ -51,7 +51,7 @@ export default function Dashboard() {
           {/* Processing Queue */}
           <div className="rounded-[var(--radius)] border bg-card">
             <div className="flex items-center justify-between border-b px-4 py-3">
-              <h2 className="text-sm font-semibold">Processing Queue</h2>
+              <h2 className="text-sm font-semibold">Verarbeitungs-Warteschlange</h2>
               <span className="font-mono text-xs text-muted-foreground">{processingQueue.length} items</span>
             </div>
             <div className="divide-y">
@@ -62,7 +62,7 @@ export default function Dashboard() {
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">{item.title}</span>
                       <span className="font-mono text-xs text-muted-foreground">
-                        {item.progress > 0 ? `${item.progress}%` : 'Queued'}
+                        {item.progress > 0 ? `${item.progress}%` : 'Wartend'}
                       </span>
                     </div>
                     {/* Pipeline Steps */}
@@ -103,8 +103,8 @@ export default function Dashboard() {
           {/* Recent Activity */}
           <div className="rounded-[var(--radius)] border bg-card">
             <div className="flex items-center justify-between border-b px-4 py-3">
-              <h2 className="text-sm font-semibold">Recent Activity</h2>
-              <button className="text-xs text-primary hover:underline">View all</button>
+              <h2 className="text-sm font-semibold">Letzte Aktivität</h2>
+              <button className="text-xs text-primary hover:underline">Alle anzeigen</button>
             </div>
             <div className="divide-y">
               {recentActivity.map((item) => {
@@ -137,16 +137,16 @@ export default function Dashboard() {
               className="flex items-center justify-center gap-3 rounded-[var(--radius)] border border-primary bg-primary px-5 py-4 text-sm font-semibold text-primary-foreground shadow-hard-sm no-underline transition-transform hover:translate-y-[-1px]"
             >
               <Upload size={18} />
-              Upload Source
+              Quelle hochladen
             </Link>
             <Link
               to="/sources/1/review/1"
               className="flex items-center justify-center gap-3 rounded-[var(--radius)] border bg-card px-5 py-4 text-sm font-semibold text-foreground shadow-hard-sm no-underline transition-transform hover:translate-y-[-1px]"
             >
               <Eye size={18} />
-              Start Review
+              Prüfung starten
               <span className="ml-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#fef3c7] px-1.5 font-mono text-[11px] font-bold text-[#92400e] dark:bg-amber-900/50 dark:text-amber-400">
-                23
+                14
               </span>
             </Link>
           </div>
@@ -156,7 +156,7 @@ export default function Dashboard() {
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="flex items-center gap-2">
                 <Sparkles size={14} className="text-accent dark:text-accent" />
-                <h2 className="text-sm font-semibold">AI Discoveries</h2>
+                <h2 className="text-sm font-semibold">KI-Entdeckungen</h2>
               </div>
               <span className="font-mono text-xs text-muted-foreground">{discoveries.length} new</span>
             </div>
@@ -174,10 +174,10 @@ export default function Dashboard() {
                   </div>
                   <div className="flex items-center gap-2 pt-1">
                     <button className="flex items-center gap-1 text-[11px] font-medium text-primary hover:underline">
-                      Inspect <ArrowRight size={10} />
+                      Untersuchen <ArrowRight size={10} />
                     </button>
-                    <button className="text-[11px] text-muted-foreground hover:text-foreground">Add to Board</button>
-                    <button className="text-[11px] text-muted-foreground hover:text-foreground">Dismiss</button>
+                    <button className="text-[11px] text-muted-foreground hover:text-foreground">Zum Board</button>
+                    <button className="text-[11px] text-muted-foreground hover:text-foreground">Verwerfen</button>
                   </div>
                 </div>
               ))}
@@ -187,16 +187,16 @@ export default function Dashboard() {
           {/* Top Entities mini */}
           <div className="rounded-[var(--radius)] border bg-card">
             <div className="flex items-center justify-between border-b px-4 py-3">
-              <h2 className="text-sm font-semibold">Top Entities</h2>
+              <h2 className="text-sm font-semibold">Top-Akteure</h2>
               <Link to="/graph" className="flex items-center gap-1 text-xs text-primary hover:underline no-underline">
-                Open Graph <ArrowRight size={10} />
+                Netzwerk öffnen <ArrowRight size={10} />
               </Link>
             </div>
             <div className="divide-y">
               {entities.slice(0, 5).map((e) => (
                 <div key={e.id} className="flex items-center justify-between px-4 py-2">
                   <EntityBadge type={e.type} name={e.name} size="xs" />
-                  <span className="font-mono text-[10px] text-muted-foreground">{e.mentions} mentions</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">{e.mentions} Erwähnungen</span>
                 </div>
               ))}
             </div>

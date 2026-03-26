@@ -48,7 +48,7 @@ export default function StoryDetail() {
         <div className="max-w-3xl mx-auto px-6 py-6">
           {/* Breadcrumb */}
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-4">
-            <Link to="/stories" className="hover:text-foreground no-underline text-muted-foreground">Stories</Link>
+            <Link to="/stories" className="hover:text-foreground no-underline text-muted-foreground">Berichte</Link>
             <ChevronRight size={12} />
             <span className="text-foreground font-medium truncate">{story.title}</span>
           </div>
@@ -67,14 +67,14 @@ export default function StoryDetail() {
               <span className="font-mono">{story.source}</span>
               <span>pp. {story.pages}</span>
               <Link to="/sources/1" className="flex items-center gap-1 text-primary no-underline hover:underline">
-                <ExternalLink size={10} /> View Source PDF
+                <ExternalLink size={10} /> Quell-PDF anzeigen
               </Link>
             </div>
           </div>
 
           {/* Entity tags */}
           <div className="mb-6 flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mr-1">Entities:</span>
+            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mr-1">Akteure:</span>
             {story.entities.map((e) => (
               <Link key={e.id} to={`/entities/${e.id}`} className="no-underline">
                 <EntityBadge type={e.type} name={e.name} size="sm" />
@@ -97,19 +97,19 @@ export default function StoryDetail() {
               to="/sources/1/review/1"
               className="flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-xs text-muted-foreground no-underline hover:bg-secondary"
             >
-              <BookOpen size={12} /> Open in Review
+              <BookOpen size={12} /> In Prüfung öffnen
             </Link>
             <Link
               to="/graph"
               className="flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-xs text-muted-foreground no-underline hover:bg-secondary"
             >
-              <GitBranch size={12} /> Show in Graph
+              <GitBranch size={12} /> Im Netzwerk zeigen
             </Link>
             <Link
               to="/boards/1"
               className="flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-xs text-muted-foreground no-underline hover:bg-secondary"
             >
-              <Kanban size={12} /> Add to Board
+              <Kanban size={12} /> Zum Board
             </Link>
           </div>
         </div>
@@ -120,10 +120,10 @@ export default function StoryDetail() {
         <div className="p-4">
           <div className="flex items-center gap-2 mb-4">
             <Sparkles size={14} className="text-accent dark:text-accent" />
-            <h2 className="text-sm font-semibold">Related Stories</h2>
+            <h2 className="text-sm font-semibold">Verwandte Berichte</h2>
           </div>
           <p className="text-[11px] text-muted-foreground mb-4 leading-relaxed">
-            Stories with overlapping entities, similar topics, or matching semantic patterns — found automatically across all documents.
+            Berichte mit überlappenden Akteuren, ähnlichen Themen oder übereinstimmenden semantischen Mustern — automatisch über alle Dokumente hinweg gefunden.
           </p>
 
           <div className="space-y-3">
@@ -138,7 +138,7 @@ export default function StoryDetail() {
                   <div className="flex items-center gap-1.5">
                     <BarChart3 size={10} className="text-primary" />
                     <span className="font-mono text-[10px] font-bold text-primary">
-                      {Math.round(similarity * 100)}% match
+                      {Math.round(similarity * 100)}% Übereinstimmung
                     </span>
                   </div>
                   <span className="text-[10px] text-muted-foreground">{rel.source}</span>
@@ -175,19 +175,19 @@ export default function StoryDetail() {
           <div className="mt-6 rounded-[var(--radius)] border-2 border-dashed border-accent/40 bg-accent/5 p-3">
             <div className="flex items-center gap-1.5 mb-2">
               <Sparkles size={12} className="text-accent dark:text-accent" />
-              <span className="text-[11px] font-semibold text-accent-foreground">Cross-Document Insight</span>
+              <span className="text-[11px] font-semibold text-accent-foreground">Dokumentübergreifende Erkenntnis</span>
             </div>
             <p className="text-[11px] leading-relaxed text-accent-foreground/80">
-              This story shares entities with <span className="font-mono font-bold">{related.length} other stories</span> across{' '}
+              Dieser Bericht teilt Akteure mit <span className="font-mono font-bold">{related.length} anderen Berichten</span> aus{' '}
               <span className="font-mono font-bold">
-                {new Set(related.map(r => r.story.source)).size} different sources
-              </span>. Overlapping facts suggest a connected narrative.
+                {new Set(related.map(r => r.story.source)).size} verschiedenen Quellen
+              </span>. Überlappende Fakten deuten auf einen zusammenhängenden Sachverhalt hin.
             </p>
             <Link
               to="/graph"
               className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-primary no-underline hover:underline"
             >
-              Explore connections in Graph <ChevronRight size={10} />
+              Verbindungen im Netzwerk erkunden <ChevronRight size={10} />
             </Link>
           </div>
         </div>

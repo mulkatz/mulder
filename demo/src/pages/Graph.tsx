@@ -49,7 +49,7 @@ function EntityNode({ data }: NodeProps) {
       >
         <div style={{ fontSize: '11px', fontWeight: 600, color: colors.text }}>{String(data.label)}</div>
         <div style={{ fontSize: '9px', color: isDark ? '#a1a1aa' : '#71717a', marginTop: '2px' }}>
-          {(data.entityType as string).toUpperCase()} · {String(data.mentions)} mentions
+          {(data.entityType as string).toUpperCase()} · {String(data.mentions)} Erwähnungen
         </div>
       </div>
       <Handle type="source" position={Position.Bottom} style={{ visibility: 'hidden' }} />
@@ -139,7 +139,7 @@ export default function Graph() {
           <div className="p-4 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold flex items-center gap-1.5">
-                <Filter size={14} /> Filters
+                <Filter size={14} /> Filter
               </h3>
               <button onClick={() => setSidebarOpen(false)} className="text-muted-foreground hover:text-foreground">
                 <X size={14} />
@@ -185,7 +185,7 @@ export default function Graph() {
 
             {/* Min connections */}
             <div>
-              <h4 className="mb-2 font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Min Connections</h4>
+              <h4 className="mb-2 font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Min. Verbindungen</h4>
               <input type="range" min="0" max="15" defaultValue="0" className="w-full" />
               <div className="flex justify-between mt-1">
                 <span className="font-mono text-[10px] text-muted-foreground">0</span>
@@ -223,7 +223,7 @@ export default function Graph() {
             onClick={() => setSidebarOpen(true)}
             className="absolute top-4 left-4 z-10 flex items-center gap-1.5 rounded-[var(--radius)] border bg-card px-3 py-1.5 text-xs shadow-hard-sm"
           >
-            <Filter size={12} /> Filters
+            <Filter size={12} /> Filter
           </button>
         )}
 
@@ -272,11 +272,11 @@ export default function Graph() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-[var(--radius)] border p-2.5">
-                <div className="font-mono text-[10px] text-muted-foreground">Mentions</div>
+                <div className="font-mono text-[10px] text-muted-foreground">Erwähnungen</div>
                 <div className="font-mono text-lg font-bold">{selected.mentions}</div>
               </div>
               <div className="rounded-[var(--radius)] border p-2.5">
-                <div className="font-mono text-[10px] text-muted-foreground">Connections</div>
+                <div className="font-mono text-[10px] text-muted-foreground">Verbindungen</div>
                 <div className="font-mono text-lg font-bold">{selected.connections}</div>
               </div>
             </div>
@@ -301,7 +301,7 @@ export default function Graph() {
             {/* Related Stories */}
             <div>
               <h4 className="mb-2 flex items-center gap-1.5 font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                <BookOpen size={10} /> Related Stories
+                <BookOpen size={10} /> Verwandte Berichte
               </h4>
               <div className="space-y-1.5">
                 {stories

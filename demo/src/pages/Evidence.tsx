@@ -13,19 +13,19 @@ import type { ContradictionStatus, Contradiction, SpatioTemporalEvent } from '..
 
 const statusConfig: Record<ContradictionStatus, { label: string; icon: React.ElementType; class: string; badgeClass: string }> = {
   POTENTIAL: {
-    label: 'Potential',
+    label: 'Möglich',
     icon: AlertTriangle,
     class: 'text-[#92400e] dark:text-amber-400',
     badgeClass: 'text-[#92400e] bg-[#fef3c7] border-[#fcd34d] dark:text-amber-400 dark:bg-amber-900/30 dark:border-amber-800',
   },
   CONFIRMED: {
-    label: 'Confirmed',
+    label: 'Bestätigt',
     icon: CheckCircle2,
     class: 'text-[#991b1b] dark:text-red-400',
     badgeClass: 'text-[#991b1b] bg-[#fee2e2] border-[#fca5a5] dark:text-red-400 dark:bg-red-900/30 dark:border-red-800',
   },
   DISMISSED: {
-    label: 'Dismissed',
+    label: 'Verworfen',
     icon: XCircle,
     class: 'text-[#15803d] dark:text-green-400',
     badgeClass: 'text-[#15803d] bg-[#dcfce7] border-[#86efac] dark:text-green-400 dark:bg-green-900/30 dark:border-green-800',
@@ -56,10 +56,10 @@ function ContradictionDetail({ contradiction }: { contradiction: Contradiction }
         {contradiction.status === 'POTENTIAL' && (
           <div className="flex items-center gap-1.5">
             <button className="flex items-center gap-1.5 rounded-[var(--radius)] border border-red-300 dark:border-red-700 px-2.5 py-1.5 text-[11px] font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
-              <ThumbsDown size={11} /> Confirm
+              <ThumbsDown size={11} /> Bestätigen
             </button>
             <button className="flex items-center gap-1.5 rounded-[var(--radius)] border border-green-300 dark:border-green-700 px-2.5 py-1.5 text-[11px] font-medium text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20">
-              <ThumbsUp size={11} /> Dismiss
+              <ThumbsUp size={11} /> Verwerfen
             </button>
           </div>
         )}
@@ -79,7 +79,7 @@ function ContradictionDetail({ contradiction }: { contradiction: Contradiction }
         <div className="flex-1 h-px bg-border" />
         <span className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-destructive dark:text-red-400">
           <Zap size={11} />
-          contradicts
+          widerspricht
         </span>
         <div className="flex-1 h-px bg-border" />
       </div>
@@ -97,7 +97,7 @@ function ContradictionDetail({ contradiction }: { contradiction: Contradiction }
       <div className="rounded-[var(--radius)] border bg-muted/30 p-4">
         <div className="flex items-center gap-1.5 mb-2">
           <Sparkles size={12} className="text-accent-foreground dark:text-accent" />
-          <span className="font-mono text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Gemini Analysis</span>
+          <span className="font-mono text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Gemini-Analyse</span>
         </div>
         <p className="text-xs leading-[1.8] text-foreground">{contradiction.geminiAnalysis}</p>
       </div>
@@ -130,7 +130,7 @@ function ContradictionsTab() {
         <div className="flex items-center gap-1.5 px-3 py-2.5 border-b flex-wrap">
           {(['ALL', 'POTENTIAL', 'CONFIRMED', 'DISMISSED'] as const).map(status => {
             const isActive = filter === status;
-            const label = status === 'ALL' ? 'All' : statusConfig[status].label;
+            const label = status === 'ALL' ? 'Alle' : statusConfig[status].label;
             const count = counts[status];
             return (
               <button
@@ -196,7 +196,7 @@ function ContradictionsTab() {
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
             <AlertTriangle size={32} className="mb-3 opacity-30" />
-            <p className="text-xs">Select a contradiction to compare claims</p>
+            <p className="text-xs">Wählen Sie einen Widerspruch zum Vergleichen</p>
           </div>
         )}
       </div>
@@ -209,10 +209,10 @@ function ContradictionsTab() {
 type SortField = 'corroborationScore' | 'sourceReliability' | 'independentSourceCount' | 'evidenceChainStrength';
 
 const sortLabels: Record<SortField, string> = {
-  corroborationScore: 'Corroboration',
-  sourceReliability: 'Reliability',
-  independentSourceCount: 'Source Count',
-  evidenceChainStrength: 'Evidence Chain',
+  corroborationScore: 'Bestätigung',
+  sourceReliability: 'Zuverlässigkeit',
+  independentSourceCount: 'Quellenanzahl',
+  evidenceChainStrength: 'Beweiskette',
 };
 
 function scoreColor(value: number): string {
@@ -320,7 +320,7 @@ function CorroborationTab() {
                   <div className="flex items-center gap-2">
                     <EntityBadge type={entry.entity.type} name={entry.entity.name} size="xs" />
                     <span className="font-mono text-[10px] text-muted-foreground">
-                      {entry.independentSourceCount} {entry.independentSourceCount === 1 ? 'source' : 'sources'}
+                      {entry.independentSourceCount} {entry.independentSourceCount === 1 ? 'Quelle' : 'Quellen'}
                     </span>
                   </div>
                 </div>
@@ -339,7 +339,7 @@ function CorroborationTab() {
               <div className="flex items-center gap-2.5 mb-3">
                 <EntityBadge type={selected.entity.type} name={selected.entity.name} size="sm" />
                 <span className="font-mono text-[10px] text-muted-foreground">
-                  {selected.independentSourceCount} independent {selected.independentSourceCount === 1 ? 'source' : 'sources'}
+                  {selected.independentSourceCount} unabhängige {selected.independentSourceCount === 1 ? 'Quelle' : 'Quellen'}
                 </span>
               </div>
               <p className="text-sm leading-[1.7] text-foreground">{selected.claim}</p>
@@ -348,30 +348,30 @@ function CorroborationTab() {
             {/* Score Breakdown */}
             <div className="rounded-[var(--radius)] border bg-card p-4 space-y-4">
               <div className="font-mono text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                Score Breakdown
+                Bewertungsdetails
               </div>
               <ScoreBar
-                label="Corroboration Score"
+                label="Bestätigungswert"
                 value={selected.corroborationScore}
-                description="How well-supported this claim is across independent sources"
+                description="Wie gut diese Aussage durch unabhängige Quellen gestützt wird"
                 color="hsl(var(--primary))"
               />
               <ScoreBar
-                label="Source Reliability"
+                label="Quellen-Zuverlässigkeit"
                 value={selected.sourceReliability}
-                description="Weighted PageRank of contributing sources"
+                description="Gewichteter PageRank der beitragenden Quellen"
               />
               <ScoreBar
-                label="Evidence Chain Strength"
+                label="Beweisketten-Stärke"
                 value={selected.evidenceChainStrength}
-                description="Directness and quality of evidence linking sources to this claim"
+                description="Direktheit und Qualität der Belege, die Quellen mit dieser Aussage verbinden"
               />
             </div>
 
             {/* Individual Sources */}
             <div>
               <div className="font-mono text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                Contributing Sources
+                Bestätigende Quellen
               </div>
               <div className="space-y-2">
                 {selected.sources.map((src, i) => (
@@ -400,7 +400,7 @@ function CorroborationTab() {
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
             <ArrowUpDown size={32} className="mb-3 opacity-30" />
-            <p className="text-xs">Select a claim to see its corroboration details</p>
+            <p className="text-xs">Wählen Sie eine Aussage für Bestätigungsdetails</p>
           </div>
         )}
       </div>
@@ -413,11 +413,11 @@ function CorroborationTab() {
 // Stylized SVG location visualization
 // Maps real lat/lng to SVG viewport positions (rough European layout)
 function projectToSvg(lat: number, lng: number, width: number, height: number): { x: number; y: number } {
-  // Bounding box covering relevant European region
-  const minLat = 33;
+  // Bounding box covering North America and Europe
+  const minLat = 28;
   const maxLat = 55;
-  const minLng = 2;
-  const maxLng = 35;
+  const minLng = -125;
+  const maxLng = 15;
 
   const x = ((lng - minLng) / (maxLng - minLng)) * (width - 80) + 40;
   const y = ((maxLat - lat) / (maxLat - minLat)) * (height - 80) + 40;
@@ -432,8 +432,8 @@ const entityTypeCircleColors: Record<string, { fill: string; stroke: string; dar
 };
 
 function SpatioTemporalTab() {
-  const minYear = 2019;
-  const maxYear = 2024;
+  const minYear = 1945;
+  const maxYear = 2025;
   const [dateRange, setDateRange] = useState<[number, number]>([minYear, maxYear]);
   const [selectedEvent, setSelectedEvent] = useState<SpatioTemporalEvent | null>(null);
   const [entityTypeFilter, setEntityTypeFilter] = useState<string | null>(null);
@@ -489,7 +489,7 @@ function SpatioTemporalTab() {
               !entityTypeFilter ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground hover:bg-secondary'
             }`}
           >
-            All Types
+            Alle Typen
           </button>
           {(['person', 'organization', 'event', 'location'] as const).map(type => (
             <button
@@ -503,7 +503,7 @@ function SpatioTemporalTab() {
             </button>
           ))}
           <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-            {filteredEvents.length} events
+            {filteredEvents.length} Ereignisse
           </span>
         </div>
 
@@ -555,7 +555,7 @@ function SpatioTemporalTab() {
         {/* Temporal Clusters */}
         <div className="mt-3 pt-3 border-t">
           <div className="font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
-            Temporal Clusters
+            Zeitliche Cluster
           </div>
           <div className="flex gap-2 flex-wrap">
             {activeClusters.map(cluster => (
@@ -565,7 +565,7 @@ function SpatioTemporalTab() {
               >
                 <div className="text-[11px] font-medium">{cluster.label}</div>
                 <div className="font-mono text-[10px] text-muted-foreground">
-                  {cluster.startDate.slice(0, 4)}–{cluster.endDate.slice(0, 4)} · {cluster.eventCount} events
+                  {cluster.startDate.slice(0, 4)}–{cluster.endDate.slice(0, 4)} · {cluster.eventCount} Ereignisse
                 </div>
               </div>
             ))}
@@ -687,7 +687,7 @@ function SpatioTemporalTab() {
         <div className="mt-3 rounded-[var(--radius)] border bg-card px-4 py-3">
           <div className="flex items-center justify-between mb-2">
             <div className="font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-              Timeline Range
+              Zeitraum
             </div>
             <span className="font-mono text-[11px] text-foreground">
               {dateRange[0]} – {dateRange[1]}
@@ -758,9 +758,9 @@ function SpatioTemporalTab() {
 type TabId = 'contradictions' | 'corroboration' | 'spatio-temporal';
 
 const tabs: { id: TabId; label: string }[] = [
-  { id: 'contradictions', label: 'Contradictions' },
-  { id: 'corroboration', label: 'Corroboration' },
-  { id: 'spatio-temporal', label: 'Spatio-Temporal' },
+  { id: 'contradictions', label: 'Widersprüche' },
+  { id: 'corroboration', label: 'Bestätigungen' },
+  { id: 'spatio-temporal', label: 'Raum-Zeit-Analyse' },
 ];
 
 export default function Evidence() {
@@ -770,9 +770,9 @@ export default function Evidence() {
     <div className="p-6 space-y-4 h-[calc(100vh-48px)] flex flex-col">
       {/* Page Header */}
       <div>
-        <h1 className="text-lg font-semibold">Evidence Analysis</h1>
+        <h1 className="text-lg font-semibold">Beweislage</h1>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Contradiction detection, corroboration scoring, and spatio-temporal event analysis
+          Widerspruchserkennung, Bestätigungsbewertung und raum-zeitliche Ereignisanalyse
         </p>
       </div>
 

@@ -26,65 +26,65 @@ interface Connection {
 const cards: BoardCard[] = [
   {
     id: 'bc1', type: 'story', x: 60, y: 40,
-    title: 'Shadow Networks in European Banking',
-    content: 'A complex web of shell companies spanning Hamburg, Zürich, and Luxembourg has been quietly funneling billions...',
-    source: 'Der Spiegel 42/2023',
-    entities: [{ name: 'Dr. Elena Richter', type: 'person' }, { name: 'Meridian Capital', type: 'organization' }],
+    title: 'Das Tic-Tac-Objekt über dem Pazifik',
+    content: 'Commander Fravor beobachtete ein weißes, ovales Objekt ohne sichtbare Antriebssysteme. Es beschleunigte auf geschätzte 46.000 km/h...',
+    source: 'MUFON UFO Journal 03/2017',
+    entities: [{ name: 'David Fravor', type: 'person' }, { name: 'US Navy', type: 'organization' }],
   },
   {
     id: 'bc2', type: 'story', x: 480, y: 20,
-    title: 'The Hamburg Connection',
-    content: 'Marcus Webb, the British financial analyst who first raised concerns about Meridian operations in Hamburg...',
-    source: 'Der Spiegel 42/2023',
-    entities: [{ name: 'Marcus Webb', type: 'person' }, { name: 'Hamburg', type: 'location' }],
+    title: 'Pentagons geheimes UFO-Programm',
+    content: 'Von 2007 bis 2012 betrieb das Pentagon mit $22 Mio. Budget das AATIP. Elizondo trat 2017 aus Protest zurück...',
+    source: 'Der Spiegel 47/2017',
+    entities: [{ name: 'Luis Elizondo', type: 'person' }, { name: 'AATIP', type: 'organization' }],
   },
   {
     id: 'bc3', type: 'entity', x: 320, y: 280,
-    title: 'Meridian Capital Group',
+    title: 'Pentagon',
     entityType: 'organization',
-    connections: 15,
+    connections: 16,
   },
   {
     id: 'bc4', type: 'story', x: 60, y: 340,
-    title: 'Following the Money: Cyprus to Luxembourg',
-    content: 'The transaction records reveal a clear pattern: funds entered through Cyprus, cleaned in Luxembourg...',
-    source: 'SZ Dossier',
-    entities: [{ name: 'Cyprus', type: 'location' }, { name: 'Luxembourg', type: 'location' }],
+    title: 'David Gruschs Aussage vor dem Kongress',
+    content: 'Grusch sagte unter Eid aus, die US-Regierung verfüge über ein Bergungsprogramm für nicht-menschliche Fahrzeuge...',
+    source: 'Congressional Record Juli 2023',
+    entities: [{ name: 'David Grusch', type: 'person' }, { name: 'Washington D.C.', type: 'location' }],
   },
   {
     id: 'bc5', type: 'note', x: 730, y: 250,
-    title: 'Key Question',
-    content: 'What is Viktor Dragan\'s exact role? The Cyprus connection suggests he orchestrates the layering stage. Need to cross-reference with FinCEN data.',
+    title: 'Kernfrage',
+    content: 'Warum bestätigte das Pentagon Elizondos Rolle bei AATIP zunächst, revidierte die Aussage dann aber? Abgleich mit Reids Brief an NBC nötig.',
   },
   {
     id: 'bc6', type: 'entity', x: 520, y: 400,
-    title: 'Viktor Dragan',
+    title: 'Luis Elizondo',
     entityType: 'person',
-    connections: 6,
+    connections: 14,
   },
   {
     id: 'bc7', type: 'story', x: 730, y: 60,
-    title: 'Senate Hearing That Changed Everything',
-    content: 'When Dr. Richter took the stand, her testimony implicated not just Meridian but a network of enablers...',
-    source: 'ZEIT Investigation',
-    entities: [{ name: 'Senate Hearing 2023', type: 'event' }, { name: 'Dr. Elena Richter', type: 'person' }],
+    title: 'AARO vs. die Whistleblower',
+    content: 'Kirkpatricks AARO fand „keine empirischen Beweise" für außerirdische Technologie. Grusch spricht von Vertuschung...',
+    source: 'FAZ Wochenendbeilage Jan 2024',
+    entities: [{ name: 'Sean Kirkpatrick', type: 'person' }, { name: 'AARO', type: 'organization' }],
   },
   {
     id: 'bc8', type: 'note', x: 340, y: 500,
-    title: 'Timeline Gap',
-    content: 'Between the Meridian Audit (Q2 2022) and the Senate Hearing (Oct 2023) — 16 months unaccounted for. What happened in this period?',
+    title: 'Zeitlücke',
+    content: 'Zwischen AATIP-Einstellung (2012) und NYT-Enthüllung (Dez 2017) — 5 Jahre. Hat Elizondo das Programm inoffiziell weitergeführt, wie er behauptet?',
   },
 ];
 
 const connections: Connection[] = [
-  { from: 'bc1', to: 'bc3', label: 'mentions' },
-  { from: 'bc2', to: 'bc3', label: 'exposes' },
-  { from: 'bc4', to: 'bc3', label: 'traces funds to' },
-  { from: 'bc3', to: 'bc6', label: 'linked to' },
+  { from: 'bc1', to: 'bc3', label: 'erwähnt' },
+  { from: 'bc2', to: 'bc3', label: 'enthüllt' },
+  { from: 'bc4', to: 'bc3', label: 'beschuldigt' },
+  { from: 'bc3', to: 'bc6', label: 'verknüpft' },
   { from: 'bc5', to: 'bc6', style: 'dashed' },
-  { from: 'bc7', to: 'bc1', label: 'confirms' },
+  { from: 'bc7', to: 'bc4', label: 'widerspricht' },
   { from: 'bc8', to: 'bc6', style: 'dashed' },
-  { from: 'bc8', to: 'bc4', style: 'dashed' },
+  { from: 'bc8', to: 'bc2', style: 'dashed' },
 ];
 
 function getCardCenter(card: BoardCard): { x: number; y: number } {
@@ -101,27 +101,27 @@ export default function Board() {
       {/* Board Toolbar */}
       <div className="border-b px-4 py-2 flex items-center justify-between bg-card">
         <div className="flex items-center gap-3">
-          <h1 className="text-sm font-semibold">Operation Sunrise — Investigation Links</h1>
+          <h1 className="text-sm font-semibold">UAP-Chronologie — Verbindungen</h1>
           <span className="rounded-[var(--radius)] bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
-            8 cards · 8 connections
+            8 Karten · 8 Verbindungen
           </span>
         </div>
         <div className="flex items-center gap-2">
           <button className="flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary">
-            <Search size={12} /> Find Stories
+            <Search size={12} /> Berichte suchen
           </button>
           <button className="flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary">
-            <StickyNote size={12} /> Add Note
+            <StickyNote size={12} /> Notiz
           </button>
           <button className="flex items-center gap-1.5 rounded-[var(--radius)] border bg-accent/20 px-3 py-1.5 text-xs hover:bg-accent/30">
-            <Sparkles size={12} /> AI Suggestions
+            <Sparkles size={12} /> KI-Vorschläge
           </button>
           <div className="h-4 border-l" />
           <button className="flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary">
-            <Share2 size={12} /> Share
+            <Share2 size={12} /> Teilen
           </button>
           <button className="flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary">
-            <Download size={12} /> Export
+            <Download size={12} /> Exportieren
           </button>
         </div>
       </div>
@@ -200,7 +200,7 @@ export default function Board() {
                   <div className="p-3">
                     <EntityBadge type={card.entityType!} name={card.title} size="sm" />
                     <div className="mt-2 font-mono text-[10px] text-muted-foreground">
-                      {card.connections} connections
+                      {card.connections} Verbindungen
                     </div>
                   </div>
                 </div>

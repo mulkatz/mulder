@@ -45,9 +45,9 @@ export default function Review() {
         <div className="flex items-center gap-3">
           {/* Breadcrumb */}
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Link to="/sources/1" className="hover:text-foreground no-underline text-muted-foreground">Der Spiegel 42/2023</Link>
+            <Link to="/sources/1" className="hover:text-foreground no-underline text-muted-foreground">MUFON UFO Journal 03/2017</Link>
             <ChevronRight size={12} />
-            <span className="text-foreground font-medium">Review</span>
+            <span className="text-foreground font-medium">Prüfung</span>
           </div>
 
           {/* Story Navigation */}
@@ -56,7 +56,7 @@ export default function Review() {
               <ChevronLeft size={14} />
             </button>
             <span className="font-mono text-xs text-muted-foreground">
-              Story <span className="text-foreground font-medium">3</span> of 12
+              Bericht <span className="text-foreground font-medium">3</span> von 12
             </span>
             <button className="flex h-6 w-6 items-center justify-center rounded-[var(--radius)] border text-muted-foreground hover:bg-secondary">
               <ChevronRight size={14} />
@@ -65,7 +65,7 @@ export default function Review() {
 
           {/* Confidence */}
           <div className="flex items-center gap-2 border-l pl-3">
-            <span className="text-xs text-muted-foreground">Confidence:</span>
+            <span className="text-xs text-muted-foreground">Konfidenz:</span>
             <ConfidenceBadge value={0.72} />
           </div>
         </div>
@@ -74,19 +74,19 @@ export default function Review() {
           {/* Shortcuts hint */}
           <div className="hidden lg:flex items-center gap-2 mr-3 text-[10px] text-muted-foreground">
             <Keyboard size={10} />
-            <kbd className="rounded border bg-muted px-1 py-0.5 font-mono">Enter</kbd> Approve
-            <kbd className="rounded border bg-muted px-1 py-0.5 font-mono">S</kbd> Skip
-            <kbd className="rounded border bg-muted px-1 py-0.5 font-mono">F</kbd> Flag
+            <kbd className="rounded border bg-muted px-1 py-0.5 font-mono">Enter</kbd> Freigeben
+            <kbd className="rounded border bg-muted px-1 py-0.5 font-mono">S</kbd> Überspringen
+            <kbd className="rounded border bg-muted px-1 py-0.5 font-mono">F</kbd> Markieren
           </div>
 
           <button className="flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary">
-            <SkipForward size={12} /> Skip
+            <SkipForward size={12} /> Überspringen
           </button>
           <button className="flex items-center gap-1.5 rounded-[var(--radius)] border border-amber-400 px-3 py-1.5 text-xs text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20">
-            <Flag size={12} /> Flag
+            <Flag size={12} /> Markieren
           </button>
           <button className="flex items-center gap-1.5 rounded-[var(--radius)] border border-primary bg-primary px-3 py-1.5 text-xs text-primary-foreground">
-            <Check size={12} /> Approve
+            <Check size={12} /> Freigeben
           </button>
         </div>
       </div>
@@ -98,7 +98,7 @@ export default function Review() {
           <div className="relative w-full max-w-[540px] bg-card border shadow-hard rounded-[var(--radius)] overflow-hidden">
             {/* Page header */}
             <div className="border-b px-4 py-2 flex items-center justify-between bg-muted/30">
-              <span className="font-mono text-[10px] text-muted-foreground">DER SPIEGEL 42/2023</span>
+              <span className="font-mono text-[10px] text-muted-foreground">MUFON UFO JOURNAL 03/2017</span>
               <span className="font-mono text-[10px] text-muted-foreground">pp. 12–18</span>
             </div>
             <div className="p-6 space-y-3">
@@ -112,7 +112,7 @@ export default function Review() {
               {/* Active story region - highlighted */}
               <div className="relative rounded border-2 border-primary bg-primary/5 p-4 space-y-2">
                 <div className="absolute -top-2.5 left-2 bg-card px-2 text-[9px] font-mono font-bold text-primary">
-                  CURRENT STORY
+                  AKTUELLER BERICHT
                 </div>
                 {/* Simulated text lines */}
                 {Array.from({ length: 8 }, (_, i) => (
@@ -141,7 +141,7 @@ export default function Review() {
 
               {/* Other stories - dimmed */}
               <div className="rounded border border-dashed border-muted-foreground/20 bg-muted/30 p-3 space-y-1.5 opacity-50">
-                <div className="text-[9px] font-mono text-muted-foreground mb-1">Other story</div>
+                <div className="text-[9px] font-mono text-muted-foreground mb-1">Anderer Bericht</div>
                 {Array.from({ length: 4 }, (_, i) => (
                   <div key={i} className={`h-2 rounded bg-foreground/10 ${i === 3 ? 'w-3/4' : 'w-full'}`} />
                 ))}
@@ -162,22 +162,22 @@ export default function Review() {
             {/* Metadata fields */}
             <div className="space-y-3 mb-6">
               <div>
-                <label className="block text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Title</label>
+                <label className="block text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Titel</label>
                 <div className="rounded-[var(--radius)] border bg-card px-3 py-2 text-sm font-semibold">
                   {story.title}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Author</label>
+                  <label className="block text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Autor</label>
                   <div className="rounded-[var(--radius)] border bg-card px-3 py-1.5 text-xs">
-                    Klaus Brinkmann, Maria Torres
+                    Dr. Richard Haines, Leslie Kean
                   </div>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Category</label>
+                  <label className="block text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Kategorie</label>
                   <div className="rounded-[var(--radius)] border bg-card px-3 py-1.5 text-xs flex items-center justify-between">
-                    <span>Investigation</span>
+                    <span>Augenzeugen-Bericht</span>
                     <ChevronRight size={12} className="text-muted-foreground rotate-90" />
                   </div>
                 </div>
@@ -186,7 +186,7 @@ export default function Review() {
 
             {/* Extracted text with entity highlights */}
             <div>
-              <label className="block text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Extracted Text</label>
+              <label className="block text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Extrahierter Text</label>
               <div className="rounded-[var(--radius)] border bg-card p-4 text-[13px] leading-relaxed space-y-3">
                 {reviewText.split('\n\n').map((paragraph, i) => (
                   <p key={i}>{renderHighlightedText(paragraph)}</p>
@@ -198,9 +198,9 @@ export default function Review() {
           {/* Entity Panel */}
           <div className="border-t">
             <div className="flex items-center justify-between px-4 py-2 bg-muted/30">
-              <h3 className="text-xs font-semibold">Entities ({storyEntities.length})</h3>
+              <h3 className="text-xs font-semibold">Akteure ({storyEntities.length})</h3>
               <button className="flex items-center gap-1 text-[11px] text-primary hover:underline">
-                <Plus size={10} /> Add Entity
+                <Plus size={10} /> Akteur hinzufügen
               </button>
             </div>
             <div className="overflow-x-auto">

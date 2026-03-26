@@ -6,7 +6,7 @@ import StatusBadge from '../components/StatusBadge';
 import { stories, entityTypeLabels } from '../data/mock';
 import type { EntityType } from '../data/mock';
 
-const categories = ['All', 'Investigation', 'Profile', 'Deep Dive', 'Analysis', 'Report'];
+const categories = ['Alle', 'Augenzeugen-Bericht', 'Investigativ-Recherche', 'Militär-Dokument', 'Wissenschaftliche Analyse', 'Regierungsdokument', 'Hintergrundbericht'];
 const types: EntityType[] = ['person', 'organization', 'event', 'location'];
 
 export default function Stories() {
@@ -16,12 +16,12 @@ export default function Stories() {
       <div className="w-56 border-r bg-card overflow-y-auto p-4 space-y-5">
         <div className="flex items-center gap-1.5">
           <SlidersHorizontal size={14} className="text-muted-foreground" />
-          <h3 className="text-xs font-semibold">Filters</h3>
+          <h3 className="text-xs font-semibold">Filter</h3>
         </div>
 
         {/* Categories */}
         <div>
-          <h4 className="mb-2 font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Category</h4>
+          <h4 className="mb-2 font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Kategorie</h4>
           <div className="space-y-1">
             {categories.map((cat, i) => (
               <label key={cat} className="flex items-center gap-2 cursor-pointer">
@@ -34,7 +34,7 @@ export default function Stories() {
 
         {/* Entity Types */}
         <div>
-          <h4 className="mb-2 font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Entity Type</h4>
+          <h4 className="mb-2 font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Akteur-Typ</h4>
           <div className="space-y-1">
             {types.map(type => (
               <label key={type} className="flex items-center gap-2 cursor-pointer">
@@ -47,9 +47,9 @@ export default function Stories() {
 
         {/* Review Status */}
         <div>
-          <h4 className="mb-2 font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Review Status</h4>
+          <h4 className="mb-2 font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Prüfstatus</h4>
           <div className="space-y-1">
-            {['Approved', 'Needs Review', 'Flagged'].map(status => (
+            {['Freigegeben', 'Prüfung nötig', 'Markiert'].map(status => (
               <label key={status} className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" defaultChecked className="rounded border" />
                 <span className="text-xs">{status}</span>
@@ -60,7 +60,7 @@ export default function Stories() {
 
         {/* Confidence Range */}
         <div>
-          <h4 className="mb-2 font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Confidence</h4>
+          <h4 className="mb-2 font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Konfidenz</h4>
           <input type="range" min="0" max="100" defaultValue="0" className="w-full" />
           <div className="flex justify-between mt-1">
             <span className="font-mono text-[10px] text-muted-foreground">0%</span>
@@ -70,9 +70,9 @@ export default function Stories() {
 
         {/* Source */}
         <div>
-          <h4 className="mb-2 font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Source</h4>
+          <h4 className="mb-2 font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Quelle</h4>
           <div className="space-y-1">
-            {['Der Spiegel', 'ZEIT Investigation', 'SZ Dossier'].map(src => (
+            {['MUFON UFO Journal', 'Der Spiegel', 'Die ZEIT'].map(src => (
               <label key={src} className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" defaultChecked className="rounded border" />
                 <span className="text-xs">{src}</span>
@@ -90,16 +90,16 @@ export default function Stories() {
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search stories — try natural language like &quot;financial transactions through shell companies&quot;"
+              placeholder="Berichte durchsuchen — z.B. &quot;Tic-Tac-Objekt ohne Antrieb&quot; oder &quot;Rendlesham Strahlungswerte&quot;"
               className="w-full rounded-[var(--radius)] border bg-background py-2.5 pl-10 pr-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
           <div className="mt-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Showing <span className="font-mono font-medium text-foreground">{stories.length}</span> stories</span>
+              <span className="text-xs text-muted-foreground">Zeige <span className="font-mono font-medium text-foreground">{stories.length}</span> Berichte</span>
             </div>
             <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-              <ArrowUpDown size={12} /> Sort by Relevance
+              <ArrowUpDown size={12} /> Nach Relevanz sortieren
             </button>
           </div>
         </div>
