@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Settings as SettingsIcon, Palette, Brain, FileText, Users, Sliders, Save, Plus, Trash2, GripVertical } from 'lucide-react';
-import { entityTypeLabels } from '../data/mock';
 import type { EntityType } from '../data/mock';
 
 type Tab = 'domain' | 'entities' | 'ai' | 'team' | 'system';
