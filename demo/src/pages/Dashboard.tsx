@@ -49,11 +49,11 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Operations row: Queue + Quick Actions + Recent Activity */}
-      <div className="grid grid-cols-[1fr_auto_380px] gap-6">
-        {/* Processing Queue — compact inline */}
-        <div className="rounded-[var(--radius)] border bg-card">
-          <div className="flex items-center justify-between border-b px-4 py-3">
+      {/* Queue + Quick Actions — compact row */}
+      <div className="flex gap-4 items-start">
+        {/* Processing Queue */}
+        <div className="flex-1 rounded-[var(--radius)] border bg-card">
+          <div className="flex items-center justify-between border-b px-4 py-2.5">
             <h2 className="text-sm font-semibold">Verarbeitungs-Warteschlange</h2>
             <span className="font-mono text-xs text-muted-foreground">{processingQueue.length} Einträge</span>
           </div>
@@ -61,7 +61,7 @@ export default function Dashboard() {
             {processingQueue.map((item) => {
               const activeIdx = item.steps.indexOf(item.step);
               return (
-                <div key={item.id} className="px-4 py-2.5 flex items-center gap-4">
+                <div key={item.id} className="px-4 py-2 flex items-center gap-4">
                   <span className="text-xs font-medium shrink-0 min-w-[180px]">{item.title}</span>
                   <div className="flex items-center gap-1 flex-1">
                     {item.steps.map((step, i) => (
@@ -86,11 +86,6 @@ export default function Dashboard() {
                   <span className="font-mono text-xs text-muted-foreground shrink-0 w-14 text-right">
                     {item.progress > 0 ? `${item.progress}%` : 'Wartend'}
                   </span>
-                  {item.progress > 0 && (
-                    <div className="w-16 h-1 overflow-hidden rounded-full bg-muted shrink-0">
-                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${item.progress}%` }} />
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -98,51 +93,24 @@ export default function Dashboard() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 gap-3 content-start">
+        <div className="flex gap-3 shrink-0">
           <Link
             to="/upload"
-            className="flex items-center justify-center gap-3 rounded-[var(--radius)] border border-primary bg-primary px-5 py-4 text-sm font-semibold text-primary-foreground shadow-hard-sm no-underline transition-transform hover:translate-y-[-1px]"
+            className="flex items-center gap-2 rounded-[var(--radius)] border border-primary bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground shadow-hard-sm no-underline hover:opacity-90"
           >
-            <Upload size={18} />
+            <Upload size={14} />
             Quelle hochladen
           </Link>
           <Link
             to="/sources/1/review/1"
-            className="flex items-center justify-center gap-3 rounded-[var(--radius)] border bg-card px-5 py-4 text-sm font-semibold text-foreground shadow-hard-sm no-underline transition-transform hover:translate-y-[-1px]"
+            className="flex items-center gap-2 rounded-[var(--radius)] border bg-card px-4 py-2.5 text-xs font-semibold text-foreground shadow-hard-sm no-underline hover:bg-muted/50"
           >
-            <Eye size={18} />
+            <Eye size={14} />
             Prüfung starten
-            <span className="ml-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#fef3c7] px-1.5 font-mono text-[11px] font-bold text-[#92400e] dark:bg-amber-900/50 dark:text-amber-400">
+            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#fef3c7] px-1.5 font-mono text-[10px] font-bold text-[#92400e] dark:bg-amber-900/50 dark:text-amber-400">
               14
             </span>
           </Link>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="rounded-[var(--radius)] border bg-card">
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <h2 className="text-sm font-semibold">Letzte Aktivität</h2>
-            <button className="text-xs text-primary hover:underline">Alle anzeigen</button>
-          </div>
-          <div className="divide-y">
-            {recentActivity.map((item) => {
-              const Icon = activityIcons[item.action] || CheckCircle;
-              return (
-                <div key={item.id} className="flex items-start gap-3 px-4 py-2.5">
-                  <Icon size={14} className="mt-0.5 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs">
-                      <span className="text-muted-foreground">{item.action}:</span>{' '}
-                      <span className="font-medium text-foreground">{item.target}</span>
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-muted-foreground">
-                      {item.user} · {item.time}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </div>
       </div>
 
@@ -177,7 +145,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Semantische Muster — full width */}
+      {/* Semantische Muster + Letzte Aktivität */}
+      <div className="grid grid-cols-[1fr_340px] gap-6">
       <div className="rounded-[var(--radius)] border bg-card relative overflow-hidden">
           {/* Subtle AI-powered indicator: top border accent */}
           <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-primary/60 via-primary/20 to-primary/60" />
@@ -260,6 +229,34 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
+      </div>
+
+      {/* Letzte Aktivität */}
+      <div className="rounded-[var(--radius)] border bg-card">
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <h2 className="text-sm font-semibold">Letzte Aktivität</h2>
+          <button className="text-xs text-primary hover:underline">Alle anzeigen</button>
+        </div>
+        <div className="divide-y">
+          {recentActivity.map((item) => {
+            const Icon = activityIcons[item.action] || CheckCircle;
+            return (
+              <div key={item.id} className="flex items-start gap-3 px-4 py-2.5">
+                <Icon size={14} className="mt-0.5 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs">
+                    <span className="text-muted-foreground">{item.action}:</span>{' '}
+                    <span className="font-medium text-foreground">{item.target}</span>
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-muted-foreground">
+                    {item.user} · {item.time}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
       </div>
     </div>
   );
