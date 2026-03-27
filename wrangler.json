@@ -1,0 +1,7 @@
+{
+  "name": "mulder",
+  "compatibility_date": "2026-03-06",
+  "assets": {
+    "directory": "demo/dist"
+  }
+}
