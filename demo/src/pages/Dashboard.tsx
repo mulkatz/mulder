@@ -49,6 +49,103 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* Operations row: Queue + Quick Actions + Recent Activity */}
+      <div className="grid grid-cols-[1fr_auto_380px] gap-6">
+        {/* Processing Queue — compact inline */}
+        <div className="rounded-[var(--radius)] border bg-card">
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <h2 className="text-sm font-semibold">Verarbeitungs-Warteschlange</h2>
+            <span className="font-mono text-xs text-muted-foreground">{processingQueue.length} Einträge</span>
+          </div>
+          <div className="divide-y">
+            {processingQueue.map((item) => {
+              const activeIdx = item.steps.indexOf(item.step);
+              return (
+                <div key={item.id} className="px-4 py-2.5 flex items-center gap-4">
+                  <span className="text-xs font-medium shrink-0 min-w-[180px]">{item.title}</span>
+                  <div className="flex items-center gap-1 flex-1">
+                    {item.steps.map((step, i) => (
+                      <div key={step} className="flex items-center">
+                        <span
+                          className={`font-mono text-[10px] px-1.5 py-0.5 rounded-[var(--radius)] border ${
+                            i < activeIdx
+                              ? 'bg-primary/10 text-primary border-primary/30'
+                              : i === activeIdx
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'text-muted-foreground border-transparent'
+                          }`}
+                        >
+                          {step}
+                        </span>
+                        {i < item.steps.length - 1 && (
+                          <span className="mx-0.5 text-muted-foreground/40">→</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <span className="font-mono text-xs text-muted-foreground shrink-0 w-14 text-right">
+                    {item.progress > 0 ? `${item.progress}%` : 'Wartend'}
+                  </span>
+                  {item.progress > 0 && (
+                    <div className="w-16 h-1 overflow-hidden rounded-full bg-muted shrink-0">
+                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${item.progress}%` }} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 gap-3 content-start">
+          <Link
+            to="/upload"
+            className="flex items-center justify-center gap-3 rounded-[var(--radius)] border border-primary bg-primary px-5 py-4 text-sm font-semibold text-primary-foreground shadow-hard-sm no-underline transition-transform hover:translate-y-[-1px]"
+          >
+            <Upload size={18} />
+            Quelle hochladen
+          </Link>
+          <Link
+            to="/sources/1/review/1"
+            className="flex items-center justify-center gap-3 rounded-[var(--radius)] border bg-card px-5 py-4 text-sm font-semibold text-foreground shadow-hard-sm no-underline transition-transform hover:translate-y-[-1px]"
+          >
+            <Eye size={18} />
+            Prüfung starten
+            <span className="ml-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#fef3c7] px-1.5 font-mono text-[11px] font-bold text-[#92400e] dark:bg-amber-900/50 dark:text-amber-400">
+              14
+            </span>
+          </Link>
+        </div>
+
+        {/* Recent Activity */}
+        <div className="rounded-[var(--radius)] border bg-card">
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <h2 className="text-sm font-semibold">Letzte Aktivität</h2>
+            <button className="text-xs text-primary hover:underline">Alle anzeigen</button>
+          </div>
+          <div className="divide-y">
+            {recentActivity.map((item) => {
+              const Icon = activityIcons[item.action] || CheckCircle;
+              return (
+                <div key={item.id} className="flex items-start gap-3 px-4 py-2.5">
+                  <Icon size={14} className="mt-0.5 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs">
+                      <span className="text-muted-foreground">{item.action}:</span>{' '}
+                      <span className="font-medium text-foreground">{item.target}</span>
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">
+                      {item.user} · {item.time}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
       {/* KI-Entdeckungen — full width, 3-column grid */}
       <div className="rounded-[var(--radius)] border bg-card">
         <div className="flex items-center justify-between border-b px-4 py-3">
@@ -80,10 +177,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Two columns: Semantic Patterns + Recent Activity */}
-      <div className="grid grid-cols-[1fr_380px] gap-6">
-        {/* Semantische Muster */}
-        <div className="rounded-[var(--radius)] border bg-card relative overflow-hidden">
+      {/* Semantische Muster — full width */}
+      <div className="rounded-[var(--radius)] border bg-card relative overflow-hidden">
           {/* Subtle AI-powered indicator: top border accent */}
           <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-primary/60 via-primary/20 to-primary/60" />
           <div className="flex items-center justify-between border-b px-4 py-3">
@@ -165,109 +260,6 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="rounded-[var(--radius)] border bg-card">
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <h2 className="text-sm font-semibold">Letzte Aktivität</h2>
-            <button className="text-xs text-primary hover:underline">Alle anzeigen</button>
-          </div>
-          <div className="divide-y">
-            {recentActivity.map((item) => {
-              const Icon = activityIcons[item.action] || CheckCircle;
-              return (
-                <div key={item.id} className="flex items-start gap-3 px-4 py-2.5">
-                  <Icon size={14} className="mt-0.5 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs">
-                      <span className="text-muted-foreground">{item.action}:</span>{' '}
-                      <span className="font-medium text-foreground">{item.target}</span>
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-muted-foreground">
-                      {item.user} · {item.time}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom row: Processing Queue (compact) + Quick Actions */}
-      <div className="grid grid-cols-[1fr_380px] gap-6">
-        {/* Processing Queue — compact inline */}
-        <div className="rounded-[var(--radius)] border bg-card">
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <h2 className="text-sm font-semibold">Verarbeitungs-Warteschlange</h2>
-            <span className="font-mono text-xs text-muted-foreground">{processingQueue.length} Einträge</span>
-          </div>
-          <div className="divide-y">
-            {processingQueue.map((item) => {
-              const activeIdx = item.steps.indexOf(item.step);
-              return (
-                <div key={item.id} className="px-4 py-2.5 flex items-center gap-4">
-                  <span className="text-xs font-medium shrink-0 min-w-[180px]">{item.title}</span>
-                  {/* Inline pipeline steps */}
-                  <div className="flex items-center gap-1 flex-1">
-                    {item.steps.map((step, i) => (
-                      <div key={step} className="flex items-center">
-                        <span
-                          className={`font-mono text-[10px] px-1.5 py-0.5 rounded-[var(--radius)] border ${
-                            i < activeIdx
-                              ? 'bg-primary/10 text-primary border-primary/30'
-                              : i === activeIdx
-                              ? 'bg-primary text-primary-foreground border-primary'
-                              : 'text-muted-foreground border-transparent'
-                          }`}
-                        >
-                          {step}
-                        </span>
-                        {i < item.steps.length - 1 && (
-                          <span className="mx-0.5 text-muted-foreground/40">→</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  {/* Progress or status */}
-                  <span className="font-mono text-xs text-muted-foreground shrink-0 w-14 text-right">
-                    {item.progress > 0 ? `${item.progress}%` : 'Wartend'}
-                  </span>
-                  {item.progress > 0 && (
-                    <div className="w-16 h-1 overflow-hidden rounded-full bg-muted shrink-0">
-                      <div
-                        className="h-full rounded-full bg-primary transition-all"
-                        style={{ width: `${item.progress}%` }}
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 gap-3 content-start">
-          <Link
-            to="/upload"
-            className="flex items-center justify-center gap-3 rounded-[var(--radius)] border border-primary bg-primary px-5 py-4 text-sm font-semibold text-primary-foreground shadow-hard-sm no-underline transition-transform hover:translate-y-[-1px]"
-          >
-            <Upload size={18} />
-            Quelle hochladen
-          </Link>
-          <Link
-            to="/sources/1/review/1"
-            className="flex items-center justify-center gap-3 rounded-[var(--radius)] border bg-card px-5 py-4 text-sm font-semibold text-foreground shadow-hard-sm no-underline transition-transform hover:translate-y-[-1px]"
-          >
-            <Eye size={18} />
-            Prüfung starten
-            <span className="ml-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#fef3c7] px-1.5 font-mono text-[11px] font-bold text-[#92400e] dark:bg-amber-900/50 dark:text-amber-400">
-              14
-            </span>
-          </Link>
-        </div>
       </div>
     </div>
   );
