@@ -281,21 +281,25 @@ interface StepResult<T> {
 
 **Process:**
 1. Load story text
-2. **Generate JSON Schema from config ontology** using `zod-to-json-schema` library (mandatory — do NOT hand-roll schema conversion). Build Zod schemas from config ontology definition, then convert to JSON Schema for Gemini structured output. This ensures schema validity and prevents subtle type mismatches that break structured output.
-3. Build extraction prompt with generated schema + story text
-4. Send to Gemini with structured output → get entities + relationships with confidence scores
-5. **Taxonomy normalization** (inline):
+2. **Hard token-count check** (via `@google/generative-ai` tokenizer or `countTokens` API):
+   - Count tokens in `story.text`
+   - If tokens ≤ `enrichment.max_story_tokens` (default: 15,000): proceed normally (single LLM call)
+   - If tokens > limit: **pre-chunk fallback** — split the story text into logical sub-chunks (~10,000 tokens each, split at paragraph boundaries), run the extraction prompt on each sub-chunk individually, then aggregate and deduplicate the extracted entities in application code before writing to the database. This handles the case where the Segment step produces an oversized story (e.g., a 60-page chapter as one "story"). Without this guard, Gemini's structured output gets truncated mid-JSON (invalid response) or entity extraction quality degrades severely due to the "Lost in the Middle" phenomenon.
+3. **Generate JSON Schema from config ontology** using `zod-to-json-schema` library (mandatory — do NOT hand-roll schema conversion). Build Zod schemas from config ontology definition, then convert to JSON Schema for Gemini structured output. This ensures schema validity and prevents subtle type mismatches that break structured output.
+4. Build extraction prompt with generated schema + story text (or sub-chunk text)
+5. Send to Gemini with structured output → get entities + relationships with confidence scores. If pre-chunked: send each sub-chunk separately, merge results.
+6. **Taxonomy normalization** (inline):
    - For each extracted entity, search taxonomy for matching canonical entry (via `pg_trgm` similarity)
    - If match found (similarity > threshold): assign `canonical_id`, add as alias
    - If no match: create new taxonomy entry with status `auto`
-6. **Entity resolution** (cross-document):
+7. **Entity resolution** (cross-document):
    - For each entity, search existing entities by name, aliases, type, and attributes
    - If match found (similarity > `entity_resolution.similarity_threshold`): merge → update `canonical_id`, add aliases
    - If no match: create new entity
    - **Deadlock prevention:** Sort all entity upserts lexicographically by `(entity_type, canonical_name)` before writing to PostgreSQL. This guarantees consistent lock ordering when multiple CLI processes or workers enrich stories concurrently, preventing transaction deadlocks.
-7. Write entities to `entities` table, relationships to `entity_edges` table
-8. Write entity-story links to `story_entities` junction table
-9. Update story status to `enriched`
+8. Write entities to `entities` table, relationships to `entity_edges` table
+9. Write entity-story links to `story_entities` junction table
+10. Update story status to `enriched`
 
 **Output:** `EnrichmentResult` — entities extracted, entities resolved, relationships created, taxonomy entries added
 
@@ -350,13 +354,14 @@ interface StepResult<T> {
    - Generate 2-3 questions this chunk could answer (via Gemini)
    - These questions become additional embedding targets (improves retrieval for question-style queries)
 4. **Embedding:**
-   - Embed each chunk text via `gemini-embedding-001` (produces 3072-dim)
+   - Embed each chunk text via `text-embedding-004` (Matryoshka model, replaces deprecated `gemini-embedding-001`)
    - Embed generated questions via same model
-   - **Matryoshka truncation at write time:** Truncate vectors from 3072 to `embedding.storage_dimensions` (default: 768) BEFORE storing in PostgreSQL. This is critical for resource planning:
+   - **Native Matryoshka dimension reduction via API parameter:**
+     Pass `outputDimensionality: 768` in the Vertex AI API call. The API returns a mathematically correct 768-dim projection, already L2-normalized. This is critical for resource planning:
      - 3072-dim: 1M vectors × 3072 × 4 bytes = ~12GB data + ~24GB HNSW index = needs a 64GB Cloud SQL instance (~$500/mo)
      - 768-dim: 1M vectors × 768 × 4 bytes = ~3GB data + ~6GB HNSW index = fits a 16GB Cloud SQL instance (~$100/mo)
-     - Quality loss at 768-dim is minimal for `gemini-embedding-001` (Matryoshka models are designed for this)
-   - Normalize vectors after truncation (L2 normalize the truncated prefix)
+     - Quality loss at 768-dim is minimal for `text-embedding-004` (trained with Matryoshka Representation Learning)
+   - **CRITICAL: NEVER truncate vectors manually in application code** (e.g., `array.slice(0, 768)`). Manual slicing destroys the semantic geometry because the dimensions are not independently meaningful. The `outputDimensionality` API parameter applies a learned projection that preserves semantic relationships. This must be enforced in code review.
 5. Store in `chunks` table: content chunks as rows with `is_question=false`, generated questions as separate rows with `is_question=true` and `parent_chunk_id` pointing to their source chunk. pgvector does not support `vector[]` arrays — each embedding needs its own row.
 6. Update story status to `embedded`
 
@@ -364,7 +369,7 @@ interface StepResult<T> {
 
 **Standalone value:** Re-embed after changing chunking strategy. Re-embed with updated entity data. Generate embeddings for specific stories.
 
-**Dependencies:** Vertex AI (Gemini for questions, gemini-embedding-001 for embeddings), PostgreSQL (pgvector)
+**Dependencies:** Vertex AI (Gemini for questions, `text-embedding-004` for embeddings), PostgreSQL (pgvector)
 
 **Force behavior:** `--force` calls `reset_pipeline_step(source_id, 'embed')` which directly deletes all chunks and full-text index entries for the source's stories, then resets story status to `enriched`. Stories, entities, and edges are preserved. No orphan risk since chunks only link to one story.
 
@@ -766,7 +771,7 @@ CREATE TABLE chunks (
   chunk_index     INTEGER NOT NULL,
   page_start      INTEGER,
   page_end        INTEGER,
-  embedding       vector(768),             -- Matryoshka-truncated from 3072; dimension configurable via embedding.storage_dimensions
+  embedding       vector(768),             -- text-embedding-004 with outputDimensionality: 768; configurable via embedding.storage_dimensions
   is_question     BOOLEAN DEFAULT false,   -- true = generated question, false = content chunk
   parent_chunk_id UUID REFERENCES chunks(id) ON DELETE CASCADE,  -- question → parent content chunk
   metadata        JSONB DEFAULT '{}',
@@ -1057,10 +1062,36 @@ src/shared/
 **Functions:**
 - `generateStructured<T>(prompt, schema): T` — Gemini structured output with Zod validation of response
 - `generateText(prompt): string` — Plain text generation
-- `embed(texts: string[]): number[][]` — Batch embedding via gemini-embedding-001
+- `embed(texts: string[], dimensions?: number): number[][]` — Batch embedding via `text-embedding-004` with `outputDimensionality` parameter (default: 768). NEVER truncate vectors manually in application code.
 - `groundedGenerate(prompt, entity): GroundingResult` — Gemini with google_search_retrieval tool
 
 Centralizes retry logic, error handling, rate limiting, and token counting. All pipeline steps call these functions, never the Vertex AI SDK directly.
+
+#### Vertex AI Concurrency Limiter (Thundering Herd Protection)
+
+**The problem:** If 3 workers with `concurrency: 5` each run simultaneously, 15 jobs fire Gemini API calls in the same millisecond window. Google's Vertex AI quotas (requests per minute per project) are quickly exhausted → all 15 get `429 Too Many Requests` → exponential backoff → all 15 sleep ~2s → all 15 wake up simultaneously → another burst of 429s. This retry storm is self-sustaining and wastes minutes per batch.
+
+**The solution:** A **process-level concurrency limiter** (e.g., `p-limit`) inside `vertex.ts`. Regardless of how many jobs a worker is processing concurrently, outgoing Vertex AI requests are throttled to `vertex.max_concurrent_requests` (default: 2) per worker process.
+
+```typescript
+import pLimit from 'p-limit'
+
+// Max 2 concurrent Vertex AI requests per worker process.
+// Additional requests queue in Node.js memory — zero cost, no network overhead.
+const vertexLimiter = pLimit(2)
+
+export async function generateStructured<T>(prompt: string, schema: ZodSchema<T>): Promise<T> {
+  return vertexLimiter(async () => {
+    // ... actual Vertex AI SDK call
+  })
+}
+```
+
+**Key points:**
+- The limiter is per-process, not per-cluster. 3 workers = 6 total concurrent Vertex AI requests.
+- This is proactive throttling — requests queue locally before hitting the network, preventing 429s entirely.
+- The exponential backoff in the retry strategy (Section 7.3) remains as a safety net for genuine API errors, but should rarely trigger if the limiter is configured correctly.
+- Embedding calls (`embed()`) also go through the limiter — they share the same Vertex AI quota.
 
 #### Dev-Mode LLM Cache
 
@@ -1442,6 +1473,29 @@ async function dequeueJob(workerId: string): Promise<Job | null> {
 
 `FOR UPDATE SKIP LOCKED` means: "Lock this row for my transaction. If another worker already locked it, don't wait — just grab the next one." Zero contention, zero deadlocks.
 
+#### Transaction Discipline (CRITICAL)
+
+The `dequeueJob()` query MUST run as an **auto-commit** statement — NOT inside a `BEGIN ... COMMIT` block that wraps the entire job execution. This is the single most important implementation constraint for the worker.
+
+**Why:** If the agent wraps `dequeue → execute pipeline step → mark completed` in one transaction, that transaction stays open for the duration of the pipeline step (minutes). Long-lived PostgreSQL transactions:
+- Block `autovacuum` from cleaning up dead tuples in the `jobs` table
+- Cause table bloat — the `jobs` table grows unboundedly as dead rows accumulate
+- Eventually trigger "Transaction ID Wraparound" — PostgreSQL freezes to prevent data corruption
+
+**Correct pattern:**
+```
+1. dequeueJob()          → auto-commit UPDATE (row locked, then immediately released)
+2. execute pipeline step → NO active DB transaction (LLM calls, file I/O happen here)
+3. markJobCompleted()    → auto-commit UPDATE (millisecond write)
+```
+
+Each of the three database touches is an independent, millisecond-duration auto-commit. The long-running pipeline work in step 2 happens with zero open database transactions.
+
+**The agent MUST NOT:**
+- Wrap the worker loop body in `pool.query('BEGIN')` ... `pool.query('COMMIT')`
+- Use a transaction-wrapping ORM method around the job execution
+- Hold a database connection checked out from the pool during LLM calls
+
 ### 10.4 Worker Loop
 
 ```typescript
@@ -1451,6 +1505,7 @@ async function startWorker(options: WorkerOptions) {
   logger.info({ workerId }, 'Worker started')
 
   while (!shuttingDown) {
+    // Step 1: Dequeue (auto-commit, milliseconds)
     const job = await dequeueJob(workerId)
 
     if (!job) {
@@ -1458,21 +1513,29 @@ async function startWorker(options: WorkerOptions) {
       continue
     }
 
+    // Step 2: Execute (NO open DB transaction during this phase)
     try {
       logger.info({ jobId: job.id, type: job.type }, 'Processing job')
 
       switch (job.type) {
-        case 'pipeline_run':
-          await runPipeline(job.payload.path, job.payload.options)
+        case 'extract':
+          await extract(job.payload.source_id)
           break
-        case 'ground_batch':
-          await ground(job.payload.entities, job.payload.options)
+        case 'segment':
+          await segment(job.payload.source_id)
           break
-        // ... other job types
+        case 'enrich':
+          await enrich(job.payload.story_id)
+          break
+        // ... other step types
       }
 
+      // Step 3a: Mark completed + enqueue next step (auto-commit, milliseconds)
       await markJobCompleted(job.id)
+      await enqueueNextStep(job)  // chains to next pipeline step if applicable
+
     } catch (error) {
+      // Step 3b: Mark failed (auto-commit, milliseconds)
       await markJobFailed(job.id, error.message)
     }
   }
@@ -1863,7 +1926,7 @@ packages/worker    → packages/core, packages/pipeline
 
 ### Why 768-dim instead of full 3072-dim vectors?
 
-- `gemini-embedding-001` uses Matryoshka Representation Learning — truncating to 768 dims preserves most of the semantic quality
+- `text-embedding-004` uses Matryoshka Representation Learning — requesting 768 dims via `outputDimensionality` API parameter preserves most of the semantic quality
 - 3072-dim HNSW at 1M vectors needs ~24GB RAM (the index must fit in memory for decent performance). A Cloud SQL instance with 64GB costs ~$500/month.
 - 768-dim HNSW at 1M vectors needs ~6GB RAM. Fits comfortably on a 16GB instance (~$100/month).
 - 75% cost reduction for minimal quality loss — the right trade-off for an OSS tool
@@ -1884,3 +1947,20 @@ packages/worker    → packages/core, packages/pipeline
 - Per-step jobs mean each job completes in minutes, well within any timeout
 - Failed steps can be retried individually without reprocessing earlier steps
 - Multiple workers can process different steps for different sources concurrently
+
+### Why auto-commit job dequeue instead of wrapping in a transaction?
+
+- A pipeline step (Extract, Enrich) can run for minutes. An open PostgreSQL transaction during that time blocks `autovacuum` on the `jobs` table.
+- Blocked autovacuum causes table bloat — dead rows accumulate, query performance degrades
+- In the worst case, long-lived transactions trigger "Transaction ID Wraparound" — PostgreSQL freezes entirely to prevent data corruption
+- Auto-commit dequeue: the row lock is held for microseconds (just the UPDATE), then immediately released. The pipeline work happens with zero open transactions.
+- This is the #1 implementation constraint for the worker — the agent must not wrap job execution in `BEGIN ... COMMIT`
+
+### Why a process-level Vertex AI concurrency limiter?
+
+- Multiple concurrent jobs in the same worker all fire Vertex AI requests simultaneously
+- Google's per-project quotas (requests/minute) are quickly exhausted → mass 429 errors
+- Exponential backoff with jitter doesn't solve this — all retries wake up in the same window (thundering herd)
+- A `p-limit(2)` limiter queues excess requests in Node.js memory (zero network cost) and releases them one at a time
+- This is proactive throttling vs reactive error handling — prevents 429s instead of recovering from them
+- Per-process, not per-cluster: 3 workers × 2 concurrent = 6 total Vertex AI requests, well within most quotas
