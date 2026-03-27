@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, XCircle, ArrowUpDown, Clock, MapPin, Zap, Sparkles, ThumbsUp, ThumbsDown } from 'lucide-react';
 import EntityBadge from '../components/EntityBadge';
 import {
@@ -6,6 +7,7 @@ import {
   corroborationEntries,
   spatioTemporalEvents,
   temporalClusters,
+  entityTypeLabels,
 } from '../data/mock';
 import type { ContradictionStatus, Contradiction, SpatioTemporalEvent } from '../data/mock';
 
@@ -51,7 +53,7 @@ function ContradictionDetail({ contradiction }: { contradiction: Contradiction }
             <StatusIcon size={12} />
             {cfg.label}
           </span>
-          <EntityBadge type={contradiction.entity.type} name={contradiction.entity.name} size="sm" />
+          <EntityBadge type={contradiction.entity.type} name={contradiction.entity.name} href={`/entities/${contradiction.entity.id}`} size="sm" />
         </div>
         {contradiction.status === 'POTENTIAL' && (
           <div className="flex items-center gap-1.5">
@@ -68,7 +70,7 @@ function ContradictionDetail({ contradiction }: { contradiction: Contradiction }
       {/* Claim A */}
       <div className="rounded-[var(--radius)] border-l-[3px] border-l-primary border border-border bg-card p-4">
         <div className="flex items-baseline justify-between gap-2 mb-2">
-          <div className="text-xs font-semibold text-foreground">{contradiction.storyA}</div>
+          <Link to={`/stories/${contradiction.storyAId}`} className="text-xs font-semibold text-foreground no-underline hover:text-primary hover:underline">{contradiction.storyA}</Link>
           <div className="font-mono text-[10px] text-muted-foreground shrink-0">{contradiction.sourceA}</div>
         </div>
         <p className="text-xs leading-[1.7] text-foreground">{contradiction.claimA}</p>
@@ -87,7 +89,7 @@ function ContradictionDetail({ contradiction }: { contradiction: Contradiction }
       {/* Claim B */}
       <div className="rounded-[var(--radius)] border-l-[3px] border-l-destructive dark:border-l-red-500 border border-border bg-card p-4">
         <div className="flex items-baseline justify-between gap-2 mb-2">
-          <div className="text-xs font-semibold text-foreground">{contradiction.storyB}</div>
+          <Link to={`/stories/${contradiction.storyBId}`} className="text-xs font-semibold text-foreground no-underline hover:text-primary hover:underline">{contradiction.storyB}</Link>
           <div className="font-mono text-[10px] text-muted-foreground shrink-0">{contradiction.sourceB}</div>
         </div>
         <p className="text-xs leading-[1.7] text-foreground">{contradiction.claimB}</p>
@@ -276,7 +278,7 @@ function CorroborationTab() {
       <div className="w-[380px] shrink-0 border-r flex flex-col min-h-0">
         {/* Sort Controls */}
         <div className="flex items-center gap-1.5 px-3 py-2.5 border-b flex-wrap">
-          <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mr-1">Sort</span>
+          <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mr-1">Sortierung</span>
           {(Object.keys(sortLabels) as SortField[]).map(field => (
             <button
               key={field}
@@ -318,7 +320,7 @@ function CorroborationTab() {
                 <div className="min-w-0 flex-1">
                   <p className="text-[11px] leading-relaxed text-foreground line-clamp-2 mb-1.5">{entry.claim}</p>
                   <div className="flex items-center gap-2">
-                    <EntityBadge type={entry.entity.type} name={entry.entity.name} size="xs" />
+                    <EntityBadge type={entry.entity.type} name={entry.entity.name} href={`/entities/${entry.entity.id}`} size="xs" />
                     <span className="font-mono text-[10px] text-muted-foreground">
                       {entry.independentSourceCount} {entry.independentSourceCount === 1 ? 'Quelle' : 'Quellen'}
                     </span>
@@ -337,7 +339,7 @@ function CorroborationTab() {
             {/* Header: Claim + Entity */}
             <div>
               <div className="flex items-center gap-2.5 mb-3">
-                <EntityBadge type={selected.entity.type} name={selected.entity.name} size="sm" />
+                <EntityBadge type={selected.entity.type} name={selected.entity.name} href={`/entities/${selected.entity.id}`} size="sm" />
                 <span className="font-mono text-[10px] text-muted-foreground">
                   {selected.independentSourceCount} unabhängige {selected.independentSourceCount === 1 ? 'Quelle' : 'Quellen'}
                 </span>
@@ -499,7 +501,7 @@ function SpatioTemporalTab() {
                 entityTypeFilter === type ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground hover:bg-secondary'
               }`}
             >
-              {type}
+              {entityTypeLabels[type]}
             </button>
           ))}
           <span className="ml-auto font-mono text-[10px] text-muted-foreground">
@@ -539,7 +541,7 @@ function SpatioTemporalTab() {
                     )}
                     <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
                       {event.entities.slice(0, 3).map(e => (
-                        <EntityBadge key={e.id} type={e.type} name={e.name} size="xs" />
+                        <EntityBadge key={e.id} type={e.type} name={e.name} href={`/entities/${e.id}`} size="xs" />
                       ))}
                       {event.entities.length > 3 && (
                         <span className="text-[10px] text-muted-foreground">+{event.entities.length - 3}</span>

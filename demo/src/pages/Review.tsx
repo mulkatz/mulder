@@ -1,12 +1,13 @@
 import { Link } from 'react-router-dom';
 import { ChevronRight, ChevronLeft, Check, SkipForward, Flag, Plus, Keyboard } from 'lucide-react';
+import EntityBadge from '../components/EntityBadge';
 import ConfidenceBadge from '../components/ConfidenceBadge';
 import StatusBadge from '../components/StatusBadge';
-import { stories, entities, reviewText } from '../data/mock';
+import { stories, reviewText, entityTypeLabels } from '../data/mock';
 import type { EntityType } from '../data/mock';
 
 const story = stories[0];
-const storyEntities = entities.slice(0, 6);
+const storyEntities = story.entities;
 
 const entityCssMap: Record<EntityType, { bg: string; text: string }> = {
   person: { bg: 'bg-entity-person-bg', text: 'text-entity-person' },
@@ -23,14 +24,17 @@ function renderHighlightedText(text: string) {
       const type = match[1] as EntityType;
       const name = match[2];
       const css = entityCssMap[type];
+      // Find matching entity for correct link
+      const entity = storyEntities.find(e => e.name === name) || stories.flatMap(s => s.entities).find(e => e.name === name);
+      const href = entity ? `/entities/${entity.id}` : '#';
       return (
-        <mark
+        <Link
           key={i}
-          className={`${css.bg} ${css.text} rounded-sm px-1 py-0.5 font-mono text-[12px] font-medium cursor-pointer hover:opacity-80`}
-          style={{ backgroundColor: undefined }}
+          to={href}
+          className={`${css.bg} ${css.text} rounded-sm px-1 py-0.5 font-mono text-[12px] font-medium no-underline hover:opacity-80 border-b-2 border-current/20`}
         >
           {name}
-        </mark>
+        </Link>
       );
     }
     return <span key={i}>{part}</span>;
@@ -66,7 +70,7 @@ export default function Review() {
           {/* Confidence */}
           <div className="flex items-center gap-2 border-l pl-3">
             <span className="text-xs text-muted-foreground">Konfidenz:</span>
-            <ConfidenceBadge value={0.72} />
+            <ConfidenceBadge value={story.confidence} />
           </div>
         </div>
 
@@ -208,21 +212,19 @@ export default function Review() {
                 <thead>
                   <tr className="border-b bg-muted/20">
                     <th className="px-4 py-1.5 text-left font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Name</th>
-                    <th className="px-4 py-1.5 text-left font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Type</th>
-                    <th className="px-4 py-1.5 text-left font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Confidence</th>
+                    <th className="px-4 py-1.5 text-left font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Typ</th>
+                    <th className="px-4 py-1.5 text-left font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Konfidenz</th>
                     <th className="px-4 py-1.5 text-left font-mono text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {storyEntities.map((e) => (
                     <tr key={e.id} className="hover:bg-muted/30">
-                      <td className="px-4 py-1.5 font-mono font-medium">{e.name}</td>
                       <td className="px-4 py-1.5">
-                        <span className={`inline-flex items-center rounded-[var(--radius)] px-1.5 py-0.5 text-[10px] font-medium ${
-                          e.type === 'person' ? 'entity-person' :
-                          e.type === 'organization' ? 'entity-organization' :
-                          e.type === 'event' ? 'entity-event' : 'entity-location'
-                        }`}>{e.type}</span>
+                        <Link to={`/entities/${e.id}`} className="font-mono font-medium no-underline hover:text-primary hover:underline">{e.name}</Link>
+                      </td>
+                      <td className="px-4 py-1.5">
+                        <EntityBadge type={e.type} name={entityTypeLabels[e.type]} size="xs" />
                       </td>
                       <td className="px-4 py-1.5"><ConfidenceBadge value={e.confidence} size="xs" /></td>
                       <td className="px-4 py-1.5"><StatusBadge status={e.status} /></td>

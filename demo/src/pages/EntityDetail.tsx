@@ -22,7 +22,7 @@ export default function EntityDetail() {
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-4">
             <Link to="/" className="hover:text-foreground no-underline text-muted-foreground">Übersicht</Link>
             <ChevronRight size={12} />
-            <span className="text-muted-foreground">Akteure</span>
+            <Link to="/entities" className="hover:text-foreground no-underline text-muted-foreground">Akteure</Link>
             <ChevronRight size={12} />
             <span className="text-foreground font-medium">{entity.name}</span>
           </div>

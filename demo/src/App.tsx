@@ -6,6 +6,7 @@ import SourceDetail from './pages/SourceDetail';
 import Review from './pages/Review';
 import Stories from './pages/Stories';
 import StoryDetail from './pages/StoryDetail';
+import EntityList from './pages/EntityList';
 import EntityDetail from './pages/EntityDetail';
 import Graph from './pages/Graph';
 import Evidence from './pages/Evidence';
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="/sources/:id/review/:storyId" element={<Review />} />
           <Route path="/stories" element={<Stories />} />
           <Route path="/stories/:id" element={<StoryDetail />} />
+          <Route path="/entities" element={<EntityList />} />
           <Route path="/entities/:id" element={<EntityDetail />} />
           <Route path="/graph" element={<Graph />} />
           <Route path="/evidence" element={<Evidence />} />

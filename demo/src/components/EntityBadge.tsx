@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import type { EntityType } from '../data/mock';
 
 const styles: Record<EntityType, string> = {
@@ -7,15 +8,19 @@ const styles: Record<EntityType, string> = {
   location: 'entity-location',
 };
 
-export default function EntityBadge({ type, name, size = 'sm' }: { type: EntityType; name: string; size?: 'xs' | 'sm' }) {
-  return (
+export default function EntityBadge({ type, name, href, size = 'sm' }: { type: EntityType; name: string; href?: string; size?: 'xs' | 'sm' }) {
+  const badge = (
     <span
       className={`inline-flex items-center rounded-[var(--radius)] border px-1.5 font-mono font-medium ${styles[type]} ${
         size === 'xs' ? 'py-0 text-[10px]' : 'py-0.5 text-[11px]'
-      }`}
+      } ${href ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
       style={{ borderColor: 'currentColor', borderWidth: '1px', borderStyle: 'solid' }}
     >
       {name}
     </span>
   );
+  if (href) {
+    return <Link to={href} className="no-underline">{badge}</Link>;
+  }
+  return badge;
 }

@@ -300,12 +300,104 @@ export const entityTypeLabels: Record<EntityType, string> = {
   location: 'Ort',
 };
 
+// --- Semantic Patterns (Vector-DB driven, NOT keyword matching) ---
+
+export interface SemanticPattern {
+  id: string;
+  label: string;
+  description: string;
+  storyIds: string[];
+  keywords: string[][]; // per story: the different words used to describe the SAME phenomenon
+  vectorSimilarity: number;
+}
+
+export const semanticPatterns: SemanticPattern[] = [
+  {
+    id: 'sp1',
+    label: 'Antriebsloses Flugobjekt',
+    description: 'Objekte ohne erkennbare Antriebssysteme, die konventionelle Flugeigenschaften überschreiten',
+    storyIds: ['s1', 's7', 's10'],
+    keywords: [
+      ['weißes, ovales Objekt', 'keine Antriebssysteme', '46.000 km/h'],
+      ['dreieckige Objekte', 'F-16-Verfolgung', 'Radarerfassung'],
+      ['dunkle Würfel in transparenter Kugel', 'ohne sichtbaren Antrieb'],
+    ],
+    vectorSimilarity: 0.89,
+  },
+  {
+    id: 'sp2',
+    label: 'Institutionelle Vertuschung',
+    description: 'Offizielle Stellen leugnen oder minimieren UAP-Evidenz trotz interner Belege',
+    storyIds: ['s5', 's8', 's9', 's12'],
+    keywords: [
+      ['geheimes Programm', 'Protest gegen Geheimhaltung'],
+      ['unter Eid', 'Bergungsprogramm', 'keine glaubwürdigen Beweise'],
+      ['Pentagon zwang', 'FLIR1-Video an die Öffentlichkeit'],
+      ['keine empirischen Beweise', 'institutionelle Vertuschung'],
+    ],
+    vectorSimilarity: 0.86,
+  },
+  {
+    id: 'sp3',
+    label: 'Späte Revisionen',
+    description: 'Zeugen oder Beteiligte revidieren Aussagen Jahre bis Jahrzehnte nach dem Ereignis',
+    storyIds: ['s4', 's11', 's14'],
+    keywords: [
+      ['verspottete zunächst', 'zehn Jahre später eigene Sichtung'],
+      ['Jahrzehnte später', 'weitergehende Behauptungen'],
+      ['20 Jahre als stärkster Beweis', 'gestand: aus Styropor gebastelt'],
+    ],
+    vectorSimilarity: 0.82,
+  },
+  {
+    id: 'sp4',
+    label: 'Physische Spurensicherung',
+    description: 'Messbare physische Anomalien an mutmaßlichen Sichtungsorten',
+    storyIds: ['s2', 's6', 's1'],
+    keywords: [
+      ['erhöhte Strahlungswerte', 'Eindrücke im Boden'],
+      ['Trümmer auf seiner Farm', 'fliegende Untertasse'],
+      ['Beschleunigungen von 5.370 g', 'Forward Looking Infrared'],
+    ],
+    vectorSimilarity: 0.78,
+  },
+];
+
+// Semantic reasons: precomputed explanations for story-pairs that share a semantic pattern
+const semanticReasons: Record<string, string> = {
+  's1→s7': 'Beide beschreiben Objekte ohne konventionelle Antriebssysteme — obwohl unterschiedliche Formen (oval vs. dreieckig) und Jahrzehnte auseinander (2004 vs. 1990)',
+  's1→s10': 'Militärpiloten beobachten manövrierfähige Objekte ohne Antrieb — unterschiedliche Ozeanregionen (Pazifik vs. Atlantik), unterschiedliche Objektbeschreibungen',
+  's7→s10': 'Radarbestätigte Sichtungen unbekannter Flugobjekte durch Militär — verschiedene Länder (Belgien vs. USA), verschiedene Epochen',
+  's5→s8': 'Regierungsmitarbeiter berichten über systematische Geheimhaltung von UAP-Untersuchungen — 6 Jahre Abstand, gleiche institutionelle Muster',
+  's5→s9': 'Die AATIP-Enthüllung aus zwei Perspektiven — Elizondos Rücktritt und die mediale Aufdeckung als korrespondierende Ereignisse',
+  's5→s12': 'Pentagon-Programme unter Verschluss — AATIP 2007-2012 und AARO 2022-2024 zeigen wiederkehrende Muster der Informationskontrolle',
+  's8→s9': 'Kongressaussagen und Medienenthüllungen als zwei Seiten derselben Disclosure-Bewegung',
+  's8→s12': 'Grusch behauptet Bergungsprogramm, Kirkpatrick bestreitet — direkter institutioneller Widerspruch',
+  's9→s12': 'NYT-Enthüllung 2017 als Katalysator für die AARO-Gründung — kausale Verbindung über Vektornähe erkannt',
+  's4→s11': 'Beide Fälle zeigen das gleiche Muster: Offizielle Position wird Jahre später vom selben Zeugen revidiert',
+  's4→s14': 'Kontrast: Symington revidiert zur Bestätigung, Marechal revidiert zur Widerlegung — gleiches Muster, gegensätzliche Richtung',
+  's11→s14': 'Spätere Aussagen stellen Jahrzehnte akzeptierte Narrative in Frage — bei Rendlesham durch Erweiterung, bei Petit-Rechain durch Widerruf',
+  's2→s6': 'Physische Spuren an mutmaßlichen UAP-Orten — Strahlungsmessungen (Rendlesham) und Trümmeranalyse (Roswell)',
+  's2→s1': 'Militärische Dokumentation physischer Anomalien — Bodenmessungen (Rendlesham) und FLIR-Aufnahmen (Nimitz)',
+  's6→s1': 'Physische Evidenz über Jahrzehnte: Metalltrümmer 1947, Infrarot-Aufnahmen 2004 — verschiedene Beweismethoden für ähnliche Phänomene',
+};
+
+function getSemanticReason(storyA: string, storyB: string): string | undefined {
+  return semanticReasons[`${storyA}→${storyB}`] || semanticReasons[`${storyB}→${storyA}`];
+}
+
+function getSharedPatterns(storyA: string, storyB: string): SemanticPattern[] {
+  return semanticPatterns.filter(p => p.storyIds.includes(storyA) && p.storyIds.includes(storyB));
+}
+
 // Related stories with similarity scores for Story Detail page
 export interface RelatedStory {
   story: Story;
   similarity: number;
   sharedEntities: Entity[];
   reason: string;
+  semanticReason?: string;
+  sharedPatterns?: SemanticPattern[];
 }
 
 export function getRelatedStories(storyId: string): RelatedStory[] {
@@ -313,16 +405,41 @@ export function getRelatedStories(storyId: string): RelatedStory[] {
   if (!story) return [];
 
   const related: RelatedStory[] = [];
+  const seen = new Set<string>();
+
+  // Phase 1: Semantic pattern matches (highest priority — this is what makes mulder unique)
+  for (const pattern of semanticPatterns) {
+    if (!pattern.storyIds.includes(storyId)) continue;
+    for (const otherId of pattern.storyIds) {
+      if (otherId === storyId || seen.has(otherId)) continue;
+      seen.add(otherId);
+      const other = stories.find(s => s.id === otherId);
+      if (!other) continue;
+      const shared = story.entities.filter(e => other.entities.some(oe => oe.id === e.id));
+      const semReason = getSemanticReason(storyId, otherId);
+      const patterns = getSharedPatterns(storyId, otherId);
+      related.push({
+        story: other,
+        similarity: pattern.vectorSimilarity + (shared.length * 0.02),
+        sharedEntities: shared,
+        reason: shared.length > 0 ? `${shared.length} gemeinsame Akteure` : 'Keine gemeinsamen Akteure',
+        semanticReason: semReason,
+        sharedPatterns: patterns,
+      });
+    }
+  }
+
+  // Phase 2: Entity-based matches (traditional — for stories not in same pattern)
   for (const other of stories) {
-    if (other.id === storyId) continue;
+    if (other.id === storyId || seen.has(other.id)) continue;
     const shared = story.entities.filter(e => other.entities.some(oe => oe.id === e.id));
     if (shared.length > 0) {
       related.push({
         story: other,
-        similarity: 0.6 + shared.length * 0.08 + Math.random() * 0.05,
+        similarity: 0.5 + shared.length * 0.08,
         sharedEntities: shared,
         reason: shared.length >= 3
-          ? `${shared.length} gemeinsame Akteure — starke Überlappung`
+          ? `${shared.length} gemeinsame Akteure`
           : shared.length === 2
           ? 'Mehrere gemeinsame Akteure'
           : `Beide erwähnen ${shared[0].name}`,
@@ -416,6 +533,8 @@ export interface Contradiction {
   sourceB: string;
   storyA: string;
   storyB: string;
+  storyAId: string;
+  storyBId: string;
   entity: Entity;
   status: ContradictionStatus;
   geminiAnalysis: string;
@@ -430,6 +549,8 @@ export const contradictions: Contradiction[] = [
     sourceB: 'Der Spiegel 47/2017, S. 106–112',
     storyA: 'Die Nächte von Rendlesham Forest',
     storyB: 'Die Halt-Memo: Warum ein Offizier sein Schweigen brach',
+    storyAId: 's2',
+    storyBId: 's11',
     entity: entities[4],
     status: 'CONFIRMED',
     geminiAnalysis: 'Der Widerspruch ist gravierend: Pennistons zeitgenössische schriftliche Aussage von 1980 an das AFOSI erwähnt weder eine Berührung des Objekts noch Binärcode. John Burroughs, der wenige Meter entfernt stand, bestätigte, dass Penniston kein Notizbuch führte. Die Binärcode-Behauptung tauchte erst 30 Jahre nach dem Vorfall auf. Colonel Ted Conrad, der damalige Kommandant, erklärte 2010: Penniston habe bei den ursprünglichen Befragungen nie von einer Berührung eines Raumfahrzeugs gesprochen.',
@@ -442,6 +563,8 @@ export const contradictions: Contradiction[] = [
     sourceB: 'GEP Journal 02/2020, S. 22–28',
     storyA: 'Bob Lazars Element 115: Genie oder Schwindler?',
     storyB: 'Der Absturz von Roswell: Was wirklich geschah',
+    storyAId: 's3',
+    storyBId: 's6',
     entity: entities[1],
     status: 'CONFIRMED',
     geminiAnalysis: 'Lazars Bildungsangaben sind zentral für seine Glaubwürdigkeit. Während er nachweislich am Los Alamos National Laboratory arbeitete (Telefonbucheintrag bestätigt), konnten weder Journalisten noch Forscher seine MIT/Caltech-Abschlüsse verifizieren. Lazar selbst behauptet, seine Unterlagen seien von der Regierung gelöscht worden. Die Tatsache, dass Element 115 (Moscovium) 2003 tatsächlich synthetisiert wurde, wird von Unterstützern als Bestätigung gewertet, von Kritikern als Zufall.',
@@ -454,6 +577,8 @@ export const contradictions: Contradiction[] = [
     sourceB: 'MUFON UFO Journal 03/2017, S. 28–38',
     storyA: 'Phoenix Lights: Die Nacht, in der Arizona den Atem anhielt',
     storyB: 'Phoenix Lights: Die Nacht, in der Arizona den Atem anhielt',
+    storyAId: 's4',
+    storyBId: 's4',
     entity: entities[7],
     status: 'CONFIRMED',
     geminiAnalysis: 'Der Widerspruch ist dokumentiert und von Symington selbst bestätigt. Er erklärte 2007, er habe die Sichtungen 1997 heruntergespielt, um eine Massenpanik zu vermeiden. Als Pilot und ehemaliger Air-Force-Offizier sei ihm sofort klar gewesen, dass das Objekt keinem ihm bekannten Fluggerät entsprach. Die zehn Jahre Verzögerung bei seinem Eingeständnis wirft Fragen über politische Motivation auf.',
@@ -466,6 +591,8 @@ export const contradictions: Contradiction[] = [
     sourceB: 'GEP Journal 02/2020, S. 4–18',
     storyA: 'Der Absturz von Roswell: Was wirklich geschah',
     storyB: 'Der Absturz von Roswell: Was wirklich geschah',
+    storyAId: 's6',
+    storyBId: 's6',
     entity: entities[23],
     status: 'DISMISSED',
     geminiAnalysis: 'Nach Analyse beider Darstellungen ergibt sich kein inhaltlicher Widerspruch im engeren Sinne: Die USAF erklärte 1994 offiziell, der „Wetterballon" sei selbst eine Coverstory gewesen — die tatsächliche Quelle der Trümmer war das klassifizierte Project Mogul, ein Höhenballonprogramm zur Erkennung sowjetischer Atomtests. Die Materialien (Alufolie, Gummireste, Holzstäbe mit bedrucktem Klebeband) entsprechen Mogul-Ausrüstung. Abgewiesen als sukzessive Aufklärung, nicht als Widerspruch.',
@@ -478,6 +605,8 @@ export const contradictions: Contradiction[] = [
     sourceB: 'FAZ Wochenendbeilage Jan 2024, S. 2–10',
     storyA: 'Die Enthüllung: Wie die New York Times das Pentagon zwang',
     storyB: 'AARO vs. die Whistleblower',
+    storyAId: 's9',
+    storyBId: 's12',
     entity: entities[2],
     status: 'POTENTIAL',
     geminiAnalysis: 'Dieser Widerspruch betrifft einen Kernaspekt der AATIP-Geschichte. Senator Harry Reid bestätigte 2021 in einem Brief an NBC Elizondos Leitungsrolle. Pentagon-Sprecherin Dana White hatte seine Rolle 2017 gegenüber Politico zunächst ebenfalls bestätigt, bevor das Pentagon die Aussage revidierte. Die wechselnden Stellungnahmen des Pentagon selbst erschweren eine eindeutige Bewertung. Empfehlung: Abgleich mit Congressional Record-Unterlagen.',
@@ -490,6 +619,8 @@ export const contradictions: Contradiction[] = [
     sourceB: 'Bild der Wissenschaft 02/2018, S. 32–38',
     storyA: 'Das Tic-Tac-Objekt über dem Pazifik',
     storyB: 'Das Petit-Rechain-Foto: Anatomie einer Fälschung',
+    storyAId: 's1',
+    storyBId: 's14',
     entity: entities[0],
     status: 'POTENTIAL',
     geminiAnalysis: 'Die Debatte dreht sich um die Interpretation technischer Daten. Fravor, Dietrich und Underwood bestehen darauf, das Objekt visuell aus nächster Nähe beobachtet zu haben — eine Kamera-Anomalie kann die visuelle Beobachtung durch erfahrene Navy-Piloten nicht erklären. Allerdings hat das Pentagon die im FLIR1-Video gezeigten Flugeigenschaften weder bestätigt noch dementiert. Eine abschließende Bewertung erfordert Zugang zu den vollständigen Radardaten der USS Princeton.',
@@ -502,6 +633,8 @@ export const contradictions: Contradiction[] = [
     sourceB: 'Bild der Wissenschaft 02/2018, S. 32–38',
     storyA: 'Belgiens schwarze Dreiecke: Die SOBEPS-Akten',
     storyB: 'Das Petit-Rechain-Foto: Anatomie einer Fälschung',
+    storyAId: 's7',
+    storyBId: 's14',
     entity: entities[17],
     status: 'CONFIRMED',
     geminiAnalysis: 'Die Nachanalyse der belgischen Luftwaffe ist gut dokumentiert: General Wilfried De Brouwer bestätigte, dass die Radarergebnisse nicht so eindeutig waren, wie die SOBEPS zunächst behauptete. Die Diskrepanz zwischen den 9 von SOBEPS behaupteten Erfassungen und den 3 bestätigten Locks (die auf die F-16 selbst zurückgingen) ist ein wesentlicher Widerspruch. Bodenzeugen berichteten zwar von dramatischen Manövern, doch keiner der F-16-Piloten sah ein unbekanntes Objekt.',
@@ -514,6 +647,8 @@ export const contradictions: Contradiction[] = [
     sourceB: 'FAZ Wochenendbeilage Jan 2024, S. 2–10',
     storyA: 'David Gruschs Aussage: „Nicht-menschliche Intelligenz"',
     storyB: 'AARO vs. die Whistleblower',
+    storyAId: 's8',
+    storyBId: 's12',
     entity: entities[6],
     status: 'POTENTIAL',
     geminiAnalysis: 'Der zentrale Widerspruch der aktuellen UAP-Debatte. Grusch betonte, seine Aussage basiere auf Interviews mit über 40 Zeugen über vier Jahre — er selbst habe jedoch keine außerirdischen Fahrzeuge oder Überreste persönlich gesehen. Kirkpatricks AARO-Bericht von 2024 fand „keine empirischen Beweise". General Mark Milley erklärte ebenfalls, er sei nie auf unterstützende Beweise gestoßen. Die Tatsache, dass NYT, Washington Post und Politico Gruschs Behauptungen zunächst nicht veröffentlichen wollten, deutet auf Vorbehalte bei der Verifizierung hin.',

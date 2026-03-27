@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Search, Sparkles, Share2, Download, StickyNote, MessageSquare } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Search, Sparkles, Share2, Download, StickyNote, MessageSquare, ExternalLink } from 'lucide-react';
 import EntityBadge from '../components/EntityBadge';
 import type { EntityType } from '../data/mock';
 
@@ -14,6 +15,7 @@ interface BoardCard {
   entityType?: EntityType;
   entities?: { name: string; type: EntityType }[];
   connections?: number;
+  linkedId?: string; // story ID or entity ID for navigation
 }
 
 interface Connection {
@@ -25,27 +27,27 @@ interface Connection {
 
 const cards: BoardCard[] = [
   {
-    id: 'bc1', type: 'story', x: 60, y: 40,
+    id: 'bc1', type: 'story', x: 60, y: 40, linkedId: 's1',
     title: 'Das Tic-Tac-Objekt über dem Pazifik',
     content: 'Commander Fravor beobachtete ein weißes, ovales Objekt ohne sichtbare Antriebssysteme. Es beschleunigte auf geschätzte 46.000 km/h...',
     source: 'MUFON UFO Journal 03/2017',
     entities: [{ name: 'David Fravor', type: 'person' }, { name: 'US Navy', type: 'organization' }],
   },
   {
-    id: 'bc2', type: 'story', x: 480, y: 20,
+    id: 'bc2', type: 'story', x: 480, y: 20, linkedId: 's5',
     title: 'Pentagons geheimes UFO-Programm',
     content: 'Von 2007 bis 2012 betrieb das Pentagon mit $22 Mio. Budget das AATIP. Elizondo trat 2017 aus Protest zurück...',
     source: 'Der Spiegel 47/2017',
     entities: [{ name: 'Luis Elizondo', type: 'person' }, { name: 'AATIP', type: 'organization' }],
   },
   {
-    id: 'bc3', type: 'entity', x: 320, y: 280,
+    id: 'bc3', type: 'entity', x: 320, y: 280, linkedId: 'e14',
     title: 'Pentagon',
     entityType: 'organization',
     connections: 16,
   },
   {
-    id: 'bc4', type: 'story', x: 60, y: 340,
+    id: 'bc4', type: 'story', x: 60, y: 340, linkedId: 's8',
     title: 'David Gruschs Aussage vor dem Kongress',
     content: 'Grusch sagte unter Eid aus, die US-Regierung verfüge über ein Bergungsprogramm für nicht-menschliche Fahrzeuge...',
     source: 'Congressional Record Juli 2023',
@@ -57,13 +59,13 @@ const cards: BoardCard[] = [
     content: 'Warum bestätigte das Pentagon Elizondos Rolle bei AATIP zunächst, revidierte die Aussage dann aber? Abgleich mit Reids Brief an NBC nötig.',
   },
   {
-    id: 'bc6', type: 'entity', x: 520, y: 400,
+    id: 'bc6', type: 'entity', x: 520, y: 400, linkedId: 'e3',
     title: 'Luis Elizondo',
     entityType: 'person',
     connections: 14,
   },
   {
-    id: 'bc7', type: 'story', x: 730, y: 60,
+    id: 'bc7', type: 'story', x: 730, y: 60, linkedId: 's12',
     title: 'AARO vs. die Whistleblower',
     content: 'Kirkpatricks AARO fand „keine empirischen Beweise" für außerirdische Technologie. Grusch spricht von Vertuschung...',
     source: 'FAZ Wochenendbeilage Jan 2024',
@@ -189,8 +191,17 @@ export default function Board() {
                       ))}
                     </div>
                   </div>
-                  <div className="border-t px-3 py-1.5 font-mono text-[9px] text-muted-foreground">
-                    {card.source}
+                  <div className="border-t px-3 py-1.5 flex items-center justify-between">
+                    <span className="font-mono text-[9px] text-muted-foreground">{card.source}</span>
+                    {card.linkedId && (
+                      <Link
+                        to={`/stories/${card.linkedId}`}
+                        className="flex items-center gap-1 text-[9px] text-primary no-underline hover:underline"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <ExternalLink size={8} /> Bericht
+                      </Link>
+                    )}
                   </div>
                 </div>
               )}
@@ -198,7 +209,7 @@ export default function Board() {
               {card.type === 'entity' && (
                 <div className="w-[180px] rounded-[var(--radius)] border bg-card shadow-hard-sm hover:shadow-hard transition-shadow">
                   <div className="p-3">
-                    <EntityBadge type={card.entityType!} name={card.title} size="sm" />
+                    <EntityBadge type={card.entityType!} name={card.title} href={card.linkedId ? `/entities/${card.linkedId}` : undefined} size="sm" />
                     <div className="mt-2 font-mono text-[10px] text-muted-foreground">
                       {card.connections} Verbindungen
                     </div>

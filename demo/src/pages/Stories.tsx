@@ -90,14 +90,20 @@ export default function Stories() {
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Berichte durchsuchen — z.B. &quot;Tic-Tac-Objekt ohne Antrieb&quot; oder &quot;Rendlesham Strahlungswerte&quot;"
+              placeholder='Semantische Suche — z.B. "leuchtende Scheibe ohne Antrieb" oder "Regierung vertuscht Beweise"'
               className="w-full rounded-[var(--radius)] border bg-background py-2.5 pl-10 pr-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-[var(--radius)] border border-primary/30 bg-primary/5 text-primary">
+              pgvector
+            </span>
+            <span className="text-[10px] text-muted-foreground">
+              Hybride Suche: Vektorähnlichkeit + BM25 Volltext + Graph-Traversierung
+            </span>
+          </div>
           <div className="mt-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Zeige <span className="font-mono font-medium text-foreground">{stories.length}</span> Berichte</span>
-            </div>
+            <span className="text-xs text-muted-foreground">Zeige <span className="font-mono font-medium text-foreground">{stories.length}</span> Berichte</span>
             <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
               <ArrowUpDown size={12} /> Nach Relevanz sortieren
             </button>

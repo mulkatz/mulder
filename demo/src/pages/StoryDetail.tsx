@@ -76,9 +76,7 @@ export default function StoryDetail() {
           <div className="mb-6 flex items-center gap-2 flex-wrap">
             <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mr-1">Akteure:</span>
             {story.entities.map((e) => (
-              <Link key={e.id} to={`/entities/${e.id}`} className="no-underline">
-                <EntityBadge type={e.type} name={e.name} size="sm" />
-              </Link>
+              <EntityBadge key={e.id} type={e.type} name={e.name} href={`/entities/${e.id}`} size="sm" />
             ))}
           </div>
 
@@ -127,7 +125,7 @@ export default function StoryDetail() {
           </p>
 
           <div className="space-y-3">
-            {related.map(({ story: rel, similarity, sharedEntities, reason }) => (
+            {related.map(({ story: rel, similarity, sharedEntities, reason, semanticReason, sharedPatterns }) => (
               <Link
                 key={rel.id}
                 to={`/stories/${rel.id}`}
@@ -136,9 +134,9 @@ export default function StoryDetail() {
                 {/* Similarity bar */}
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-1.5">
-                    <BarChart3 size={10} className="text-primary" />
-                    <span className="font-mono text-[10px] font-bold text-primary">
-                      {Math.round(similarity * 100)}% Übereinstimmung
+                    <BarChart3 size={10} className={semanticReason ? 'text-amber-500' : 'text-primary'} />
+                    <span className={`font-mono text-[10px] font-bold ${semanticReason ? 'text-amber-600 dark:text-amber-400' : 'text-primary'}`}>
+                      {Math.round(similarity * 100)}% {semanticReason ? 'Vektorähnlichkeit' : 'Übereinstimmung'}
                     </span>
                   </div>
                   <span className="text-[10px] text-muted-foreground">{rel.source}</span>
@@ -147,7 +145,7 @@ export default function StoryDetail() {
                 {/* Similarity indicator bar */}
                 <div className="h-1 w-full overflow-hidden rounded-full bg-muted mb-2">
                   <div
-                    className="h-full rounded-full bg-primary/60"
+                    className={`h-full rounded-full ${semanticReason ? 'bg-amber-500/60' : 'bg-primary/60'}`}
                     style={{ width: `${similarity * 100}%` }}
                   />
                 </div>
@@ -156,17 +154,38 @@ export default function StoryDetail() {
                 <p className="text-[11px] text-muted-foreground line-clamp-2 mb-2">{rel.excerpt}</p>
 
                 {/* Shared entities */}
-                <div className="flex items-center gap-1 flex-wrap mb-1.5">
-                  {sharedEntities.map((e) => (
-                    <EntityBadge key={e.id} type={e.type} name={e.name} size="xs" />
-                  ))}
-                </div>
+                {sharedEntities.length > 0 && (
+                  <div className="flex items-center gap-1 flex-wrap mb-1.5">
+                    {sharedEntities.map((e) => (
+                      <EntityBadge key={e.id} type={e.type} name={e.name} size="xs" />
+                    ))}
+                  </div>
+                )}
 
-                {/* Reason */}
-                <div className="flex items-center gap-1.5 rounded bg-accent/10 dark:bg-accent/10 px-2 py-1">
-                  <Sparkles size={9} className="text-accent-foreground/60 shrink-0" />
-                  <span className="font-mono text-[9px] text-accent-foreground/80">{reason}</span>
-                </div>
+                {/* Semantic reason — the key differentiator */}
+                {semanticReason ? (
+                  <div className="rounded border border-amber-300/40 dark:border-amber-600/30 bg-amber-50/50 dark:bg-amber-950/20 px-2 py-1.5 space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles size={9} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span className="text-[9px] font-semibold text-amber-700 dark:text-amber-300 uppercase tracking-wider">Semantische Analyse</span>
+                    </div>
+                    <p className="text-[10px] leading-relaxed text-amber-900/80 dark:text-amber-100/70">{semanticReason}</p>
+                    {sharedPatterns && sharedPatterns.length > 0 && (
+                      <div className="flex items-center gap-1 pt-0.5">
+                        {sharedPatterns.map(p => (
+                          <span key={p.id} className="inline-flex items-center gap-0.5 rounded-full bg-amber-200/50 dark:bg-amber-800/30 px-1.5 py-0.5 text-[9px] font-mono text-amber-800 dark:text-amber-200">
+                            {p.label}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 rounded bg-accent/10 dark:bg-accent/10 px-2 py-1">
+                    <Sparkles size={9} className="text-accent-foreground/60 shrink-0" />
+                    <span className="font-mono text-[9px] text-accent-foreground/80">{reason}</span>
+                  </div>
+                )}
               </Link>
             ))}
           </div>
