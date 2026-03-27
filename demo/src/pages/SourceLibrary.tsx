@@ -152,7 +152,7 @@ function SourceTable({
 // --- Main component ---
 
 export default function SourceLibrary() {
-  const [view, setView] = useState<'grid' | 'table'>('grid');
+  const [view, setView] = useState<'grid' | 'table'>('table');
   const [sortBy, setSortBy] = useState<SortField>('uploadDate');
   const [sortAsc, setSortAsc] = useState(false);
   const [search, setSearch] = useState('');
