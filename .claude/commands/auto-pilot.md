@@ -145,11 +145,11 @@ done
 **Add to GitHub Project** (same as architect workflow):
 
 ```bash
-PROJECT_NUM=$(gh project list --owner mulkatz --format json --jq '.projects[] | select(.title=="Mulder Roadmap") | .number' 2>/dev/null)
-if [ -z "$PROJECT_NUM" ]; then
-  PROJECT_NUM=$(gh project create --owner mulkatz --title "Mulder Roadmap" --format json --jq '.number')
+# Skip silently if project doesn't exist or token lacks project scope
+PROJECT_NUM=$(gh project list --owner mulkatz --format json --jq '.projects[] | select(.title=="Mulder") | .number' 2>/dev/null)
+if [ -n "$PROJECT_NUM" ]; then
+  gh project item-add "$PROJECT_NUM" --owner mulkatz --url "{ISSUE_URL}" 2>/dev/null || true
 fi
-gh project item-add "$PROJECT_NUM" --owner mulkatz --url "{ISSUE_URL}"
 ```
 
 ### 1.6 Update roadmap + commit

@@ -275,15 +275,14 @@ EOF
 3. Add the issue to the GitHub Project board:
 
 ```bash
-# Find or create the "Mulder Roadmap" project (idempotent)
-PROJECT_NUM=$(gh project list --owner mulkatz --format json --jq '.projects[] | select(.title=="Mulder Roadmap") | .number' 2>/dev/null)
-if [ -z "$PROJECT_NUM" ]; then
-  PROJECT_NUM=$(gh project create --owner mulkatz --title "Mulder Roadmap" --format json --jq '.number')
+# Add issue to the "Mulder" GitHub Project (requires project scope — skip silently if unavailable)
+PROJECT_NUM=$(gh project list --owner mulkatz --format json --jq '.projects[] | select(.title=="Mulder") | .number' 2>/dev/null)
+if [ -n "$PROJECT_NUM" ]; then
+  gh project item-add "$PROJECT_NUM" --owner mulkatz --url "{ISSUE_URL}" 2>/dev/null || true
 fi
-
-# Add issue to project
-gh project item-add "$PROJECT_NUM" --owner mulkatz --url "{ISSUE_URL}"
 ```
+
+If the project doesn't exist yet or the token lacks `project` scope, skip this step silently — it's not blocking.
 
 **For multi-spec splits:** Create one issue per spec, each referencing its spec file. Add a note to each issue body listing the other related issues and their dependency order. Add all issues to the project.
 
