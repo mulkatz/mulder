@@ -64,11 +64,42 @@ mulder.config.yaml  →  terraform apply  →  mulder pipeline run ./pdfs/  → 
 ## Pipeline
 
 ```
-PDF  →  Ingest  →  Extract  →  Segment  →  Enrich  →  [Ground]  →  Embed  →  Graph  →  [Analyze]
-         GCS       Doc AI       Gemini      Gemini     Search       text-      Dedup     Contra-
-                   + Vision     Images →    Entities   Grounding    embedding  Corr.     dictions
-                   → GCS        Markdown    Resolution              -004       Scoring   PageRank
-                                → GCS       Taxonomy                                     Evidence
+          PDF
+           │
+     ┌─────▼─────┐
+     │   Ingest   │  Upload to Cloud Storage, pre-flight validation
+     └─────┬─────┘
+           │
+     ┌─────▼─────┐
+     │  Extract   │  Document AI + Gemini Vision fallback → layout JSON + page images → GCS
+     └─────┬─────┘
+           │
+     ┌─────▼─────┐
+     │  Segment   │  Gemini identifies stories from page images → Markdown + metadata → GCS
+     └─────┬─────┘
+           │
+     ┌─────▼─────┐
+     │   Enrich   │  Entity extraction, taxonomy normalization, cross-lingual resolution
+     └─────┬─────┘
+           │
+     ┌─────▼─────┐
+     │   Ground   │  Web enrichment via Gemini Search — coordinates, bios, verification
+     └─────┬─────┘
+           │
+     ┌─────▼─────┐
+     │   Embed    │  Semantic chunking + text-embedding-004 (768-dim) → pgvector + BM25
+     └─────┬─────┘
+           │
+     ┌─────▼─────┐
+     │   Graph    │  Deduplication, corroboration scoring, contradiction flagging
+     └─────┬─────┘
+           │
+     ┌─────▼─────┐
+     │  Analyze   │  Contradiction resolution, PageRank reliability, evidence chains
+     └─────┬─────┘
+           │
+       Knowledge
+         Graph
 ```
 
 Every step is idempotent, independently runnable, and CLI-accessible. Content artifacts live in GCS, search index in PostgreSQL.
