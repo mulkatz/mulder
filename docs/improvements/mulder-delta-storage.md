@@ -1,4 +1,4 @@
-# mulder — Delta: Extraction Format + Storage Architecture
+# Mulder — Delta: Extraction Format + Storage Architecture
 
 Aktualisiere README.md und CLAUDE.md mit der korrekten Extraction-Format-Strategie und Storage-Architektur. Das betrifft primär die CLAUDE.md (Key Patterns, Architecture) und sekundär die README.md (Architecture Overview).
 

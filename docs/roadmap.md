@@ -1,4 +1,4 @@
-# mulder — Implementation Roadmap
+# Mulder — Implementation Roadmap
 
 Tracer bullet development path. Build the pipeline synchronously via CLI first (M1-M6), defer distributed infrastructure until the core works (M7-M8). Optimize for time to first demoable product (M4).
 

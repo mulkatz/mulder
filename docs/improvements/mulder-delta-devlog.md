@@ -1,4 +1,4 @@
-# mulder — Delta: Devlog System
+# Mulder — Delta: Devlog System
 
 Erstelle das Verzeichnis `devlog/` im Repo-Root und aktualisiere die CLAUDE.md mit den Devlog-Regeln. Erstelle KEINEN initialen Devlog-Eintrag — das passiert automatisch bei der nächsten signifikanten Änderung.
 

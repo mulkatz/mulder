@@ -1,4 +1,4 @@
-# mulder — Delta: Operational Architecture
+# Mulder — Delta: Operational Architecture
 
 Aktualisiere README.md und CLAUDE.md mit den folgenden 6 operativen Architektur-Themen. Diese sind keine Features im Sinne von Capabilities — sie sind die Engineering-Grundlage ohne die das Projekt nicht entwickelbar, nicht testbar und nicht sicher betreibbar ist. Alle 6 müssen vor dem ersten echten Pipeline-Code existieren, entweder als Implementierung oder als verbindliches Design in CLAUDE.md.
 

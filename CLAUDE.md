@@ -1,4 +1,4 @@
-# mulder
+# Mulder
 
 Config-driven Document Intelligence Platform on GCP. Transforms document collections (PDFs with complex layouts) into a searchable knowledge base with Knowledge Graph. One `mulder.config.yaml` defines the domain ontology, `terraform apply` deploys everything.
 
@@ -28,7 +28,7 @@ Config-driven Document Intelligence Platform on GCP. Transforms document collect
 
 ## Infrastructure
 
-mulder runs on a minimal GCP footprint. All capabilities are feature-flagged in `mulder.config.yaml` — enable what you need, disable what you don't. No tiers, no paywalls.
+Mulder runs on a minimal GCP footprint. All capabilities are feature-flagged in `mulder.config.yaml` — enable what you need, disable what you don't. No tiers, no paywalls.
 
 **Core (always deployed):**
 - Cloud SQL PostgreSQL (pgvector + tsvector + PostGIS) — single instance for all data + job queue

@@ -2,7 +2,7 @@
 description: "Full automation — architect, implement, verify, iterate until spec is satisfied, then label for human review"
 ---
 
-# mulder — Auto-Pilot
+# Mulder — Auto-Pilot
 
 You orchestrate the full feature lifecycle from idea to implementation-complete. You run the architect workflow, spawn an implementation agent (which plans before coding), spawn a verification agent, and iterate until all QA conditions pass or you hit the iteration limit.
 

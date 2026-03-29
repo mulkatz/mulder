@@ -1,4 +1,4 @@
-# mulder — Functional Specification
+# Mulder — Functional Specification
 
 ## Guiding Principles
 

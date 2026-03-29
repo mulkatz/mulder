@@ -1,6 +1,6 @@
 <p align="center"><img src="./icon.png" width="120" /></p>
 
-# mulder
+# Mulder
 
 **Config-driven Document Intelligence Platform on GCP.**
 Turn any document collection into a searchable knowledge base with a Knowledge Graph — defined by one config file, deployed by one command.
@@ -9,9 +9,9 @@ Turn any document collection into a searchable knowledge base with a Knowledge G
 
 ## What it does
 
-mulder transforms unstructured document collections — PDFs with complex layouts like magazines, newspapers, government correspondence — into structured, searchable knowledge. You define your domain ontology (entity types, relationships, extraction strategy) in a single `mulder.config.yaml`, run `terraform apply`, and get a fully deployed GCP pipeline that ingests, extracts, enriches, and connects your documents.
+Mulder transforms unstructured document collections — PDFs with complex layouts like magazines, newspapers, government correspondence — into structured, searchable knowledge. You define your domain ontology (entity types, relationships, extraction strategy) in a single `mulder.config.yaml`, run `terraform apply`, and get a fully deployed GCP pipeline that ingests, extracts, enriches, and connects your documents.
 
-There's no open-source tool that combines GCP-native Terraform deployment, a config-driven domain ontology, hybrid retrieval (vector + full-text + graph), web grounding, evidence scoring, and spatio-temporal analysis — all on a single PostgreSQL instance. mulder fills that gap.
+There's no open-source tool that combines GCP-native Terraform deployment, a config-driven domain ontology, hybrid retrieval (vector + full-text + graph), web grounding, evidence scoring, and spatio-temporal analysis — all on a single PostgreSQL instance. Mulder fills that gap.
 
 ## Key Features
 
@@ -56,7 +56,7 @@ Transforms the knowledge graph from a connection map into an assessment system. 
 
 ## Architecture Overview
 
-mulder processes documents through an eight-stage pipeline, orchestrated by Cloud Workflows:
+Mulder processes documents through an eight-stage pipeline, orchestrated by Cloud Workflows:
 
 1. **Ingest** — PDFs land in Cloud Storage, triggering the pipeline via Eventarc + Pub/Sub
 2. **Extract** — Document AI Layout Parser handles OCR and layout analysis; Gemini Vision falls back on low-confidence pages
@@ -208,7 +208,7 @@ Every section beyond `project` and `ontology` has sensible defaults — you only
 
 ## Infrastructure & Cost
 
-mulder runs on a minimal GCP footprint. All capabilities are feature-flagged — enable what you need, disable what you don't.
+Mulder runs on a minimal GCP footprint. All capabilities are feature-flagged — enable what you need, disable what you don't.
 
 **Core (always deployed):**
 - Cloud SQL PostgreSQL (pgvector + tsvector + PostGIS) — single instance for all data
@@ -244,7 +244,7 @@ Baseline cost: **~30-40 EUR/mo** for a small Cloud SQL instance. Scales with ins
 
 ## Status
 
-mulder's design phase is complete. Architecture, functional spec, and implementation roadmap are finalized. Building Phase A (foundation) now. See [docs/roadmap.md](docs/roadmap.md) for the 8-milestone implementation plan.
+Mulder's design phase is complete. Architecture, functional spec, and implementation roadmap are finalized. Building Phase A (foundation) now. See [docs/roadmap.md](docs/roadmap.md) for the 8-milestone implementation plan.
 
 Contributions, feedback, and ideas are welcome — open an issue or start a discussion.
 

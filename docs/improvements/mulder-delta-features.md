@@ -1,4 +1,4 @@
-# mulder — Delta: 5 weitere Architektur-Features
+# Mulder — Delta: 5 weitere Architektur-Features
 
 Aktualisiere README.md und CLAUDE.md mit den folgenden 5 Features. Drei davon sind Core-Design (ohne sie ist das System kaputt oder fundamental eingeschränkt), zwei sind Phase-2-Features die aber bereits im Design berücksichtigt werden müssen.
 
