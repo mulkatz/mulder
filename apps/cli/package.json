@@ -3,6 +3,9 @@
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
+	"bin": {
+		"mulder": "./dist/index.js"
+	},
 	"exports": {
 		".": "./dist/index.js"
 	},
@@ -12,10 +15,8 @@
 	},
 	"dependencies": {
 		"@mulder/core": "workspace:*",
-		"@mulder/pipeline": "workspace:*",
-		"@mulder/retrieval": "workspace:*",
-		"@mulder/taxonomy": "workspace:*",
-		"@mulder/evidence": "workspace:*",
-		"@mulder/worker": "workspace:*"
+		"chalk": "^5.0.0",
+		"commander": "^13.0.0",
+		"yaml": "^2.7.0"
 	}
 }
