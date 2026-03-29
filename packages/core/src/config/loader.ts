@@ -98,7 +98,10 @@ export function loadConfig(path?: string): MulderConfig {
 				err.issues.map((issue) => ({
 					path: formatZodPath(issue.path),
 					message: issue.message,
-					code: issue.code,
+					code:
+						issue.code === 'custom' && issue.params && typeof issue.params.customCode === 'string'
+							? issue.params.customCode
+							: issue.code,
 				})),
 			);
 		}

@@ -346,6 +346,7 @@ export const mulderConfigSchema = baseMulderConfigSchema.superRefine((data, ctx)
 				code: z.ZodIssueCode.custom,
 				path: ['ontology', 'relationships', i, 'source'],
 				message: `Relationship "${rel.name}" references unknown entity type "${rel.source}" as source. Available types: ${[...entityTypeNames].join(', ')}`,
+				params: { customCode: 'invalid_reference' },
 			});
 		}
 
@@ -354,6 +355,7 @@ export const mulderConfigSchema = baseMulderConfigSchema.superRefine((data, ctx)
 				code: z.ZodIssueCode.custom,
 				path: ['ontology', 'relationships', i, 'target'],
 				message: `Relationship "${rel.name}" references unknown entity type "${rel.target}" as target. Available types: ${[...entityTypeNames].join(', ')}`,
+				params: { customCode: 'invalid_reference' },
 			});
 		}
 	}
