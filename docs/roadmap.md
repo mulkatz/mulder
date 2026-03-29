@@ -19,7 +19,7 @@ No GCP, no LLM, no cost. Pure TypeScript scaffolding.
 | ⚪ | A3 | Custom error classes — Error types with codes | §7.1, §7.2 |
 | ⚪ | A4 | Logger setup — Pino structured JSON | §8 |
 | ⚪ | A5 | CLI scaffold — `mulder` binary, `config validate`, `config show` | §1, §1.1 |
-| ⚪ | A6 | Database client + migration runner — dual connection pools | §4.2, §4.6 |
+| ⚪ | A6 | Database client + migration runner — dual connection pools | §4.2, §4.3, §4.6 |
 | ⚪ | A7 | Core schema migrations (001-008) — all tables, extensions, indexes | §4.3 |
 | ⚪ | A8 | Job queue + pipeline tracking migrations (012-014) | §4.3 (jobs, pipeline_runs), §4.3.1 |
 | ⚪ | A9 | Fixture directory structure — placeholders in `fixtures/` | §11 |
@@ -41,7 +41,7 @@ First GCP integration. First real cost (Document AI).
 | ⚪ | B1 | GCP + dev service implementations | §4.5, §4.6 |
 | ⚪ | B2 | Source repository — CRUD for `sources` table | §4.3 (sources table), §2.1 |
 | ⚪ | B3 | Native text detection — `pdf-parse`, `has_native_text` flag | §2.1 |
-| ⚪ | B4 | Ingest step — `mulder ingest <path>` | §2.1, §1 (ingest cmd) |
+| ⚪ | B4 | Ingest step — `mulder ingest <path>` | §2.1, §4.3 (sources table), §1 (ingest cmd) |
 | ⚪ | B5 | Vertex AI wrapper + dev cache | §4.8 |
 | ⚪ | B6 | Prompt template engine — `renderPrompt()` | §4.7 |
 | ⚪ | B7 | Extract step — output to GCS | §2.2, §4.4 |
@@ -67,7 +67,7 @@ Core intelligence. Where Mulder becomes more than an OCR tool.
 | ⚪ | C5 | JSON Schema generator — `zod-to-json-schema` | §2.4, §14 (why zod-to-json-schema) |
 | ⚪ | C6 | Taxonomy normalization — `pg_trgm` matching | §6.2, §2.4 |
 | ⚪ | C7 | Cross-lingual entity resolution — 3-tier | §2.4 (resolution strategy), §4.8 (embedding calls) |
-| ⚪ | C8 | Enrich step — `mulder enrich <id>` | §2.4, §1 (enrich cmd) |
+| ⚪ | C8 | Enrich step — `mulder enrich <id>` | §2.4, §6 (especially §6.2), §1 (enrich cmd) |
 | ⚪ | C9 | Cascading reset function — PL/pgSQL | §4.3.1, §3.4 |
 | ⚪ | C10 | Golden test set: segmentation + entities — Vitest assertions | §15.1, §15.2 |
 
@@ -86,7 +86,7 @@ First version worth showing to anyone.
 | ⚪ | D1-D3 | Embedding wrapper + semantic chunker + chunk repo | §2.6, §4.3 (chunks table) |
 | ⚪ | D4 | Embed step — `mulder embed <id>` | §2.6, §1 (embed cmd) |
 | ⚪ | D5 | Graph step — dedup + corroboration + contradiction flagging | §2.7, §1 (graph cmd) |
-| ⚪ | D6 | Pipeline orchestrator — cursor-based | §3.1, §3.2, §3.3, §1 (pipeline cmd) |
+| ⚪ | D6 | Pipeline orchestrator — cursor-based | §3.1, §3.2, §3.3, §3.4, §3.5, §1 (pipeline cmd) |
 | ⚪ | D7 | Full-text search — generated tsvector on chunks | §4.3 (chunks.fts_vector), §5.1 |
 | ⚪ | E1 | Vector search — HNSW, pgvector cosine similarity | §5.1 (vector search), §4.3 (HNSW index) |
 | ⚪ | E2 | Full-text search wrapper — BM25 queries | §5.1 (full-text search) |
@@ -140,7 +140,7 @@ First version worth showing to anyone.
 | Status | Step | What | Spec |
 |--------|------|------|------|
 | ⚪ | H1 | Job queue repository — enqueue/dequeue/reap | §4.3 (jobs table), §10.2, §10.3 |
-| ⚪ | H2 | Worker loop — `mulder worker start/status/reap` | §10.4, §10.5, §1 (worker cmd) |
+| ⚪ | H2 | Worker loop — `mulder worker start/status/reap` | §10.3, §10.4, §10.5, §1 (worker cmd) |
 | ⚪ | H3 | Hono server scaffold | §13 (apps/api/) |
 | ⚪ | H4 | Pipeline API routes (async) | §10.2, §10.6 |
 | ⚪ | H5 | Job status API | §10.6 |

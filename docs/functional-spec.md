@@ -149,7 +149,7 @@ mulder
     └── --failed          # Show only documents with failed steps
 ```
 
-### CLI Architecture
+### 1.1 CLI Architecture
 
 ```
 cli/
