@@ -67,11 +67,11 @@ mulder.config.yaml  →  terraform apply  →  mulder pipeline run ./pdfs/  → 
           PDF
            │
      ┌─────▼─────┐
-     │   Ingest   │  Upload to Cloud Storage, pre-flight validation
+     │   Ingest  │  Upload to Cloud Storage, pre-flight validation
      └─────┬─────┘
            │
      ┌─────▼─────┐
-     │  Extract   │  Document AI + Gemini Vision fallback → layout JSON + page images → GCS
+     │  Extract  │  Document AI + Gemini Vision fallback → layout JSON + page images → GCS
      └─────┬─────┘
            │
      ┌─────▼─────┐
