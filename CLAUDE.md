@@ -14,7 +14,7 @@ The functional spec (`docs/functional-spec.md`) is 2500+ lines. **Never read it 
 3. Read **only the referenced sections** of `docs/functional-spec.md` (e.g., `§4.1` = Section 4.1)
 4. Also read the milestone's **"Also read"** cross-references (shared context for all steps in that milestone)
 5. Implement the step
-6. **Mark the step as done** in `docs/roadmap.md` — change `[ ]` to `[x]` in the Status column
+6. **Update status** in `docs/roadmap.md` — `⚪` → `🟡` when starting, `🟡` → `🟢` when done
 
 The roadmap is the source of truth for what's been built. Always check it before starting work to avoid duplicating effort.
 
