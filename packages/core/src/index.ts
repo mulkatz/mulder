@@ -23,6 +23,19 @@ export type {
 	MulderErrorCode,
 } from './shared/errors.js';
 
+// ── Logger ──────────────────────────────────────────────────
+export {
+	createLogger,
+	createChildLogger,
+	withDuration,
+} from './shared/logger.js';
+
+export type {
+	Logger,
+	LoggerOptions,
+	ChildLoggerContext,
+} from './shared/logger.js';
+
 // ── Config ──────────────────────────────────────────────────
 export {
 	ConfigValidationError,
