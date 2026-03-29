@@ -2,6 +2,8 @@
 
 Config-driven Document Intelligence Platform on GCP. Transforms document collections (PDFs with complex layouts) into a searchable knowledge base with Knowledge Graph. One `mulder.config.yaml` defines the domain ontology, `terraform apply` deploys everything.
 
+**This is a public open-source repository (Apache 2.0).** Never commit API keys, GCP credentials, service account JSON, `.env` files, or any secrets. All sensitive config goes through environment variables or GCP IAM — never in code or config files checked into git. The `.gitignore` blocks `.env*`, `terraform.tfstate*`, and `.mulder-cache.db`. If you spot a leaked secret, rotate it immediately.
+
 ## Architecture Decisions
 
 - **TypeScript** throughout (pipeline, API, CLI, config loader) — ESM, strict mode
