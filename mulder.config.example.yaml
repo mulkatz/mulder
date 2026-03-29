@@ -1,0 +1,218 @@
+# mulder.config.example.yaml
+# Copy to mulder.config.yaml and customize for your domain.
+# Only configure what you deviate from — sensible defaults are applied for everything else.
+
+# --- Project ---
+project:
+  name: "my-document-collection"
+  description: "Domain-specific document intelligence"
+  supported_locales: ["en"]          # UI + prompt language (entity resolution works across ALL languages)
+
+# --- GCP ---
+gcp:
+  project_id: "my-gcp-project"
+  region: "europe-west1"
+  cloud_sql:
+    instance_name: "mulder-db"
+    database: "mulder"
+    tier: "db-custom-2-8192"         # 2 vCPU, 8GB RAM — sufficient for ~100k vectors
+  storage:
+    bucket: "mulder-my-project"
+
+# --- Dev Mode ---
+# Set to true for local development with fixtures — no GCP calls, no cost.
+dev_mode: false
+
+# --- Domain Ontology ---
+# Define entity types and relationships for your domain.
+# Gemini structured output uses dynamically generated JSON Schema from this config.
+ontology:
+  entity_types:
+    - name: "person"
+      description: "A named individual"
+      attributes:
+        - name: "role"
+          type: "string"
+        - name: "affiliation"
+          type: "string"
+    - name: "location"
+      description: "A geographic location"
+      attributes:
+        - name: "coordinates"
+          type: "geo_point"
+        - name: "region"
+          type: "string"
+    - name: "organization"
+      description: "A named organization or institution"
+      attributes:
+        - name: "type"
+          type: "string"
+    - name: "event"
+      description: "A specific occurrence or incident"
+      attributes:
+        - name: "date"
+          type: "date"
+        - name: "location"
+          type: "string"
+    - name: "document"
+      description: "A referenced publication or report"
+      attributes:
+        - name: "author"
+          type: "string"
+        - name: "publication_date"
+          type: "date"
+
+  relationships:
+    - name: "PARTICIPATED_IN"
+      source: "person"
+      target: "event"
+    - name: "LOCATED_IN"
+      source: "event"
+      target: "location"
+    - name: "AFFILIATED_WITH"
+      source: "person"
+      target: "organization"
+    - name: "AUTHORED"
+      source: "person"
+      target: "document"
+    - name: "REFERENCES"
+      source: "document"
+      target: "event"
+
+# --- Ingestion ---
+ingestion:
+  max_file_size_mb: 100              # Reject PDFs larger than this
+  max_pages: 2000                    # Reject PDFs with more pages
+
+# --- Extraction ---
+extraction:
+  native_text_threshold: 0.9         # Skip Document AI if >= 90% pages have native text
+  max_vision_pages: 20               # Circuit breaker: max pages sent to Gemini Vision fallback
+  segmentation:
+    model: "gemini-2.5-flash"
+
+# --- Enrichment ---
+enrichment:
+  model: "gemini-2.5-flash"
+  max_story_tokens: 15000            # Pre-chunk fallback if story exceeds this
+
+# --- Entity Resolution ---
+entity_resolution:
+  strategies:
+    - type: "attribute_match"         # Deterministic: coordinates, dates, IDs
+      enabled: true
+    - type: "embedding_similarity"    # Statistical: text-embedding-004
+      enabled: true
+      threshold: 0.85
+    - type: "llm_assisted"            # Semantic: Gemini decides
+      enabled: true
+      model: "gemini-2.5-flash"
+  cross_lingual: true                 # Always true — cross-lingual is the default
+
+# --- Deduplication ---
+deduplication:
+  enabled: true
+  segment_level:
+    strategy: "minhash"               # minhash | embedding_similarity
+    similarity_threshold: 0.90        # Above this = near-duplicate
+  corroboration_filter:
+    same_author_is_one_source: true
+    similarity_above_threshold_is_one_source: true
+
+# --- Embedding ---
+embedding:
+  model: "text-embedding-004"
+  storage_dimensions: 768             # Matryoshka: 768-dim via outputDimensionality API param
+  chunk_size_tokens: 512
+  chunk_overlap_tokens: 50
+  questions_per_chunk: 3              # Generated questions for improved retrieval
+
+# --- Retrieval ---
+retrieval:
+  default_strategy: "hybrid"          # vector | fulltext | graph | hybrid
+  top_k: 10
+  rerank:
+    enabled: true
+    model: "gemini-2.5-flash"
+    candidates: 20                    # Top N from RRF sent to reranker
+  strategies:
+    vector:
+      weight: 0.5
+    fulltext:
+      weight: 0.3
+    graph:
+      weight: 0.2
+      max_hops: 2                     # Recursive CTE depth limit
+      supernode_threshold: 100        # Skip entities with more source mentions than this
+
+# --- Web Grounding (v2.0) ---
+grounding:
+  enabled: false                      # Enable for v2.0
+  mode: "on_demand"                   # pipeline | on_demand | disabled
+  enrich_types: ["location", "person", "organization"]
+  cache_ttl_days: 30
+
+# --- Analysis (v2.0) ---
+analysis:
+  enabled: false                      # Enable for v2.0
+  contradictions: true
+  reliability: true
+  evidence_chains: true
+  spatio_temporal: true
+  cluster_window_days: 30
+
+# --- Sparse Graph Thresholds ---
+# Features degrade gracefully below these thresholds.
+# API responses include a confidence object with corpus_size and feature status.
+thresholds:
+  taxonomy_bootstrap: 25              # Documents before taxonomy bootstrap runs
+  corroboration_meaningful: 50        # Documents before corroboration scores are reliable
+  graph_community_detection: 100      # Entities before community detection is meaningful
+  temporal_clustering: 30             # Events with timestamps before clustering activates
+  source_reliability: 50              # Documents before PageRank stabilizes
+
+# --- Pipeline Concurrency & Retry ---
+pipeline:
+  concurrency:
+    document_ai: 5                    # Max parallel Document AI batch requests
+    gemini: 10                        # Max parallel Gemini calls
+    embeddings: 20                    # Max parallel embedding batches
+    grounding: 3                      # Max parallel Search Grounding calls (conservative)
+  batch_size:
+    extract: 10                       # Documents per Cloud Run Job task
+    segment: 5                        # Documents per task (Gemini-intensive)
+    embed: 50                         # Segments per embedding batch call
+  retry:
+    max_attempts: 3
+    backoff_base_ms: 1000
+    backoff_max_ms: 30000
+  error_handling:
+    partial_results: true             # Preserve partial results (95/100 pages OK = keep 95)
+    continue_on_page_error: true      # Single page errors don't abort the whole document
+
+# --- Cost Safety ---
+safety:
+  max_pages_without_confirm: 500      # Over 500 pages: CLI asks for confirmation
+  max_cost_without_confirm_usd: 20    # Over $20 estimated: CLI asks for confirmation
+  budget_alert_monthly_usd: 100       # GCP budget alert threshold
+  block_production_calls_in_test: true # NODE_ENV=test: GCP calls blocked, fixtures forced
+
+# --- Phase 2 (reserved, not yet implemented) ---
+
+visual_intelligence:
+  enabled: false
+  extract_images: true
+  analyze_images: true
+  image_embedding: true
+  extract_from_maps: true
+  extract_from_diagrams: true
+
+pattern_discovery:
+  enabled: false
+  run_after_batch: true
+  anomaly_detection: true
+  temporal_spikes: true
+  subgraph_similarity: true
+  digest:
+    enabled: false
+    frequency: "weekly"
