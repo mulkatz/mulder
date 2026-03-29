@@ -39,7 +39,7 @@ Read in this order:
 2. **The spec file** (`docs/specs/NN_*.spec.md`) — full spec including Blueprint (Section 4)
 3. **The PR diff:**
    ```bash
-   gh pr diff {PR_NUMBER}
+   gh pr diff {PR_NUMBER} -- ':!pnpm-lock.yaml'
    ```
 4. **If anything looks off**, read the relevant section of `docs/functional-spec.md`:
    - Grep for the section header: `^#{2,4}\s*{number}\b`

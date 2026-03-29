@@ -353,6 +353,11 @@ WORKFLOW:
 
 IMPORTANT: Fix ONLY code that causes failing conditions. Do not rewrite everything.
 
+ESCAPE HATCH: If a failing test contradicts the spec (e.g., test asserts 200 but spec says 201),
+do NOT change code to match a wrong test. Instead, report:
+TEST_MISMATCH: <test file:line> asserts <X>, but spec Section 5 says <Y>
+The orchestrator will route this back to the verify agent for test correction.
+
 Report:
 BRANCH_NAME: {BRANCH_NAME}
 PR_URL: {PR_URL}
@@ -365,6 +370,8 @@ LOCAL_TEST_RESULT: <pass/fail>
 ### After subagent returns
 
 Parse the subagent's output for BRANCH_NAME, PR_URL, PR_NUMBER. Update state variables.
+
+**TEST_MISMATCH handling:** If the implement agent reports `TEST_MISMATCH`, do NOT proceed to Phase 3 with the same tests. Instead, pass the mismatch details to the verify agent in the next Phase 3 run so it can correct the test assertion. Include the mismatch in the verify prompt: "The implement agent flagged a test-vs-spec mismatch: {details}. Review the assertion and fix if warranted."
 
 If iteration 1: mark implement task complete, mark verify task in-progress.
 
@@ -500,7 +507,7 @@ Your job: verify the implementation is architecturally sound and spec-compliant 
 **Read in this order:**
 1. `CLAUDE.md` — architecture decisions, key patterns, conventions
 2. `{SPEC_PATH}` — the full spec (all sections including Blueprint)
-3. The PR diff: `git diff main...{BRANCH_NAME}`
+3. The PR diff: `git diff main...{BRANCH_NAME} -- ':!pnpm-lock.yaml'`
 4. If anything looks off, read the relevant section of `docs/functional-spec.md` for authoritative requirements
 
 **Review checklist — check each, report only real issues:**
@@ -569,7 +576,8 @@ if REVIEW_VERDICT == "CHANGES_REQUESTED":
     if blocking_count > 0 and ITERATION < MAX_ITERATIONS:
         Tell user: "Review found {N} blocking issues. Sending back to implement..."
         Format blocking issues as FAILURES
-        → Phase 2 (next iteration, with review issues as failures)
+        Set VERDICT = "pending"   ← MUST reset — fixes may break existing tests
+        → Phase 2 (fix) → Phase 3 (re-verify) → Phase 4 (re-review)
     if blocking_count > 0 and ITERATION >= MAX_ITERATIONS:
         → Phase 5 (Finalize — needs review)
 ```
