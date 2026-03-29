@@ -115,6 +115,8 @@ Create `docs/specs/NN_title.spec.md` following the template from the architect w
 
 ### 1.5 Create GitHub labels + issue
 
+**Labels** are for categorization only. Status, priority, and phase are tracked on the project board.
+
 **Labels (idempotent — safe to run every time):**
 
 ```bash
@@ -129,13 +131,6 @@ for label in \
   "taxonomy:Entity normalization, resolution:0D8C6F" \
   "retrieval:Hybrid search, RRF, re-ranking:D4C5F9" \
   "evidence:Corroboration, contradictions, scoring:F9D0C4" \
-  "P0-critical:Blocks other work or production:B60205" \
-  "P1-high:Core capability for current milestone:D93F0B" \
-  "P2-medium:Important but not blocking:FBCA04" \
-  "P3-low:Backlog, nice-to-have:C2E0C6" \
-  "status\:in-progress:Actively being worked on:FBCA04" \
-  "status\:review:Ready for code review:0E8A16" \
-  "status\:blocked:Blocked, needs attention:D93F0B" \
   "type\:feature:New feature or capability:1D76DB" \
   "type\:bug:Bug fix:B60205" \
   "type\:chore:Maintenance, tooling, config:C2E0C6"; do
@@ -144,12 +139,12 @@ for label in \
 done
 ```
 
-**Create the issue** with the `status:in-progress` label. The issue must be self-contained for reviewers:
+**Create the issue.** Labels are domain + type only. The issue must be self-contained for reviewers:
 
 ```bash
 gh issue create \
   --title "[Domain] Observable system change — TARGET_STEP" \
-  --label "domain-label,priority-label,status:in-progress" \
+  --label "domain-label,type:feature" \
   --body "$(cat <<'EOF'
 ## Objective
 
@@ -178,17 +173,45 @@ EOF
 
 After creation, update the spec's `issue:` frontmatter with the issue URL.
 
-**Add to GitHub Project** (same as architect workflow):
+**Add to GitHub Project and set board fields:**
+
+Status, priority, phase, step, and spec are tracked as project board fields — not labels.
 
 ```bash
-# Uses GH_PROJECT_TOKEN (classic PAT with only `project` scope) — skip if not set
+# Uses GH_PROJECT_TOKEN (classic PAT with `project` scope) — skip if not set
 if [ -n "$GH_PROJECT_TOKEN" ]; then
   PROJECT_NUM=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project list --owner @me --format json --jq '.projects[] | select(.title=="Mulder") | .number' 2>/dev/null)
   if [ -n "$PROJECT_NUM" ]; then
+    # Add issue to project
     GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-add "$PROJECT_NUM" --owner @me --url "{ISSUE_URL}" 2>/dev/null || true
+
+    # Set board fields: Status, Phase, Priority, Step, Spec
+    # Use `gh project item-edit` for single-select fields, `gh project item-field-set` for text fields
+    # Get the item ID first:
+    ITEM_ID=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-list "$PROJECT_NUM" --owner @me --format json --jq '.items[] | select(.content.url=="{ISSUE_URL}") | .id' 2>/dev/null)
+    if [ -n "$ITEM_ID" ]; then
+      # Status → "In Progress" (option id: 08dd1a37)
+      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_NUM" --id "$ITEM_ID" --field-id "PVTSSF_lAHOAD_Rzc4BTIvwzhAdyRE" --single-select-option-id "08dd1a37" 2>/dev/null || true
+      # Phase → set based on MILESTONE (match option name like "M1 Foundation")
+      # Priority → set based on step analysis (P0-P3 option ids: 5988f848, b1a604f6, 07c6dcf8, 7a548448)
+      # Step → text field with TARGET_STEP value
+      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_NUM" --id "$ITEM_ID" --field-id "PVTF_lAHOAD_Rzc4BTIvwzhAd01U" --text "{TARGET_STEP}" 2>/dev/null || true
+      # Spec → text field with spec path
+      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_NUM" --id "$ITEM_ID" --field-id "PVTF_lAHOAD_Rzc4BTIvwzhAd02A" --text "{SPEC_PATH}" 2>/dev/null || true
+    fi
   fi
 fi
 ```
+
+**Board field IDs reference** (from project setup):
+
+| Field | ID | Type | Options |
+|-------|-----|------|---------|
+| Status | `PVTSSF_...dyRE` | single-select | Backlog `d0c8a535`, Spec `1ac591d0`, Ready `638e78e3`, In Progress `08dd1a37`, In Review `a7f130a1`, Done `fa785559` |
+| Phase | `PVTSSF_...d0z8` | single-select | M1 `f15b9c6c`, M2 `e5fbbc12`, M3 `1e83885d`, M4 `3de6a7d4`, M5 `2da286d2`, M6 `268ec9a1`, M7 `2affaccc`, M8 `453f2da6` |
+| Priority | `PVTSSF_...d00A` | single-select | P0 `5988f848`, P1 `b1a604f6`, P2 `07c6dcf8`, P3 `7a548448` |
+| Step | `PVTF_...d01U` | text | — |
+| Spec | `PVTF_...d02A` | text | — |
 
 ### 1.6 Update roadmap + commit
 
@@ -586,10 +609,17 @@ Merge commit preserves the atomic commit history (types, logic, integration, QA 
 
 The PR body already contains `Closes #{ISSUE_NUMBER}`, so the issue closes automatically on merge.
 
-**4. Update issue label:**
+**4. Update board status → Done:**
 
 ```bash
-gh issue edit {ISSUE_NUMBER} --remove-label "status:in-progress" --add-label "status:review" 2>/dev/null || true
+if [ -n "$GH_PROJECT_TOKEN" ]; then
+  PROJECT_NUM=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project list --owner @me --format json --jq '.projects[] | select(.title=="Mulder") | .number' 2>/dev/null)
+  ITEM_ID=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-list "$PROJECT_NUM" --owner @me --format json --jq '.items[] | select(.content.url=="{ISSUE_URL}") | .id' 2>/dev/null)
+  if [ -n "$ITEM_ID" ]; then
+    # Status → "Done" (option id: fa785559)
+    GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_NUM" --id "$ITEM_ID" --field-id "PVTSSF_lAHOAD_Rzc4BTIvwzhAdyRE" --single-select-option-id "fa785559" 2>/dev/null || true
+  fi
+fi
 ```
 
 **5. Return to main:**
@@ -601,8 +631,14 @@ git checkout main && git pull
 ### On NEEDS-REVIEW (max iterations reached)
 
 ```bash
-gh issue edit {ISSUE_NUMBER} --remove-label "status:in-progress"
-gh issue edit {ISSUE_NUMBER} --add-label "status:blocked"
+# Update board status → "In Review" (needs human attention)
+if [ -n "$GH_PROJECT_TOKEN" ]; then
+  PROJECT_NUM=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project list --owner @me --format json --jq '.projects[] | select(.title=="Mulder") | .number' 2>/dev/null)
+  ITEM_ID=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-list "$PROJECT_NUM" --owner @me --format json --jq '.items[] | select(.content.url=="{ISSUE_URL}") | .id' 2>/dev/null)
+  if [ -n "$ITEM_ID" ]; then
+    GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_NUM" --id "$ITEM_ID" --field-id "PVTSSF_lAHOAD_Rzc4BTIvwzhAdyRE" --single-select-option-id "a7f130a1" 2>/dev/null || true
+  fi
+fi
 
 gh pr comment {PR_NUMBER} --body "$(cat <<'EOF'
 ## Verification Incomplete
@@ -670,7 +706,7 @@ If Phase 1 classified the scope as **multi-spec** (and the user approved the spl
    - Phase 3b (iterate) if needed
    - Phase 4 (review)
    - **On pass:** update task list, proceed to next sub-spec
-   - **On needs-review:** stop the pipeline. Label the failing sub-issue AND all remaining sub-issues as `status:blocked`. Report what passed and what didn't.
+   - **On needs-review:** stop the pipeline. Set the failing sub-issue's board status to "In Review". Report what passed and what didn't.
 3. When ALL sub-specs pass: squash merge all PRs, update the roadmap step to 🟢
 
 Track each sub-spec's state independently. Report progress to the user between sub-specs:

@@ -222,13 +222,6 @@ for label in \
   "taxonomy:Entity normalization, resolution:0D8C6F" \
   "retrieval:Hybrid search, RRF, re-ranking:D4C5F9" \
   "evidence:Corroboration, contradictions, scoring:F9D0C4" \
-  "P0-critical:Blocks other work or production:B60205" \
-  "P1-high:Core capability for current milestone:D93F0B" \
-  "P2-medium:Important but not blocking:FBCA04" \
-  "P3-low:Backlog, nice-to-have:C2E0C6" \
-  "status\:in-progress:Actively being worked on:FBCA04" \
-  "status\:review:Ready for code review:0E8A16" \
-  "status\:blocked:Blocked, needs attention:D93F0B" \
   "type\:feature:New feature or capability:1D76DB" \
   "type\:bug:Bug fix:B60205" \
   "type\:chore:Maintenance, tooling, config:C2E0C6"; do
@@ -237,21 +230,21 @@ for label in \
 done
 ```
 
-**Priority assignment:**
+**Priority** is a board field, not a label. Determine the priority level and set it on the project board after creating the issue.
 
 | Priority | When |
 |----------|------|
-| `P0-critical` | Blocks other roadmap steps |
-| `P1-high` | Core capability for the current milestone |
-| `P2-medium` | Important but not blocking the critical path |
-| `P3-low` | Nice-to-have, backlog |
+| P0 Critical | Blocks other roadmap steps |
+| P1 High | Core capability for the current milestone |
+| P2 Medium | Important but not blocking the critical path |
+| P3 Low | Nice-to-have, backlog |
 
-**Issue creation:**
+**Issue creation.** Labels are domain + type only:
 
 ```bash
 gh issue create \
   --title "[Domain] Title — step ID" \
-  --label "domain-label,priority-label,status:in-progress" \
+  --label "domain-label,type:feature" \
   --body "$(cat <<'EOF'
 ## Objective
 
