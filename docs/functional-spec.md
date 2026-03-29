@@ -30,6 +30,7 @@ mulder
 ├── ingest <path>         # Ingest PDF(s) — file or directory
 │   ├── --watch           # Watch directory for new PDFs
 │   ├── --dry-run         # Validate without uploading
+│   ├── --cost-estimate   # Estimate pipeline cost before ingesting
 │   └── --tag <tag>       # Tag ingested sources for batch operations
 │
 ├── extract <source-id>   # Run extraction on a specific source
@@ -74,6 +75,7 @@ mulder
 │   │   ├── --up-to <step>  # Run pipeline up to a specific step (e.g., --up-to enrich)
 │   │   ├── --from <step>   # Resume pipeline from a specific step
 │   │   ├── --dry-run       # Show what would happen without executing
+│   │   ├── --cost-estimate # Estimate cost before executing
 │   │   └── --tag <tag>     # Tag this pipeline run
 │   ├── status            # Show pipeline status for all sources
 │   │   ├── --source <id>  # Status for a specific source
@@ -124,7 +126,27 @@ mulder
 │   └── evidence          # Export evidence report
 │       └── --format <f>   # json | csv | markdown
 │
+├── fixtures
+│   └── generate          # Generate dev-mode fixtures from real GCP run
+│       ├── --input <path>  # Input PDFs directory
+│       └── --output <path> # Output fixtures directory
+│
+├── eval                  # Evaluate pipeline quality against golden test set
+│   ├── --step <step>     # Evaluate a specific step only
+│   ├── --compare baseline # Compare against saved baseline
+│   └── --update-baseline # Save current results as new baseline
+│
+├── retry                 # Retry failed pipeline steps
+│   ├── --document <id>   # Retry all failed steps for a document
+│   └── --step <step>     # Retry a specific step for all failed documents
+│
+├── reprocess             # Selective reprocessing after config changes
+│   ├── --dry-run         # Show what would reprocess without executing
+│   ├── --step <step>     # Force reprocess a specific step
+│   └── --cost-estimate   # Estimate reprocessing cost
+│
 └── status                # Overview: sources, stories, entities, pipeline health
+    └── --failed          # Show only documents with failed steps
 ```
 
 ### CLI Architecture
@@ -150,7 +172,11 @@ cli/
 │   ├── query.ts          # query <question>
 │   ├── entity.ts         # entity list | show | merge | aliases
 │   ├── export.ts         # export graph | stories | evidence
-│   └── status.ts         # status overview
+│   ├── status.ts         # status overview
+│   ├── fixtures.ts       # fixtures generate
+│   ├── eval.ts           # eval (quality framework)
+│   ├── retry.ts          # retry failed steps
+│   └── reprocess.ts      # selective reprocessing after config changes
 └── lib/
     ├── output.ts         # Formatting: tables, JSON, progress bars, colors
     ├── prompts.ts        # Interactive prompts (for config init, confirmations)
@@ -186,6 +212,11 @@ interface StepResult<T> {
 }
 ```
 
+**Global conventions for all steps:**
+- **No internal retry logic.** All external API calls (Document AI, Gemini, Embedding API) use the centralized `RateLimiter` (token bucket in `src/shared/rate-limiter.ts`) and `withRetry` wrapper (`src/shared/retry.ts`). Steps never implement their own backoff.
+- **Firestore as observability projection.** Each step fires a write-only update to Firestore (`documents/{doc-id}`) with granular per-page progress. This is purely for UI/monitoring — **PostgreSQL remains the authoritative source of truth** for pipeline state (`sources.status`, `stories.status`, `pipeline_runs`). If Firestore and PostgreSQL diverge, PostgreSQL wins. Workers never read Firestore for orchestration decisions (see [Section 3.2](#32-full-pipeline-orchestrator)).
+- **Service abstraction.** Steps call service interfaces (`src/shared/services.ts`), never GCP clients directly. In dev mode, fixture-based implementations are injected transparently (see [Section 9](#9-local-development-mode)).
+
 ### 2.1 Ingest
 
 **Purpose:** Accept PDF documents and register them as sources in the system.
@@ -214,7 +245,7 @@ interface StepResult<T> {
 
 ### 2.2 Extract
 
-**Purpose:** OCR and layout analysis — turn PDF pages into structured text with layout metadata.
+**Purpose:** OCR and layout analysis — turn PDF pages into structured layout data with spatial information.
 
 **Input:**
 - `source_id` (must have status >= `ingested`)
@@ -229,18 +260,22 @@ interface StepResult<T> {
 3. For pages with confidence < threshold (from config): send page image to Gemini Vision with layout-aware prompt → get corrected text.
    **Circuit breaker:** Cap Gemini Vision fallback at `extraction.max_vision_pages` (default: 20) per document. If more pages need fallback than the limit allows, the remaining low-confidence pages use the Document AI text as-is (best effort). The source proceeds to `extracted` status normally, but `metadata.vision_fallback_capped: true` is set for auditing. This prevents a single badly-scanned 500-page PDF from burning $50+ in Gemini Vision tokens and hitting GCP request quotas.
 4. Merge results: prefer Document AI where confident, Gemini Vision where not, local text where native
-5. Store extracted content in PostgreSQL (`source_extractions` table) — full text + per-page layout metadata + extraction method per page (`native` | `document_ai` | `gemini_vision`)
-6. Update source status to `extracted`
+5. **Write to GCS** (not PostgreSQL):
+   - `gs://{bucket}/extracted/{doc-id}/layout.json` — Document AI Structured JSON with bounding boxes, reading order, confidence scores, block types per text fragment. This is the spatial source of truth for magazine layout segmentation.
+   - `gs://{bucket}/extracted/{doc-id}/pages/page-{NNN}.png` — Page images for the Segment step (Gemini needs visual layout context)
+6. Update source status to `extracted` in PostgreSQL (authoritative). Fire Firestore observability update (fire-and-forget).
 
-**Output:** `ExtractionResult` — structured text with page-level layout metadata, confidence per page, extraction method per page
+**Output:** `ExtractionResult` — GCS URIs for layout JSON and page images, confidence per page, extraction method per page
+
+**Key design decision:** Extraction output is Document AI Structured JSON with spatial data — NOT Markdown. Markdown is the *end format* per story after segmentation. The spatial information (bounding boxes, block positions) is critical for the Segment step to identify story boundaries in complex magazine layouts.
 
 **Cost impact:** For a 50,000 page collection where 70% are text-based PDFs, this heuristic saves ~$3,500 in Document AI costs.
 
 **Standalone value:** Run extraction separately to inspect OCR quality before committing to segmentation. Debug Document AI vs Gemini Vision vs native text per page.
 
-**Dependencies:** Document AI API (only for scanned docs), Vertex AI (Gemini Vision), Cloud Storage, PostgreSQL
+**Dependencies:** Document AI API (only for scanned docs), Vertex AI (Gemini Vision), Cloud Storage
 
-**Force behavior:** `--force` calls `reset_pipeline_step(source_id, 'extract')` which deletes all source_extractions, then cascading-deletes all stories, chunks, edges, and orphaned entities before re-extracting.
+**Force behavior:** `--force` calls `reset_pipeline_step(source_id, 'extract')` which deletes GCS extracted artifacts, then cascading-deletes all stories (via segments in GCS), chunks, edges, and orphaned entities before re-extracting.
 
 ### 2.3 Segment
 
@@ -248,26 +283,46 @@ interface StepResult<T> {
 
 **Input:**
 - `source_id` (must have status >= `extracted`)
-- Extracted text + layout metadata from PostgreSQL
+- Page images + Layout JSON from GCS (`gs://{bucket}/extracted/{doc-id}/`)
 
 **Process:**
-1. Load extracted content for source
-2. Build segmentation prompt from config (`extraction.segmentation` section) + extracted text
-3. Send to Gemini with structured output schema:
+1. Load page images and layout JSON from GCS
+2. Build segmentation prompt from config (`extraction.segmentation` section)
+3. Send to Gemini with **page images + layout JSON** as context. Gemini sees both the visual layout and the extracted text, enabling it to identify story boundaries, advertisements, captions, and multi-column flows. Spatial information is fully available at this stage.
+4. Gemini returns structured output:
    ```
-   { stories: [{ title, subtitle?, page_start, page_end, text, summary, language }] }
+   { stories: [{ title, subtitle?, page_start, page_end, language, category }] }
    ```
-4. Validate output against extracted page count and text
-5. Create `stories` records in PostgreSQL, linked to source
-6. Update source status to `segmented`
+5. For each identified story, generate the story text as **Markdown** (headings as `#`, paragraphs separated, bold preserved) — this is the final content format for downstream steps.
+6. **Write to GCS** (not PostgreSQL):
+   - `gs://{bucket}/segments/{doc-id}/{segment-id}.md` — Story text as Markdown
+   - `gs://{bucket}/segments/{doc-id}/{segment-id}.meta.json` — Lean metadata JSON (no content):
+     ```json
+     {
+       "id": "seg-abc123",
+       "document_id": "doc-xyz",
+       "title": "...",
+       "author": "...",
+       "language": "de",
+       "category": "sighting_report",
+       "pages": [12, 13, 14],
+       "date_references": ["1987-03-15"],
+       "geographic_references": ["Bodensee", "Konstanz"],
+       "extraction_confidence": 0.92
+     }
+     ```
+7. Create `stories` records in PostgreSQL with GCS URIs (no inline text), linked to source
+8. Update source status to `segmented` in PostgreSQL (authoritative). Fire Firestore observability update (fire-and-forget).
 
-**Output:** `Story[]` — isolated articles with title, text, page range, language
+**Key design decision:** Markdown is the *end format* per story, written once here. The metadata JSON is lean — no content duplication. Full story text lives only in GCS and is loaded on demand (e.g., for RAG answers with full context).
+
+**Output:** `Story[]` — GCS URIs for Markdown + metadata, page ranges, language
 
 **Standalone value:** Re-segment when improving segmentation prompts. Compare segmentation strategies.
 
-**Dependencies:** Vertex AI (Gemini), PostgreSQL
+**Dependencies:** Vertex AI (Gemini), Cloud Storage, PostgreSQL
 
-**Force behavior:** `--force` calls `reset_pipeline_step(source_id, 'segment')` which deletes ALL stories for this source. Thanks to `ON DELETE CASCADE`, all chunks, story_entities junctions, and edges originating from those stories are automatically removed. Entities that become orphaned (zero story links) are NOT deleted inline — they are cleaned up later by `mulder db gc` to avoid race conditions with concurrent workers.
+**Force behavior:** `--force` calls `reset_pipeline_step(source_id, 'segment')` which deletes ALL stories for this source and their GCS segment artifacts. Thanks to `ON DELETE CASCADE`, all chunks, story_entities junctions, and edges originating from those stories are automatically removed. Entities that become orphaned (zero story links) are NOT deleted inline — they are cleaned up later by `mulder db gc` to avoid race conditions with concurrent workers.
 
 ### 2.4 Enrich
 
@@ -275,16 +330,16 @@ interface StepResult<T> {
 
 **Input:**
 - `story_id` (must have status >= `segmented`)
-- Story text from PostgreSQL
+- Story Markdown from GCS (loaded via `gcs_markdown_uri`)
 - Ontology definition from config
 - Current taxonomy (if exists)
 
 **Process:**
-1. Load story text
+1. Load story Markdown from GCS
 2. **Hard token-count check** (via `@google/generative-ai` tokenizer or `countTokens` API):
-   - Count tokens in `story.text`
+   - Count tokens in the loaded Markdown content
    - If tokens ≤ `enrichment.max_story_tokens` (default: 15,000): proceed normally (single LLM call)
-   - If tokens > limit: **pre-chunk fallback** — split the story text into logical sub-chunks (~10,000 tokens each, split at paragraph boundaries), run the extraction prompt on each sub-chunk individually, then aggregate and deduplicate the extracted entities in application code before writing to the database. This handles the case where the Segment step produces an oversized story (e.g., a 60-page chapter as one "story"). Without this guard, Gemini's structured output gets truncated mid-JSON (invalid response) or entity extraction quality degrades severely due to the "Lost in the Middle" phenomenon.
+   - If tokens > limit: **pre-chunk fallback** — split the story Markdown into logical sub-chunks (~10,000 tokens each, split at paragraph boundaries), run the extraction prompt on each sub-chunk individually, then aggregate and deduplicate the extracted entities in application code before writing to the database. This handles the case where the Segment step produces an oversized story (e.g., a 60-page chapter as one "story"). Without this guard, Gemini's structured output gets truncated mid-JSON (invalid response) or entity extraction quality degrades severely due to the "Lost in the Middle" phenomenon.
 3. **Generate JSON Schema from config ontology** using `zod-to-json-schema` library (mandatory — do NOT hand-roll schema conversion). Build Zod schemas from config ontology definition, then convert to JSON Schema for Gemini structured output. This ensures schema validity and prevents subtle type mismatches that break structured output.
 4. Build extraction prompt with generated schema + story text (or sub-chunk text)
 5. Send to Gemini with structured output → get entities + relationships with confidence scores. If pre-chunked: send each sub-chunk separately, merge results.
@@ -292,10 +347,14 @@ interface StepResult<T> {
    - For each extracted entity, search taxonomy for matching canonical entry (via `pg_trgm` similarity)
    - If match found (similarity > threshold): assign `canonical_id`, add as alias
    - If no match: create new taxonomy entry with status `auto`
-7. **Entity resolution** (cross-document):
-   - For each entity, search existing entities by name, aliases, type, and attributes
-   - If match found (similarity > `entity_resolution.similarity_threshold`): merge → update `canonical_id`, add aliases
+7. **Cross-lingual entity resolution** (cross-document, language-agnostic):
+   Three-tier strategy that works across all languages, not just `supported_locales`:
+   - **Tier 1 — Attribute match** (deterministic): Entities with identical normalized attributes (GPS coordinates, ISO dates, Wikidata IDs) are merged. Grounding provides these attributes. Works for any language Google Search covers.
+   - **Tier 2 — Embedding similarity** (statistical): Entity names are embedded via `text-embedding-004` and compared. The model supports 100+ languages in the same semantic space — "München" and "Munich" are already close. Above `entity_resolution.embedding_threshold` (default: 0.85) → merge candidate.
+   - **Tier 3 — LLM-assisted** (semantic): Gemini receives candidate pairs and decides whether they represent the same entity. Works language-independently — Gemini understands 40+ languages production-grade.
+   - If match found at any tier: merge → update `canonical_id`, add as language-specific alias variant
    - If no match: create new entity
+   - **Taxonomy as cross-lingual anchor:** Canonical taxonomy entries have no language — they have an ID and variants in any number of languages. `supported_locales` controls UI/prompt language only, not entity resolution.
    - **Deadlock prevention:** Sort all entity upserts lexicographically by `(entity_type, canonical_name)` before writing to PostgreSQL. This guarantees consistent lock ordering when multiple CLI processes or workers enrich stories concurrently, preventing transaction deadlocks.
 8. Write entities to `entities` table, relationships to `entity_edges` table
 9. Write entity-story links to `story_entities` junction table
@@ -307,7 +366,7 @@ interface StepResult<T> {
 
 **Dependencies:** Vertex AI (Gemini), PostgreSQL, Config (ontology + taxonomy)
 
-**Force behavior:** When called with `--source <id> --force`, calls `reset_pipeline_step(source_id, 'enrich')` which deletes story_entities junctions and entity_edges for all stories of that source. Story texts are preserved. Orphaned entities are cleaned up later by `mulder db gc`. When called with `<story-id> --force`, resets only that single story's entity links and edges (no source-level reset). The `--all --force` flag is not supported — too dangerous for bulk operations, use `--source` to scope the reset.
+**Force behavior:** When called with `--source <id> --force`, calls `reset_pipeline_step(source_id, 'enrich')` which deletes story_entities junctions and entity_edges for all stories of that source. Story GCS URIs are preserved. Orphaned entities are cleaned up later by `mulder db gc`. When called with `<story-id> --force`, resets only that single story's entity links and edges (no source-level reset). The `--all --force` flag is not supported — too dangerous for bulk operations, use `--source` to scope the reset.
 
 ### 2.5 Ground (v2.0)
 
@@ -342,10 +401,11 @@ interface StepResult<T> {
 
 **Input:**
 - `story_id` (must have status >= `enriched`)
-- Story text + extracted entities from PostgreSQL
+- Story Markdown from GCS (loaded via `gcs_markdown_uri`)
+- Extracted entities from PostgreSQL
 
 **Process:**
-1. Load story text and entity data
+1. Load story Markdown from GCS and entity data from PostgreSQL
 2. **Semantic chunking:**
    - Split story into chunks based on semantic boundaries (paragraph breaks, topic shifts)
    - Target chunk size from config (default: ~512 tokens, overlap: ~50 tokens)
@@ -354,7 +414,7 @@ interface StepResult<T> {
    - Generate 2-3 questions this chunk could answer (via Gemini)
    - These questions become additional embedding targets (improves retrieval for question-style queries)
 4. **Embedding:**
-   - Embed each chunk text via `text-embedding-004` (Matryoshka model, replaces deprecated `gemini-embedding-001`)
+   - Embed each chunk text via `text-embedding-004` (Matryoshka model, multilingual, 100+ languages)
    - Embed generated questions via same model
    - **Native Matryoshka dimension reduction via API parameter:**
      Pass `outputDimensionality: 768` in the Vertex AI API call. The API returns a mathematically correct 768-dim projection, already L2-normalized. This is critical for resource planning:
@@ -371,7 +431,7 @@ interface StepResult<T> {
 
 **Dependencies:** Vertex AI (Gemini for questions, `text-embedding-004` for embeddings), PostgreSQL (pgvector)
 
-**Force behavior:** `--force` calls `reset_pipeline_step(source_id, 'embed')` which directly deletes all chunks and full-text index entries for the source's stories, then resets story status to `enriched`. Stories, entities, and edges are preserved. No orphan risk since chunks only link to one story.
+**Force behavior:** `--force` calls `reset_pipeline_step(source_id, 'embed')` which directly deletes all chunks (embeddings + FTS vectors live on the same table) for the source's stories, then resets story status to `enriched`. Stories, entities, and edges are preserved. No orphan risk since chunks only link to one story.
 
 ### 2.7 Graph
 
@@ -386,16 +446,23 @@ interface StepResult<T> {
 2. **Write edges:**
    - Upsert `entity_edges` records with relationship type, attributes, source story, confidence
    - Handle bidirectional relationships (store both directions)
-3. **Corroboration scoring** (SQL aggregation):
+3. **Deduplication** (before corroboration — critical for score accuracy):
+   - Run MinHash/SimHash on chunk embeddings for the story's segments
+   - Compare against all existing segments to detect near-duplicates (reprints, updated versions, summaries of older reports)
+   - If similarity > `deduplication.segment_level.similarity_threshold` (default: 0.90): create `DUPLICATE_OF` edge with `similarity_score` and `duplicate_type` (`exact` | `near` | `reprint` | `summary`)
+   - Duplicates are **marked, not deleted** — original text is preserved but excluded from corroboration counting
+   - Distinguish "same text reprinted" (= one source) from "different authors independently reporting on the same event" (= real corroboration). Signals: same author + identical passages + same source → one source. Different authors + different phrasing + different details → real corroboration.
+5. **Corroboration scoring** (SQL aggregation, dedup-aware):
    - For each entity, count independent sources (different `source_id` values via `story_entities` → `stories` → `source_id`)
+   - **Exclude near-duplicates:** Stories linked by `DUPLICATE_OF` edges count as one source, not multiple
    - Update `entities.source_count` with the independent source count
    - Calculate corroboration score: `min(source_count / min_independent_sources, 1.0)`
    - Update `entities.corroboration_score`
-4. **Contradiction flagging** (attribute diff, no LLM):
+6. **Contradiction flagging** (attribute diff, no LLM):
    - For each entity with multiple source mentions, compare key attributes (date, location, description)
    - If attributes conflict (e.g., different dates for the same event): create `POTENTIAL_CONTRADICTION` edge between the two claims
    - Fast pass — no LLM, only string/date comparison
-5. Update story status to `graphed`
+7. Update story status to `graphed`
 
 **Output:** `GraphResult` — edges created, corroboration scores updated, contradictions flagged
 
@@ -472,7 +539,38 @@ Entity: created → [grounded] → [analyzed]
 
 `mulder pipeline run` is a coordinator, not a step itself. It uses **cursor-based progress tracking** — not a naive for-loop that loses state on crash.
 
-**Progress table:** The orchestrator writes progress to the `pipeline_runs` table. Each source gets a row tracking which step it's on, so a crash at document 45,000 resumes from document 45,000 — not from the beginning.
+**Source of truth: PostgreSQL.** Pipeline orchestration, crash recovery, and job state all rely on PostgreSQL (`sources.status`, `stories.status`, `pipeline_runs`, `jobs`). The orchestrator writes progress to the `pipeline_runs` table. Each source gets a row tracking which step it's on, so a crash at document 45,000 resumes from document 45,000 — not from the beginning. **Workers never read Firestore for orchestration decisions.**
+
+**Observability projection: Firestore.** Each step fires a write-only, fire-and-forget update to Firestore (`documents/{doc-id}`) with granular per-page progress. This is purely for the UI/monitoring layer — it provides real-time detail (e.g., "95 of 100 pages extracted") that the batch-level PostgreSQL rows don't capture. If Firestore is unavailable or diverges, the pipeline is unaffected.
+
+```typescript
+// Firestore: documents/{doc-id} — OBSERVABILITY ONLY, not read by workers
+interface DocumentProcessingState {
+  id: string;
+  status: 'queued' | 'processing' | 'completed' | 'partial' | 'failed';
+  steps: {
+    [step: string]: {
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+      config_hash: string;       // Projection from source_steps table (not read for orchestration)
+      started_at?: Timestamp;
+      completed_at?: Timestamp;
+      error?: {
+        code: string;            // e.g., 'EXTRACTION_LOW_CONFIDENCE', 'GEMINI_TIMEOUT'
+        message: string;
+        page?: number;           // Which page the error occurred on
+        retries: number;
+      };
+      metrics?: {
+        pages_processed?: number;
+        entities_extracted?: number;
+        duration_ms?: number;
+      };
+    };
+  };
+}
+```
+
+**Partial results are preserved.** If Extract succeeds for 95 of 100 pages and 5 fail: the 95 successful pages are written to GCS, the source is marked `partial` in PostgreSQL with error details, and the Segment step can run on the 95 pages (best-effort). The 5 failed pages can be retried individually later.
 
 ```typescript
 // Pseudocode for pipeline orchestrator with cursor-based resume
@@ -578,21 +676,22 @@ The orchestrator checks source/story status to determine what needs processing. 
 ```
 extract --force:
   DELETE stories WHERE source_id = X
-    → CASCADE: chunks, story_entities, entity_edges, story_fts
-  DELETE source_extractions WHERE source_id = X
+    → CASCADE: chunks (incl. FTS vectors), story_entities, entity_edges
+  DELETE extracted artifacts from GCS (layout.json, page images)
 
 segment --force:
   DELETE stories WHERE source_id = X
-    → CASCADE: chunks, story_entities, entity_edges, story_fts
-  (source_extractions preserved — no need to re-extract)
+    → CASCADE: chunks (incl. FTS vectors), story_entities, entity_edges
+  DELETE segment artifacts from GCS (*.md, *.meta.json)
+  (extracted artifacts preserved — no need to re-extract)
 
 enrich --force:
   DELETE story_entities, entity_edges for stories of source X
-  (story texts, chunks, and source_extractions preserved)
+  (story GCS URIs, chunks preserved)
 
 embed --force:
-  DELETE chunks, story_fts for stories of source X
-  (entities, edges, and source_extractions preserved)
+  DELETE chunks (incl. FTS vectors) for stories of source X
+  (entities, edges preserved)
 
 graph --force:
   DELETE entity_edges for stories of source X
@@ -602,6 +701,36 @@ graph --force:
 **The entity trap:** Entities like "USA" appear in dozens of documents. `--force` resets delete the junction (`story_entities`) and edges from the specific source, but do NOT delete the entities themselves — even if they become orphaned (zero remaining story links). Orphaned entity cleanup runs separately via `mulder db gc` or as a scheduled background job. This prevents race conditions where a concurrent worker tries to link to an entity that's being deleted by another worker's `--force` reset.
 
 **Implementation:** See `reset_pipeline_step()` in [Section 4.3](#43-core-database-schema).
+
+**`--force` vs `reprocess` — when to use which:**
+- **`--force`** is a destructive manual override. It cascading-deletes downstream data for a specific source/step and reruns from scratch. Use when you know a specific step produced bad output and want to redo it.
+- **`reprocess`** is a smart, non-destructive state reconciliation. It detects which documents need which steps re-run based on config changes, and executes the minimal set. Use after updating the config (new entity types, changed prompts, etc.).
+
+### 3.5 Schema Evolution & Selective Reprocessing
+
+**The problem:** After 200+ documents are processed, a config change (new entity type, updated taxonomy, changed extraction settings) shouldn't require reprocessing everything from scratch.
+
+**The solution:** Every pipeline step stores the `config_hash` (SHA-256 of the step-relevant config subset) in a dedicated PostgreSQL table (`source_steps`). When config changes, a diff determines which steps need re-running for which documents. Firestore receives a copy of this data strictly for UI observability, but the CLI and workers never read from it.
+
+**Reprocessing Matrix:**
+
+| Config Change | Steps to Re-run | Preserved |
+|---|---|---|
+| Ontology change (new entity type, relationship) | Enrich → Ground → Graph → Analyze | Extract, Segment |
+| Taxonomy extended | Normalization (part of Enrich) → Graph | Extract, Segment, Embed |
+| Retrieval config (weights, re-ranker) | **None** — takes effect at query time | Everything |
+| Evidence config | Analyze only | Everything else |
+| Extraction config (layout_complexity) | Extract → all downstream | Nothing |
+
+**CLI integration:**
+```bash
+mulder reprocess --dry-run      # Show what needs reprocessing + estimated cost
+mulder reprocess                # Run selective reprocessing
+mulder reprocess --step enrich  # Force a specific step for all documents
+mulder reprocess --cost-estimate # Show cost estimate without dry-run details
+```
+
+The `reprocess` command queries `source_steps` in PostgreSQL, compares each document's per-step `config_hash` against the current config, builds the minimal set of steps to re-run, and executes them in dependency order.
 
 ---
 
@@ -635,11 +764,11 @@ src/database/
 ├── migrations/           # Numbered SQL migration files
 │   ├── 001_extensions.sql          # pgvector, PostGIS, pg_trgm
 │   ├── 002_sources.sql
-│   ├── 003_source_extractions.sql
-│   ├── 004_stories.sql
+│   ├── 003_source_steps.sql        # Per-document, per-step config_hash tracking
+│   ├── 004_stories.sql             # References + GCS URIs, no inline content
 │   ├── 005_entities.sql
 │   ├── 006_entity_edges.sql
-│   ├── 007_chunks.sql
+│   ├── 007_chunks.sql              # Short chunk text inline (for vector + BM25)
 │   ├── 008_taxonomy.sql
 │   ├── 009_grounding.sql           # v2.0
 │   ├── 010_evidence.sql            # v2.0
@@ -682,37 +811,44 @@ CREATE TABLE sources (
   updated_at        TIMESTAMPTZ DEFAULT now()
 );
 
--- Source extractions: raw extracted text + layout metadata per page
--- Populated by the Extract step, consumed by Segment
-CREATE TABLE source_extractions (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+-- Source Steps: Permanent tracking of step execution and config state per document.
+-- This is the source of truth for `mulder reprocess` to determine if a step
+-- needs to be re-run due to a config change. Separate from the transient
+-- pipeline_run_sources table (which tracks a specific batch run's progress).
+CREATE TABLE source_steps (
   source_id       UUID NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
-  page_number     INTEGER NOT NULL,
-  text            TEXT NOT NULL,
-  extraction_method TEXT NOT NULL,         -- 'native' | 'document_ai' | 'gemini_vision'
-  confidence      FLOAT,
-  layout_metadata JSONB DEFAULT '{}',      -- bounding boxes, reading order, block types
-  created_at      TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(source_id, page_number)
+  step_name       TEXT NOT NULL,                     -- 'extract', 'segment', 'enrich', etc.
+  status          TEXT NOT NULL DEFAULT 'pending',   -- 'pending', 'completed', 'failed', 'partial'
+  config_hash     TEXT,                              -- SHA-256 of the step-relevant config subset
+  completed_at    TIMESTAMPTZ,
+  error_message   TEXT,
+  PRIMARY KEY (source_id, step_name)
 );
 
+-- NOTE: source_extractions table REMOVED. Extract step writes Document AI
+-- Structured JSON + page images to GCS (gs://{bucket}/extracted/{doc-id}/).
+-- No raw extraction text stored in PostgreSQL.
+
 -- Stories: individual articles/segments within a source
+-- Content lives in GCS (Markdown + Metadata JSON), not inline.
 -- NOTE: ON DELETE CASCADE on all child tables ensures clean --force re-runs
 CREATE TABLE stories (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  source_id       UUID NOT NULL REFERENCES sources(id),
-  title           TEXT NOT NULL,
-  subtitle        TEXT,
-  text            TEXT NOT NULL,
-  summary         TEXT,
-  language        TEXT,
-  page_start      INTEGER,
-  page_end        INTEGER,
-  status          TEXT NOT NULL DEFAULT 'segmented',
-  confidence      FLOAT,
-  metadata        JSONB DEFAULT '{}',
-  created_at      TIMESTAMPTZ DEFAULT now(),
-  updated_at      TIMESTAMPTZ DEFAULT now()
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_id         UUID NOT NULL REFERENCES sources(id),
+  title             TEXT NOT NULL,
+  subtitle          TEXT,
+  language          TEXT,
+  category          TEXT,
+  page_start        INTEGER,
+  page_end          INTEGER,
+  gcs_markdown_uri  TEXT NOT NULL,          -- gs://bucket/segments/{doc-id}/{seg-id}.md
+  gcs_metadata_uri  TEXT NOT NULL,          -- gs://bucket/segments/{doc-id}/{seg-id}.meta.json
+  chunk_count       INTEGER DEFAULT 0,
+  extraction_confidence FLOAT,
+  status            TEXT NOT NULL DEFAULT 'segmented',
+  metadata          JSONB DEFAULT '{}',
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now()
 );
 
 -- Entities: extracted and resolved entities
@@ -764,25 +900,27 @@ CREATE TABLE entity_edges (
 -- Embedding chunks — CASCADE ensures vectors are cleaned up with stories
 -- NOTE: pgvector does NOT support vector[] (arrays of vectors).
 -- Question embeddings are stored as separate rows with is_question=true.
+-- chunks.content is inline because chunks are small (~512 tokens) and needed
+-- directly for retrieval (vector search + BM25 in one query). Full story
+-- Markdown (multi-page) lives only in GCS, loaded on demand for RAG context.
 CREATE TABLE chunks (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   story_id        UUID NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
-  text            TEXT NOT NULL,
+  content         TEXT NOT NULL,           -- Chunk text inline (short, ~512 tokens)
   chunk_index     INTEGER NOT NULL,
   page_start      INTEGER,
   page_end        INTEGER,
   embedding       vector(768),             -- text-embedding-004 with outputDimensionality: 768; configurable via embedding.storage_dimensions
+  fts_vector      tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED,  -- BM25 on same table as vectors
   is_question     BOOLEAN DEFAULT false,   -- true = generated question, false = content chunk
   parent_chunk_id UUID REFERENCES chunks(id) ON DELETE CASCADE,  -- question → parent content chunk
   metadata        JSONB DEFAULT '{}',
   created_at      TIMESTAMPTZ DEFAULT now()
 );
 
--- Full-text search — CASCADE with story
-CREATE TABLE story_fts (
-  story_id        UUID PRIMARY KEY REFERENCES stories(id) ON DELETE CASCADE,
-  fts_vector      tsvector NOT NULL
-);
+-- NOTE: Full-text search lives on the chunks table (generated tsvector column),
+-- not in a separate story_fts table. This keeps both vector search and BM25
+-- on the same table for fast hybrid queries. See chunks table above.
 
 -- Taxonomy
 CREATE TABLE taxonomy (
@@ -831,7 +969,7 @@ CREATE TABLE spatio_temporal_clusters (
 );
 
 -- Job queue for async API (see Section 10)
-CREATE TYPE job_status AS ENUM ('pending', 'running', 'completed', 'failed');
+CREATE TYPE job_status AS ENUM ('pending', 'running', 'completed', 'failed', 'dead_letter');
 
 CREATE TABLE jobs (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -885,10 +1023,9 @@ CREATE INDEX idx_entities_canonical ON entities(canonical_id);
 CREATE INDEX idx_entity_edges_source ON entity_edges(source_entity_id);
 CREATE INDEX idx_entity_edges_target ON entity_edges(target_entity_id);
 CREATE INDEX idx_entity_edges_type ON entity_edges(edge_type);
-CREATE INDEX idx_source_extractions_source ON source_extractions(source_id);
 CREATE INDEX idx_chunks_story ON chunks(story_id);
 CREATE INDEX idx_chunks_questions ON chunks(parent_chunk_id) WHERE is_question = true;
-CREATE INDEX idx_story_fts ON story_fts USING gin(fts_vector);
+CREATE INDEX idx_chunks_fts ON chunks USING gin(fts_vector);
 CREATE INDEX idx_entities_name_trgm ON entities USING gin(name gin_trgm_ops);  -- for taxonomy similarity search
 CREATE INDEX idx_taxonomy_name_trgm ON taxonomy USING gin(canonical_name gin_trgm_ops);
 CREATE INDEX idx_jobs_queue ON jobs(status, created_at) WHERE status = 'pending';
@@ -919,41 +1056,48 @@ CREATE OR REPLACE FUNCTION reset_pipeline_step(
   p_step TEXT  -- 'extract' | 'segment' | 'enrich' | 'embed' | 'graph'
 ) RETURNS VOID AS $$
 BEGIN
-  -- EXTRACT: nuke everything including raw extractions
+  -- EXTRACT: nuke everything (GCS extracted artifacts deleted by caller in application code)
   IF p_step = 'extract' THEN
-    DELETE FROM stories WHERE source_id = p_source_id;        -- cascades to chunks, story_entities, edges, fts
-    DELETE FROM source_extractions WHERE source_id = p_source_id;
+    DELETE FROM stories WHERE source_id = p_source_id;        -- cascades to chunks, story_entities, edges
+    DELETE FROM source_steps WHERE source_id = p_source_id;   -- clear ALL step state
     UPDATE sources SET status = 'ingested' WHERE id = p_source_id;
+    -- NOTE: GCS cleanup (extracted/ + segments/) handled in application code after this function returns
   END IF;
 
-  -- SEGMENT: nuke stories + downstream, keep raw extractions
-  -- Deleting stories cascades to: chunks, story_entities, entity_edges, story_fts
+  -- SEGMENT: nuke stories + downstream, keep extracted artifacts in GCS
+  -- Deleting stories cascades to: chunks (incl. FTS vectors), story_entities, entity_edges
   IF p_step = 'segment' THEN
     DELETE FROM stories WHERE source_id = p_source_id;
+    DELETE FROM source_steps WHERE source_id = p_source_id
+      AND step_name IN ('segment', 'enrich', 'embed', 'graph');
     UPDATE sources SET status = 'extracted' WHERE id = p_source_id;
   END IF;
 
-  -- ENRICH: keep story texts, delete entity links + edges
+  -- ENRICH: keep story GCS URIs, delete entity links + edges
   IF p_step = 'enrich' THEN
     DELETE FROM story_entities
       WHERE story_id IN (SELECT id FROM stories WHERE source_id = p_source_id);
     DELETE FROM entity_edges
       WHERE story_id IN (SELECT id FROM stories WHERE source_id = p_source_id);
+    DELETE FROM source_steps WHERE source_id = p_source_id
+      AND step_name IN ('enrich', 'embed', 'graph');
     UPDATE stories SET status = 'segmented' WHERE source_id = p_source_id;
     UPDATE sources SET status = 'segmented' WHERE id = p_source_id;
   END IF;
 
-  -- EMBED: keep entities and edges, delete chunks (vectors) + FTS
+  -- EMBED: keep entities and edges, delete chunks (vectors + FTS vectors live on same table)
   IF p_step = 'embed' THEN
     DELETE FROM chunks
       WHERE story_id IN (SELECT id FROM stories WHERE source_id = p_source_id);
-    DELETE FROM story_fts
-      WHERE story_id IN (SELECT id FROM stories WHERE source_id = p_source_id);
+    DELETE FROM source_steps WHERE source_id = p_source_id
+      AND step_name IN ('embed', 'graph');
     UPDATE stories SET status = 'enriched' WHERE source_id = p_source_id;
   END IF;
 
   -- GRAPH: delete edges only (keep entities, chunks, embeddings)
   IF p_step = 'graph' THEN
+    DELETE FROM source_steps WHERE source_id = p_source_id
+      AND step_name = 'graph';
     DELETE FROM entity_edges
       WHERE story_id IN (SELECT id FROM stories WHERE source_id = p_source_id);
     UPDATE stories SET status = 'embedded' WHERE source_id = p_source_id;
@@ -995,20 +1139,91 @@ $$ LANGUAGE plpgsql;
 - **No race conditions:** No risk of TypeScript async code interleaving with concurrent writes.
 - **Performance:** One round-trip to the database instead of dozens of sequential queries.
 
-### 4.4 GCP Clients
+### 4.4 Storage Architecture
+
+**Principle: Content in Cloud Storage, References/Index in Cloud SQL.**
+
+No Markdown or long text in database columns. PostgreSQL stores references (GCS URIs) and the search index (short chunk text + embeddings + tsvector). All content artifacts live in GCS.
+
+```
+gs://mulder-{project}/
+├── raw/                          # Original PDFs (immutable)
+│   └── {doc-id}.pdf
+├── extracted/                    # Document AI JSON (spatial, archival)
+│   └── {doc-id}/
+│       ├── layout.json           # Full Layout Parser result (bounding boxes, reading order)
+│       └── pages/                # Page images (for Gemini Segment step)
+│           ├── page-001.png
+│           └── page-002.png
+├── segments/                     # Per story: Markdown + Metadata (separated)
+│   └── {doc-id}/
+│       ├── {segment-id}.md       # Pure story text as Markdown
+│       ├── {segment-id}.meta.json # Lean metadata JSON (no content)
+│       └── {segment-id}/
+│           └── images/           # Phase 2: extracted images
+│               ├── img-001.png
+│               └── img-001.meta.json
+└── taxonomy/                     # Auto-generated + curated taxonomy
+    ├── taxonomy.auto.yaml
+    └── taxonomy.curated.yaml
+```
+
+**Why this split:**
+- `chunks.content` is inline because chunks are small (~512 tokens) and directly needed for retrieval (vector search + BM25 in one query, no GCS round-trip)
+- Full story Markdown (can span multiple pages) lives only in GCS and is loaded on demand (e.g., for RAG answer with full context)
+- Segment metadata JSON is lean (no content) — structured fields only
+
+### 4.5 Service Abstraction
+
+Every GCP service is called through an interface. In dev mode, fixture-based implementations return pre-recorded responses. In production, real GCP clients are used. Pipeline steps never know the difference.
 
 ```
 src/shared/
-├── gcp.ts                # Client factory — lazy-initialized, singleton clients
+├── services.ts           # Service interfaces (DocumentExtractor, LlmService, etc.)
+├── services.dev.ts       # Dev mode: reads from fixtures/
+├── services.gcp.ts       # Production: real GCP API calls
+├── registry.ts           # Service registry — selects implementation based on mode
+├── rate-limiter.ts       # Central token-bucket rate limiter
+├── retry.ts              # Retry with exponential backoff + jitter
+└── cost-estimator.ts     # Cost estimation for pipeline operations
+```
+
+```typescript
+// src/shared/registry.ts
+export function createServices(config: MulderConfig): Services {
+  if (config.dev_mode || process.env.NODE_ENV === 'development') {
+    return createDevServices(config);   // Fixtures
+  }
+  return createGcpServices(config);     // Real GCP calls
+}
+```
+
+**Rule:** Never instantiate GCP clients directly in pipeline code. Always go through the service registry. This makes local development free (no GCP costs) and testing deterministic.
+
+### 4.6 GCP Clients (Connection Manager)
+
+**Relationship to Section 4.5:** These are three distinct layers with clear responsibilities:
+
+| Layer | File | Role |
+|-------|------|------|
+| **Connection Manager** | `gcp.ts` | Holds lazy-initialized, singleton raw GCP SDK clients + PostgreSQL connection pools. Knows how to connect, nothing else. |
+| **Implementation Layer** | `services.gcp.ts` | Classes that inject raw clients from `gcp.ts` and implement the service interfaces from `services.ts`. Formats data, handles API specifics. |
+| **Dependency Injector** | `registry.ts` | Hands the pipeline either `services.gcp.ts` (production) or `services.dev.ts` (dev mode). Pipeline steps only see the interfaces. |
+
+Pipeline steps call service interfaces (Section 4.5) → registry selects implementation → GCP implementations use `gcp.ts` for raw clients.
+
+```
+src/shared/
+├── gcp.ts                # Connection manager — raw GCP SDK clients (lazy singletons)
 ├── errors.ts             # Custom error classes with error codes
 ├── logger.ts             # Pino logger, structured JSON, configurable level
 └── types.ts              # Shared TypeScript types
 ```
 
-**`gcp.ts` client factory:**
+**`gcp.ts` connection manager:**
 
 ```typescript
-// Lazy singletons — created on first access
+// Lazy singletons — raw SDK clients, used by services.gcp.ts only
 export function getStorageClient(): Storage
 export function getDocumentAIClient(): DocumentProcessorServiceClient
 export function getVertexAI(): VertexAI
@@ -1022,11 +1237,11 @@ export function getQueryPool(): Pool     // Larger pool (5-10 connections), for 
                                          // statement_timeout = 10s — queries that take longer are killed
 ```
 
-All GCP clients created through this factory. No direct instantiation anywhere else. This makes testing easy (mock the factory) and ensures connection pooling.
+**Pipeline steps NEVER import `gcp.ts` directly.** They call service interfaces which are injected by the registry. Only `services.gcp.ts` imports from `gcp.ts`.
 
 **Why two pools:** PostgreSQL's `FOR UPDATE SKIP LOCKED` (job queue) runs in microseconds but needs a connection always available. Vector search + recursive CTEs can take seconds and saturate the pool. If a single pool is shared, a burst of heavy search queries starves the worker — it can't dequeue jobs because all connections are occupied. Two pools guarantee the worker always has a connection available.
 
-### 4.5 Prompt Templates
+### 4.7 Prompt Templates
 
 ```
 src/prompts/
@@ -1051,7 +1266,7 @@ Templates use variables injected at render time:
 
 No inline prompt strings in pipeline code. Every LLM call uses a template.
 
-### 4.6 Vertex AI Wrapper + Dev Cache
+### 4.8 Vertex AI Wrapper + Dev Cache
 
 ```
 src/shared/
@@ -1065,7 +1280,7 @@ src/shared/
 - `embed(texts: string[], dimensions?: number): number[][]` — Batch embedding via `text-embedding-004` with `outputDimensionality` parameter (default: 768). NEVER truncate vectors manually in application code.
 - `groundedGenerate(prompt, entity): GroundingResult` — Gemini with google_search_retrieval tool
 
-Centralizes retry logic, error handling, rate limiting, and token counting. All pipeline steps call these functions, never the Vertex AI SDK directly.
+Wraps the Vertex AI SDK with the shared `withRetry` (`retry.ts`) and `RateLimiter` (`rate-limiter.ts`) modules, plus a process-level concurrency limiter (see below). All pipeline steps call these functions, never the Vertex AI SDK directly.
 
 #### Vertex AI Concurrency Limiter (Thundering Herd Protection)
 
@@ -1140,7 +1355,7 @@ src/retrieval/
 
 **Vector search (`vector.ts`):**
 ```sql
-SELECT c.id, c.story_id, c.text, 1 - (c.embedding <=> $1) AS score
+SELECT c.id, c.story_id, c.content, 1 - (c.embedding <=> $1) AS score
 FROM chunks c
 ORDER BY c.embedding <=> $1
 LIMIT $2
@@ -1148,10 +1363,12 @@ LIMIT $2
 
 **Full-text search (`fulltext.ts`):**
 ```sql
-SELECT s.id, s.title, s.text, ts_rank(f.fts_vector, plainto_tsquery($1)) AS score
-FROM stories s
-JOIN story_fts f ON f.story_id = s.id
-WHERE f.fts_vector @@ plainto_tsquery($1)
+-- BM25 on the same chunks table as vector search — no join, no separate FTS table.
+-- The fts_vector column is a GENERATED ALWAYS column on chunks.content.
+SELECT c.id, c.story_id, c.content, ts_rank(c.fts_vector, plainto_tsquery($1)) AS score
+FROM chunks c
+WHERE c.fts_vector @@ plainto_tsquery($1)
+  AND c.is_question = false       -- only match content chunks, not generated questions
 ORDER BY score DESC
 LIMIT $2
 ```
@@ -1228,6 +1445,42 @@ Query → [Vector Search] ──→ results + scores ──┐
 - Gemini returns re-ranked list with relevance scores
 - Return top_k (default: 10) to user
 
+### 5.3 Sparse Graph Degradation
+
+Features have minimum data thresholds below which they degrade gracefully instead of returning misleading results. Every API response includes a `confidence` object so consumers know how reliable the results are.
+
+**Thresholds** (configurable in `mulder.config.yaml`):
+
+```yaml
+thresholds:
+  taxonomy_bootstrap: 25           # Documents before taxonomy bootstrap runs
+  corroboration_meaningful: 50     # Documents before corroboration scores are reliable
+  graph_community_detection: 100   # Entities before community detection is meaningful
+  temporal_clustering: 30          # Events with timestamps before clustering activates
+  source_reliability: 50           # Documents before PageRank stabilizes
+```
+
+**Degradation behavior:**
+- **Taxonomy** < threshold: Entities are extracted but not normalized. Raw entity names in the graph.
+- **Corroboration** < threshold: Score returned as `null` / `"insufficient_data"`, not `1`.
+- **Hybrid Retrieval** with sparse data: Falls back to pure vector search. BM25 and graph expansion remain active but with honest confidence ("graph expansion returned 0 additional results").
+- **Evidence chains** < threshold: Feature disabled, API endpoint returns `501 Not Yet Available` with explanation.
+
+**API response `confidence` object:**
+```json
+{
+  "results": [...],
+  "confidence": {
+    "corpus_size": 12,
+    "taxonomy_status": "bootstrapping",
+    "corroboration_reliability": "low",
+    "graph_density": 0.03
+  }
+}
+```
+
+Values for `taxonomy_status`: `"not_started"` | `"bootstrapping"` | `"active"` | `"mature"`. Values for `corroboration_reliability`: `"insufficient"` | `"low"` | `"moderate"` | `"high"`.
+
 ---
 
 ## 6. Taxonomy System
@@ -1241,6 +1494,8 @@ src/taxonomy/
 ```
 
 ### 6.1 Bootstrap Flow
+
+**Sparse graph guard:** Taxonomy bootstrap only runs when corpus size ≥ `thresholds.taxonomy_bootstrap` (default: 25 documents). Below that threshold, entities are extracted and stored with raw names but not normalized. The `mulder taxonomy bootstrap` command enforces this (can be overridden with `--min-docs`).
 
 ```
 All entities (after ~25 docs) → Gemini clustering prompt → Taxonomy tree
@@ -1268,7 +1523,7 @@ mulder taxonomy export > taxonomy.curated.yaml   # Export current state
 mulder taxonomy merge                             # Apply curated changes
 ```
 
-`taxonomy.curated.yaml` format:
+`taxonomy.curated.yaml` format (language-agnostic — canonical entries have no language, only variants):
 ```yaml
 categories:
   person:
@@ -1279,6 +1534,15 @@ categories:
       status: confirmed
       aliases: ["Vallee", "J. Vallée"]
   location:
+    - canonical: "Munich"
+      id: "loc:munich"
+      wikidata: "Q1726"
+      status: confirmed
+      variants:
+        de: ["München"]
+        en: ["Munich"]
+        it: ["Monaco di Baviera"]
+      aliases: ["Roswell", "Roswell NM"]
     - canonical: "Roswell, New Mexico"
       status: confirmed
       aliases: ["Roswell", "Roswell NM"]
@@ -1365,25 +1629,76 @@ CLI output uses a separate formatter (colors, tables, progress bars). Logs go to
 
 ## 9. Local Development Mode
 
-For development and testing without GCP:
+### 9.1 Fixture-Based Dev Mode
 
-```bash
-# Use local PostgreSQL instead of Cloud SQL
-export MULDER_DB_HOST=localhost
-export MULDER_DB_PORT=5432
+Document AI and Gemini have no local equivalent. Without a dev story, every iteration costs money and latency. The solution: pre-recorded real API responses that pipeline steps consume transparently.
 
-# Use local file storage instead of Cloud Storage
-export MULDER_STORAGE_LOCAL=true
-export MULDER_STORAGE_PATH=./data/storage
+**`fixtures/` directory** in the repo with real, checked-in artifacts from a one-time GCP run against a small test corpus (3-5 pages of varying layout complexity):
 
-# Skip Document AI, use Gemini Vision for all pages
-export MULDER_EXTRACT_GEMINI_ONLY=true
-
-# Enable LLM response cache (saves tokens during prompt iteration)
-export MULDER_LLM_CACHE=true
+```
+fixtures/
+├── raw/                           # 2-3 test PDFs (public domain or self-created)
+│   ├── simple-layout.pdf
+│   ├── complex-magazine.pdf
+│   └── mixed-language.pdf
+├── extracted/                     # Real Document AI Layout Parser outputs
+│   ├── simple-layout/
+│   │   └── layout.json
+│   └── complex-magazine/
+│       ├── layout.json
+│       └── pages/
+│           ├── page-001.png
+│           └── page-002.png
+├── segments/                      # Real Gemini segmentation outputs
+│   └── complex-magazine/
+│       ├── seg-001.md
+│       ├── seg-001.meta.json
+│       ├── seg-002.md
+│       └── seg-002.meta.json
+├── entities/                      # Real Gemini entity extraction outputs
+│   └── seg-001.entities.json
+├── embeddings/                    # Real text-embedding-004 outputs
+│   └── seg-001.embeddings.json
+└── grounding/                     # Real Gemini Search Grounding outputs
+    └── loc-munich.grounding.json
 ```
 
-The GCP client factory checks these env vars and returns local implementations when set. Pipeline steps don't need to know the difference.
+Fixtures are generated from a real GCP run via:
+```bash
+npx mulder fixtures generate --input ./test-pdfs/ --output ./fixtures/
+```
+
+### 9.2 Service Abstraction
+
+Pipeline steps call service interfaces, not GCP clients. The service registry selects the implementation based on mode (see [Section 4.5](#45-service-abstraction)):
+- `dev_mode: true` or `NODE_ENV=development` → fixture-based implementations (zero GCP calls, zero cost)
+- `NODE_ENV=test` → **actively blocks** real GCP calls (throws if a real client is instantiated, preventing CI/CD from accidentally generating costs)
+- Production → real GCP clients via service registry
+
+### 9.3 Local Infrastructure
+
+```yaml
+# docker-compose.yaml
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    # + PostGIS via Dockerfile or init script
+    ports: ["5432:5432"]
+  firestore:
+    image: google/cloud-sdk
+    command: gcloud emulators firestore start --host-port=0.0.0.0:8080
+    ports: ["8080:8080"]
+```
+
+Config:
+```yaml
+# mulder.config.yaml
+dev_mode: true   # true → fixtures + local DB, no GCP calls
+```
+
+### 9.4 Dev-Mode LLM Cache
+
+Still applies: a local SQLite cache (`.mulder-cache.db`) that hashes `(model + prompt + schema)` → stores the response. Reduces prompt iteration cost from O(docs × iterations) to O(docs) for the first run, then O(1) for subsequent runs. Enabled via `MULDER_LLM_CACHE=true`. See [Section 4.8](#48-vertex-ai-wrapper--dev-cache) for details.
 
 ---
 
@@ -1542,7 +1857,7 @@ async function startWorker(options: WorkerOptions) {
 }
 ```
 
-### 10.5 Stuck Job Recovery (Reaper)
+### 10.5 Stuck Job Recovery (Reaper) + Dead Letter Queue
 
 If a worker crashes (OOM, GCP preemption), its job stays `running` forever. The reaper fixes this:
 
@@ -1556,6 +1871,21 @@ SET status = 'pending', worker_id = NULL, started_at = NULL
 WHERE status = 'running'
   AND started_at < now() - interval '2 hours';
 ```
+
+**Dead Letter Queue (DLQ):** Jobs that exhaust `max_attempts` retries are moved to `status = 'dead_letter'` instead of staying permanently as `failed`. This is a native PostgreSQL DLQ — no Pub/Sub, no additional infrastructure, consistent with the "PostgreSQL for everything" philosophy.
+
+```sql
+-- Worker marks job as dead_letter when max_attempts exhausted
+UPDATE jobs SET status = 'dead_letter' WHERE id = $1;
+```
+
+```bash
+mulder status --failed           # Show all documents with failed/dead_letter steps
+mulder retry --document {id}     # Reset dead_letter jobs back to pending for a document
+mulder retry --step enrich       # Reset dead_letter enrich jobs for all documents
+```
+
+The `retry` command simply resets `dead_letter` jobs to `pending` with `attempts = 0`, allowing the worker to pick them up again.
 
 ### 10.6 API Contract (Phase H)
 
@@ -1597,32 +1927,45 @@ When implementing pipeline steps, the agent (Claude) will need to write tests ag
 
 ### 11.2 The Solution
 
-Provide real (anonymized) response fixtures that tests MUST use.
+A single `fixtures/` directory at the repo root serves **both** local dev mode (see [Section 9](#9-local-development-mode)) and unit tests. Tests and dev mode use the exact same artifact pool — no duplication.
 
 ```
-docs/fixtures/
-├── document-ai/
-│   ├── layout-parser-response.json       # Real Document AI Layout Parser output (1 page)
-│   ├── layout-parser-multipage.json      # Multi-page response (3 pages, mixed confidence)
-│   └── README.md                         # Field descriptions, version info
-├── gemini/
-│   ├── segment-response.json             # Real Gemini structured output for segmentation
-│   ├── extract-entities-response.json    # Real Gemini structured output for entity extraction
-│   ├── grounding-response.json           # Real Gemini google_search_retrieval response
-│   └── README.md                         # Model version, schema version
-└── pdfs/
-    ├── native-text.pdf                   # PDF with extractable text (for native text detection)
-    ├── scanned-magazine.pdf              # Scanned document requiring OCR (1-2 pages)
-    └── mixed-layout.pdf                  # Multi-column layout with images
+fixtures/
+├── raw/                                  # Test PDFs (public domain or self-created)
+│   ├── simple-layout.pdf
+│   ├── complex-magazine.pdf
+│   └── mixed-language.pdf
+├── extracted/                            # Real Document AI Layout Parser outputs
+│   ├── simple-layout/
+│   │   └── layout.json
+│   └── complex-magazine/
+│       ├── layout.json
+│       └── pages/
+│           ├── page-001.png
+│           └── page-002.png
+├── segments/                             # Real Gemini segmentation outputs
+│   └── complex-magazine/
+│       ├── seg-001.md
+│       ├── seg-001.meta.json
+│       ├── seg-002.md
+│       └── seg-002.meta.json
+├── entities/                             # Real Gemini entity extraction outputs
+│   └── seg-001.entities.json
+├── embeddings/                           # Real embedding outputs
+│   └── seg-001.embeddings.json
+├── grounding/                            # Real Gemini Search Grounding outputs
+│   └── loc-munich.grounding.json
+└── README.md                             # API versions, field descriptions
 ```
 
 ### 11.3 Usage Rules
 
-1. **Pipeline step tests MUST load fixtures from `docs/fixtures/`** — never invent response structures
+1. **Pipeline step tests MUST load fixtures from `fixtures/`** — never invent response structures
 2. Fixtures are committed to the repo and version-controlled
-3. Each fixture has a README documenting which API version produced it
+3. The README documents which API version produced each fixture
 4. When an API response format changes, update the fixture AND the test
 5. The `zod-to-json-schema` conversion in Enrich step must be validated against the Gemini fixture — if the generated schema doesn't match what Gemini actually accepts, the test fails
+6. `mulder fixtures generate` regenerates all fixtures from a real GCP run against test PDFs
 
 ---
 
@@ -1640,41 +1983,44 @@ The build sequence follows dependencies. Each step is independently testable.
 | A4 | Logger setup | `logger` | A1 |
 | A5 | CLI scaffold | `mulder` binary, `config validate`, `config show` | A1-A4 |
 | A6 | Database client + migration runner | `getWorkerPool()`, `getQueryPool()`, `mulder db migrate` | A1, A5 |
-| A7 | Core schema migrations (001-008) | Extensions, tables: sources, source_extractions, stories, entities, edges, chunks, taxonomy | A6 |
+| A7 | Core schema migrations (001-008) | Extensions, tables: sources, source_steps, stories, entities, edges, chunks, taxonomy | A6 |
 | A8 | Job queue + pipeline tracking migrations (012-014) | Tables: jobs, pipeline_runs, reset_pipeline_step() function | A6 |
-| A9 | Test fixtures | `docs/fixtures/` with real API response samples | — |
+| A9 | Test fixtures | `fixtures/` with real API response samples (shared by tests + dev mode) | — |
+| A10 | Service abstraction layer | `services.ts`, `registry.ts`, `rate-limiter.ts`, `retry.ts` | A1 |
+| A11 | Docker Compose setup | `docker-compose.yaml` (pgvector + Firestore emulator) | — |
 
-**Testable at this point:** `mulder config validate`, `mulder db migrate`, `mulder db status`
+**Testable at this point:** `mulder config validate`, `mulder db migrate`, `mulder db status`, dev-mode service registry
 
 ### Phase B: Ingest + Extract (first GCP integration)
 
 | # | What | Produces | Depends on |
 |---|------|----------|------------|
-| B1 | GCP client factory | `getStorageClient()`, `getDocumentAIClient()`, etc. | A1-A4 |
+| B1 | GCP service implementations | `services.gcp.ts`, `services.dev.ts` | A10 |
 | B2 | Source repository | CRUD for `sources` table | A7 |
 | B3 | Native text detection | `pdf-parse` integration, `has_native_text` flag | A1 |
 | B4 | Ingest step | `mulder ingest <path>` | B1, B2, B3 |
 | B5 | Vertex AI wrapper + dev cache | `generateStructured()`, `generateText()`, `.mulder-cache.db` | B1 |
 | B6 | Prompt template engine | `renderPrompt()` | A1 |
-| B7 | Extract step (with native text gate) | `mulder extract <source-id>` | B1, B2, B5, B3 |
+| B7 | Extract step (output to GCS) | `mulder extract <source-id>` → GCS layout.json + page images | B1, B2, B5, B3 |
+| B8 | Fixture generator | `mulder fixtures generate` | B1-B7 |
 
-**Testable at this point:** Ingest PDFs (native text detected), extract text (Document AI skipped for text PDFs), inspect quality.
+**Testable at this point:** Ingest PDFs (native text detected), extract to GCS (Document AI skipped for text PDFs), inspect quality. Generate fixtures for dev mode.
 
 ### Phase C: Segment + Enrich (core intelligence)
 
 | # | What | Produces | Depends on |
 |---|------|----------|------------|
-| C1 | Story repository | CRUD for `stories` table | A7 |
-| C2 | Segment step | `mulder segment <source-id>` | B5, B6, C1 |
+| C1 | Story repository | CRUD for `stories` table (GCS URIs, no inline text) | A7 |
+| C2 | Segment step (output to GCS) | `mulder segment <source-id>` → GCS Markdown + metadata | B5, B6, C1 |
 | C3 | Entity repository | CRUD for `entities`, `entity_aliases`, `story_entities` | A7 |
 | C4 | Edge repository | CRUD for `entity_edges` | A7 |
 | C5 | JSON Schema generator (via `zod-to-json-schema`) | Dynamic schema for Gemini structured output | A2 |
 | C6 | Taxonomy normalization | `normalize()` function | A7 |
-| C7 | Entity resolution (with lexicographic ordering) | `resolve()` function | C3 |
+| C7 | Cross-lingual entity resolution (3-tier) | `resolve()` with attribute match, embedding similarity, LLM-assisted | C3, B5 |
 | C8 | Enrich step | `mulder enrich <story-id>` | B5, B6, C1-C7 |
 | C9 | Cascading reset function | `reset_pipeline_step()` PL/pgSQL | A7 |
 
-**Testable at this point:** Full extraction pipeline up to entities. `--force` re-runs clean up orphans. Inspect entities, relationships, taxonomy.
+**Testable at this point:** Full extraction pipeline up to entities. `--force` re-runs clean up orphans. Cross-lingual entity merging works. Inspect entities, relationships, taxonomy.
 
 ### Phase D: Embed + Graph + Pipeline (searchable)
 
@@ -1684,9 +2030,9 @@ The build sequence follows dependencies. Each step is independently testable.
 | D2 | Semantic chunker | `chunk()` function | — |
 | D3 | Chunk repository | CRUD for `chunks` table | A7 |
 | D4 | Embed step | `mulder embed <story-id>` | D1-D3, B5, B6 |
-| D5 | Graph step (edges + corroboration + contradiction flagging) | `mulder graph <story-id>` | C4 |
+| D5 | Graph step (dedup + edges + corroboration + contradiction flagging) | `mulder graph <story-id>` | C4 |
 | D6 | Pipeline orchestrator (cursor-based) | `mulder pipeline run <path>` | B4, B7, C2, C8, D4, D5 |
-| D7 | Full-text index builder | Populate `story_fts` table | C1 |
+| D7 | Full-text search | Generated `fts_vector` column on `chunks` table (auto-populated) | D3 |
 
 **Testable at this point:** Full MVP pipeline end-to-end. All data in PostgreSQL. Cursor-based resume works.
 
@@ -1741,6 +2087,19 @@ The build sequence follows dependencies. Each step is independently testable.
 
 **Key change from original spec:** The API no longer calls pipeline functions directly. Long-running operations go through the job queue. Only read-only queries (search, entities, evidence) are synchronous.
 
+### Phase I: Operational Infrastructure
+
+| # | What | Produces | Depends on |
+|---|------|----------|------------|
+| I1 | Evaluation framework + golden test set | `eval/`, `mulder eval` | B7, C2, C8 |
+| I2 | Cost estimator | `mulder ingest --cost-estimate`, `mulder reprocess --cost-estimate` | B4, D6 |
+| I3 | Terraform budget alerts | `terraform/modules/budget/` | — |
+| I4 | Schema evolution / reprocessing | `mulder reprocess`, config_hash tracking | D6 |
+| I5 | Dead Letter Queue | `dead_letter` job status + `mulder retry` CLI | H2 |
+| I6 | Devlog system | `devlog/` directory + conventions | — |
+
+**Testable at this point:** Full operational safety net — eval against golden set, cost gates before expensive operations, selective reprocessing after config changes, DLQ recovery for failed jobs.
+
 ---
 
 ## 13. Source Layout
@@ -1752,7 +2111,23 @@ mulder/
 ├── tsconfig.base.json              # Shared TS config
 ├── mulder.config.yaml              # User's domain config
 ├── mulder.config.example.yaml      # Template
+├── docker-compose.yaml             # Local dev: pgvector + Firestore emulator
 ├── .mulder-cache.db                # Dev-mode LLM cache (gitignored)
+│
+├── fixtures/                       # Real GCP artifacts — shared by dev mode + tests (checked in)
+│   ├── raw/                        # Test PDFs
+│   ├── extracted/                  # Real Document AI Layout Parser outputs
+│   ├── segments/                   # Real Gemini segmentation outputs (Markdown + metadata)
+│   ├── entities/                   # Real Gemini entity extraction outputs
+│   ├── embeddings/                 # Real text-embedding-004 outputs
+│   └── grounding/                  # Real Gemini Search Grounding outputs
+│
+├── eval/                           # Quality framework
+│   ├── golden/                     # Ground-truth annotations
+│   ├── metrics/                    # Eval results (baseline checked in)
+│   └── run-eval.ts                 # Eval script
+│
+├── devlog/                         # Public build log, auto-deployed
 │
 ├── packages/
 │   ├── core/                       # Shared library
@@ -1761,6 +2136,13 @@ mulder/
 │   │       ├── config/             # Config loader + schemas
 │   │       ├── database/           # Client, migrations, repositories
 │   │       ├── shared/             # GCP factory, errors, logger, types
+│   │       │   ├── services.ts     # Service interfaces
+│   │       │   ├── services.dev.ts # Fixture-based implementations
+│   │       │   ├── services.gcp.ts # Real GCP implementations
+│   │       │   ├── registry.ts     # Service registry (dev vs GCP)
+│   │       │   ├── rate-limiter.ts # Central token-bucket rate limiter
+│   │       │   ├── retry.ts        # Retry with exponential backoff
+│   │       │   └── cost-estimator.ts # Pipeline cost estimation
 │   │       ├── prompts/            # Template engine + templates
 │   │       ├── vertex.ts           # Vertex AI wrapper
 │   │       └── llm-cache.ts        # Dev-mode LLM response cache
@@ -1815,7 +2197,8 @@ mulder/
 │   │   ├── package.json
 │   │   └── src/
 │   │       ├── index.ts            # Entry point
-│   │       ├── commands/           # Command handlers (incl. worker.ts)
+│   │       ├── commands/           # Command handlers (incl. worker.ts, fixtures.ts,
+│   │       │                       #   eval.ts, retry.ts, reprocess.ts)
 │   │       └── lib/                # CLI utilities
 │   │
 │   └── api/                        # HTTP API (Phase H)
@@ -1834,15 +2217,12 @@ mulder/
 │       ├── cloud-run/
 │       ├── pubsub/
 │       ├── firestore/
+│       ├── budget/                 # GCP billing budget alerts
 │       ├── iam/
 │       └── networking/
 │
 ├── docs/
 │   ├── specs/                      # Spec-driven development
-│   ├── fixtures/                   # Real API response samples for testing
-│   │   ├── document-ai/
-│   │   ├── gemini/
-│   │   └── pdfs/
 │   └── functional-spec.md          # This document
 │
 └── demo/                           # Demo UI (existing)
@@ -1964,3 +2344,230 @@ packages/worker    → packages/core, packages/pipeline
 - A `p-limit(2)` limiter queues excess requests in Node.js memory (zero network cost) and releases them one at a time
 - This is proactive throttling vs reactive error handling — prevents 429s instead of recovering from them
 - Per-process, not per-cluster: 3 workers × 2 concurrent = 6 total Vertex AI requests, well within most quotas
+
+### Why content in GCS instead of PostgreSQL?
+
+- Full story Markdown can span multiple pages — storing it in `TEXT` columns bloats the database and slows backups
+- The Extract step produces Document AI Structured JSON with spatial data (bounding boxes) that's only needed by the Segment step — not worth indexing in SQL
+- Page images for Gemini are binary blobs that belong in object storage, not a relational database
+- `chunks.content` stays inline (~512 tokens) because it's queried directly by vector search + BM25 in the same SQL query — a GCS round-trip per chunk would kill retrieval latency
+- GCS is immutable-friendly: `raw/` is never modified, `extracted/` is append-only, `segments/` is per-document — clean lifecycle management
+
+### Why cross-lingual entity resolution by default?
+
+- Multilingual corpora are the norm, not the exception. German UFO magazines cite English sources, reference Italian locations, and name Russian scientists
+- Without cross-lingual resolution, "München", "Munich", and "Monaco di Baviera" are three separate entities — corroboration scores, cluster analysis, and cross-referencing are all broken
+- `text-embedding-004` already maps 100+ languages into the same semantic space — the embedding-similarity tier is essentially free
+- `supported_locales` controls UI and prompt language only — entity resolution works across all languages automatically
+
+### Why deduplication before corroboration?
+
+- Magazine content is frequently reprinted across issues. Without dedup, a reprinted article counts as multiple independent sources, inflating corroboration scores
+- MinHash/SimHash on chunk embeddings is fast and deterministic — no LLM cost
+- Duplicates are marked (`DUPLICATE_OF` edge) but never deleted — the original text is preserved for audit
+- The semantic distinction between "same text reprinted" (one source) and "different authors independently reporting" (real corroboration) is the difference between meaningful and meaningless evidence scores
+
+---
+
+## 15. Evaluation & Quality Framework
+
+Without evaluation, the pipeline is a black box. Changes to prompts, config, or model versions can silently degrade quality.
+
+### 15.1 Golden Test Set
+
+```
+eval/
+├── golden/
+│   ├── page-simple-de.json        # Ground truth for simple German page
+│   ├── page-complex-magazine.json # Ground truth for complex magazine layout
+│   ├── page-mixed-language.json   # Ground truth for DE+EN mixed
+│   ├── segments-magazine.json     # Expected segment boundaries for test magazine
+│   └── entities-article.json      # Expected entities for test article
+├── metrics/                       # Eval results (gitignored, baseline checked in)
+│   └── baseline.json              # Result of initial eval run
+└── run-eval.ts                    # Eval script
+```
+
+5-10 manually annotated pages covering different difficulty levels: simple layout, multi-column, text-over-image, mixed languages.
+
+### 15.2 Metrics Per Step
+
+| Step | Metrics |
+|------|---------|
+| Extract | Character Error Rate (CER), Word Error Rate (WER) against ground truth |
+| Segment | Boundary Accuracy (start/end pages correct?), Segment Count Accuracy |
+| Enrich | Entity Extraction Precision, Recall, F1 per entity type |
+| Ground | Enrichment Coverage (% entities with grounding result), Coordinate Accuracy |
+| Embed | Retrieval Accuracy (relevant chunks in top-K for test queries?) |
+| Graph | Relationship Accuracy, Cross-Lingual Merge Precision |
+
+### 15.3 CLI
+
+```bash
+npx mulder eval                    # Full eval run against golden set
+npx mulder eval --step extract     # Evaluate extraction only
+npx mulder eval --compare baseline # Compare against saved baseline
+npx mulder eval --update-baseline  # Save current results as new baseline
+```
+
+Output is structured JSON + human-readable summary:
+```
+Extraction Quality:
+  CER:  3.2% (baseline: 3.5%) ✓ improved
+  WER:  8.1% (baseline: 7.9%) ⚠ slightly worse
+
+Segmentation Quality:
+  Boundary Accuracy: 91% (baseline: 89%) ✓ improved
+  Segment Count:     exact in 8/10 documents
+
+Entity Extraction:
+  Location Precision: 94%  Recall: 87%  F1: 90.4%
+  Person Precision:   88%  Recall: 72%  F1: 79.2%
+```
+
+**The golden test set must exist before the first batch run** — not as an afterthought. Initial 5-10 pages are created manually, coverage grows incrementally.
+
+---
+
+## 16. Cost Safety
+
+### 16.1 Budget Alerts
+
+Terraform module for GCP billing budget alerts:
+
+```hcl
+# terraform/modules/budget/main.tf
+resource "google_billing_budget" "mulder" {
+  billing_account = var.billing_account
+  display_name    = "mulder-${var.project_name}"
+  amount {
+    specified_amount {
+      currency_code = "USD"
+      units         = var.monthly_budget_usd
+    }
+  }
+  threshold_rules {
+    threshold_percent = 0.5   # Alert at 50%
+  }
+  threshold_rules {
+    threshold_percent = 0.9   # Alert at 90%
+  }
+}
+```
+
+### 16.2 Cost Estimation
+
+Before expensive operations, the CLI shows an estimate and asks for confirmation:
+
+```bash
+npx mulder ingest ./pdfs/ --cost-estimate
+# ┌─────────────────────────────────────────────┐
+# │ Cost Estimate for 217 documents (est. 21,700 pages)
+# ├─────────────────────────────────────────────┤
+# │ Extract (Document AI):    ~$32.55
+# │ Segment (Gemini Flash):   ~$12.00
+# │ Enrich  (Gemini Flash):   ~$4.50
+# │ Ground  (Search Grounding): ~$3.00
+# │ Embed   (Embeddings):     ~$2.10
+# │ ─────────────────────────────────────────────
+# │ Total estimated:          ~$54.15
+# └─────────────────────────────────────────────┘
+# Proceed? [y/N]
+```
+
+### 16.3 Hard Limits
+
+```yaml
+safety:
+  max_pages_without_confirm: 500     # Over 500 pages: CLI asks for confirmation
+  max_cost_without_confirm_usd: 20   # Over $20 estimated: CLI asks for confirmation
+  budget_alert_monthly_usd: 100      # GCP budget alert threshold
+  block_production_calls_in_test: true # NODE_ENV=test: GCP calls blocked, fixture mode forced
+```
+
+**Test safety:** When `NODE_ENV=test`, real GCP calls are not just bypassed but actively blocked. The service registry throws an error if a real GCP client is instantiated in test mode. This prevents CI/CD from accidentally generating costs.
+
+---
+
+## 17. Devlog System
+
+The `devlog/` directory contains short, structured entries about significant project progress. Auto-deployed to a website as a public build log.
+
+**File format:** `devlog/{YYYY-MM-DD}-{slug}.md`
+
+```markdown
+---
+date: 2026-03-28
+type: architecture
+title: "Short, concrete title"
+tags: [relevant, technical, tags]
+---
+
+2-5 sentences. What was done or decided, and the result.
+No filler, no "today I", no introduction. Direct to the point.
+Technical enough for a developer, short enough for 15 seconds.
+```
+
+**Type values:** `architecture` | `implementation` | `breakthrough` | `decision` | `refactor` | `integration` | `milestone`
+
+**When to log:** New capability works, architecture decision made/revised, non-obvious problem solved, GCP service first integrated, significant refactor, milestone reached.
+
+**When NOT to log:** Routine refactoring, bug fixes, dependency updates, formatting, repeated iterations on the same feature.
+
+---
+
+## 18. Phase 2 Outlook
+
+Design reservations for Phase 2 features. The data models and GCS structure already accommodate these — no schema migration needed when they activate.
+
+### 18.1 Visual Intelligence (Phase 2)
+
+Currently the pipeline extracts text and discards all visual information. In magazines, photos, sketches, diagrams, and maps are data in themselves.
+
+**Planned:**
+- Document AI identifies image regions on pages during the Segment step
+- Images are extracted and stored in GCS (`segments/{doc-id}/{segment-id}/images/`)
+- Gemini analyzes each image: description, recognizable entities, structured data extraction from maps/diagrams
+- Image descriptions feed into the entity graph as an additional source
+- Captions (from text extraction) are linked to their images
+- Images get their own embeddings (Gemini multimodal) for visual similarity search
+
+**Config (reserved but disabled):**
+```yaml
+visual_intelligence:
+  enabled: false  # Phase 2
+  extract_images: true
+  analyze_images: true
+  image_embedding: true
+  extract_from_maps: true
+  extract_from_diagrams: true
+```
+
+**Design impact now:** GCS segment structure includes `images/` directory. Graph schema reserves an `Image` node type. The `image_count` field is available in segment metadata.
+
+### 18.2 Proactive Pattern Discovery (Phase 2)
+
+Currently the system is purely reactive — someone asks, it answers. A research graph should proactively surface interesting patterns.
+
+**Planned:**
+- Runs as a sub-step of Analyze after each batch
+- **Cluster anomalies:** New locations/entities that suddenly appear in clusters
+- **Temporal spikes:** Unusual frequency of certain phenomena in time windows
+- **Disconnected subgraphs:** Similar but unconnected entity clusters that might be related
+- **High-impact pending:** Entities with high corroboration potential not yet enriched/verified
+- Results stored as `insights` in Firestore, surfaced via API endpoint and optionally as periodic digest
+
+**Config (reserved but disabled):**
+```yaml
+pattern_discovery:
+  enabled: false  # Phase 2
+  run_after_batch: true
+  anomaly_detection: true
+  temporal_spikes: true
+  subgraph_similarity: true
+  digest:
+    enabled: false
+    frequency: "weekly"
+```
+
+**Design impact now:** Firestore reserves an `insights` collection. API reserves a placeholder `routes/insights.ts`. The Analyze step is designed to be extensible.
