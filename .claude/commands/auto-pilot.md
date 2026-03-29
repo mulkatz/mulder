@@ -578,23 +578,11 @@ git push
 
 **3. Squash merge + close:**
 
-Determine the semantic prefix from the step type:
-- Pipeline steps, new capabilities, CLI commands → `feat:`
-- Bug fixes → `fix:`
-- Infrastructure, config, tooling, scaffolding → `chore:`
-- Schema changes, migrations → `feat:` (if new tables) or `refactor:` (if restructuring)
-
 ```bash
-gh pr merge {PR_NUMBER} --squash --delete-branch --subject "{prefix}: {short description} ({TARGET_STEP})" --body "$(cat <<'EOF'
-Spec: {SPEC_PATH}
-Roadmap: {TARGET_STEP}
-QA: {PASSED}/{TOTAL} conditions passed
-Iterations: {ITERATION}
-
-Co-Authored-By: Claude <noreply@anthropic.com>
-EOF
-)"
+gh pr merge {PR_NUMBER} --merge --delete-branch
 ```
+
+Merge commit preserves the atomic commit history (types, logic, integration, QA fixes) while `git log --first-parent` still gives a clean high-level view.
 
 The PR body already contains `Closes #{ISSUE_NUMBER}`, so the issue closes automatically on merge.
 

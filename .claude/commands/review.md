@@ -126,5 +126,5 @@ If running as `/review` independently:
 2. Post the review as a PR comment: `gh pr comment {PR_NUMBER} --body "..."`
 3. If APPROVED and the user wants to merge:
    - Update roadmap 🟡 → 🟢 on the feature branch
-   - `gh pr merge {PR_NUMBER} --squash --delete-branch`
+   - `gh pr merge {PR_NUMBER} --merge --delete-branch`
    - `git checkout main && git pull`
