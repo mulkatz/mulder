@@ -5,12 +5,5 @@
 		"rootDir": "src"
 	},
 	"include": ["src"],
-	"references": [
-		{ "path": "../../packages/core" },
-		{ "path": "../../packages/pipeline" },
-		{ "path": "../../packages/retrieval" },
-		{ "path": "../../packages/taxonomy" },
-		{ "path": "../../packages/evidence" },
-		{ "path": "../../packages/worker" }
-	]
+	"references": [{ "path": "../../packages/core" }]
 }
