@@ -1,14 +1,16 @@
-export {
-	ConfigValidationError,
-	CONFIG_DEFAULTS,
-	loadConfig,
-	mulderConfigSchema,
-} from './config/index.js';
+/**
+ * Config module barrel export.
+ * Public API: loadConfig, MulderConfig, ConfigValidationError, mulderConfigSchema
+ */
 
+export { ConfigValidationError } from './errors.js';
+export type { ConfigIssue } from './errors.js';
+export { loadConfig } from './loader.js';
+export { mulderConfigSchema } from './schema.js';
+export { CONFIG_DEFAULTS } from './defaults.js';
 export type {
 	AnalysisConfig,
 	CloudSqlConfig,
-	ConfigIssue,
 	DeduplicationConfig,
 	EmbeddingConfig,
 	EnrichmentConfig,
@@ -29,4 +31,4 @@ export type {
 	StorageConfig,
 	ThresholdsConfig,
 	VisualIntelligenceConfig,
-} from './config/index.js';
+} from './types.js';
