@@ -15,7 +15,7 @@ No GCP, no LLM, no cost. Pure TypeScript scaffolding.
 | Status | Step | What | Spec |
 |--------|------|------|------|
 | 🟢 | A1 | Monorepo setup — pnpm, turbo, tsconfig, biome | §13 |
-| ⚪ | A2 | Config loader + Zod schemas — `loadConfig()` | §4.1 |
+| 🟡 | A2 | Config loader + Zod schemas — `loadConfig()` | §4.1 |
 | ⚪ | A3 | Custom error classes — Error types with codes | §7.1, §7.2 |
 | ⚪ | A4 | Logger setup — Pino structured JSON | §8 |
 | ⚪ | A5 | CLI scaffold — `mulder` binary, `config validate`, `config show` | §1, §1.1 |
