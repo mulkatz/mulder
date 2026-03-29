@@ -225,7 +225,13 @@ for label in \
   "P0-critical:Blocks other work or production:B60205" \
   "P1-high:Core capability for current milestone:D93F0B" \
   "P2-medium:Important but not blocking:FBCA04" \
-  "P3-low:Backlog, nice-to-have:C2E0C6"; do
+  "P3-low:Backlog, nice-to-have:C2E0C6" \
+  "status\:in-progress:Actively being worked on:FBCA04" \
+  "status\:review:Ready for code review:0E8A16" \
+  "status\:blocked:Blocked, needs attention:D93F0B" \
+  "type\:feature:New feature or capability:1D76DB" \
+  "type\:bug:Bug fix:B60205" \
+  "type\:chore:Maintenance, tooling, config:C2E0C6"; do
   IFS=: read -r name desc color <<< "$label"
   gh label create "$name" --description "$desc" --color "$color" 2>/dev/null || true
 done
@@ -257,7 +263,7 @@ gh issue create \
 
 ## Branch
 
-`feat/GH-{NUMBER}-short-descriptor`
+`feat/{NUMBER}-short-descriptor`
 
 ## Acceptance Criteria
 
@@ -346,7 +352,7 @@ If the user's request doesn't map to any roadmap step:
   [How to confirm the fix works — specific steps]
 
   ## Branch
-  `fix/GH-{NUMBER}-short-descriptor`
+  `fix/{NUMBER}-short-descriptor`
   ```
 - No roadmap update needed
 
@@ -381,7 +387,7 @@ If the user's request doesn't map to any roadmap step:
 ## Branch Convention
 
 ```
-{type}/GH-{issue-number}-{short-kebab-descriptor}
+{type}/{issue-number}-{short-kebab-descriptor}
 ```
 
 Types: `feat/`, `fix/`, `refactor/`, `chore/`, `docs/`

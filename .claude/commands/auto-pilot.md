@@ -1,10 +1,10 @@
 ---
-description: "Full lifecycle — picks roadmap step, architects spec, implements, verifies, iterates until QA passes"
+description: "Full lifecycle — picks roadmap step, architects spec, implements, verifies, reviews, merges"
 ---
 
 # Mulder — Auto-Pilot
 
-You orchestrate the full feature lifecycle: pick a roadmap step → architect a spec → implement the code → verify with black-box tests → iterate until all QA conditions pass or you hit the iteration limit. At the end, the roadmap is updated and the issue is labeled for human review.
+You orchestrate the full feature lifecycle: pick a roadmap step → architect a spec → implement the code → verify with black-box tests → architect review → merge and close. Iterate on failures until QA passes or you hit the iteration limit.
 
 **Scope:** Auto-pilot handles **roadmap steps only** — it always creates a spec. For micro tasks (bug fixes, small refactors without spec), use `/implement` + `/verify` directly instead.
 
@@ -40,7 +40,8 @@ Create a task list at the start:
 2. [ ] Architect: read spec sections, generate spec, create issue
 3. [ ] Implement: plan + build (iteration 1)
 4. [ ] Verify: write + run black-box tests
-5. [ ] Finalize: labels + roadmap update
+5. [ ] Review: architect-level correctness check
+6. [ ] Finalize: merge, close issue, update roadmap
 ```
 
 ---
@@ -132,15 +133,18 @@ for label in \
   "P1-high:Core capability for current milestone:D93F0B" \
   "P2-medium:Important but not blocking:FBCA04" \
   "P3-low:Backlog, nice-to-have:C2E0C6" \
-  "ai-in-progress:Being implemented by AI agents:6F42C1" \
-  "ai-done:AI complete, ready for human review:0E8A16" \
-  "ai-needs-review:AI hit iteration limit, needs human help:D93F0B"; do
+  "status\:in-progress:Actively being worked on:FBCA04" \
+  "status\:review:Ready for code review:0E8A16" \
+  "status\:blocked:Blocked, needs attention:D93F0B" \
+  "type\:feature:New feature or capability:1D76DB" \
+  "type\:bug:Bug fix:B60205" \
+  "type\:chore:Maintenance, tooling, config:C2E0C6"; do
   IFS=: read -r name desc color <<< "$label"
   gh label create "$name" --description "$desc" --color "$color" 2>/dev/null || true
 done
 ```
 
-**Create the issue** with the `ai-in-progress` label. Follow the architect conventions for title format and body structure. After creation, update the issue body with the actual issue number and update the spec's `issue:` frontmatter.
+**Create the issue** with the `status:in-progress` label. Follow the architect conventions for title format and body structure. After creation, update the issue body with the actual issue number and update the spec's `issue:` frontmatter.
 
 **Add to GitHub Project** (same as architect workflow):
 
@@ -246,12 +250,13 @@ Before committing, run:
 Do not proceed to Step 4 if either check fails.
 
 **Step 4: Branch, commit, push, PR.**
-- Create branch: feat/GH-{ISSUE_NUMBER}-{kebab-from-spec-title}
+- Create branch: feat/{ISSUE_NUMBER}-{kebab-from-spec-title}
 - Atomic commits per phase with semantic messages
 - Include `Co-Authored-By: Claude <noreply@anthropic.com>` in every commit
 - Push: git push -u origin {branch}
-- Create PR: gh pr create --title "[Domain] Title" referencing issue #{ISSUE_NUMBER}
+- Create PR with `Closes #{ISSUE_NUMBER}` in the body
 - Do NOT write tests — a separate verification agent handles that
+- Do NOT update docs/roadmap.md — that happens after QA passes
 
 **Report these values exactly:**
 BRANCH_NAME: <branch>
@@ -289,6 +294,7 @@ WORKFLOW:
 6b. Build verification: run `npx tsc --noEmit` and `npx biome check .` — fix any issues before committing
 7. Commit: "fix: address QA failures — [brief description]" with Co-Authored-By trailer
 8. Push to the same branch
+9. Do NOT update docs/roadmap.md
 
 IMPORTANT: Fix ONLY code that causes failing conditions. Do not rewrite everything.
 
@@ -391,7 +397,7 @@ Parse VERDICT and FAILURE blocks from the output.
 
 ```
 if VERDICT == "PASS":
-    → Phase 5 (Finalize — success)
+    → Phase 4 (Review)
 
 if VERDICT == "FAIL" and ITERATION < MAX_ITERATIONS:
     FAILURES = [parsed failure details]
@@ -400,17 +406,17 @@ if VERDICT == "FAIL" and ITERATION < MAX_ITERATIONS:
 
 if VERDICT == "FAIL" and ITERATION >= MAX_ITERATIONS:
     FAILURES = [parsed failure details]
-    → Phase 5 (Finalize — needs review)
+    → Phase 6 (Finalize — needs review)
 
 if VERDICT == "PARTIAL":
-    If all non-skipped conditions PASS → treat as PASS
+    If all non-skipped conditions PASS → treat as PASS → Phase 4
     If any non-skipped condition FAIL → treat as FAIL
     Skipped conditions don't count against the verdict
 ```
 
 ---
 
-## Phase 4: Iterate
+## Phase 3b: Iterate
 
 This is the loop between Phase 2 and Phase 3 — not a separate phase.
 
@@ -425,36 +431,106 @@ Update the task list on each iteration to keep the user informed of progress.
 
 ---
 
-## Phase 5: Finalize
+## Phase 4: Review (Subagent)
 
-### On PASS
+After QA passes, spawn an architect-level review agent to check for correctness before merging. This is the "red hat" — a final sanity check that catches architectural drift, spec violations, and edge cases that black-box tests can't see.
 
-```bash
-# Update issue labels
-gh issue edit {ISSUE_NUMBER} --remove-label "ai-in-progress"
-gh issue edit {ISSUE_NUMBER} --add-label "ai-done"
+Spawn a review subagent with `model: "opus"`.
 
-# Comment on the PR
-gh pr comment {PR_NUMBER} --body "$(cat <<'EOF'
-## AI Verification Complete
+```
+You are the Lead Architect reviewing a feature implementation for mulder (mulkatz/mulder).
 
-All QA conditions from the spec pass. Ready for human review.
+Your job: verify the implementation is architecturally sound and spec-compliant before it merges. You are the last gate before this lands on main.
 
-- Spec: `{SPEC_PATH}`
-- Roadmap: {TARGET_STEP}
-- Iterations: {ITERATION}
-- QA: {PASSED}/{TOTAL} conditions met ({SKIPPED} skipped due to infrastructure)
+**Read in this order:**
+1. `CLAUDE.md` — architecture decisions, key patterns, conventions
+2. `{SPEC_PATH}` — the full spec (all sections including Blueprint)
+3. The PR diff: `git diff main...{BRANCH_NAME}`
+4. If anything looks off, read the relevant section of `docs/functional-spec.md` for authoritative requirements
 
-Please review the implementation and tests, then merge when satisfied.
-EOF
-)"
+**Review checklist — check each, report only real issues:**
+
+1. **Spec compliance** — Does the implementation match the spec's Blueprint (Section 4)?
+   - All files listed in the spec created?
+   - Exports/imports match the spec's description?
+   - Database DDL matches exactly?
+   - Config additions match?
+
+2. **Architecture alignment** — Does the code follow CLAUDE.md patterns?
+   - Service abstraction (no direct GCP SDK calls from pipeline steps)
+   - Config via loader (no direct YAML parsing)
+   - Error handling (custom error classes, not generic throws)
+   - Idempotency (ON CONFLICT DO UPDATE where required)
+   - ESM, strict mode, no `any`/`as`
+
+3. **Integration correctness** — Are the wiring points correct?
+   - Barrel exports updated?
+   - Package dependencies declared in package.json?
+   - TypeScript project references in tsconfig.json?
+
+4. **Edge cases that matter** — Only flag edge cases that:
+   - Would cause data loss or corruption
+   - Would break other pipeline steps
+   - Are explicitly called out in the functional spec
+   - Would fail silently (no error, wrong result)
+
+**DO NOT flag:**
+- Style preferences (that's Biome's job)
+- Missing error handling for scenarios that can't happen
+- Missing tests (that's verify's job)
+- Hypothetical future requirements
+- Minor naming nitpicks
+
+**Output format:**
+
+REVIEW_VERDICT: APPROVED | CHANGES_REQUESTED
+
+If APPROVED:
+"Implementation is architecturally sound and spec-compliant. No blocking issues found."
+[Optional: non-blocking observations for future improvement]
+
+If CHANGES_REQUESTED:
+For each issue:
+ISSUE: [short title]
+SEVERITY: blocking | warning
+FILE: [path:line]
+PROBLEM: [what's wrong]
+FIX: [specific fix needed]
+SPEC_REF: [which spec section or CLAUDE.md pattern is violated]
 ```
 
-**Update roadmap** — change 🟡 to 🟢.
+### After review subagent returns
 
-This commit goes on the **feature branch** intentionally — the 🟢 status lands on main only when the PR is merged, ensuring the roadmap never shows "complete" for unmerged work.
+**Decision tree:**
+
+```
+if REVIEW_VERDICT == "APPROVED":
+    → Phase 5 (Finalize — merge)
+
+if REVIEW_VERDICT == "CHANGES_REQUESTED":
+    Count blocking issues only (ignore warnings)
+    if blocking_count == 0:
+        → Phase 5 (Finalize — merge, note warnings in PR)
+    if blocking_count > 0 and ITERATION < MAX_ITERATIONS:
+        Tell user: "Review found {N} blocking issues. Sending back to implement..."
+        Format blocking issues as FAILURES
+        → Phase 2 (next iteration, with review issues as failures)
+    if blocking_count > 0 and ITERATION >= MAX_ITERATIONS:
+        → Phase 5 (Finalize — needs review)
+```
+
+Mark review task complete.
+
+---
+
+## Phase 5: Finalize
+
+### On PASS (QA passed + review approved)
+
+**1. Update roadmap** — change 🟡 to 🟢 on the feature branch:
 
 ```bash
+git checkout {BRANCH_NAME} && git pull
 # Edit docs/roadmap.md: 🟡 → 🟢 for TARGET_STEP
 git add docs/roadmap.md
 git commit -m "$(cat <<'EOF'
@@ -466,18 +542,44 @@ EOF
 git push
 ```
 
-**Devlog check:** Read `docs/roadmap.md` and check if TARGET_STEP is the last step in its milestone (all other steps are now 🟢). If yes, write a devlog entry at `devlog/{YYYY-MM-DD}-{milestone-slug}.md` summarizing what the milestone achieved (per CLAUDE.md devlog conventions). Commit and push it on the feature branch alongside the roadmap update.
+**2. Devlog check:** Read `docs/roadmap.md` and check if TARGET_STEP is the last step in its milestone (all other steps are now 🟢). If yes, write a devlog entry at `devlog/{YYYY-MM-DD}-{milestone-slug}.md` summarizing what the milestone achieved (per CLAUDE.md devlog conventions). Commit and push it on the feature branch.
+
+**3. Squash merge + close:**
+
+```bash
+gh pr merge {PR_NUMBER} --squash --delete-branch --body "$(cat <<'EOF'
+Spec: {SPEC_PATH}
+Roadmap: {TARGET_STEP}
+QA: {PASSED}/{TOTAL} conditions passed
+Iterations: {ITERATION}
+EOF
+)"
+```
+
+The PR body already contains `Closes #{ISSUE_NUMBER}`, so the issue closes automatically on merge.
+
+**4. Update issue label:**
+
+```bash
+gh issue edit {ISSUE_NUMBER} --remove-label "status:in-progress" --add-label "status:review" 2>/dev/null || true
+```
+
+**5. Return to main:**
+
+```bash
+git checkout main && git pull
+```
 
 ### On NEEDS-REVIEW (max iterations reached)
 
 ```bash
-gh issue edit {ISSUE_NUMBER} --remove-label "ai-in-progress"
-gh issue edit {ISSUE_NUMBER} --add-label "ai-needs-review"
+gh issue edit {ISSUE_NUMBER} --remove-label "status:in-progress"
+gh issue edit {ISSUE_NUMBER} --add-label "status:blocked"
 
 gh pr comment {PR_NUMBER} --body "$(cat <<'EOF'
-## AI Verification Incomplete
+## Verification Incomplete
 
-Reached maximum iterations ({MAX_ITERATIONS}). Some QA conditions still failing.
+Reached maximum iterations ({MAX_ITERATIONS}). Some conditions still failing.
 
 - Spec: `{SPEC_PATH}`
 - Roadmap: {TARGET_STEP}
@@ -493,6 +595,11 @@ EOF
 
 Roadmap stays 🟡 (not marked complete since QA didn't fully pass).
 
+Return to main:
+```bash
+git checkout main
+```
+
 ### Final report
 
 ```
@@ -505,10 +612,10 @@ Auto-pilot complete.
   Branch:     {BRANCH_NAME}
   QA:         {PASSED}/{TOTAL} passed ({SKIPPED} skipped)
   Iterations: {ITERATION}
-  Status:     ai-done | ai-needs-review
+  Result:     merged | needs-review
 
-{If ai-done: "All QA conditions pass. Review the PR and merge when ready."}
-{If ai-needs-review: "Remaining failures listed in PR comment. Human review needed."}
+{If merged: "Merged to main. Issue closed. Roadmap updated."}
+{If needs-review: "Remaining failures listed in PR comment. Manual intervention needed."}
 ```
 
 Mark all tasks complete.
@@ -532,10 +639,11 @@ If Phase 1 classified the scope as **multi-spec** (and the user approved the spl
    - Reset ITERATION to 0
    - Run Phase 2 (implement) for this sub-spec
    - Run Phase 3 (verify) for this sub-spec
-   - Phase 4 (iterate) if needed
-   - **On pass:** label the sub-issue `ai-done`, update task list, proceed to next sub-spec
-   - **On needs-review:** stop the pipeline. Label the failing sub-issue AND all remaining sub-issues as `ai-needs-review`. Report what passed and what didn't.
-3. When ALL sub-specs pass: update the roadmap step to 🟢
+   - Phase 3b (iterate) if needed
+   - Phase 4 (review)
+   - **On pass:** update task list, proceed to next sub-spec
+   - **On needs-review:** stop the pipeline. Label the failing sub-issue AND all remaining sub-issues as `status:blocked`. Report what passed and what didn't.
+3. When ALL sub-specs pass: squash merge all PRs, update the roadmap step to 🟢
 
 Track each sub-spec's state independently. Report progress to the user between sub-specs:
 
@@ -553,6 +661,7 @@ Starting sub-spec 2/3: [title]...
 | **Subagent output unparseable** | Re-read the response. Extract what you can. If clearly failed (no code, no PR), tell user and stop. |
 | **`gh` commands fail** | Run `gh auth status`. Report the error. |
 | **Merge conflicts on push** | Tell the user. Don't force-push. Likely means someone else pushed to the branch. |
+| **Merge conflicts on squash merge** | Tell the user. The branch likely diverged from main. |
 | **Missing infrastructure (greenfield)** | If the implement agent reports fundamental infrastructure is missing (`packages/` doesn't exist, no `package.json`), tell user: "This step depends on infrastructure from an earlier step. Start with {earlier step}." |
 | **Spec is ambiguous** | Pause. Ask user: "The spec has a gap in {area}. Proceed with {assumption}, or update the spec first?" |
 | **All dependencies unmet** | Don't proceed blindly. Tell user which dependencies are missing and suggest the correct starting point. |

@@ -259,7 +259,7 @@ For tasks where there's no `.spec.md` (small bug fixes, refactors with issue-onl
 
 1. Read the GitHub issue body with `gh issue view {number}`
 2. Find the **Verification** section in the issue body — this is your test contract
-3. Write tests at `tests/micro/GH-{number}_short_name.test.ts`
+3. Write tests at `tests/micro/{number}_short_name.test.ts`
 4. Same structure and reporting format, but derive conditions from the Verification section instead of a QA Contract
 
 ---
