@@ -166,7 +166,7 @@ gh issue create \
 `feat/{NUMBER}-short-descriptor`
 
 ---
-*Spec-driven development — [Mulder](https://github.com/mulkatz/mulder)*
+*Architected from [`docs/specs/NN_title.spec.md`](https://github.com/mulkatz/mulder/blob/main/docs/specs/NN_title.spec.md) — [Mulder](https://github.com/mulkatz/mulder)*
 EOF
 )"
 ```
@@ -180,28 +180,32 @@ Status, priority, phase, step, and spec are tracked as project board fields — 
 ```bash
 # Uses GH_PROJECT_TOKEN (classic PAT with `project` scope) — skip if not set
 if [ -n "$GH_PROJECT_TOKEN" ]; then
+  PROJECT_ID=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project list --owner @me --format json --jq '.projects[] | select(.title=="Mulder") | .id' 2>/dev/null)
   PROJECT_NUM=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project list --owner @me --format json --jq '.projects[] | select(.title=="Mulder") | .number' 2>/dev/null)
-  if [ -n "$PROJECT_NUM" ]; then
+  if [ -n "$PROJECT_ID" ]; then
     # Add issue to project
     GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-add "$PROJECT_NUM" --owner @me --url "{ISSUE_URL}" 2>/dev/null || true
 
-    # Set board fields: Status, Phase, Priority, Step, Spec
-    # Use `gh project item-edit` for single-select fields, `gh project item-field-set` for text fields
-    # Get the item ID first:
+    # Get the item ID
     ITEM_ID=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-list "$PROJECT_NUM" --owner @me --format json --jq '.items[] | select(.content.url=="{ISSUE_URL}") | .id' 2>/dev/null)
     if [ -n "$ITEM_ID" ]; then
-      # Status → "In Progress" (option id: 08dd1a37)
-      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_NUM" --id "$ITEM_ID" --field-id "PVTSSF_lAHOAD_Rzc4BTIvwzhAdyRE" --single-select-option-id "08dd1a37" 2>/dev/null || true
-      # Phase → set based on MILESTONE (match option name like "M1 Foundation")
-      # Priority → set based on step analysis (P0-P3 option ids: 5988f848, b1a604f6, 07c6dcf8, 7a548448)
-      # Step → text field with TARGET_STEP value
-      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_NUM" --id "$ITEM_ID" --field-id "PVTF_lAHOAD_Rzc4BTIvwzhAd01U" --text "{TARGET_STEP}" 2>/dev/null || true
-      # Spec → text field with spec path
-      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_NUM" --id "$ITEM_ID" --field-id "PVTF_lAHOAD_Rzc4BTIvwzhAd02A" --text "{SPEC_PATH}" 2>/dev/null || true
+      # IMPORTANT: --project-id requires the node ID (PVT_...), NOT the project number
+      # Status → "In Progress"
+      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" --field-id "PVTSSF_lAHOAD_Rzc4BTIvwzhAdyRE" --single-select-option-id "08dd1a37" 2>&1 || true
+      # Phase → set based on MILESTONE (use the matching option ID from the table below)
+      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" --field-id "PVTSSF_lAHOAD_Rzc4BTIvwzhAd0z8" --single-select-option-id "{PHASE_OPTION_ID}" 2>&1 || true
+      # Priority → set based on step analysis (foundation steps = P1, critical path = P0)
+      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" --field-id "PVTSSF_lAHOAD_Rzc4BTIvwzhAd00A" --single-select-option-id "{PRIORITY_OPTION_ID}" 2>&1 || true
+      # Step → text field
+      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" --field-id "PVTF_lAHOAD_Rzc4BTIvwzhAd01U" --text "{TARGET_STEP}" 2>&1 || true
+      # Spec → text field
+      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" --field-id "PVTF_lAHOAD_Rzc4BTIvwzhAd02A" --text "{SPEC_PATH}" 2>&1 || true
     fi
   fi
 fi
 ```
+
+**CRITICAL:** `--project-id` requires the **node ID** (`PVT_kwHOAD_Rzc4BTIvw`), NOT the project number. Use `.id` from the JSON, not `.number`. The number is only used for `item-add` and `item-list`.
 
 **Board field IDs reference** (from project setup):
 
@@ -298,11 +302,18 @@ Execute the plan phase by phase. Follow CLAUDE.md conventions strictly:
 - Pipeline steps: idempotent with ON CONFLICT DO UPDATE
 - Files: kebab-case.ts | Types: PascalCase | Functions: camelCase
 
-**Step 3b: Build verification.**
-Before committing, run:
-- `pnpm turbo run build --filter='...[HEAD]' 2>&1 || npx tsc --noEmit` — fix any type errors
-- `npx biome check .` — fix any lint/format issues (`npx biome check --write .` for auto-fix)
-Do not proceed to Step 4 if either check fails.
+**Step 3b: Build + integration verification.**
+Before committing, run ALL of these in order — fix any issues before proceeding:
+1. `pnpm turbo run build 2>&1` — fix any type errors (build ALL packages, not just changed)
+2. `npx biome check .` — fix any lint/format issues (`npx biome check --write .` for auto-fix)
+3. `npx vitest run tests/ --reporter=verbose` — run the FULL test suite (all existing tests)
+
+This catches regressions early. If an existing test fails because of your changes, you must fix it. Common causes:
+- Biome lint rules (no `any` in source, no `as` assertions) — fix the code, don't suppress
+- Type signature changes that break consumers — update call sites
+- Barrel export ordering or naming conflicts
+
+Do not proceed to Step 4 if any check fails.
 
 **Step 4: Branch, commit, push, PR.**
 - Create branch: feat/{ISSUE_NUMBER}-{kebab-from-spec-title}
@@ -345,8 +356,9 @@ WORKFLOW:
 3. Read the test file to understand exact assertions
 4. Enter plan mode (EnterPlanMode): plan minimal fixes for each failure
 5. Exit plan mode: apply fixes
-6. Run tests locally: npx vitest run tests/specs/{SPEC_NUMBER}_*.test.ts --reporter=verbose
-6b. Build verification: run `npx tsc --noEmit` and `npx biome check .` — fix any issues before committing
+6. Run the full test suite: npx vitest run tests/ --reporter=verbose
+   (This runs ALL tests, not just the spec's tests — catches regressions)
+6b. Build verification: run `pnpm turbo run build` and `npx biome check .` — fix any issues before committing
 7. Commit: "fix: address QA failures — [brief description]" with Co-Authored-By trailer
 8. Push to the same branch
 9. Do NOT update docs/roadmap.md
@@ -402,8 +414,11 @@ Your task:
    - Use execFileSync for CLI commands (not exec — avoid shell injection)
    - Tests interact through system boundaries only: CLI, SQL, HTTP, filesystem
    - Never import from packages/ or src/
-3. Run tests: npx vitest run tests/specs/{SPEC_NUMBER}_*.test.ts --reporter=verbose
-4. Commit and push the test file with Co-Authored-By trailer
+3. Run your new tests: npx vitest run tests/specs/{SPEC_NUMBER}_*.test.ts --reporter=verbose
+4. Run the FULL test suite for regression check: npx vitest run tests/ --reporter=verbose
+   - If any EXISTING test (from a previous spec) fails, this is a regression caused by the new feature
+   - Report regressions as FAIL conditions — they count against the verdict
+5. Commit and push the test file with Co-Authored-By trailer
 
 Distinguish between:
 - FAIL: system doesn't behave as specified (implementation bug)
@@ -433,7 +448,11 @@ The implementation was updated to fix previous failures. Re-run existing tests.
 
 Checkout: git checkout {BRANCH_NAME} && git pull
 
-Run: npx vitest run tests/specs/{SPEC_NUMBER}_*.test.ts --reporter=verbose
+Run the spec's tests first, then the FULL test suite for regression check:
+1. npx vitest run tests/specs/{SPEC_NUMBER}_*.test.ts --reporter=verbose
+2. npx vitest run tests/ --reporter=verbose
+
+If any EXISTING test (from a previous spec) fails, report it as a regression FAIL condition.
 
 Do NOT modify tests unless a test itself has a bug (wrong assertion logic, not an implementation mismatch). If you fix a test bug, commit and push.
 
@@ -621,11 +640,12 @@ The PR body already contains `Closes #{ISSUE_NUMBER}`, so the issue closes autom
 
 ```bash
 if [ -n "$GH_PROJECT_TOKEN" ]; then
+  PROJECT_ID=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project list --owner @me --format json --jq '.projects[] | select(.title=="Mulder") | .id' 2>/dev/null)
   PROJECT_NUM=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project list --owner @me --format json --jq '.projects[] | select(.title=="Mulder") | .number' 2>/dev/null)
   ITEM_ID=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-list "$PROJECT_NUM" --owner @me --format json --jq '.items[] | select(.content.url=="{ISSUE_URL}") | .id' 2>/dev/null)
   if [ -n "$ITEM_ID" ]; then
-    # Status → "Done" (option id: fa785559)
-    GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_NUM" --id "$ITEM_ID" --field-id "PVTSSF_lAHOAD_Rzc4BTIvwzhAdyRE" --single-select-option-id "fa785559" 2>/dev/null || true
+    # Status → "Done" (option id: fa785559) — MUST use PROJECT_ID (node ID), not PROJECT_NUM
+    GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" --field-id "PVTSSF_lAHOAD_Rzc4BTIvwzhAdyRE" --single-select-option-id "fa785559" 2>&1 || true
   fi
 fi
 ```
@@ -641,10 +661,11 @@ git checkout main && git pull
 ```bash
 # Update board status → "In Review" (needs human attention)
 if [ -n "$GH_PROJECT_TOKEN" ]; then
+  PROJECT_ID=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project list --owner @me --format json --jq '.projects[] | select(.title=="Mulder") | .id' 2>/dev/null)
   PROJECT_NUM=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project list --owner @me --format json --jq '.projects[] | select(.title=="Mulder") | .number' 2>/dev/null)
   ITEM_ID=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-list "$PROJECT_NUM" --owner @me --format json --jq '.items[] | select(.content.url=="{ISSUE_URL}") | .id' 2>/dev/null)
   if [ -n "$ITEM_ID" ]; then
-    GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_NUM" --id "$ITEM_ID" --field-id "PVTSSF_lAHOAD_Rzc4BTIvwzhAdyRE" --single-select-option-id "a7f130a1" 2>/dev/null || true
+    GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" --field-id "PVTSSF_lAHOAD_Rzc4BTIvwzhAdyRE" --single-select-option-id "a7f130a1" 2>&1 || true
   fi
 fi
 

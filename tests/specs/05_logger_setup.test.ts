@@ -60,7 +60,7 @@ describe('Spec 05: Logger Setup — Pino Structured JSON', () => {
 	/**
 	 * Helper: parse newline-delimited JSON from a string.
 	 */
-	function parseJsonLines(output: string): any[] {
+	function parseJsonLines(output: string): Record<string, unknown>[] {
 		return output
 			.split('\n')
 			.filter((line) => line.trim().length > 0)
@@ -210,9 +210,7 @@ const { createLogger, createChildLogger, withDuration, ConfigError } = core;`;
 			]);
 
 			const lines = parseJsonLines(stdout);
-			const durationEntry = lines.find(
-				(l) => typeof l.duration_ms === 'number',
-			);
+			const durationEntry = lines.find((l) => typeof l.duration_ms === 'number');
 			expect(durationEntry).toBeDefined();
 			expect(durationEntry.duration_ms).toBeGreaterThanOrEqual(0);
 			// Should be info level (level string "info" or numeric 30)
@@ -245,9 +243,7 @@ const { createLogger, createChildLogger, withDuration, ConfigError } = core;`;
 
 			const lines = parseJsonLines(stdout);
 			const errorEntry = lines.find(
-				(l) =>
-					typeof l.duration_ms === 'number' &&
-					(l.level === 'error' || l.level === 50),
+				(l) => typeof l.duration_ms === 'number' && (l.level === 'error' || l.level === 50),
 			);
 			expect(errorEntry).toBeDefined();
 			expect(errorEntry.duration_ms).toBeGreaterThanOrEqual(0);

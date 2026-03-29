@@ -54,7 +54,7 @@ function formatZodPath(path: readonly (string | number)[]): string {
  *
  * @throws {ConfigValidationError} on file not found, invalid YAML, or validation failure
  */
-export function loadConfig(path?: string): MulderConfig {
+export function loadConfig(path?: string): Readonly<MulderConfig> {
 	// 1. Resolve path
 	const configPath = resolve(path ?? process.env.MULDER_CONFIG ?? DEFAULT_CONFIG_FILENAME);
 
@@ -109,5 +109,5 @@ export function loadConfig(path?: string): MulderConfig {
 	}
 
 	// 5. Deep freeze the result
-	return deepFreeze(config) as MulderConfig;
+	return deepFreeze(config);
 }

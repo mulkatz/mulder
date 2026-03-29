@@ -20,6 +20,21 @@
 			"semicolons": "always"
 		}
 	},
+	"overrides": [
+		{
+			"include": ["tests/**/*.ts", "**/*.test.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "off"
+					},
+					"performance": {
+						"noDelete": "off"
+					}
+				}
+			}
+		}
+	],
 	"files": {
 		"ignore": ["node_modules", "dist", ".turbo", "fixtures", "demo", ".claude"]
 	}

@@ -266,7 +266,7 @@ gh issue create \
 `feat/{NUMBER}-short-descriptor`
 
 ---
-*Spec-driven development — [Mulder](https://github.com/mulkatz/mulder)*
+*Architected from [`docs/specs/NN_title.spec.md`](https://github.com/mulkatz/mulder/blob/main/docs/specs/NN_title.spec.md) — [Mulder](https://github.com/mulkatz/mulder)*
 EOF
 )"
 ```
@@ -277,15 +277,33 @@ EOF
 3. Add the issue to the GitHub Project board:
 
 ```bash
-# Add issue to the "Mulder" GitHub Project
-# Uses GH_PROJECT_TOKEN (classic PAT with only `project` scope) — skip silently if not set
+# Add issue to the "Mulder" GitHub Project and set board fields
+# Uses GH_PROJECT_TOKEN (classic PAT with `project` scope) — skip silently if not set
 if [ -n "$GH_PROJECT_TOKEN" ]; then
+  PROJECT_ID=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project list --owner @me --format json --jq '.projects[] | select(.title=="Mulder") | .id' 2>/dev/null)
   PROJECT_NUM=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project list --owner @me --format json --jq '.projects[] | select(.title=="Mulder") | .number' 2>/dev/null)
-  if [ -n "$PROJECT_NUM" ]; then
+  if [ -n "$PROJECT_ID" ]; then
     GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-add "$PROJECT_NUM" --owner @me --url "{ISSUE_URL}" 2>/dev/null || true
+
+    ITEM_ID=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-list "$PROJECT_NUM" --owner @me --format json --jq '.items[] | select(.content.url=="{ISSUE_URL}") | .id' 2>/dev/null)
+    if [ -n "$ITEM_ID" ]; then
+      # IMPORTANT: --project-id requires the node ID (PVT_...), NOT the project number
+      # Status → "Spec"
+      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" --field-id "PVTSSF_lAHOAD_Rzc4BTIvwzhAdyRE" --single-select-option-id "1ac591d0" 2>&1 || true
+      # Phase → set based on MILESTONE
+      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" --field-id "PVTSSF_lAHOAD_Rzc4BTIvwzhAd0z8" --single-select-option-id "{PHASE_OPTION_ID}" 2>&1 || true
+      # Priority → set based on step analysis
+      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" --field-id "PVTSSF_lAHOAD_Rzc4BTIvwzhAd00A" --single-select-option-id "{PRIORITY_OPTION_ID}" 2>&1 || true
+      # Step
+      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" --field-id "PVTF_lAHOAD_Rzc4BTIvwzhAd01U" --text "{TARGET_STEP}" 2>&1 || true
+      # Spec
+      GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" --field-id "PVTF_lAHOAD_Rzc4BTIvwzhAd02A" --text "{SPEC_PATH}" 2>&1 || true
+    fi
   fi
 fi
 ```
+
+**CRITICAL:** `--project-id` requires the **node ID** (`PVT_kwHOAD_Rzc4BTIvw`), NOT the project number. Use `.id` from the JSON, not `.number`. The number is only used for `item-add` and `item-list`.
 
 If `GH_PROJECT_TOKEN` is not set or the project doesn't exist, this step is skipped silently — it's not blocking.
 

@@ -186,9 +186,7 @@ ontology:
 				expect(error).toBeInstanceOf(ConfigValidationError);
 				const err = error as { issues?: Array<{ path: string }> };
 				// Should have an issue mentioning project or project.name
-				const hasProjectIssue = err.issues?.some(
-					(issue) => issue.path.includes('project'),
-				);
+				const hasProjectIssue = err.issues?.some((issue) => issue.path.includes('project'));
 				expect(hasProjectIssue, 'Expected an issue pointing to project.name').toBe(true);
 			}
 		});
@@ -226,9 +224,7 @@ ingestion:
 			} catch (error: unknown) {
 				expect(error).toBeInstanceOf(ConfigValidationError);
 				const err = error as { issues?: Array<{ path: string; message: string }> };
-				const hasPathIssue = err.issues?.some(
-					(issue) => issue.path.includes('max_file_size_mb'),
-				);
+				const hasPathIssue = err.issues?.some((issue) => issue.path.includes('max_file_size_mb'));
 				expect(hasPathIssue, 'Expected an issue pointing to ingestion.max_file_size_mb').toBe(true);
 			}
 		});
@@ -311,17 +307,14 @@ ontology:
 
 				// Spec requires code "invalid_reference" per QA-05
 				const actualCodes = err.issues?.map((i) => `code="${i.code}" path="${i.path}"`).join(', ');
-				const invalidRefIssue = err.issues?.find(
-					(issue) => issue.code === 'invalid_reference',
-				);
+				const invalidRefIssue = err.issues?.find((issue) => issue.code === 'invalid_reference');
 				expect(
 					invalidRefIssue,
 					`Expected an issue with code "invalid_reference", but got: [${actualCodes}]`,
 				).toBeDefined();
-				expect(
-					invalidRefIssue?.message,
-					'Expected error message to mention the invalid type name',
-				).toMatch(/nonexistent_type/i);
+				expect(invalidRefIssue?.message, 'Expected error message to mention the invalid type name').toMatch(
+					/nonexistent_type/i,
+				);
 			}
 		});
 	});
@@ -366,7 +359,7 @@ ontology:
 		afterAll(() => {
 			// Restore original env
 			if (originalEnv === undefined) {
-				delete process.env.MULDER_CONFIG;
+				process.env.MULDER_CONFIG = undefined;
 			} else {
 				process.env.MULDER_CONFIG = originalEnv;
 			}

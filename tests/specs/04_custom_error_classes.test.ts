@@ -121,9 +121,7 @@ describe('Spec 04: Custom Error Classes', () => {
 
 	describe('QA-04: ConfigValidationError extends ConfigError', () => {
 		it('is instanceof ConfigError and MulderError with code CONFIG_INVALID', () => {
-			const error = new ConfigValidationError([
-				{ path: 'a.b', message: 'bad', code: 'invalid_type' },
-			]);
+			const error = new ConfigValidationError([{ path: 'a.b', message: 'bad', code: 'invalid_type' }]);
 
 			expect(error).toBeInstanceOf(ConfigError);
 			expect(error).toBeInstanceOf(MulderError);
@@ -260,7 +258,7 @@ project:
 				const err = error as { issues?: Array<{ path: string; message: string }> };
 				expect(err.issues).toBeDefined();
 				expect(Array.isArray(err.issues)).toBe(true);
-				expect(err.issues!.length).toBeGreaterThan(0);
+				expect(err.issues?.length).toBeGreaterThan(0);
 			}
 		});
 
