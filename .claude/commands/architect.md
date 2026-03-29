@@ -104,7 +104,6 @@ roadmap_step: "[M1-A2]"
 functional_spec: "[§4.1]"
 scope: "[single | phased | multi-spec]"
 issue: ""
-status: draft
 created: YYYY-MM-DD
 ---
 
@@ -173,6 +172,8 @@ Single phase — implement all files in the order listed in §4.1.
 
 Each condition must be verifiable by a QA agent WITHOUT reading implementation code. Concrete Given/When/Then with specific values, not vague descriptions.
 
+> **Foundational steps** (steps that CREATE the test framework, monorepo, or build tooling — e.g., M1-A1, M1-A11): The QA agent runs tests via vitest, but if this step installs vitest, a broken implementation means vitest is unavailable and tests SKIP rather than FAIL. For such steps, write QA conditions using **raw shell assertions**: file/directory existence (`test -f package.json`), exit codes from build commands (`pnpm install`, `tsc --noEmit`), CLI availability (`npx vitest --version`), or `jq` queries on `package.json`. The verify agent wraps these in vitest `it()` blocks using `execFileSync`, but the assertions themselves must not depend on the infrastructure being validated.
+
 1. **[Descriptive name — what capability is being validated]**
    - Given: [precise precondition — input data, DB state, config values, file content]
    - When: [exact action — CLI command with arguments, API call, pipeline trigger]
@@ -192,6 +193,17 @@ Each condition must be verifiable by a QA agent WITHOUT reading implementation c
    - Given: [required upstream data doesn't exist]
    - When: [action attempted]
    - Then: [clear error indicating what's missing, not a crash]
+
+## 6. Cost Considerations
+
+[If this step involves paid GCP API calls (Document AI, Gemini, Vertex AI, Cloud Storage writes), list:]
+
+- **Services called:** [e.g., Document AI Layout Parser, Gemini 2.5 Flash, text-embedding-004]
+- **Estimated cost per document:** [e.g., ~$0.01/page for Document AI, ~$0.002/request for Gemini Flash]
+- **Dev mode alternative:** [e.g., dev_mode reads from fixtures/ — zero cost]
+- **Safety flags:** [reference CLAUDE.md Cost Safety — max_pages_without_confirm, --cost-estimate]
+
+[If this step has NO paid API calls (M1 steps, config, schemas, CLI scaffold): "None — no paid API calls."]
 ```
 
 ### Step 5: Create GitHub Issue
@@ -260,8 +272,20 @@ EOF
 **After issue creation:**
 1. Edit the issue body — replace `{NUMBER}` with the actual issue number
 2. Update the spec's frontmatter `issue:` field with the issue URL
+3. Add the issue to the GitHub Project board:
 
-**For multi-spec splits:** Create one issue per spec, each referencing its spec file. Add a note to each issue body listing the other related issues and their dependency order.
+```bash
+# Find or create the "Mulder Roadmap" project (idempotent)
+PROJECT_NUM=$(gh project list --owner mulkatz --format json --jq '.projects[] | select(.title=="Mulder Roadmap") | .number' 2>/dev/null)
+if [ -z "$PROJECT_NUM" ]; then
+  PROJECT_NUM=$(gh project create --owner mulkatz --title "Mulder Roadmap" --format json --jq '.number')
+fi
+
+# Add issue to project
+gh project item-add "$PROJECT_NUM" --owner mulkatz --url "{ISSUE_URL}"
+```
+
+**For multi-spec splits:** Create one issue per spec, each referencing its spec file. Add a note to each issue body listing the other related issues and their dependency order. Add all issues to the project.
 
 ### Step 6: Update Roadmap Status
 

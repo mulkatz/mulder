@@ -35,7 +35,7 @@ The user can provide:
 | Spec number (`02` or `2`) | Find `docs/specs/{NN}*.spec.md` (zero-padded match) |
 | Filename (`02_config_loader.spec.md`) | Read from `docs/specs/` |
 | Full path (`docs/specs/02_config_loader.spec.md`) | Read directly |
-| Roadmap step (`A2` or `M1-A2`) | Find spec in `docs/specs/` by `roadmap_step` frontmatter match or by title similarity |
+| Roadmap step (`A2` or `M1-A2`) | Find spec in `docs/specs/` by `roadmap_step` frontmatter match. If no match, fall back to title similarity (roadmap step title vs. spec title). If still no match: "No spec found for roadmap step {X}. The roadmap may have been edited without updating spec frontmatter. Run `/architect {X}` to create a spec, or add `roadmap_step: {X}` to the existing spec's frontmatter." |
 | GitHub issue (`#42` or URL) | Fetch with `gh issue view`, extract spec path from issue body |
 | Nothing | Read `docs/roadmap.md`, find the most recent 🟡 step, resolve its spec |
 
@@ -45,7 +45,7 @@ If no spec exists for the resolved target, stop: "No spec found for {target}. Ru
 
 Read in this exact order:
 
-1. **The spec file** — all sections. This is your implementation contract. Note the `roadmap_step` and `functional_spec` frontmatter fields.
+1. **The spec file** — all sections. This is your implementation contract. Note the `roadmap_step` and `functional_spec` frontmatter fields. **If the spec lacks these fields (legacy specs created before the current template), skip sub-steps 3-5 below** (roadmap context, functional-spec sections, milestone cross-refs). Use only the spec itself and CLAUDE.md as implementation inputs.
 
 2. **`CLAUDE.md`** — architecture, conventions, patterns, repo structure. Pay special attention to:
    - Code Conventions (naming, error handling, types)
@@ -141,6 +141,8 @@ If splitting is warranted: "This spec covers a large scope. I recommend splittin
 
 Exit plan mode with `ExitPlanMode` when the plan is solid and no blocking risks remain.
 
+**Cost check:** If the spec includes Section 6 (Cost Considerations) listing paid GCP services, inform the user before proceeding: "This step involves paid APIs: {services from spec}. Estimated cost: {from spec}. Dev mode available: {yes/no}. Proceed?" Wait for confirmation before implementing steps that incur real GCP costs.
+
 ### Step 5: Implement
 
 Execute the plan phase by phase. Follow the commit sequence from your plan.
@@ -176,6 +178,24 @@ Execute the plan phase by phase. Follow the commit sequence from your plan.
 - If you discover a spec gap that's blocking (can't compile without a decision), stop and ask
 - If you discover a spec gap that's minor (obvious from context), proceed and note it for the PR
 
+### Step 5b: Build Verification
+
+Before committing, verify the code compiles and passes lint:
+
+```bash
+# TypeScript compilation — catches type errors before they become cryptic QA failures
+pnpm turbo run build --filter='...[HEAD]' 2>&1 || npx tsc --noEmit 2>&1
+
+# Biome lint + format — the project uses Biome, NOT eslint/prettier
+npx biome check . 2>&1
+```
+
+**If `tsc` fails:** Fix the type errors before proceeding. These are implementation bugs.
+
+**If `biome check` fails:** Run `npx biome check --write .` to auto-fix formatting. For lint errors that can't be auto-fixed, fix manually. Do NOT suppress Biome rules.
+
+**Do not skip this step.** Type errors and lint violations caught here are trivial to fix; the same errors discovered during verification waste an entire QA iteration cycle.
+
 ### Step 6: Create Branch + Commit + Push
 
 **Branch name** — from the spec's linked GitHub issue:
@@ -184,7 +204,17 @@ Execute the plan phase by phase. Follow the commit sequence from your plan.
 feat/GH-{issue-number}-{short-kebab-descriptor}
 ```
 
-If the branch already exists (partial implementation from a prior session), check it out and continue from where it left off.
+If the branch already exists (partial implementation from a prior session):
+
+1. Check out the branch and pull latest: `git checkout {branch} && git pull`
+2. Read the spec's Blueprint (Section 4.1 — Files) for the complete file list
+3. For each file in the Blueprint, check if it already exists on the branch
+4. In plan mode, categorize each file as:
+   - **Done** — file exists and appears complete (skip in plan)
+   - **Partial** — file exists but is incomplete or has TODOs (resume)
+   - **Missing** — file does not exist (implement)
+5. Resume implementation from the first missing or partial file, following the Blueprint's file order
+6. If ALL files exist, check if integration wiring (Section 4.4) is complete — this is often the last thing missing
 
 If no issue exists (shouldn't happen if `/architect` ran first):
 ```
@@ -269,6 +299,8 @@ Ready for:  /verify 02
 ```
 
 **Note:** The roadmap stays at 🟡 after implementation. It is only updated to 🟢 after `/verify` confirms all QA conditions pass. This prevents marking work as complete before it's validated. If running standalone (not via `/auto-pilot`), update the roadmap manually after verification passes.
+
+**Devlog:** After completing a roadmap step AND verification has passed, check if it is the last step in its milestone (all other steps are 🟢). If yes, write a devlog entry at `devlog/{YYYY-MM-DD}-{milestone-slug}.md` summarizing what the milestone achieved, per the devlog conventions in CLAUDE.md.
 
 ---
 

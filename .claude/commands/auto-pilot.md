@@ -109,7 +109,7 @@ Analyze the step and classify scope:
 ### 1.4 Generate spec
 
 Create `docs/specs/NN_title.spec.md` following the template from the architect workflow:
-- Frontmatter: spec number, title, roadmap_step, functional_spec sections, scope, status: draft
+- Frontmatter: spec number, title, roadmap_step, functional_spec sections, scope, created
 - Sections: Objective, Boundaries, Dependencies, Blueprint (files, DB, config, integration, phases), QA Contract
 
 ### 1.5 Create GitHub labels + issue
@@ -141,6 +141,16 @@ done
 ```
 
 **Create the issue** with the `ai-in-progress` label. Follow the architect conventions for title format and body structure. After creation, update the issue body with the actual issue number and update the spec's `issue:` frontmatter.
+
+**Add to GitHub Project** (same as architect workflow):
+
+```bash
+PROJECT_NUM=$(gh project list --owner mulkatz --format json --jq '.projects[] | select(.title=="Mulder Roadmap") | .number' 2>/dev/null)
+if [ -z "$PROJECT_NUM" ]; then
+  PROJECT_NUM=$(gh project create --owner mulkatz --title "Mulder Roadmap" --format json --jq '.number')
+fi
+gh project item-add "$PROJECT_NUM" --owner mulkatz --url "{ISSUE_URL}"
+```
 
 ### 1.6 Update roadmap + commit
 
@@ -227,6 +237,12 @@ Execute the plan phase by phase. Follow CLAUDE.md conventions strictly:
 - Pipeline steps: idempotent with ON CONFLICT DO UPDATE
 - Files: kebab-case.ts | Types: PascalCase | Functions: camelCase
 
+**Step 3b: Build verification.**
+Before committing, run:
+- `pnpm turbo run build --filter='...[HEAD]' 2>&1 || npx tsc --noEmit` — fix any type errors
+- `npx biome check .` — fix any lint/format issues (`npx biome check --write .` for auto-fix)
+Do not proceed to Step 4 if either check fails.
+
 **Step 4: Branch, commit, push, PR.**
 - Create branch: feat/GH-{ISSUE_NUMBER}-{kebab-from-spec-title}
 - Atomic commits per phase with semantic messages
@@ -268,6 +284,7 @@ WORKFLOW:
 4. Enter plan mode (EnterPlanMode): plan minimal fixes for each failure
 5. Exit plan mode: apply fixes
 6. Run tests locally: npx vitest run tests/specs/{SPEC_NUMBER}_*.test.ts --reporter=verbose
+6b. Build verification: run `npx tsc --noEmit` and `npx biome check .` — fix any issues before committing
 7. Commit: "fix: address QA failures — [brief description]" with Co-Authored-By trailer
 8. Push to the same branch
 
@@ -447,6 +464,8 @@ EOF
 git push
 ```
 
+**Devlog check:** Read `docs/roadmap.md` and check if TARGET_STEP is the last step in its milestone (all other steps are now 🟢). If yes, write a devlog entry at `devlog/{YYYY-MM-DD}-{milestone-slug}.md` summarizing what the milestone achieved (per CLAUDE.md devlog conventions). Commit and push it on the feature branch alongside the roadmap update.
+
 ### On NEEDS-REVIEW (max iterations reached)
 
 ```bash
@@ -499,6 +518,14 @@ Mark all tasks complete.
 If Phase 1 classified the scope as **multi-spec** (and the user approved the split):
 
 1. Phase 1 creates ALL sub-specs and issues
+
+**Determining dependency order:**
+   1. Read each sub-spec's Section 3 (Dependencies → Requires)
+   2. Build a directed graph: if spec A requires spec B, add edge B → A (B must come first)
+   3. Topological sort: process specs with no incoming edges (no unmet dependencies) first
+   4. If a cycle is detected (A requires B, B requires C, C requires A), **stop:** "Circular dependency detected between specs {list}. The spec split needs revision."
+   5. If multiple specs have no dependencies (independent), process in spec-number order
+
 2. For each sub-spec **in dependency order**:
    - Reset ITERATION to 0
    - Run Phase 2 (implement) for this sub-spec

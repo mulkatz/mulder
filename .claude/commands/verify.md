@@ -78,6 +78,26 @@ npx mulder --version 2>/dev/null || echo "CLI not available"
 - Mark infrastructure-dependent tests with a clear skip reason
 - The test file should be complete and ready to run once infrastructure is available
 
+**Foundational steps** (steps that CREATE the test framework itself, e.g., M1-A1 monorepo setup): If the spec's QA conditions use raw shell assertions (file existence, exit codes, CLI availability) instead of application-level testing, wrap them in vitest `it()` blocks using `execFileSync`. Example:
+
+```typescript
+it('QA-01: pnpm workspace is configured', () => {
+  expect(() => execFileSync('test', ['-f', 'pnpm-workspace.yaml'])).not.toThrow();
+});
+
+it('QA-02: TypeScript compiles without errors', () => {
+  const result = execFileSync('npx', ['tsc', '--noEmit'], { encoding: 'utf-8' });
+  // exit code 0 = success (execFileSync throws on non-zero)
+});
+
+it('QA-03: vitest is installed', () => {
+  const version = execFileSync('npx', ['vitest', '--version'], { encoding: 'utf-8' });
+  expect(version.trim()).toMatch(/^\d+\.\d+/);
+});
+```
+
+For foundational steps, if the infrastructure is so broken that vitest cannot run at all, report the tests as **FAIL** (not SKIP) — a broken test framework IS the failure.
+
 ### Step 4: Write Test Files
 
 Create test files at:
