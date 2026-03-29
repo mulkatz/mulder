@@ -2,25 +2,29 @@
 
 Tracer bullet development path. Build the pipeline synchronously via CLI first (M1-M6), defer distributed infrastructure until the core works (M7-M8). Optimize for time to first demoable product (M4).
 
+**Spec references:** Each step lists the exact sections of [`functional-spec.md`](./functional-spec.md) needed to implement it. Read only those sections — never the full 2500-line spec.
+
 ---
 
-## M1: "mulder runs locally" — Foundation
+## M1: "Mulder runs locally" — Foundation
 
 No GCP, no LLM, no cost. Pure TypeScript scaffolding.
 
-| Step | What | Produces | Depends on |
-|------|------|----------|------------|
-| A1 | Monorepo setup | pnpm, turbo, tsconfig, eslint | — |
-| A2 | Config loader + Zod schemas | `loadConfig()`, validated against `mulder.config.example.yaml` | A1 |
-| A3 | Custom error classes | Error types with codes | A1 |
-| A4 | Logger setup | Pino structured JSON logger | A1 |
-| A5 | CLI scaffold | `mulder` binary, `config validate`, `config show` | A1-A4 |
-| A6 | Database client + migration runner | `getWorkerPool()`, `getQueryPool()`, `mulder db migrate` | A1, A5 |
-| A7 | Core schema migrations (001-008) | Tables: sources, source_steps, stories, entities, edges, chunks, taxonomy | A6 |
-| A8 | Job queue + pipeline tracking migrations (012-014) | Tables: jobs, pipeline_runs, reset_pipeline_step() function | A6 |
-| A9 | Fixture directory structure | Placeholder structure in `fixtures/` | — |
-| A10 | Service abstraction layer | `services.ts`, `registry.ts`, `rate-limiter.ts`, `retry.ts` | A1 |
-| A11 | Docker Compose setup | pgvector + Firestore emulator | — |
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| [ ] | A1 | Monorepo setup — pnpm, turbo, tsconfig, eslint | §13 |
+| [ ] | A2 | Config loader + Zod schemas — `loadConfig()` | §4.1 |
+| [ ] | A3 | Custom error classes — Error types with codes | §7.1, §7.2 |
+| [ ] | A4 | Logger setup — Pino structured JSON | §8 |
+| [ ] | A5 | CLI scaffold — `mulder` binary, `config validate`, `config show` | §1, §1.1 |
+| [ ] | A6 | Database client + migration runner — dual connection pools | §4.2, §4.6 |
+| [ ] | A7 | Core schema migrations (001-008) — all tables, extensions, indexes | §4.3 |
+| [ ] | A8 | Job queue + pipeline tracking migrations (012-014) | §4.3 (jobs, pipeline_runs), §4.3.1 |
+| [ ] | A9 | Fixture directory structure — placeholders in `fixtures/` | §11 |
+| [ ] | A10 | Service abstraction — interfaces, registry, rate-limiter, retry | §4.5, §7.3 |
+| [ ] | A11 | Docker Compose — pgvector + Firestore emulator | §9.3 |
+
+**Also read for all M1 steps:** §13 (source layout), §14 (design decisions — monorepo, repositories, single PostgreSQL, CLI-first)
 
 **Testable:** `mulder config validate` + `mulder db migrate` + `mulder db status`. Dev registry returns fixture services. No GCP account needed.
 
@@ -30,94 +34,100 @@ No GCP, no LLM, no cost. Pure TypeScript scaffolding.
 
 First GCP integration. First real cost (Document AI).
 
-| Step | What | Produces | Depends on |
-|------|------|----------|------------|
-| B1 | GCP + dev service implementations | `services.gcp.ts`, `services.dev.ts` | A10 |
-| B2 | Source repository | CRUD for `sources` table | A7 |
-| B3 | Native text detection | `pdf-parse` integration, `has_native_text` flag | A1 |
-| B4 | Ingest step | `mulder ingest <path>` | B1, B2, B3 |
-| B5 | Vertex AI wrapper + dev cache | `generateStructured()`, `.mulder-cache.db` | B1 |
-| B6 | Prompt template engine | `renderPrompt()` | A1 |
-| B7 | Extract step (output to GCS) | `mulder extract <id>` → layout.json + page images in GCS | B1, B2, B5, B3 |
-| B8 | Fixture generator | `mulder fixtures generate` | B1-B7 |
-| B9 | **Golden test set: extraction** | 5-10 annotated test pages with expected OCR output. Vitest assertions against fixtures. | B7, B8 |
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| [ ] | B1 | GCP + dev service implementations | §4.5, §4.6 |
+| [ ] | B2 | Source repository — CRUD for `sources` table | §4.3 (sources table), §2.1 |
+| [ ] | B3 | Native text detection — `pdf-parse`, `has_native_text` flag | §2.1 |
+| [ ] | B4 | Ingest step — `mulder ingest <path>` | §2.1, §1 (ingest cmd) |
+| [ ] | B5 | Vertex AI wrapper + dev cache | §4.8 |
+| [ ] | B6 | Prompt template engine — `renderPrompt()` | §4.7 |
+| [ ] | B7 | Extract step — output to GCS | §2.2, §4.4 |
+| [ ] | B8 | Fixture generator — `mulder fixtures generate` | §11, §9.1 |
+| [ ] | B9 | Golden test set: extraction — 5-10 annotated pages, Vitest assertions | §15.1, §15.2 |
 
-**Testable:** Feed PDFs, inspect OCR quality. Dev mode works against fixtures (zero cost). Golden test pages validate extraction before moving forward.
+**Also read for all M2 steps:** §2 (global step conventions), §4.5 (service abstraction), §7.3 (retry), §8 (logging), §11 (fixtures)
+
+**Testable:** Feed PDFs, inspect OCR quality. Dev mode works against fixtures (zero cost). Golden test pages validate extraction.
 
 ---
 
 ## M3: "Stories and entities appear" — Segment + Enrich
 
-Core intelligence. Where mulder becomes more than an OCR tool.
+Core intelligence. Where Mulder becomes more than an OCR tool.
 
-| Step | What | Produces | Depends on |
-|------|------|----------|------------|
-| C1 | Story repository (GCS URIs) | CRUD for `stories` table | A7 |
-| C2 | Segment step (output to GCS) | `mulder segment <id>` → Markdown + metadata per segment | B5, B6, C1 |
-| C3 | Entity + alias repositories | CRUD for `entities`, `entity_aliases`, `story_entities` | A7 |
-| C4 | Edge repository | CRUD for `entity_edges` | A7 |
-| C5 | JSON Schema generator (zod-to-json-schema) | Dynamic schema for Gemini structured output | A2 |
-| C6 | Taxonomy normalization | `normalize()` via `pg_trgm` | A7 |
-| C7 | Cross-lingual entity resolution (3-tier) | `resolve()` with attribute match, embedding similarity, LLM-assisted | C3, B5 |
-| C8 | Enrich step | `mulder enrich <id>` | B5, B6, C1-C7 |
-| C9 | Cascading reset function | `reset_pipeline_step()` PL/pgSQL | A7 |
-| C10 | **Golden test set: segmentation + entities** | 3-5 annotated articles with expected segment boundaries + entities. Vitest assertions. | C2, C8 |
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| [ ] | C1 | Story repository — CRUD with GCS URIs | §4.3 (stories table), §2.3 |
+| [ ] | C2 | Segment step — output Markdown + metadata to GCS | §2.3, §4.4 |
+| [ ] | C3 | Entity + alias repositories — CRUD | §4.3 (entities, entity_aliases, story_entities), §2.4 |
+| [ ] | C4 | Edge repository — CRUD for `entity_edges` | §4.3 (entity_edges), §2.4 |
+| [ ] | C5 | JSON Schema generator — `zod-to-json-schema` | §2.4, §14 (why zod-to-json-schema) |
+| [ ] | C6 | Taxonomy normalization — `pg_trgm` matching | §6.2, §2.4 |
+| [ ] | C7 | Cross-lingual entity resolution — 3-tier | §2.4 (resolution strategy), §4.8 (embedding calls) |
+| [ ] | C8 | Enrich step — `mulder enrich <id>` | §2.4, §1 (enrich cmd) |
+| [ ] | C9 | Cascading reset function — PL/pgSQL | §4.3.1, §3.4 |
+| [ ] | C10 | Golden test set: segmentation + entities — Vitest assertions | §15.1, §15.2 |
+
+**Also read for all M3 steps:** §2 (global step conventions), §4.5 (service abstraction), §6 (taxonomy system), §7.3 (retry), §8 (logging)
 
 **Testable:** Full extraction pipeline through entities. `--force` re-runs work cleanly. Cross-lingual entity merging verified. Golden tests catch prompt regressions.
 
 ---
 
-## M4: "You can search" — Embed + Graph + Pipeline + Retrieval (v1.0 MVP)
+## M4: "You can search" — v1.0 MVP
 
 First version worth showing to anyone.
 
-| Step | What | Produces | Depends on |
-|------|------|----------|------------|
-| D1-D3 | Embedding wrapper + semantic chunker + chunk repository | `embed()`, `chunk()`, CRUD for `chunks` | B1, A7 |
-| D4 | Embed step | `mulder embed <id>` → chunks with vectors + FTS in PostgreSQL | D1-D3, B5, B6 |
-| D5 | Graph step (dedup + corroboration + contradiction flagging) | `mulder graph <id>` | C4 |
-| D6 | Pipeline orchestrator (cursor-based) | `mulder pipeline run <path>` | B4, B7, C2, C8, D4, D5 |
-| D7 | Full-text search (generated tsvector on chunks) | BM25 queries on same table as vectors | D3 |
-| E1 | Vector search (HNSW) | pgvector cosine similarity queries | D3 |
-| E2 | Full-text search wrapper | tsvector BM25 queries | D7 |
-| E3 | Graph traversal (recursive CTE with cycle detection) | Connected entity queries | C4 |
-| E4 | RRF fusion | Combined results from all strategies | E1-E3 |
-| E5 | LLM re-ranking | Gemini Flash re-ranks top N | B5, B6 |
-| E6 | Hybrid retrieval orchestrator | `mulder query <question>` | E1-E5 |
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| [ ] | D1-D3 | Embedding wrapper + semantic chunker + chunk repo | §2.6, §4.3 (chunks table) |
+| [ ] | D4 | Embed step — `mulder embed <id>` | §2.6, §1 (embed cmd) |
+| [ ] | D5 | Graph step — dedup + corroboration + contradiction flagging | §2.7, §1 (graph cmd) |
+| [ ] | D6 | Pipeline orchestrator — cursor-based | §3.1, §3.2, §3.3, §1 (pipeline cmd) |
+| [ ] | D7 | Full-text search — generated tsvector on chunks | §4.3 (chunks.fts_vector), §5.1 |
+| [ ] | E1 | Vector search — HNSW, pgvector cosine similarity | §5.1 (vector search), §4.3 (HNSW index) |
+| [ ] | E2 | Full-text search wrapper — BM25 queries | §5.1 (full-text search) |
+| [ ] | E3 | Graph traversal — recursive CTE, cycle detection | §5.1 (graph traversal SQL) |
+| [ ] | E4 | RRF fusion — configurable weights | §5.2 |
+| [ ] | E5 | LLM re-ranking — Gemini Flash | §5.2, §4.8 |
+| [ ] | E6 | Hybrid retrieval orchestrator — `mulder query` | §5 (full section), §1 (query cmd) |
 
-**Testable: Full MVP end-to-end.** Ingest PDFs → process → query with natural language → ranked results. Demo-worthy. Blog-post-worthy. This is v1.0.
+**Also read for all M4 steps:** §2 (global step conventions), §5.3 (sparse graph degradation), §14 (design decisions — HNSW, 768-dim, dedup before corroboration)
+
+**Testable: Full MVP end-to-end.** Ingest PDFs, process, query with natural language, ranked results. This is v1.0.
 
 ---
 
 ## M5: "Curated knowledge" — Taxonomy + Entity Management
 
-Polish and curation tools.
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| [ ] | F1 | Taxonomy bootstrap — `mulder taxonomy bootstrap` | §6.1, §1 (taxonomy cmd) |
+| [ ] | F2 | Taxonomy export/curate/merge | §6.3, §1 (taxonomy cmd) |
+| [ ] | F3 | Entity management CLI — list/show/merge/aliases | §1 (entity cmd) |
+| [ ] | F4 | Status overview — `mulder status` | §1 (status cmd) |
+| [ ] | F5 | Export commands — graph/stories/evidence | §1 (export cmd) |
 
-| Step | What | Produces | Depends on |
-|------|------|----------|------------|
-| F1 | Taxonomy bootstrap | `mulder taxonomy bootstrap` | C3, B5 |
-| F2 | Taxonomy export/curate/merge | `mulder taxonomy export/curate/merge` | F1 |
-| F3 | Entity management CLI | `mulder entity list/show/merge/aliases` | C3 |
-| F4 | Status overview | `mulder status` | B2, C1, C3 |
-| F5 | Export commands | `mulder export graph/stories/evidence` | C3, C4 |
+**Also read for all M5 steps:** §6 (full taxonomy system), §5.3 (sparse graph degradation — bootstrap threshold)
 
 **Testable:** Human-in-the-loop curation. Export to Neo4j/Gephi. Production entity management.
 
 ---
 
-## M6: "Intelligence layer" — Ground + Analyze (v2.0)
+## M6: "Intelligence layer" — v2.0
 
-The differentiating capabilities.
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| [ ] | G1 | v2.0 schema migrations (009-011) | §4.3 (grounding, evidence_chains, clusters tables) |
+| [ ] | G2 | Ground step — `mulder ground <entity-id>` | §2.5, §1 (ground cmd) |
+| [ ] | G3 | Contradiction resolution — `mulder analyze --contradictions` | §2.8 |
+| [ ] | G4 | Source reliability scoring — `mulder analyze --reliability` | §2.8, §5.3 |
+| [ ] | G5 | Evidence chains — `mulder analyze --evidence-chains` | §2.8, §4.3 (evidence_chains table) |
+| [ ] | G6 | Spatio-temporal clustering | §2.8, §4.3 (clusters table) |
+| [ ] | G7 | Analyze orchestrator — `mulder analyze --full` | §2.8, §1 (analyze cmd) |
 
-| Step | What | Produces | Depends on |
-|------|------|----------|------------|
-| G1 | v2.0 schema migrations (009-011) | Tables: grounding, evidence_chains, clusters | A6 |
-| G2 | Ground step | `mulder ground <entity-id>` | B5, G1 |
-| G3 | Contradiction resolution | `mulder analyze --contradictions` | B5, B6, D5 |
-| G4 | Source reliability scoring | `mulder analyze --reliability` | D5 |
-| G5 | Evidence chains | `mulder analyze --evidence-chains` | D5, G1 |
-| G6 | Spatio-temporal clustering | `mulder analyze --spatio-temporal` | G1, G2 |
-| G7 | Analyze orchestrator | `mulder analyze --full` | G3-G6 |
+**Also read for all M6 steps:** §2 (global step conventions), §4.8 (Vertex AI wrapper for Gemini calls)
 
 **Testable:** Web-enriched entities, resolved contradictions, evidence chains, spatial clusters. Full v2.0 intelligence.
 
@@ -125,19 +135,19 @@ The differentiating capabilities.
 
 ## M7: "API + workers" — Async Execution Layer
 
-Makes mulder deployable as a service.
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| [ ] | H1 | Job queue repository — enqueue/dequeue/reap | §4.3 (jobs table), §10.2, §10.3 |
+| [ ] | H2 | Worker loop — `mulder worker start/status/reap` | §10.4, §10.5, §1 (worker cmd) |
+| [ ] | H3 | Hono server scaffold | §13 (apps/api/) |
+| [ ] | H4 | Pipeline API routes (async) | §10.2, §10.6 |
+| [ ] | H5 | Job status API | §10.6 |
+| [ ] | H6 | Search API routes (sync) | §10.6, §5 |
+| [ ] | H7 | Entity API routes (sync) | §10.6 |
+| [ ] | H8 | Evidence API routes (sync) | §10.6 |
+| [ ] | H9 | Middleware — auth, rate limiting, validation | §10.6 (rate limiting tiers) |
 
-| Step | What | Produces | Depends on |
-|------|------|----------|------------|
-| H1 | Job queue repository | `enqueue()`, `dequeue()`, `reap()` | A8 |
-| H2 | Worker loop | `mulder worker start/status/reap` | H1 |
-| H3 | Hono server scaffold | HTTP server | A1 |
-| H4 | Pipeline API routes (async) | `POST /api/pipeline/run` → 202 + job_id | H1, H2, D6 |
-| H5 | Job status API | `GET /api/jobs/:id` | H1 |
-| H6 | Search API routes (sync) | `POST /api/search` | E6 |
-| H7 | Entity API routes (sync) | `GET /api/entities/*` | C3 |
-| H8 | Evidence API routes (sync) | `GET /api/evidence/*` | G7 |
-| H9 | Middleware (auth, rate limiting, validation) | API safety layer | H3 |
+**Also read for all M7 steps:** §10 (full job queue section — especially §10.3 transaction discipline), §14 (design decisions — PostgreSQL queue, auto-commit dequeue, per-step job slicing)
 
 **Testable:** HTTP API for everything. Workers process jobs asynchronously. Deployable to Cloud Run.
 
@@ -145,18 +155,18 @@ Makes mulder deployable as a service.
 
 ## M8: "Production-safe" — Operational Infrastructure
 
-Safety nets for running at scale.
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| [ ] | I1 | `mulder eval` CLI + reporter | §15, §1 (eval cmd) |
+| [ ] | I2 | Cost estimator — `--cost-estimate` flag | §16.2, §1 (ingest/pipeline/reprocess cmds) |
+| [ ] | I3 | Terraform budget alerts | §16.1 |
+| [ ] | I4 | Schema evolution / reprocessing — `mulder reprocess` | §3.5, §4.3 (source_steps table) |
+| [ ] | I5 | Dead letter queue — `mulder retry` | §10.5, §1 (retry cmd) |
+| [ ] | I6 | Devlog system — conventions established | §17 |
 
-| Step | What | Produces | Depends on |
-|------|------|----------|------------|
-| I1 | `mulder eval` CLI + reporter | `mulder eval --compare baseline`, CER/WER metrics, regression detection | B9, C10 |
-| I2 | Cost estimator | `mulder ingest --cost-estimate`, `mulder reprocess --cost-estimate` | B4, D6 |
-| I3 | Terraform budget alerts | `terraform/modules/budget/` | — |
-| I4 | Schema evolution / reprocessing | `mulder reprocess --dry-run`, config_hash comparison | D6 |
-| I5 | Dead letter queue | `dead_letter` job status + `mulder retry` CLI | H2 |
-| I6 | Devlog system | `devlog/` conventions established | — |
+**Also read for all M8 steps:** §16 (full cost safety section)
 
-**Testable:** Eval against golden set with CLI reporter. Cost gates before expensive operations. Selective reprocessing after config changes. DLQ recovery.
+**Testable:** Eval against golden set with CLI reporter. Cost gates before expensive operations. Selective reprocessing. DLQ recovery.
 
 ---
 
@@ -173,7 +183,7 @@ M1 Foundation
              └→ M8 Operations
 ```
 
-M1→M4 is the critical path. Everything after M4 can be reordered based on user feedback. M5-M8 are largely independent of each other.
+M1-M4 is the critical path. Everything after M4 can be reordered based on user feedback.
 
 ## Key decisions baked into this order
 

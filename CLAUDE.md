@@ -4,6 +4,20 @@ Config-driven Document Intelligence Platform on GCP. Transforms document collect
 
 **This is a public open-source repository (Apache 2.0).** Never commit API keys, GCP credentials, service account JSON, `.env` files, or any secrets. All sensitive config goes through environment variables or GCP IAM — never in code or config files checked into git. The `.gitignore` blocks `.env*`, `terraform.tfstate*`, and `.mulder-cache.db`. If you spot a leaked secret, rotate it immediately.
 
+## Implementation Workflow
+
+The functional spec (`docs/functional-spec.md`) is 2500+ lines. **Never read it fully.** Use the roadmap as an index instead.
+
+**For every implementation step:**
+1. Read this file (CLAUDE.md) — loaded automatically, gives architecture + conventions + patterns
+2. Read `docs/roadmap.md` — find the current step, check its **Spec** column for section references
+3. Read **only the referenced sections** of `docs/functional-spec.md` (e.g., `§4.1` = Section 4.1)
+4. Also read the milestone's **"Also read"** cross-references (shared context for all steps in that milestone)
+5. Implement the step
+6. **Mark the step as done** in `docs/roadmap.md` — change `[ ]` to `[x]` in the Status column
+
+The roadmap is the source of truth for what's been built. Always check it before starting work to avoid duplicating effort.
+
 ## Architecture Decisions
 
 - **TypeScript** throughout (pipeline, API, CLI, config loader) — ESM, strict mode
