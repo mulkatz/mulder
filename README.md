@@ -52,7 +52,7 @@ Transforms the knowledge graph from a connection map into an assessment system. 
 
 ## Quick Start
 
-> Coming soon — the project is under active development.
+> Coming soon — see [docs/roadmap.md](docs/roadmap.md) for the implementation plan.
 
 ## Architecture Overview
 
@@ -63,7 +63,7 @@ mulder processes documents through an eight-stage pipeline, orchestrated by Clou
 3. **Segment** — Gemini structured output identifies and isolates individual articles/stories within a document
 4. **Enrich** — Entities and relationships extracted based on your config ontology, normalized against the domain taxonomy, with cross-document entity resolution
 5. **Ground** — Web enrichment via Gemini `google_search_retrieval` — verifies and enriches entities with real-world data (coordinates, bios, descriptions)
-6. **Embed** — Semantic chunking with question generation, embedded via `gemini-embedding-001` (3072-dim, multilingual)
+6. **Embed** — Semantic chunking with question generation, embedded via `text-embedding-004` (768-dim Matryoshka, multilingual)
 7. **Graph** — Entities and relationships written to PostgreSQL relational tables; corroboration scoring (SQL aggregation); flags potential contradictions via attribute diff (no LLM)
 8. **Analyze** — Resolves pending contradictions via Gemini (confirm or dismiss), spatio-temporal clustering, source reliability scoring (weighted PageRank), evidence chain computation
 
@@ -233,7 +233,7 @@ Baseline cost: **~30-40 EUR/mo** for a small Cloud SQL instance. Scales with ins
 | OCR | Document AI Layout Parser |
 | LLM | Gemini 2.5 Flash via Vertex AI |
 | Web Grounding | Gemini `google_search_retrieval` (Vertex AI) |
-| Embeddings | gemini-embedding-001 (3072-dim) |
+| Embeddings | text-embedding-004 (768-dim Matryoshka) |
 | Database | Cloud SQL PostgreSQL (pgvector + tsvector + PostGIS) |
 | Metadata | Firestore |
 | Orchestration | Cloud Workflows + Cloud Run Jobs |
@@ -244,7 +244,7 @@ Baseline cost: **~30-40 EUR/mo** for a small Cloud SQL instance. Scales with ins
 
 ## Status
 
-mulder is in active early development. The architecture is defined, implementation is underway.
+mulder's design phase is complete. Architecture, functional spec, and implementation roadmap are finalized. Building Phase A (foundation) now. See [docs/roadmap.md](docs/roadmap.md) for the 8-milestone implementation plan.
 
 Contributions, feedback, and ideas are welcome — open an issue or start a discussion.
 

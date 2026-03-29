@@ -1,6 +1,30 @@
 node_modules/
 dist/
-.idea/
 *.log
 .DS_Store
 *.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code
+.claude/plans/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Dev mode
+.mulder-cache.db
+.env*
+!.env.example
+
+# Terraform
+terraform/.terraform/
+terraform/terraform.tfstate*
+
+# Eval metrics (baseline is checked in)
+eval/metrics/*.json
+!eval/metrics/baseline.json
