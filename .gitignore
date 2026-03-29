@@ -28,3 +28,8 @@ terraform/terraform.tfstate*
 # Eval metrics (baseline is checked in)
 eval/metrics/*.json
 !eval/metrics/baseline.json
+
+# Build outputs
+dist/
+*.tsbuildinfo
+.turbo/

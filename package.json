@@ -1,0 +1,23 @@
+{
+	"name": "mulder",
+	"private": true,
+	"type": "module",
+	"packageManager": "pnpm@10.29.3",
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"scripts": {
+		"build": "turbo run build",
+		"typecheck": "turbo run typecheck",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"test": "vitest run",
+		"test:watch": "vitest"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.9.0",
+		"turbo": "^2.3.0",
+		"typescript": "^5.7.0",
+		"vitest": "^3.0.0"
+	}
+}
