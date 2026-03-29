@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./icon.png" width="100" alt="Mulder" />
+  <img src="./mulder-icon.svg" width="100" alt="Mulder" />
 </p>
 
 <h1 align="center">Mulder</h1>
