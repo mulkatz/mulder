@@ -1,252 +1,157 @@
-<p align="center"><img src="./icon.png" width="120" /></p>
+<p align="center">
+  <img src="./icon.png" width="100" alt="Mulder" />
+</p>
 
-# Mulder
+<h1 align="center">Mulder</h1>
 
-**Config-driven Document Intelligence Platform on GCP.**
-Turn any document collection into a searchable knowledge base with a Knowledge Graph — defined by one config file, deployed by one command.
+<p align="center">
+  <strong>Config-driven Document Intelligence Platform on GCP</strong><br />
+  Turn document collections into searchable knowledge graphs — defined by one config file, deployed by one command.
+</p>
 
-*The truth is in the documents.*
+<p align="center">
+  <em>The truth is in the documents.</em>
+</p>
+
+<p align="center">
+  <a href="https://mulder.mulkatz.dev"><img src="https://img.shields.io/badge/demo-live-blue?style=flat-square" alt="Live Demo" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache_2.0-green?style=flat-square" alt="License" /></a>
+  <img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/GCP-native-4285F4?style=flat-square&logo=googlecloud&logoColor=white" alt="GCP" />
+  <img src="https://img.shields.io/badge/status-building_M1-orange?style=flat-square" alt="Status" />
+</p>
+
+<p align="center">
+  <a href="https://mulder.mulkatz.dev">Live Demo</a> &middot;
+  <a href="./docs/functional-spec.md">Functional Spec</a> &middot;
+  <a href="./docs/roadmap.md">Roadmap</a> &middot;
+  <a href="./mulder.config.example.yaml">Example Config</a>
+</p>
+
+---
+
+<p align="center">
+  <img src="./docs/screenshots/01-dashboard-light.png" width="720" alt="Mulder Dashboard" />
+</p>
 
 ## What it does
 
-Mulder transforms unstructured document collections — PDFs with complex layouts like magazines, newspapers, government correspondence — into structured, searchable knowledge. You define your domain ontology (entity types, relationships, extraction strategy) in a single `mulder.config.yaml`, run `terraform apply`, and get a fully deployed GCP pipeline that ingests, extracts, enriches, and connects your documents.
+Mulder transforms unstructured document collections — PDFs with complex layouts like magazines, newspapers, government correspondence — into structured, searchable knowledge.
 
-Most document intelligence tools require custom code per domain. Mulder takes a different approach: describe your domain in YAML, and the pipeline adapts — extraction, entity resolution, retrieval, and analysis all derive from one config file.
+You define your domain ontology in a single `mulder.config.yaml`. The pipeline adapts: extraction, entity resolution, retrieval, and analysis all derive from that one config file. No custom code per domain.
 
-## Key Features
+```
+mulder.config.yaml  →  terraform apply  →  mulder pipeline run ./pdfs/  →  mulder query "..."
+```
 
-- **Config-driven** — One YAML file defines your entire domain: entities, relationships, extraction rules
-- **Terraform-deployed** — Full GCP infrastructure from a single `terraform apply`
-- **Complex layout support** — Document AI Layout Parser + Gemini Vision fallback for magazines, newspapers, multi-column layouts
-- **Hybrid Retrieval** — Vector search (pgvector) + BM25 full-text (tsvector) + graph traversal, fused via RRF and LLM re-ranking
-- **Domain Taxonomy** — Auto-generated, incrementally growing taxonomy with human-in-the-loop curation for entity normalization
-- **Web Grounding** — Gemini verifies and enriches entities against live web data (coordinates, bios, org descriptions)
-- **Spatio-Temporal Analysis** — PostGIS proximity queries, temporal clustering, pattern detection across time and space
-- **Evidence Scoring** — Corroboration scores, contradiction detection, source reliability via weighted PageRank, evidence chains
-- **PostgreSQL All-in-One** — Single Cloud SQL instance handles vector search, full-text search, geospatial, and graph traversal (recursive CTEs)
-- **Multilingual** — German + English out of the box, extensible to any language
-- **CLI-first** — Ingest, query, export, and manage everything from the terminal
+## Capabilities
 
-## Core Capabilities
+| # | Capability | What it does |
+|---|-----------|-------------|
+| 1 | **Layout Extraction** | Document AI + Gemini Vision fallback for magazines, newspapers, multi-column layouts |
+| 2 | **Domain Ontology** | One YAML defines entities, relationships, extraction rules. Gemini structured output with auto-generated JSON Schema. |
+| 3 | **Taxonomy** | Auto-bootstrapped after ~25 docs, incremental growth, human-in-the-loop curation, cross-lingual |
+| 4 | **Hybrid Retrieval** | Vector (pgvector) + BM25 (tsvector) + graph traversal (recursive CTEs), fused via RRF + LLM re-ranking |
+| 5 | **Web Grounding** | Gemini verifies entities against live web data — coordinates, bios, org descriptions |
+| 6 | **Spatio-Temporal** | PostGIS proximity queries, temporal clustering, pattern detection across time and space |
+| 7 | **Evidence Scoring** | Corroboration scores, two-phase contradiction detection, source reliability (PageRank), evidence chains |
+| 8 | **Cross-Lingual Resolution** | 3-tier entity resolution (attribute match, embedding similarity, LLM-assisted) across 100+ languages |
+| 9 | **Deduplication** | MinHash/SimHash near-duplicate detection, dedup-aware corroboration scoring |
+| 10 | **Schema Evolution** | Config-hash tracking per document per step, selective reprocessing after config changes |
 
-### 1. Complex Layout Extraction
-Document AI Layout Parser handles OCR and layout analysis for complex documents — magazines, newspapers, multi-column government correspondence. Gemini Vision falls back on pages where confidence is low, handling tables, sidebars, and mixed-layout content.
+<details>
+<summary><strong>Phase 2</strong> (designed for, not yet implemented)</summary>
 
-### 2. Config-Driven Domain Ontology
-A single `mulder.config.yaml` defines entity types, relationships, attributes, and extraction strategy. Gemini structured output uses dynamically generated JSON Schema from this config. Switch domains by editing one file — no code changes.
+| # | Capability | What it does |
+|---|-----------|-------------|
+| 11 | **Visual Intelligence** | Image extraction, Gemini analysis, image embeddings, map/diagram data extraction |
+| 12 | **Pattern Discovery** | Cluster anomalies, temporal spikes, subgraph similarity, proactive insights |
 
-### 3. Domain Taxonomy with Auto-Normalization
-Solves the problem of entity matching across inconsistent terminology. After ~25 documents, Gemini bootstraps a taxonomy grouping entity variants under canonical terms. Each new document matches entities against the existing taxonomy. Auto-generated entries marked `auto`, manually confirmed entries marked `confirmed`. Curate via `taxonomy.curated.yaml` or the CLI. Re-bootstrap via `mulder taxonomy re-bootstrap` when the collection grows significantly.
+</details>
 
-### 4. Hybrid Retrieval with LLM Re-Ranking
-Three parallel retrieval strategies — vector search (pgvector cosine similarity), BM25 full-text search (PostgreSQL tsvector), and graph traversal (recursive CTEs) — fused via Reciprocal Rank Fusion (RRF). Gemini Flash re-ranks the fused results for final relevance in the query context.
+## Pipeline
 
-### 5. Web Grounding / Enrichment
-Gemini's native `google_search_retrieval` tool via Vertex AI verifies and enriches extracted entities: locations → GPS coordinates and type, persons → biographical context, organizations → descriptions, events → date verification. Three modes: `pipeline` (auto during ingestion), `on_demand` (enrich specific entities or batches via API/CLI), or `disabled`. Config controls which entity types get enriched. Results cached with configurable TTL.
+```
+PDF  →  Ingest  →  Extract  →  Segment  →  Enrich  →  [Ground]  →  Embed  →  Graph  →  [Analyze]
+         GCS       Doc AI       Gemini      Gemini     Search       text-      Dedup     Contra-
+                   + Vision     Images →    Entities   Grounding    embedding  Corr.     dictions
+                   → GCS        Markdown    Resolution              -004       Scoring   PageRank
+                                → GCS       Taxonomy                                     Evidence
+```
 
-### 6. Spatio-Temporal Analysis
-Time and space as first-class dimensions. Temporal: normalized timestamps on events, fuzzy date normalization ("early 80s" → date range), temporal cluster detection. Geospatial: PostGIS for proximity queries, coordinates enriched via web grounding. Combined: graph algorithms (community detection, shortest path) filtered by time and space windows.
-
-### 7. Evidence Scoring & Contradiction Detection
-Transforms the knowledge graph from a connection map into an assessment system. Two-phase contradiction detection: the Graph step flags potential contradictions immediately via attribute comparison (fast, no LLM — e.g., "March 1982" vs "July 1983" on the same event), then the Analyze step resolves them via Gemini semantic comparison (confirms real contradictions, dismisses precision differences like "early 1982" vs "March 1982"). Corroboration scores count independent sources per claim. Weighted PageRank scores source reliability. Evidence chains trace paths through the graph supporting or refuting a thesis.
-
-## Quick Start
-
-> Coming soon — see [docs/roadmap.md](docs/roadmap.md) for the implementation plan.
-
-## Architecture Overview
-
-Mulder processes documents through an eight-stage pipeline, orchestrated by Cloud Workflows:
-
-1. **Ingest** — PDFs land in Cloud Storage, triggering the pipeline via Eventarc + Pub/Sub
-2. **Extract** — Document AI Layout Parser handles OCR and layout analysis; Gemini Vision falls back on low-confidence pages
-3. **Segment** — Gemini structured output identifies and isolates individual articles/stories within a document
-4. **Enrich** — Entities and relationships extracted based on your config ontology, normalized against the domain taxonomy, with cross-document entity resolution
-5. **Ground** — Web enrichment via Gemini `google_search_retrieval` — verifies and enriches entities with real-world data (coordinates, bios, descriptions)
-6. **Embed** — Semantic chunking with question generation, embedded via `text-embedding-004` (768-dim Matryoshka, multilingual)
-7. **Graph** — Entities and relationships written to PostgreSQL relational tables; corroboration scoring (SQL aggregation); flags potential contradictions via attribute diff (no LLM)
-8. **Analyze** — Resolves pending contradictions via Gemini (confirm or dismiss), spatio-temporal clustering, source reliability scoring (weighted PageRank), evidence chain computation
-
-Every step is idempotent and can be re-run individually. Ground can run independently when web data changes. Analyze can run after each new batch without retriggering the full pipeline.
-
-Query via the API or CLI using hybrid retrieval (vector + full-text + graph), with LLM re-ranking for optimal results.
+Every step is idempotent, independently runnable, and CLI-accessible. Content artifacts live in GCS, search index in PostgreSQL.
 
 ## Configuration
 
-All domain-specific logic lives in `mulder.config.yaml`. Here's an example for investigative journalism research:
+All domain logic lives in `mulder.config.yaml`. Define your domain, the pipeline adapts:
 
 ```yaml
 project:
   name: investigative-journalism
-  gcp_project_id: my-gcp-project
-  region: europe-west3
 
 ontology:
-  entities:
+  entity_types:
     - name: person
       description: Individual mentioned in documents
       attributes:
-        - name: role
-          type: string
-          description: Role or title (e.g., politician, whistleblower, journalist)
-        - name: affiliation
-          type: string
-          description: Organization or group affiliation
-
-    - name: organization
-      description: Company, agency, or institution
-      attributes:
-        - name: type
-          type: enum
-          values: [government, corporate, ngo, media, other]
-
+        - { name: role, type: string }
+        - { name: affiliation, type: string }
     - name: event
-      description: A specific incident, meeting, or occurrence
+      description: A specific incident or occurrence
       attributes:
-        - name: date
-          type: date
-        - name: location
-          type: string
-
-    - name: document_ref
-      description: Reference to an external document, law, or filing
-      attributes:
-        - name: doc_type
-          type: enum
-          values: [court_filing, legislation, report, memo, correspondence]
-        - name: identifier
-          type: string
-
+        - { name: date, type: date }
+        - { name: location, type: string }
     - name: location
       description: Geographic place
       attributes:
-        - name: coordinates
-          type: geo_point
-          optional: true
+        - { name: coordinates, type: geo_point, optional: true }
 
   relationships:
-    - name: involved_in
-      from: person
-      to: event
-      attributes:
-        - name: role
-          type: string
-
-    - name: affiliated_with
-      from: person
-      to: organization
-
-    - name: references
-      from: event
-      to: document_ref
-
-    - name: occurred_at
-      from: event
-      to: location
-
-extraction:
-  language: [en, de]
-  segmentation:
-    strategy: llm
-    model: gemini-2.5-flash
-  entity_extraction:
-    model: gemini-2.5-flash
-    confidence_threshold: 0.8
-  entity_resolution:
-    enabled: true
-    similarity_threshold: 0.85
-
-taxonomy:
-  auto_generate: true
-  bootstrap_after_n_documents: 25
-  allow_re_bootstrap: true
-  normalization_model: "gemini-2.5-flash"
-  curated_file: "taxonomy.curated.yaml"
-
-retrieval:
-  strategies:
-    vector: { weight: 0.4, top_k: 20 }
-    fulltext: { weight: 0.3, top_k: 20 }
-    graph: { weight: 0.3, max_hops: 2 }
-  reranker:
-    enabled: true
-    model: "gemini-2.5-flash"
-    top_k: 10
-
-enrichment:
-  enabled: true
-  mode: "on_demand"  # "pipeline" | "on_demand" | "disabled"
-  provider: "gemini_search_grounding"
-  enrich_types: ["Location", "Person", "Organization", "Event"]
-  skip_types: ["Phenomenon", "ObjectDescription"]
-  cache_ttl_days: 90
-
-analysis:
-  temporal:
-    enabled: true
-    cluster_window_days: 30
-    normalize_dates: true
-  geospatial:
-    enabled: true
-    proximity_default_km: 50
-    enrich_coordinates: true
-
-evidence:
-  corroboration:
-    enabled: true
-    min_independent_sources: 2
-  contradiction:
-    enabled: true
-    detection_model: "gemini-2.5-flash"
-    compare_attributes: ["date", "location", "description", "witness_count"]
-  source_scoring:
-    enabled: true
-    algorithm: "weighted_pagerank"
+    - { name: involved_in, from: person, to: event }
+    - { name: occurred_at, from: event, to: location }
 ```
 
-Every section beyond `project` and `ontology` has sensible defaults — you only need to configure what you want to customize.
+Everything beyond `project` and `ontology` has sensible defaults. See [`mulder.config.example.yaml`](./mulder.config.example.yaml) for the full reference.
 
-## Infrastructure & Cost
+## Architecture
 
-Mulder runs on a minimal GCP footprint. All capabilities are feature-flagged — enable what you need, disable what you don't.
+<table>
+<tr><td><strong>Single PostgreSQL</strong></td><td>pgvector + tsvector + PostGIS + recursive CTEs + job queue — one instance, no graph DB, no Redis, no Pub/Sub</td></tr>
+<tr><td><strong>Content in GCS</strong></td><td>PDFs, layout JSON, page images, story Markdown in Cloud Storage. PostgreSQL holds references + search index only.</td></tr>
+<tr><td><strong>Service Abstraction</strong></td><td>All GCP services behind interfaces. Dev mode uses fixtures — zero API calls, zero cost.</td></tr>
+<tr><td><strong>CLI-first</strong></td><td>Every capability is a CLI command. The API is a job producer, not a direct executor.</td></tr>
+<tr><td><strong>PostgreSQL is truth</strong></td><td>Pipeline state, job queue, config tracking. Firestore is observability-only (UI monitoring).</td></tr>
+</table>
 
-**Core (always deployed):**
-- Cloud SQL PostgreSQL (pgvector + tsvector + PostGIS) — single instance for all data
-- Cloud Storage — document storage
-- Cloud Run — API + pipeline workers
-- Pub/Sub + Eventarc — pipeline orchestration
-- Firestore — metadata
-
-**Optional (enable via config):**
-- BigQuery — analytics and reporting
-- Vertex AI Search — managed retrieval alternative
-
-Baseline cost: **~30-40 EUR/mo** for a small Cloud SQL instance. Scales with instance size and Gemini API usage. All capabilities are included — you choose what to enable based on your needs and budget.
+**Baseline cost:** ~30-40 EUR/mo for a small Cloud SQL instance. Scales with Gemini API usage.
 
 ## Tech Stack
 
-| Component | Technology |
+| | |
 |---|---|
-| Language | TypeScript (ESM, strict) |
-| Monorepo | pnpm + Turborepo |
-| Infrastructure | Terraform (modular) |
-| OCR | Document AI Layout Parser |
-| LLM | Gemini 2.5 Flash via Vertex AI |
-| Web Grounding | Gemini `google_search_retrieval` (Vertex AI) |
-| Embeddings | text-embedding-004 (768-dim Matryoshka) |
-| Database | Cloud SQL PostgreSQL (pgvector + tsvector + PostGIS) |
-| Metadata | Firestore |
-| Orchestration | Cloud Workflows + Cloud Run Jobs |
-| API | Cloud Run Service |
-| Config Validation | Zod |
-| CLI | Commander.js / oclif |
-| Testing | Vitest |
+| **Language** | TypeScript (ESM, strict mode) |
+| **Monorepo** | pnpm + Turborepo |
+| **Infrastructure** | Terraform (modular) |
+| **OCR** | Document AI Layout Parser |
+| **LLM** | Gemini 2.5 Flash (Vertex AI) |
+| **Embeddings** | text-embedding-004 (768-dim Matryoshka) |
+| **Database** | Cloud SQL PostgreSQL |
+| **Search** | pgvector (HNSW) + tsvector (BM25) + recursive CTEs |
+| **Geospatial** | PostGIS |
+| **CLI** | Commander.js |
+| **Testing** | Vitest |
 
 ## Status
 
-Mulder's design phase is complete. Architecture, functional spec, and implementation roadmap are finalized. Building Phase A (foundation) now. See [docs/roadmap.md](docs/roadmap.md) for the 8-milestone implementation plan.
+Mulder's design phase is complete — [functional spec](./docs/functional-spec.md), [implementation roadmap](./docs/roadmap.md), and [config schema](./mulder.config.example.yaml) are finalized.
 
-Contributions, feedback, and ideas are welcome — open an issue or start a discussion.
+Currently building **Milestone 1** (foundation: monorepo, config loader, database, CLI scaffold).
+
+See the [roadmap](./docs/roadmap.md) for all 8 milestones from foundation to production-ready.
+
+## Contributing
+
+Contributions, feedback, and ideas are welcome. Open an issue or start a discussion.
 
 ## License
 
