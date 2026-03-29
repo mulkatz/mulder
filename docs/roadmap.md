@@ -18,7 +18,7 @@ No GCP, no LLM, no cost. Pure TypeScript scaffolding.
 | 🟢 | A2 | Config loader + Zod schemas — `loadConfig()` | §4.1 |
 | 🟢 | A3 | Custom error classes — Error types with codes | §7.1, §7.2 |
 | 🟢 | A4 | Logger setup — Pino structured JSON | §8 |
-| ⚪ | A5 | CLI scaffold — `mulder` binary, `config validate`, `config show` | §1, §1.1 |
+| 🟡 | A5 | CLI scaffold — `mulder` binary, `config validate`, `config show` | §1, §1.1 |
 | ⚪ | A6 | Database client + migration runner — dual connection pools | §4.2, §4.3, §4.6 |
 | ⚪ | A7 | Core schema migrations (001-008) — all tables, extensions, indexes | §4.3 |
 | ⚪ | A8 | Job queue + pipeline tracking migrations (012-014) | §4.3 (jobs, pipeline_runs), §4.3.1 |
