@@ -201,7 +201,7 @@ npx biome check . 2>&1
 **Branch name** — from the spec's linked GitHub issue:
 
 ```
-feat/GH-{issue-number}-{short-kebab-descriptor}
+feat/{issue-number}-{short-kebab-descriptor}
 ```
 
 If the branch already exists (partial implementation from a prior session):
@@ -287,7 +287,7 @@ EOF
 ### Step 8: Report
 
 ```
-Branch:     feat/GH-42-config-loader
+Branch:     feat/42-config-loader
 Commits:    3 (types, logic, integration)
 PR:         <URL>
 Spec:       docs/specs/02_config_loader.spec.md
@@ -310,7 +310,7 @@ When the resolved reference is a GitHub issue with no linked spec (created by `/
 
 1. **Read the issue body** with `gh issue view {number}` — the **Scope** section is your implementation contract, the **Verification** section defines success criteria
 2. **Read `CLAUDE.md`** — conventions still apply
-3. **Branch name** is in the issue body — use it (typically `fix/GH-{N}-descriptor`)
+3. **Branch name** is in the issue body — use it (typically `fix/{N}-descriptor`)
 4. **Study existing patterns** — same as Step 3 above, find similar code
 5. **Plan in plan mode** — same discipline, even for small changes
 6. **Implement** the scoped change — nothing outside the issue's Scope section
