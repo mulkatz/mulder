@@ -1,10 +1,12 @@
 ---
-description: "Full automation — architect, implement, verify, iterate until spec is satisfied, then label for human review"
+description: "Full lifecycle — picks roadmap step, architects spec, implements, verifies, iterates until QA passes"
 ---
 
 # Mulder — Auto-Pilot
 
-You orchestrate the full feature lifecycle from idea to implementation-complete. You run the architect workflow, spawn an implementation agent (which plans before coding), spawn a verification agent, and iterate until all QA conditions pass or you hit the iteration limit.
+You orchestrate the full feature lifecycle: pick a roadmap step → architect a spec → implement the code → verify with black-box tests → iterate until all QA conditions pass or you hit the iteration limit. At the end, the roadmap is updated and the issue is labeled for human review.
+
+**Scope:** Auto-pilot handles **roadmap steps only** — it always creates a spec. For micro tasks (bug fixes, small refactors without spec), use `/implement` + `/verify` directly instead.
 
 **The user's request:** $ARGUMENTS
 
@@ -15,67 +17,104 @@ You orchestrate the full feature lifecycle from idea to implementation-complete.
 Track these variables throughout the pipeline. Update them after each phase.
 
 ```
-SPEC_PATH     = (set in Phase 1)
-ISSUE_NUMBER  = (set in Phase 1)
-ISSUE_URL     = (set in Phase 1)
-BRANCH_NAME   = (set in Phase 2)
-PR_URL        = (set in Phase 2)
-PR_NUMBER     = (set in Phase 2)
-ITERATION     = 0
+TARGET_STEP    = (set in Phase 1)
+MILESTONE      = (set in Phase 1)
+SCOPE          = (set in Phase 1: single | phased | multi-spec)
+SPEC_PATH      = (set in Phase 1)
+SPEC_NUMBER    = (set in Phase 1)
+ISSUE_NUMBER   = (set in Phase 1)
+ISSUE_URL      = (set in Phase 1)
+BRANCH_NAME    = (set in Phase 2)
+PR_URL         = (set in Phase 2)
+PR_NUMBER      = (set in Phase 2)
+ITERATION      = 0
 MAX_ITERATIONS = 3
-VERDICT       = pending
-FAILURES      = []
+VERDICT        = pending
+FAILURES       = []
 ```
 
-Create a task list at the start to give the user visibility:
+Create a task list at the start:
 
 ```
-1. [ ] Architect: Generate spec + create GitHub issue
-2. [ ] Implement: Build feature (iteration 1)
-3. [ ] Verify: Run black-box tests
-4. [ ] Finalize: Label issue with result
+1. [ ] Pre-flight: clean state + pick roadmap step
+2. [ ] Architect: read spec sections, generate spec, create issue
+3. [ ] Implement: plan + build (iteration 1)
+4. [ ] Verify: write + run black-box tests
+5. [ ] Finalize: labels + roadmap update
 ```
 
 ---
 
-## Phase 0: Pre-Flight Check
+## Phase 0: Pre-Flight
 
-Before starting, verify the environment is ready:
+Verify the environment is ready:
 
 ```bash
-# Must be on main with clean working tree
-git status --porcelain  # should be empty
-git branch --show-current  # should be "main"
-git pull origin main  # ensure up to date
-gh auth status  # ensure GitHub CLI is authenticated
+# Clean working tree?
+git status --porcelain
+
+# On main?
+git branch --show-current
+
+# GitHub CLI authenticated?
+gh auth status 2>&1 | head -3
 ```
 
-If the working tree is dirty, tell the user: "There are uncommitted changes. Please commit or stash them before running auto-pilot."
+**Gate conditions:**
+- **Dirty working tree:** "There are uncommitted changes. Commit or stash before running auto-pilot."
+- **Not on main:** "Currently on branch {X}. Auto-pilot needs to start from main to create a clean branch. Switch to main?"
+- **gh not authenticated:** "GitHub CLI not authenticated. Run `gh auth login` first."
 
-If not on main, tell the user and ask if they want to switch.
+If all gates pass:
+```bash
+git pull origin main
+```
+
+Mark pre-flight task complete.
 
 ---
 
-## Phase 1: Architect (inline)
+## Phase 1: Architect (Inline)
 
-Run this phase yourself — not as a subagent. You need direct access to tools for file creation and `gh` commands.
+Run this phase yourself — you need direct tool access for file creation and `gh` commands.
 
-### 1.1 Read context
+### 1.1 Read context + pick step
 
-Read these files:
-- `CLAUDE.md` — architecture, conventions, pipeline stages
-- `docs/specs/` — existing specs for numbering
+1. Read `CLAUDE.md` (loaded automatically)
+2. Read `docs/roadmap.md`
+3. List `docs/specs/*.spec.md` for numbering
 
-### 1.2 Classify and generate
+**Determine target step:**
+- If user provided a step ID or description: use that
+- If no arguments: auto-pick the next ⚪ step (first milestone with ⚪ → first ⚪ step in that milestone)
+- Verify prior steps in the milestone are 🟢 (dependency gate)
 
-Follow the workflow from `.claude/commands/architect.md`:
+### 1.2 Read functional spec sections
 
-1. Classify scale (Micro / Standard / Macro)
-2. Assign priority (P0-P3)
-3. If Standard or Macro: generate the `.spec.md` file in `docs/specs/`
-4. If Macro: propose sub-tasks and wait for user approval before continuing
+From the roadmap step's **Spec** column, extract `§` references.
 
-### 1.3 Create GitHub labels (idempotent)
+**Read each section:**
+1. Grep for the section header: `^#{2,4}\s*{number}\b` in `docs/functional-spec.md`
+2. Read from that line with appropriate limit
+
+Also read the milestone's "Also read" cross-references.
+
+### 1.3 Scope assessment
+
+Analyze the step and classify scope:
+- **Single** (≤8 files, 1-2 concerns): 1 spec
+- **Phased** (8-20 files, 2-3 concerns): 1 spec with implementation phases
+- **Multi-spec** (>20 files, >3 concerns): multiple specs — **stop and present the split for user approval**
+
+### 1.4 Generate spec
+
+Create `docs/specs/NN_title.spec.md` following the template from the architect workflow:
+- Frontmatter: spec number, title, roadmap_step, functional_spec sections, scope, status: draft
+- Sections: Objective, Boundaries, Dependencies, Blueprint (files, DB, config, integration, phases), QA Contract
+
+### 1.5 Create GitHub labels + issue
+
+**Labels (idempotent — safe to run every time):**
 
 ```bash
 for label in \
@@ -94,307 +133,231 @@ for label in \
   "P2-medium:Important but not blocking:FBCA04" \
   "P3-low:Backlog, nice-to-have:C2E0C6" \
   "ai-in-progress:Being implemented by AI agents:6F42C1" \
-  "ai-done:AI implementation complete, ready for human review:0E8A16" \
+  "ai-done:AI complete, ready for human review:0E8A16" \
   "ai-needs-review:AI hit iteration limit, needs human help:D93F0B"; do
   IFS=: read -r name desc color <<< "$label"
   gh label create "$name" --description "$desc" --color "$color" 2>/dev/null || true
 done
 ```
 
-### 1.4 Create GitHub issue
+**Create the issue** with the `ai-in-progress` label. Follow the architect conventions for title format and body structure. After creation, update the issue body with the actual issue number and update the spec's `issue:` frontmatter.
 
-Create the issue following the architect workflow conventions (title taxonomy, body format, labels). Add the `ai-in-progress` label.
+### 1.6 Update roadmap + commit
 
-### 1.5 Cross-reference
-
-Update the spec's frontmatter `issue:` field with the issue URL.
-
-### 1.6 Commit the spec
+Change the step's status from ⚪ to 🟡 in `docs/roadmap.md`.
 
 ```bash
-git add docs/specs/NN_*.spec.md
-git commit -m "docs: add spec NN — [short title]
+git add docs/specs/NN_*.spec.md docs/roadmap.md
+git commit -m "$(cat <<'EOF'
+docs: add spec NN — [short title] (TARGET_STEP)
 
-Co-Authored-By: Claude <noreply@anthropic.com>"
+Co-Authored-By: Claude <noreply@anthropic.com>
+EOF
+)"
 git push
 ```
 
-### 1.7 Update state and report
+### 1.7 Update state + report
 
-**For Standard/Macro tasks:**
 ```
-SCALE = standard | macro
-SPEC_PATH = docs/specs/NN_component_feature.spec.md
-ISSUE_NUMBER = (from gh output)
-ISSUE_URL = (from gh output)
-```
-
-**For Micro tasks (no spec file):**
-```
-SCALE = micro
-SPEC_PATH = none
-ISSUE_NUMBER = (from gh output)
-ISSUE_URL = (from gh output)
+TARGET_STEP  = M1-A2
+MILESTONE    = M1
+SCOPE        = single
+SPEC_PATH    = docs/specs/02_config_loader.spec.md
+SPEC_NUMBER  = 02
+ISSUE_NUMBER = 42
+ISSUE_URL    = https://github.com/mulkatz/mulder/issues/42
 ```
 
 Tell the user:
 ```
-Phase 1 complete: {Spec created + issue opened | Issue opened (Micro — no spec)}.
-{Spec: docs/specs/NN_component_feature.spec.md}  (omit for Micro)
-Issue: #N — <URL>
+Phase 1 complete: Spec + issue created.
+Spec:  docs/specs/02_config_loader.spec.md
+Step:  M1-A2 — Config loader + Zod schemas
+Issue: #42 — <URL>
 Starting implementation...
 ```
 
-Mark the architect task complete. Mark the implement task in-progress.
+Mark architect task complete. Mark implement task in-progress.
 
 ---
 
-## Phase 2: Implement (subagent)
+## Phase 2: Implement (Subagent)
 
-Increment ITERATION. Spawn an implementation agent:
+Increment ITERATION. Spawn an implementation subagent with `model: "opus"`.
 
-```
-Agent(
-  description: "Implement spec NN (iteration {ITERATION})",
-  model: "opus",
-  prompt: see below
-)
-```
-
-### Subagent prompt
-
-Construct the prompt based on iteration number:
-
-**Iteration 1 (Standard/Macro):**
+### Iteration 1 subagent prompt:
 
 ```
 You are the implementation agent for mulder (mulkatz/mulder).
 
-Read these files in order:
-1. `.claude/commands/implement.md` — your workflow instructions
-2. `CLAUDE.md` — architecture and code conventions
-3. `{SPEC_PATH}` — the specification you must implement
+Read these files in this exact order:
+1. `CLAUDE.md` — architecture, conventions, repo structure, key patterns
+2. `{SPEC_PATH}` — the specification you must implement (all sections)
+3. `docs/roadmap.md` — find step {TARGET_STEP}, note the milestone and its "Also read" sections
+4. The functional spec sections listed in the spec's `functional_spec:` frontmatter — use Grep to find headers (pattern: `^#{2,4}\s*{number}\b`) in `docs/functional-spec.md`, then Read with offset
+5. The milestone's "Also read" cross-reference sections from the roadmap
 
-IMPORTANT: Follow the implement.md workflow exactly, including Step 4 (Plan Before Code).
-You MUST use plan mode (EnterPlanMode tool) before writing any code:
-1. Study existing code patterns adjacent to what you're building
-2. Enter plan mode and produce a full execution plan (file order, imports, integration points, commit sequence, risk check)
-3. Exit plan mode, then implement by following your plan step by step
+CRITICAL WORKFLOW — follow this exact sequence:
 
-Your task:
+**Step 1: Study existing patterns.**
+Find a file in the codebase structurally similar to what you're building. If building a pipeline step, read an existing pipeline step. If building config schemas, read existing Zod schemas. If nothing exists yet (greenfield), note this — you're establishing the pattern.
+
+**Step 2: Plan in plan mode.**
+Use the EnterPlanMode tool. Produce a full execution plan:
+- File creation order (types first, logic second, integration last)
+- For each file: path, exports, imports, which spec section it fulfills, which existing file it mirrors
+- Database migrations: exact DDL from spec
+- Config changes: YAML + Zod schema additions
+- Integration wiring: where new code plugs into existing systems
+- Commit sequence: one commit per logical phase
+- Risk check: conflicts, missing deps, ambiguities
+
+If the plan exceeds 15 files or 500 lines, propose splitting and ask. If risks are blocking, stop and report.
+
+Exit plan mode with ExitPlanMode when the plan is solid.
+
+**Step 3: Implement.**
+Execute the plan phase by phase. Follow CLAUDE.md conventions strictly:
+- TypeScript strict mode, ESM only
+- Zod for all validation, custom Error classes with codes
+- Pino structured logging, no console.log
+- Service interfaces only, never direct GCP SDK calls
+- Config via loader, prompts via templates
+- Pipeline steps: idempotent with ON CONFLICT DO UPDATE
+- Files: kebab-case.ts | Types: PascalCase | Functions: camelCase
+
+**Step 4: Branch, commit, push, PR.**
 - Create branch: feat/GH-{ISSUE_NUMBER}-{kebab-from-spec-title}
-- Plan the implementation by studying existing codebase patterns
-- Implement exactly what the spec describes, following your plan and CLAUDE.md conventions
-- Make atomic commits with semantic messages
-- Push the branch
-- Create a PR with `gh pr create` referencing issue #{ISSUE_NUMBER}
+- Atomic commits per phase with semantic messages
+- Include `Co-Authored-By: Claude <noreply@anthropic.com>` in every commit
+- Push: git push -u origin {branch}
+- Create PR: gh pr create --title "[Domain] Title" referencing issue #{ISSUE_NUMBER}
 - Do NOT write tests — a separate verification agent handles that
 
-When done, report these values exactly in this format:
-BRANCH_NAME: <the branch name>
-PR_URL: <the full PR URL>
-PR_NUMBER: <the PR number>
-FILES_CHANGED: <comma-separated list of created/modified files>
+**Report these values exactly:**
+BRANCH_NAME: <branch>
+PR_URL: <full URL>
+PR_NUMBER: <number>
+FILES_CHANGED: <comma-separated list>
 DEVIATIONS: <any spec deviations, or "none">
 ```
 
-**Iteration 1 (Micro — no spec, issue-only):**
+### Iteration 2+ subagent prompt:
 
 ```
 You are the implementation agent for mulder (mulkatz/mulder).
 
 Read these files in order:
-1. `.claude/commands/implement.md` — your workflow instructions (see "Handling Micro Tasks" section)
-2. `CLAUDE.md` — architecture and code conventions
-3. The GitHub issue: `gh issue view {ISSUE_NUMBER}` — the issue body IS your implementation contract
-
-This is a Micro task — there is no spec file. The issue body contains:
-- **Scope section:** what to change and which files
-- **Verification section:** how to confirm the fix works
-
-Your task:
-- Create branch: fix/GH-{ISSUE_NUMBER}-{kebab-from-issue-title}
-- Read the issue body for the scope and verification criteria
-- Plan your approach (use EnterPlanMode), then implement
-- Make atomic commits with semantic messages
-- Push the branch
-- Create a PR with `gh pr create` referencing issue #{ISSUE_NUMBER}
-
-When done, report these values exactly in this format:
-BRANCH_NAME: <the branch name>
-PR_URL: <the full PR URL>
-PR_NUMBER: <the PR number>
-FILES_CHANGED: <comma-separated list of modified files>
-DEVIATIONS: none
-```
-
-**Iteration 2+:**
-
-```
-You are the implementation agent for mulder (mulkatz/mulder).
-
-Read these files in order:
-1. `.claude/commands/implement.md` — your workflow instructions
-2. `CLAUDE.md` — architecture and code conventions
-3. `{SPEC_PATH}` — the specification you must implement
+1. `CLAUDE.md` — conventions and patterns
+2. `{SPEC_PATH}` — the specification
+3. The test file at tests/specs/{SPEC_NUMBER}_*.test.ts — understand what's being asserted
 
 This is iteration {ITERATION}. The previous implementation failed these QA conditions:
 
-{FAILURES — formatted as a numbered list with condition name, expected, actual, and evidence}
+{FAILURES — formatted as numbered list:
+1. **[Condition name]**
+   - Expected: [from spec]
+   - Actual: [what happened]
+   - Evidence: [proof]}
 
-IMPORTANT: Before fixing, use plan mode (EnterPlanMode tool) to plan your approach:
-1. Read each failure carefully — understand WHY it failed, not just WHAT failed
-2. Read the test file to understand exactly what's being asserted
-3. In plan mode, plan the minimal set of changes needed to fix each failure
-4. Exit plan mode, then apply your fixes
+WORKFLOW:
+1. Check out branch: git checkout {BRANCH_NAME} && git pull
+2. Read each failure carefully — understand WHY it failed, not just WHAT
+3. Read the test file to understand exact assertions
+4. Enter plan mode (EnterPlanMode): plan minimal fixes for each failure
+5. Exit plan mode: apply fixes
+6. Run tests locally: npx vitest run tests/specs/{SPEC_NUMBER}_*.test.ts --reporter=verbose
+7. Commit: "fix: address QA failures — [brief description]" with Co-Authored-By trailer
+8. Push to the same branch
 
-Your task:
-- Check out the existing branch: {BRANCH_NAME}
-- Pull the latest changes
-- Read the existing test file at tests/specs/NN_*.test.ts to understand what's being tested
-- Plan your fixes based on the failure evidence
-- Fix ONLY the code that causes the failing conditions — do not rewrite everything
-- Run the tests locally to verify your fixes: `npx vitest run tests/specs/NN_*.test.ts`
-- Commit fixes with message: "fix: address QA failures — [brief description]"
-- Push to the same branch (the PR updates automatically)
+IMPORTANT: Fix ONLY code that causes failing conditions. Do not rewrite everything.
 
-When done, report these values exactly in this format:
+Report:
 BRANCH_NAME: {BRANCH_NAME}
 PR_URL: {PR_URL}
 PR_NUMBER: {PR_NUMBER}
-FILES_CHANGED: <comma-separated list of modified files>
-FIXES_APPLIED: <what you changed to address each failure>
-LOCAL_TEST_RESULT: <pass/fail — from running tests locally>
+FILES_CHANGED: <modified files>
+FIXES_APPLIED: <what changed per failure>
+LOCAL_TEST_RESULT: <pass/fail>
 ```
 
 ### After subagent returns
 
-Parse the subagent's output for BRANCH_NAME, PR_URL, PR_NUMBER. Update state.
+Parse the subagent's output for BRANCH_NAME, PR_URL, PR_NUMBER. Update state variables.
 
-If this was iteration 1, mark implement task complete, mark verify task in-progress.
+If iteration 1: mark implement task complete, mark verify task in-progress.
 
 ---
 
-## Phase 3: Verify (subagent)
+## Phase 3: Verify (Subagent)
 
-Spawn a verification agent:
+Spawn a verification subagent with `model: "opus"`.
 
-```
-Agent(
-  description: "Verify spec NN (iteration {ITERATION})",
-  model: "opus",
-  prompt: see below
-)
-```
-
-### Subagent prompt
-
-**Iteration 1 — Standard/Macro** (tests don't exist yet):
+### Iteration 1 prompt (tests don't exist yet):
 
 ```
 You are the QA verification agent for mulder (mulkatz/mulder).
 
 Read these files in order:
-1. `.claude/commands/verify.md` — your workflow instructions
-2. `CLAUDE.md` — ONLY the Testing section
-3. `{SPEC_PATH}` — ONLY Sections 1, 2, and 5
+1. `CLAUDE.md` — ONLY the Testing, Local Development, and Error Handling sections
+2. `{SPEC_PATH}` — ONLY Sections 1 (Objective), 2 (Boundaries), and 5 (QA Contract)
 
-CRITICAL: Do NOT read any files under src/. Do NOT read Section 4 of the spec. You are black-box only.
+CRITICAL: Do NOT read files under packages/, src/, or apps/. Do NOT read Section 4 of the spec. You are black-box only.
 
-Make sure you are on branch {BRANCH_NAME}:
+Checkout the implementation branch:
   git checkout {BRANCH_NAME} && git pull
 
 Your task:
-- Ensure test dependencies are installed (vitest, pg, yaml, etc.)
-- Write black-box tests to tests/specs/NN_spec_name.test.ts
-- One `it()` block per QA condition in Section 5
-- Tests interact with the system ONLY through: CLI commands, HTTP requests, direct SQL queries, filesystem checks
-- Run the tests: `npx vitest run tests/specs/NN_*.test.ts --reporter=verbose`
-- Commit the test file: "test: add black-box QA tests for spec NN"
-- Push to the same branch
+1. Check test infrastructure (docker compose, vitest, CLI availability)
+2. Write black-box tests to tests/specs/{SPEC_NUMBER}_spec_name.test.ts
+   - One `it()` per QA condition in Section 5
+   - Use execFileSync for CLI commands (not exec — avoid shell injection)
+   - Tests interact through system boundaries only: CLI, SQL, HTTP, filesystem
+   - Never import from packages/ or src/
+3. Run tests: npx vitest run tests/specs/{SPEC_NUMBER}_*.test.ts --reporter=verbose
+4. Commit and push the test file with Co-Authored-By trailer
 
-When done, report in this exact format:
+Distinguish between:
+- FAIL: system doesn't behave as specified (implementation bug)
+- SKIP: can't verify due to missing infrastructure (not a failure)
+- Test bugs: fix these immediately and re-run
+
+Report in this exact format:
 TOTAL: <number of conditions>
 PASSED: <count>
 FAILED: <count>
 SKIPPED: <count>
 VERDICT: PASS | FAIL | PARTIAL
 
-For each failure, include:
+For each failure:
 FAILURE: <condition name>
-EXPECTED: <what should happen>
+EXPECTED: <what should happen per spec>
 ACTUAL: <what happened>
-EVIDENCE: <proof>
+EVIDENCE: <concrete proof — DB output, CLI stderr, HTTP response>
 ```
 
-**Iteration 1 — Micro** (tests don't exist yet, no spec):
+### Iteration 2+ prompt (tests exist, re-run):
 
 ```
 You are the QA verification agent for mulder (mulkatz/mulder).
 
-Read these files in order:
-1. `.claude/commands/verify.md` — your workflow instructions (see "Handling Micro Tasks" section)
-2. `CLAUDE.md` — ONLY the Testing section
-3. The GitHub issue: `gh issue view {ISSUE_NUMBER}` — read the **Verification** section
+The implementation was updated to fix previous failures. Re-run existing tests.
 
-CRITICAL: Do NOT read any files under src/. You are black-box only.
+Checkout: git checkout {BRANCH_NAME} && git pull
 
-Make sure you are on branch {BRANCH_NAME}:
-  git checkout {BRANCH_NAME} && git pull
+Run: npx vitest run tests/specs/{SPEC_NUMBER}_*.test.ts --reporter=verbose
 
-Your task:
-- Derive test conditions from the issue's Verification section
-- Write tests to tests/micro/GH-{ISSUE_NUMBER}_short_name.test.ts
-- Run the tests: `npx vitest run tests/micro/GH-{ISSUE_NUMBER}_*.test.ts --reporter=verbose`
-- Commit and push the test file
+Do NOT modify tests unless a test itself has a bug (wrong assertion logic, not an implementation mismatch). If you fix a test bug, commit and push.
 
-When done, report in this exact format:
+Report in this exact format:
 TOTAL: <number of conditions>
 PASSED: <count>
 FAILED: <count>
 SKIPPED: <count>
 VERDICT: PASS | FAIL | PARTIAL
 
-For each failure, include:
-FAILURE: <condition name>
-EXPECTED: <what should happen>
-ACTUAL: <what happened>
-EVIDENCE: <proof>
-```
-
-**Iteration 2+** (tests already exist):
-
-```
-You are the QA verification agent for mulder (mulkatz/mulder).
-
-Read these files in order:
-1. `.claude/commands/verify.md` — your workflow instructions
-2. `CLAUDE.md` — ONLY the Testing section
-3. `{SPEC_PATH}` — ONLY Sections 1, 2, and 5 (for diagnosing test bugs if needed)
-   {For Micro: `gh issue view {ISSUE_NUMBER}` instead}
-
-Make sure you are on branch {BRANCH_NAME}:
-  git checkout {BRANCH_NAME} && git pull
-
-The implementation was updated to fix previous failures. The test file already exists.
-
-CRITICAL: Do NOT read any files under src/. You are black-box only.
-
-Your task:
-- Re-run the existing tests: `npx vitest run tests/specs/NN_*.test.ts --reporter=verbose`
-  {For Micro: `npx vitest run tests/micro/GH-{ISSUE_NUMBER}_*.test.ts --reporter=verbose`}
-- Do NOT modify the tests unless a test itself had a bug (not an implementation issue)
-- If you modify a test, commit and push the change
-- Report the results
-
-When done, report in this exact format:
-TOTAL: <number of conditions>
-PASSED: <count>
-FAILED: <count>
-SKIPPED: <count>
-VERDICT: PASS | FAIL | PARTIAL
-
-For each failure, include:
+For each failure:
 FAILURE: <condition name>
 EXPECTED: <what should happen>
 ACTUAL: <what happened>
@@ -403,48 +366,43 @@ EVIDENCE: <proof>
 
 ### After subagent returns
 
-Parse the verify output for VERDICT and any FAILURE blocks.
+Parse VERDICT and FAILURE blocks from the output.
 
-If VERDICT is PASS:
-```
-VERDICT = pass
-FAILURES = []
-```
-Go to Phase 5.
+**Decision tree:**
 
-If VERDICT is FAIL and ITERATION < MAX_ITERATIONS:
 ```
-FAILURES = [parsed failure details]
-```
-Tell the user: `Iteration {ITERATION}: {FAILED_COUNT} conditions failed. Starting fix cycle...`
-Go to Phase 2 (next iteration).
+if VERDICT == "PASS":
+    → Phase 5 (Finalize — success)
 
-If VERDICT is FAIL and ITERATION >= MAX_ITERATIONS:
-```
-VERDICT = needs-review
-FAILURES = [parsed failure details]
-```
-Go to Phase 5.
+if VERDICT == "FAIL" and ITERATION < MAX_ITERATIONS:
+    FAILURES = [parsed failure details]
+    Tell user: "Iteration {ITERATION}: {FAILED_COUNT} QA conditions failed. Starting fix cycle..."
+    → Phase 2 (next iteration)
 
-If VERDICT is PARTIAL (some skipped due to infra):
-Treat passed conditions as pass, failed as fail. Skipped conditions don't count against the verdict. If all non-skipped conditions pass, VERDICT = pass.
+if VERDICT == "FAIL" and ITERATION >= MAX_ITERATIONS:
+    FAILURES = [parsed failure details]
+    → Phase 5 (Finalize — needs review)
+
+if VERDICT == "PARTIAL":
+    If all non-skipped conditions PASS → treat as PASS
+    If any non-skipped condition FAIL → treat as FAIL
+    Skipped conditions don't count against the verdict
+```
 
 ---
 
 ## Phase 4: Iterate
 
-This is not a separate phase — it's the loop between Phase 2 and Phase 3.
+This is the loop between Phase 2 and Phase 3 — not a separate phase.
 
 ```
-while VERDICT != pass AND ITERATION < MAX_ITERATIONS:
+while VERDICT != PASS and ITERATION < MAX_ITERATIONS:
     ITERATION++
-    run Phase 2 (implement with failure context)
-    run Phase 3 (verify — re-run tests)
+    Phase 2 (implement with failure context)
+    Phase 3 (verify — re-run tests)
 ```
 
-Update the task list on each iteration:
-- Rename or add tasks to reflect the current iteration
-- Keep the user informed of progress
+Update the task list on each iteration to keep the user informed of progress.
 
 ---
 
@@ -453,7 +411,7 @@ Update the task list on each iteration:
 ### On PASS
 
 ```bash
-# Label the issue
+# Update issue labels
 gh issue edit {ISSUE_NUMBER} --remove-label "ai-in-progress"
 gh issue edit {ISSUE_NUMBER} --add-label "ai-done"
 
@@ -464,6 +422,7 @@ gh pr comment {PR_NUMBER} --body "$(cat <<'EOF'
 All QA conditions from the spec pass. Ready for human review.
 
 - Spec: `{SPEC_PATH}`
+- Roadmap: {TARGET_STEP}
 - Iterations: {ITERATION}
 - QA: {PASSED}/{TOTAL} conditions met ({SKIPPED} skipped due to infrastructure)
 
@@ -472,35 +431,53 @@ EOF
 )"
 ```
 
-### On NEEDS-REVIEW (max iterations)
+**Update roadmap** — change 🟡 to 🟢.
+
+This commit goes on the **feature branch** intentionally — the 🟢 status lands on main only when the PR is merged, ensuring the roadmap never shows "complete" for unmerged work.
 
 ```bash
-# Label the issue
+# Edit docs/roadmap.md: 🟡 → 🟢 for TARGET_STEP
+git add docs/roadmap.md
+git commit -m "$(cat <<'EOF'
+docs: mark roadmap step {TARGET_STEP} complete
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+EOF
+)"
+git push
+```
+
+### On NEEDS-REVIEW (max iterations reached)
+
+```bash
 gh issue edit {ISSUE_NUMBER} --remove-label "ai-in-progress"
 gh issue edit {ISSUE_NUMBER} --add-label "ai-needs-review"
 
-# Comment on the PR with failure details
 gh pr comment {PR_NUMBER} --body "$(cat <<'EOF'
 ## AI Verification Incomplete
 
 Reached maximum iterations ({MAX_ITERATIONS}). Some QA conditions still failing.
 
 - Spec: `{SPEC_PATH}`
+- Roadmap: {TARGET_STEP}
 - QA: {PASSED}/{TOTAL} conditions met
 - Remaining failures:
 
-{FAILURES — formatted as markdown list}
+{FAILURES — formatted as markdown list with condition name, expected, actual}
 
 Manual intervention needed for the remaining conditions.
 EOF
 )"
 ```
 
-### Final report to user
+Roadmap stays 🟡 (not marked complete since QA didn't fully pass).
+
+### Final report
 
 ```
-Ship complete.
+Auto-pilot complete.
 
+  Step:       {TARGET_STEP} — [description]
   Spec:       {SPEC_PATH}
   Issue:      #{ISSUE_NUMBER} — {ISSUE_URL}
   PR:         #{PR_NUMBER} — {PR_URL}
@@ -510,40 +487,45 @@ Ship complete.
   Status:     ai-done | ai-needs-review
 
 {If ai-done: "All QA conditions pass. Review the PR and merge when ready."}
-{If ai-needs-review: "Remaining failures listed in the PR comment. Review needed."}
+{If ai-needs-review: "Remaining failures listed in PR comment. Human review needed."}
 ```
 
 Mark all tasks complete.
 
 ---
 
-## Macro Handling
+## Multi-Spec Handling
 
-If the architect classifies the request as Macro:
+If Phase 1 classified the scope as **multi-spec** (and the user approved the split):
 
-1. Complete Phase 0 (pre-flight) and Phase 1 (architect) — create umbrella issue + all sub-task specs + issues
-2. For each sub-task in dependency order:
-   - Run Phase 2 (implement) for this sub-task's spec
-   - Run Phase 3 (verify) for this sub-task's spec
-   - Iterate if needed (Phase 4)
-   - On pass: label the sub-task issue `ai-done`, move to next
-   - On needs-review: stop the pipeline, label sub-task AND umbrella as `ai-needs-review`
-3. When all sub-tasks pass: label umbrella issue as `ai-done`
+1. Phase 1 creates ALL sub-specs and issues
+2. For each sub-spec **in dependency order**:
+   - Reset ITERATION to 0
+   - Run Phase 2 (implement) for this sub-spec
+   - Run Phase 3 (verify) for this sub-spec
+   - Phase 4 (iterate) if needed
+   - **On pass:** label the sub-issue `ai-done`, update task list, proceed to next sub-spec
+   - **On needs-review:** stop the pipeline. Label the failing sub-issue AND all remaining sub-issues as `ai-needs-review`. Report what passed and what didn't.
+3. When ALL sub-specs pass: update the roadmap step to 🟢
 
-Do NOT close sub-task issues — they still need human review.
+Track each sub-spec's state independently. Report progress to the user between sub-specs:
 
-Track each sub-task's state independently. Report progress to the user between sub-tasks.
+```
+Sub-spec 1/3 complete: [title] — all QA conditions pass.
+Starting sub-spec 2/3: [title]...
+```
 
 ---
 
 ## Error Handling
 
-**Agent fails to produce parseable output:** Re-read the agent's response carefully. Extract what you can. If the agent clearly failed (no code written, no PR created), tell the user and stop.
-
-**`gh` commands fail:** Check auth status with `gh auth status`. Report the error to the user.
-
-**Merge conflicts on push:** Tell the user — this likely means someone else pushed to the branch. Don't force-push.
-
-**All dependencies unmet (greenfield):** If the implement agent reports that fundamental infrastructure is missing (no `src/`, no `package.json`), tell the user: "This spec depends on infrastructure that doesn't exist yet. Consider starting with an earlier roadmap phase."
-
-**Spec is ambiguous or incomplete:** If the implement agent reports spec gaps, pause and ask the user whether to proceed with reasonable assumptions or update the spec first.
+| Scenario | Action |
+|----------|--------|
+| **Subagent output unparseable** | Re-read the response. Extract what you can. If clearly failed (no code, no PR), tell user and stop. |
+| **`gh` commands fail** | Run `gh auth status`. Report the error. |
+| **Merge conflicts on push** | Tell the user. Don't force-push. Likely means someone else pushed to the branch. |
+| **Missing infrastructure (greenfield)** | If the implement agent reports fundamental infrastructure is missing (`packages/` doesn't exist, no `package.json`), tell user: "This step depends on infrastructure from an earlier step. Start with {earlier step}." |
+| **Spec is ambiguous** | Pause. Ask user: "The spec has a gap in {area}. Proceed with {assumption}, or update the spec first?" |
+| **All dependencies unmet** | Don't proceed blindly. Tell user which dependencies are missing and suggest the correct starting point. |
+| **Micro task / no-spec issue passed as input** | Auto-pilot requires a roadmap step, not a micro issue. Tell user: "This looks like a micro task (no spec needed). Use `/implement #{N}` + `/verify #{N}` directly instead of auto-pilot." |
+| **Subagent crashes or times out** | Report what happened. Suggest running `/implement` or `/verify` manually to debug. |
