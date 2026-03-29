@@ -58,16 +58,8 @@ mulder.config.yaml  →  terraform apply  →  mulder pipeline run ./pdfs/  → 
 | 8 | **Cross-Lingual Resolution** | 3-tier entity resolution (attribute match, embedding similarity, LLM-assisted) across 100+ languages |
 | 9 | **Deduplication** | MinHash/SimHash near-duplicate detection, dedup-aware corroboration scoring |
 | 10 | **Schema Evolution** | Config-hash tracking per document per step, selective reprocessing after config changes |
-
-<details>
-<summary><strong>Phase 2</strong> (designed for, not yet implemented)</summary>
-
-| # | Capability | What it does |
-|---|-----------|-------------|
 | 11 | **Visual Intelligence** | Image extraction, Gemini analysis, image embeddings, map/diagram data extraction |
 | 12 | **Pattern Discovery** | Cluster anomalies, temporal spikes, subgraph similarity, proactive insights |
-
-</details>
 
 ## Pipeline
 
