@@ -147,9 +147,9 @@ done
 ```bash
 # Uses GH_PROJECT_TOKEN (classic PAT with only `project` scope) — skip if not set
 if [ -n "$GH_PROJECT_TOKEN" ]; then
-  PROJECT_NUM=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project list --owner mulkatz --format json --jq '.projects[] | select(.title=="Mulder") | .number' 2>/dev/null)
+  PROJECT_NUM=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project list --owner @me --format json --jq '.projects[] | select(.title=="Mulder") | .number' 2>/dev/null)
   if [ -n "$PROJECT_NUM" ]; then
-    GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-add "$PROJECT_NUM" --owner mulkatz --url "{ISSUE_URL}" 2>/dev/null || true
+    GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-add "$PROJECT_NUM" --owner @me --url "{ISSUE_URL}" 2>/dev/null || true
   fi
 fi
 ```
