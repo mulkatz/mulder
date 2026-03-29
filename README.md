@@ -75,27 +75,27 @@ mulder.config.yaml  →  terraform apply  →  mulder pipeline run ./pdfs/  → 
      └─────┬─────┘
            │
      ┌─────▼─────┐
-     │  Segment   │  Gemini identifies stories from page images → Markdown + metadata → GCS
+     │  Segment  │  Gemini identifies stories from page images → Markdown + metadata → GCS
      └─────┬─────┘
            │
      ┌─────▼─────┐
-     │   Enrich   │  Entity extraction, taxonomy normalization, cross-lingual resolution
+     │   Enrich  │  Entity extraction, taxonomy normalization, cross-lingual resolution
      └─────┬─────┘
            │
      ┌─────▼─────┐
-     │   Ground   │  Web enrichment via Gemini Search — coordinates, bios, verification
+     │   Ground  │  Web enrichment via Gemini Search — coordinates, bios, verification
      └─────┬─────┘
            │
      ┌─────▼─────┐
-     │   Embed    │  Semantic chunking + text-embedding-004 (768-dim) → pgvector + BM25
+     │   Embed   │  Semantic chunking + text-embedding-004 (768-dim) → pgvector + BM25
      └─────┬─────┘
            │
      ┌─────▼─────┐
-     │   Graph    │  Deduplication, corroboration scoring, contradiction flagging
+     │   Graph   │  Deduplication, corroboration scoring, contradiction flagging
      └─────┬─────┘
            │
      ┌─────▼─────┐
-     │  Analyze   │  Contradiction resolution, PageRank reliability, evidence chains
+     │  Analyze  │  Contradiction resolution, PageRank reliability, evidence chains
      └─────┬─────┘
            │
        Knowledge
