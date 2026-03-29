@@ -144,7 +144,39 @@ for label in \
 done
 ```
 
-**Create the issue** with the `status:in-progress` label. Follow the architect conventions for title format and body structure. After creation, update the issue body with the actual issue number and update the spec's `issue:` frontmatter.
+**Create the issue** with the `status:in-progress` label. The issue must be self-contained for reviewers:
+
+```bash
+gh issue create \
+  --title "[Domain] Observable system change — TARGET_STEP" \
+  --label "domain-label,priority-label,status:in-progress" \
+  --body "$(cat <<'EOF'
+## Objective
+
+[2-3 sentence summary from spec Section 1]
+
+## Spec
+
+[`docs/specs/NN_title.spec.md`](https://github.com/mulkatz/mulder/blob/main/docs/specs/NN_title.spec.md) — Roadmap step [TARGET_STEP]
+
+## Acceptance Criteria
+
+[Copy the QA conditions from spec Section 5 as a checklist:]
+- [ ] QA-01: [condition name — Given/When/Then summary]
+- [ ] QA-02: [condition name]
+- ...
+
+## Branch
+
+`feat/{NUMBER}-short-descriptor`
+
+---
+*Spec-driven development — [Mulder](https://github.com/mulkatz/mulder)*
+EOF
+)"
+```
+
+After creation, update the spec's `issue:` frontmatter with the issue URL.
 
 **Add to GitHub Project** (same as architect workflow):
 
@@ -546,12 +578,20 @@ git push
 
 **3. Squash merge + close:**
 
+Determine the semantic prefix from the step type:
+- Pipeline steps, new capabilities, CLI commands → `feat:`
+- Bug fixes → `fix:`
+- Infrastructure, config, tooling, scaffolding → `chore:`
+- Schema changes, migrations → `feat:` (if new tables) or `refactor:` (if restructuring)
+
 ```bash
-gh pr merge {PR_NUMBER} --squash --delete-branch --body "$(cat <<'EOF'
+gh pr merge {PR_NUMBER} --squash --delete-branch --subject "{prefix}: {short description} ({TARGET_STEP})" --body "$(cat <<'EOF'
 Spec: {SPEC_PATH}
 Roadmap: {TARGET_STEP}
 QA: {PASSED}/{TOTAL} conditions passed
 Iterations: {ITERATION}
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
 ```

@@ -251,26 +251,29 @@ done
 ```bash
 gh issue create \
   --title "[Domain] Title — step ID" \
-  --label "domain-label,priority-label" \
+  --label "domain-label,priority-label,status:in-progress" \
   --body "$(cat <<'EOF'
 ## Objective
 
-[2-3 sentence summary of what's being built and why]
+[2-3 sentence summary from spec Section 1]
 
 ## Spec
 
-[`docs/specs/NN_title.spec.md`](docs/specs/NN_title.spec.md) — Roadmap step [M1-A2]
+[`docs/specs/NN_title.spec.md`](https://github.com/mulkatz/mulder/blob/main/docs/specs/NN_title.spec.md) — Roadmap step [M1-A2]
+
+## Acceptance Criteria
+
+[Copy QA conditions from spec Section 5 as a checklist:]
+- [ ] QA-01: [condition name — Given/When/Then summary]
+- [ ] QA-02: [condition name]
+- ...
 
 ## Branch
 
 `feat/{NUMBER}-short-descriptor`
 
-## Acceptance Criteria
-
-- [ ] Implementation matches spec blueprint (Section 4)
-- [ ] All QA Contract conditions pass (Section 5)
-- [ ] No regressions in existing tests
-- [ ] PR references this issue (`Closes #NUMBER`)
+---
+*Spec-driven development — [Mulder](https://github.com/mulkatz/mulder)*
 EOF
 )"
 ```
