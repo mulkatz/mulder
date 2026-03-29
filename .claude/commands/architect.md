@@ -275,14 +275,17 @@ EOF
 3. Add the issue to the GitHub Project board:
 
 ```bash
-# Add issue to the "Mulder" GitHub Project (requires project scope — skip silently if unavailable)
-PROJECT_NUM=$(gh project list --owner mulkatz --format json --jq '.projects[] | select(.title=="Mulder") | .number' 2>/dev/null)
-if [ -n "$PROJECT_NUM" ]; then
-  gh project item-add "$PROJECT_NUM" --owner mulkatz --url "{ISSUE_URL}" 2>/dev/null || true
+# Add issue to the "Mulder" GitHub Project
+# Uses GH_PROJECT_TOKEN (classic PAT with only `project` scope) — skip silently if not set
+if [ -n "$GH_PROJECT_TOKEN" ]; then
+  PROJECT_NUM=$(GH_TOKEN="$GH_PROJECT_TOKEN" gh project list --owner mulkatz --format json --jq '.projects[] | select(.title=="Mulder") | .number' 2>/dev/null)
+  if [ -n "$PROJECT_NUM" ]; then
+    GH_TOKEN="$GH_PROJECT_TOKEN" gh project item-add "$PROJECT_NUM" --owner mulkatz --url "{ISSUE_URL}" 2>/dev/null || true
+  fi
 fi
 ```
 
-If the project doesn't exist yet or the token lacks `project` scope, skip this step silently — it's not blocking.
+If `GH_PROJECT_TOKEN` is not set or the project doesn't exist, this step is skipped silently — it's not blocking.
 
 **For multi-spec splits:** Create one issue per spec, each referencing its spec file. Add a note to each issue body listing the other related issues and their dependency order. Add all issues to the project.
 
