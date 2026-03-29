@@ -4,6 +4,8 @@
  * into a unified format with dot-separated paths.
  */
 
+import { ConfigError } from '../shared/errors.js';
+
 export interface ConfigIssue {
 	/** Dot-separated path like "ontology.entity_types[0].name" */
 	path: string;
@@ -13,11 +15,13 @@ export interface ConfigIssue {
 	code: string;
 }
 
-export class ConfigValidationError extends Error {
+export class ConfigValidationError extends ConfigError {
 	public readonly issues: readonly ConfigIssue[];
 
 	constructor(issues: readonly ConfigIssue[]) {
-		super(ConfigValidationError.formatMessage(issues));
+		super(ConfigValidationError.formatMessage(issues), 'CONFIG_INVALID', {
+			context: { issueCount: issues.length },
+		});
 		this.name = 'ConfigValidationError';
 		this.issues = issues;
 	}
