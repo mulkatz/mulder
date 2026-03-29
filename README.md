@@ -11,7 +11,7 @@ Turn any document collection into a searchable knowledge base with a Knowledge G
 
 Mulder transforms unstructured document collections — PDFs with complex layouts like magazines, newspapers, government correspondence — into structured, searchable knowledge. You define your domain ontology (entity types, relationships, extraction strategy) in a single `mulder.config.yaml`, run `terraform apply`, and get a fully deployed GCP pipeline that ingests, extracts, enriches, and connects your documents.
 
-There's no open-source tool that combines GCP-native Terraform deployment, a config-driven domain ontology, hybrid retrieval (vector + full-text + graph), web grounding, evidence scoring, and spatio-temporal analysis — all on a single PostgreSQL instance. Mulder fills that gap.
+Most document intelligence tools require custom code per domain. Mulder takes a different approach: describe your domain in YAML, and the pipeline adapts — extraction, entity resolution, retrieval, and analysis all derive from one config file.
 
 ## Key Features
 
