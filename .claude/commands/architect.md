@@ -266,7 +266,7 @@ gh issue create \
 `feat/{NUMBER}-short-descriptor`
 
 ---
-*Architected from [`docs/specs/NN_title.spec.md`](https://github.com/mulkatz/mulder/blob/main/docs/specs/NN_title.spec.md) — [Mulder](https://github.com/mulkatz/mulder)*
+*Architected from [`docs/specs/NN_title.spec.md`](https://github.com/mulkatz/mulder/blob/main/docs/specs/NN_title.spec.md)*
 EOF
 )"
 ```
