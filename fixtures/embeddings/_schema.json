@@ -1,0 +1,10 @@
+{
+  "$schema": "fixture-schema",
+  "description": "text-embedding-004 output — per-segment chunk embeddings",
+  "api": "Vertex AI text-embedding-004",
+  "api_version": "v1",
+  "structure": {
+    "{segment-id}.embeddings.json": "Array of chunks with content, embedding vectors (768-dim), and metadata"
+  },
+  "notes": "768-dim via Matryoshka outputDimensionality parameter. Never truncate vectors manually."
+}

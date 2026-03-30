@@ -1,0 +1,10 @@
+{
+  "$schema": "fixture-schema",
+  "description": "Gemini entity extraction output — per-segment entity list",
+  "api": "Vertex AI Gemini (structured output)",
+  "api_version": "v1",
+  "structure": {
+    "{segment-id}.entities.json": "Array of extracted entities with types, attributes, and relationships"
+  },
+  "notes": "Schema generated dynamically from config via zod-to-json-schema. Entity types depend on domain ontology."
+}

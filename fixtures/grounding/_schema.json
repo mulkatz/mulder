@@ -1,0 +1,10 @@
+{
+  "$schema": "fixture-schema",
+  "description": "Gemini Search Grounding output — web enrichment results",
+  "api": "Vertex AI Gemini google_search_retrieval",
+  "api_version": "v1",
+  "structure": {
+    "{entity-slug}.grounding.json": "Search grounding result with web sources, confidence, cached status"
+  },
+  "notes": "Three modes: pipeline, on_demand, disabled. Results cached with configurable TTL."
+}

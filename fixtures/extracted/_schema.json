@@ -1,0 +1,11 @@
+{
+  "$schema": "fixture-schema",
+  "description": "Document AI Layout Parser output — one directory per source document",
+  "api": "Google Document AI Layout Parser",
+  "api_version": "v1",
+  "structure": {
+    "{source-slug}/layout.json": "Full Document AI response with spatial data (bounding boxes, paragraphs, tables)",
+    "{source-slug}/pages/page-{NNN}.png": "Rendered page images for Gemini Vision fallback"
+  },
+  "notes": "Spatial data preserved for segmentation step. NOT Markdown — raw structured JSON."
+}
