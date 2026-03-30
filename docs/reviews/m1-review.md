@@ -4,7 +4,7 @@ title: "Mulder runs locally" — Foundation
 reviewed: 2026-03-30
 steps_reviewed: [A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11]
 spec_sections: ["§1", "§1.1", "§4.1", "§4.2", "§4.3", "§4.3.1", "§4.5", "§4.6", "§7.1", "§7.2", "§7.3", "§8", "§9.3", "§11", "§13", "§14"]
-verdict: PASS_WITH_WARNINGS
+verdict: PASS
 ---
 
 # Milestone Review: M1 — Foundation
@@ -14,12 +14,12 @@ verdict: PASS_WITH_WARNINGS
 | Severity | Count |
 |----------|-------|
 | Critical | 0 |
-| Warning  | 7 |
+| Warning  | 4 |
 | Note     | 6 |
 
-**Verdict:** PASS_WITH_WARNINGS
+**Verdict:** PASS
 
-M1 is solidly implemented. All 11 steps are complete, all core infrastructure works. The database schema DDL matches the spec exactly across 14 migration files. Config loader, error hierarchy, logging, retry, rate limiter, service abstraction, and Docker Compose all align with the functional spec. The divergences found are structural (migration file numbering/naming differs from spec) and scope-related (files planned for later milestones not yet present, which is expected). No critical issues block starting M2.
+M1 is solidly implemented. All 11 steps are complete, all core infrastructure works. The database schema DDL matches the spec exactly across 14 migration files. Config loader, error hierarchy, logging, retry, rate limiter, service abstraction, and Docker Compose all align with the functional spec. Three spec divergences (migration numbering, registry function name, Docker Compose approach) were resolved by updating the functional spec to match the implementation. Remaining warnings are expected scope boundaries (files planned for M2+ milestones). No issues block starting M2.
 
 ---
 
@@ -75,12 +75,9 @@ No divergences found. Implementation matches spec:
 
 ### §4.3 — Core Database Schema
 
-**[DIV-005] Migration file numbering differs from spec**
-- **Severity:** WARNING
-- **Spec says:** §4.2 (line 762-778) lists: 002_sources, 003_source_steps, 004_stories, 005_entities, 006_entity_edges, 007_chunks, 008_taxonomy
-- **Code does:** 002_sources (includes source_steps), 003_stories, 004_entities, 005_relationships (story_entities + entity_edges), 006_chunks, 007_taxonomy, 008_indexes
-- **Evidence:** The spec splits source_steps into its own file (003), but the implementation combines it with sources (002). The spec has entity_edges as 006, but implementation has story_entities + entity_edges together as 005_relationships. Spec has indexes inline, implementation has them in a dedicated 008_indexes.sql.
-- **Note:** All tables and DDL content matches the spec exactly — only the file boundaries differ. The actual schema is correct.
+**[DIV-005] Migration file numbering differed from spec — RESOLVED**
+- **Severity:** ~~WARNING~~ RESOLVED
+- **Resolution:** Spec §4.2 updated to match implementation's migration file naming (002_sources includes source_steps, 005_relationships combines story_entities + entity_edges, 008_indexes is separate). Code's organization is better — related tables grouped together.
 
 **[DIV-006] v2.0 tables (009-011) not created as migration files**
 - **Severity:** NOTE
@@ -109,11 +106,9 @@ No divergences found. Both `reset_pipeline_step()` and `gc_orphaned_entities()` 
 - **Code does:** File does not exist in `packages/core/src/shared/`
 - **Evidence:** Cost estimation is M8-I2 scope
 
-**[DIV-009] Registry function name differs from spec**
-- **Severity:** WARNING
-- **Spec says:** §4.5 (line 1193) shows `createServices(config: MulderConfig): Services`
-- **Code does:** `registry.ts:52` exports `createServiceRegistry(config: MulderConfig, logger: Logger): Services`
-- **Evidence:** Function name is `createServiceRegistry` vs spec's `createServices`, and it takes an additional `logger` parameter
+**[DIV-009] Registry function name differed from spec — RESOLVED**
+- **Severity:** ~~WARNING~~ RESOLVED
+- **Resolution:** Spec §4.5 updated to use `createServiceRegistry(config, logger)`. The name is more precise (it creates a registry, not services directly) and the `logger` parameter enables initialization logging.
 
 ### §4.6 — GCP Clients (Connection Manager)
 
@@ -170,11 +165,9 @@ No divergences found. Implementation matches spec:
 
 ### §9.3 — Local Infrastructure (Docker Compose)
 
-**[DIV-012] Custom Dockerfile instead of direct image**
-- **Severity:** WARNING
-- **Spec says:** §9.3 (line 1684) shows `image: pgvector/pgvector:pg16`
-- **Code does:** `docker-compose.yaml:3` uses `build: ./docker/postgres` with a custom Dockerfile extending `pgvector/pgvector:pg17`
-- **Evidence:** The spec's approach of installing PostGIS via init script fails because init scripts run as the non-root `postgres` user. The Dockerfile installs PostGIS at build time as root. This is a justified deviation. Also uses pg17 instead of pg16 (newer, consistent with test infrastructure).
+**[DIV-012] Docker Compose approach differed from spec — RESOLVED**
+- **Severity:** ~~WARNING~~ RESOLVED
+- **Resolution:** Spec §9.3 updated to reflect the Dockerfile approach (pg17 + build-time PostGIS installation) with full service definitions, health checks, and volumes. The original spec approach (pg16 + init-script apt-get) fails because init scripts run as the non-root `postgres` user.
 
 ### §11 — Test Fixtures
 
@@ -252,13 +245,15 @@ CLAUDE.md accurately reflects the functional spec and implementation. The archit
 None.
 
 ### Should Fix (Warning)
-1. [DIV-002]: Implement `config init` subcommand, or update the spec to move it to a later milestone
-2. [DIV-003]: Implement `db reset` and `db gc` subcommands, or defer to appropriate milestones (db reset may be M3-C9, db gc is M3+ scope)
-3. [DIV-005]: Consider whether migration file numbering should be aligned with the spec. The content is correct; only the file boundaries differ. May warrant a spec update to reflect the actual (arguably better) organization.
-4. [DIV-007]: Expected — `services.gcp.ts` will be created in M2-B1
-5. [DIV-009]: Decide whether to rename `createServiceRegistry` to `createServices` (spec name) or update the spec. The extra `logger` parameter is a useful addition.
-6. [DIV-010]: Expected — `gcp.ts` connection manager will be created in M2-B1
-7. [DIV-012]: Update the spec §9.3 to reflect the Dockerfile approach (pg17 + build-time PostGIS installation) since the original spec approach (pg16 + init-script apt-get) doesn't work
+1. [DIV-002]: `config init` deferred — implement when interactive config generation is needed (M2 or later)
+2. [DIV-003]: `db reset` and `db gc` deferred — implement when cascading reset is exercised (M3-C9)
+3. [DIV-007]: Expected — `services.gcp.ts` will be created in M2-B1
+4. [DIV-010]: Expected — `gcp.ts` connection manager will be created in M2-B1
+
+### Resolved in This Review
+- [DIV-005]: Spec §4.2 migration numbering updated to match implementation
+- [DIV-009]: Spec §4.5 registry function updated to `createServiceRegistry(config, logger)`
+- [DIV-012]: Spec §9.3 Docker Compose updated to Dockerfile approach with pg17
 
 ### For Consideration (Note)
 1. [DIV-001]: Remaining CLI commands are M2-M8 scope — no action needed

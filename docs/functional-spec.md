@@ -763,19 +763,19 @@ src/database/
 ├── client.ts             # PostgreSQL connection pool (pg or postgres.js)
 ├── migrations/           # Numbered SQL migration files
 │   ├── 001_extensions.sql          # pgvector, PostGIS, pg_trgm
-│   ├── 002_sources.sql
-│   ├── 003_source_steps.sql        # Per-document, per-step config_hash tracking
-│   ├── 004_stories.sql             # References + GCS URIs, no inline content
-│   ├── 005_entities.sql
-│   ├── 006_entity_edges.sql
-│   ├── 007_chunks.sql              # Short chunk text inline (for vector + BM25)
-│   ├── 008_taxonomy.sql
+│   ├── 002_sources.sql             # sources + source_steps tables
+│   ├── 003_stories.sql             # References + GCS URIs, no inline content
+│   ├── 004_entities.sql            # entities + entity_aliases
+│   ├── 005_relationships.sql       # story_entities + entity_edges
+│   ├── 006_chunks.sql              # Short chunk text inline (for vector + BM25)
+│   ├── 007_taxonomy.sql
+│   ├── 008_indexes.sql             # All indexes (btree, GIN, HNSW, trigram)
 │   ├── 009_grounding.sql           # v2.0
 │   ├── 010_evidence.sql            # v2.0
 │   ├── 011_spatio_temporal.sql     # v2.0
-│   ├── 012_jobs_queue.sql          # Job queue for async API
-│   ├── 013_pipeline_runs.sql       # Cursor-based pipeline progress
-│   └── 014_reset_functions.sql     # reset_pipeline_step() PL/pgSQL
+│   ├── 012_job_queue.sql           # Job queue for async API
+│   ├── 013_pipeline_tracking.sql   # Cursor-based pipeline progress
+│   └── 014_pipeline_functions.sql  # reset_pipeline_step() + gc_orphaned_entities() PL/pgSQL
 ├── migrate.ts            # Migration runner
 └── repositories/         # Data access layer
     ├── sources.ts
@@ -1190,11 +1190,14 @@ src/shared/
 
 ```typescript
 // src/shared/registry.ts
-export function createServices(config: MulderConfig): Services {
+export function createServiceRegistry(config: MulderConfig, logger: Logger): Services {
   if (config.dev_mode || process.env.NODE_ENV === 'development') {
-    return createDevServices(config);   // Fixtures
+    return createDevServices(config, logger);   // Fixtures
   }
-  return createGcpServices(config);     // Real GCP calls
+  if (process.env.NODE_ENV === 'test') {
+    return createDevServices(config, logger);   // Tests always use fixtures
+  }
+  return createGcpServices(config, logger);     // Real GCP calls
 }
 ```
 
@@ -1681,14 +1684,37 @@ Pipeline steps call service interfaces, not GCP clients. The service registry se
 # docker-compose.yaml
 services:
   postgres:
-    image: pgvector/pgvector:pg16
-    # + PostGIS via Dockerfile or init script
+    build: ./docker/postgres          # Custom Dockerfile: pgvector/pgvector:pg17 + PostGIS
+    container_name: mulder-postgres
     ports: ["5432:5432"]
+    environment:
+      POSTGRES_USER: mulder
+      POSTGRES_PASSWORD: mulder
+      POSTGRES_DB: mulder
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mulder"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   firestore:
-    image: google/cloud-sdk
-    command: gcloud emulators firestore start --host-port=0.0.0.0:8080
+    image: google/cloud-sdk:emulators
+    container_name: mulder-firestore
+    command: gcloud emulators firestore start --host-port=0.0.0.0:8080 --project=mulder-dev
     ports: ["8080:8080"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
 ```
+
+**Why a custom Dockerfile:** The `pgvector/pgvector` image has pgvector pre-installed but not PostGIS. PostGIS must be installed as root at build time — init scripts in `/docker-entrypoint-initdb.d/` run as the non-root `postgres` user and cannot `apt-get install`. The Dockerfile extends `pgvector/pgvector:pg17` and adds PostGIS. An init script then creates all three extensions (vector, postgis, pg_trgm) via SQL.
 
 Config:
 ```yaml
