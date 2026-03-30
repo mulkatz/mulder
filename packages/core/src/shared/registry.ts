@@ -10,9 +10,9 @@
  */
 
 import type { MulderConfig } from '../config/types.js';
-import { ConfigError } from './errors.js';
 import type { Logger } from './logger.js';
 import { createDevServices } from './services.dev.js';
+import { createGcpServices } from './services.gcp.js';
 import type { ServiceMode, Services } from './services.js';
 
 // ────────────────────────────────────────────────────────────
@@ -42,12 +42,11 @@ function resolveServiceMode(config: MulderConfig): ServiceMode {
  *
  * - `dev_mode: true` or `NODE_ENV=development` → fixture-based dev services
  * - `NODE_ENV=test` → fixture-based dev services (tests always use fixtures)
- * - Otherwise → throws `ConfigError` (GCP implementations not yet available, M2-B1)
+ * - Otherwise → GCP services (real API calls via Application Default Credentials)
  *
  * @param config - The validated Mulder configuration.
  * @param logger - Logger instance for service initialization logging.
  * @returns A `Services` bundle with all service implementations.
- * @throws {ConfigError} When GCP mode is requested but not yet implemented.
  */
 export function createServiceRegistry(config: MulderConfig, logger: Logger): Services {
 	const mode = resolveServiceMode(config);
@@ -58,15 +57,5 @@ export function createServiceRegistry(config: MulderConfig, logger: Logger): Ser
 		return createDevServices(config, logger);
 	}
 
-	// GCP implementations are not yet available (M2-B1)
-	throw new ConfigError(
-		'GCP service implementations are not yet available. Set dev_mode: true in config or NODE_ENV=development to use fixture-based dev services.',
-		'CONFIG_INVALID',
-		{
-			context: {
-				requestedMode: mode,
-				hint: 'GCP services will be implemented in M2-B1',
-			},
-		},
-	);
+	return createGcpServices(config, logger);
 }

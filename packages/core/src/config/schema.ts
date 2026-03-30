@@ -58,11 +58,16 @@ const storageSchema = z.object({
 	bucket: z.string().min(1),
 });
 
+const documentAiSchema = z.object({
+	processor_id: z.string().min(1),
+});
+
 const gcpSchema = z.object({
 	project_id: z.string().min(1),
 	region: z.string().min(1),
 	cloud_sql: cloudSqlSchema,
 	storage: storageSchema,
+	document_ai: documentAiSchema,
 });
 
 // --- Ingestion ---
@@ -370,6 +375,7 @@ export {
 	analysisSchema,
 	cloudSqlSchema,
 	deduplicationSchema,
+	documentAiSchema,
 	embeddingSchema,
 	enrichmentSchema,
 	entityResolutionSchema,

@@ -27,6 +27,8 @@ gcp:
     database: "testdb"
   storage:
     bucket: "test-bucket"
+  document_ai:
+    processor_id: "test-processor"
 
 ontology:
   entity_types:
@@ -51,6 +53,8 @@ gcp:
     tier: "db-custom-4-16384"
   storage:
     bucket: "test-bucket"
+  document_ai:
+    processor_id: "test-processor"
 
 dev_mode: false
 
@@ -170,6 +174,8 @@ gcp:
     database: "testdb"
   storage:
     bucket: "test-bucket"
+  document_ai:
+    processor_id: "test-processor"
 ontology:
   entity_types:
     - name: "person"
@@ -207,6 +213,8 @@ gcp:
     database: "testdb"
   storage:
     bucket: "test-bucket"
+  document_ai:
+    processor_id: "test-processor"
 ontology:
   entity_types:
     - name: "person"
@@ -286,6 +294,8 @@ gcp:
     database: "testdb"
   storage:
     bucket: "test-bucket"
+  document_ai:
+    processor_id: "test-processor"
 ontology:
   entity_types:
     - name: "person"
@@ -377,6 +387,8 @@ gcp:
     database: "envdb"
   storage:
     bucket: "env-bucket"
+  document_ai:
+    processor_id: "env-processor"
 ontology:
   entity_types:
     - name: "document"

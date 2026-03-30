@@ -86,20 +86,21 @@ describe('Spec 11: Service Abstraction', () => {
 		}
 	});
 
-	// ─── QA-03: Registry throws for production mode without GCP implementation ───
+	// ─── QA-03: Registry returns GCP services in production mode ───
+	// (Updated: GCP implementations now available after M2-B1)
 
-	it('QA-03: Registry throws for production mode without GCP implementation', () => {
+	it('QA-03: Registry returns GCP services in production mode', () => {
 		const prodConfig = { ...exampleConfig, dev_mode: false };
 		const savedEnv = process.env.NODE_ENV;
 		process.env.NODE_ENV = 'production';
 		try {
-			expect(() => createServiceRegistry(prodConfig, silentLogger)).toThrow();
-			try {
-				createServiceRegistry(prodConfig, silentLogger);
-			} catch (e: unknown) {
-				expect(e).toBeInstanceOf(ConfigError);
-				expect((e as any).code).toBe('CONFIG_INVALID');
-			}
+			const services = createServiceRegistry(prodConfig, silentLogger);
+			expect(services).toBeDefined();
+			expect(services.storage).toBeDefined();
+			expect(services.documentAi).toBeDefined();
+			expect(services.llm).toBeDefined();
+			expect(services.embedding).toBeDefined();
+			expect(services.firestore).toBeDefined();
 		} finally {
 			process.env.NODE_ENV = savedEnv;
 		}
