@@ -103,6 +103,8 @@ First version worth showing to anyone.
 
 ## M5: "Curated knowledge" — Taxonomy + Entity Management
 
+Human-in-the-loop taxonomy curation. Entity management for production use.
+
 | Status | Step | What | Spec |
 |--------|------|------|------|
 | ⚪ | F1 | Taxonomy bootstrap — `mulder taxonomy bootstrap` | §6.1, §1 (taxonomy cmd) |
@@ -118,6 +120,8 @@ First version worth showing to anyone.
 ---
 
 ## M6: "Intelligence layer" — v2.0
+
+Web grounding, contradiction resolution, evidence chains, spatial clustering. The analytical brain.
 
 | Status | Step | What | Spec |
 |--------|------|------|------|
@@ -136,6 +140,8 @@ First version worth showing to anyone.
 ---
 
 ## M7: "API + workers" — Async Execution Layer
+
+Move from CLI to HTTP. Job queue, async workers, and a full REST API over the pipeline.
 
 | Status | Step | What | Spec |
 |--------|------|------|------|
@@ -157,6 +163,8 @@ First version worth showing to anyone.
 
 ## M8: "Production-safe" — Operational Infrastructure
 
+Eval framework, cost gates, schema evolution, dead letter recovery. Safe to run on real data at scale.
+
 | Status | Step | What | Spec |
 |--------|------|------|------|
 | ⚪ | I1 | `mulder eval` CLI + reporter | §15, §1 (eval cmd) |
@@ -174,7 +182,7 @@ First version worth showing to anyone.
 
 ## M9: "Beyond PDFs" — Multi-Format Ingestion
 
-Extend ingest + extract to handle images, text documents, Office files, spreadsheets, emails, and web URLs. Everything from segment onward is already format-agnostic (Markdown + entities). This milestone adds format-specific extractors that converge to the same intermediate representation, plus the pipeline branching needed to skip steps for pre-structured formats.
+Images, Office docs, emails, URLs — every format converges to the same Markdown + entities. Only ingest/extract change; everything downstream stays identical.
 
 | Status | Step | What | Spec |
 |--------|------|------|------|
