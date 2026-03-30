@@ -39,7 +39,7 @@ First GCP integration. First real cost (Document AI).
 | Status | Step | What | Spec |
 |--------|------|------|------|
 | 🟢 | B1 | GCP + dev service implementations | §4.5, §4.6 |
-| 🟡 | B2 | Source repository — CRUD for `sources` table | §4.3 (sources table), §2.1 |
+| 🟢 | B2 | Source repository — CRUD for `sources` table | §4.3 (sources table), §2.1 |
 | ⚪ | B3 | Native text detection — `pdf-parse`, `has_native_text` flag | §2.1 |
 | ⚪ | B4 | Ingest step — `mulder ingest <path>` | §2.1, §4.3 (sources table), §1 (ingest cmd) |
 | ⚪ | B5 | Vertex AI wrapper + dev cache | §4.8 |
