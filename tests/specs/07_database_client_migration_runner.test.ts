@@ -117,6 +117,34 @@ function cleanupTestTables(): void {
 	);
 }
 
+/**
+ * Full database reset: drops all core tables, extensions, and the migrations table.
+ * Required when tests need to re-run `db migrate` against the real migrations directory
+ * (which uses CREATE TABLE, not CREATE TABLE IF NOT EXISTS).
+ */
+function resetDatabase(): void {
+	const dropSql = [
+		'DROP TABLE IF EXISTS chunks CASCADE',
+		'DROP TABLE IF EXISTS story_entities CASCADE',
+		'DROP TABLE IF EXISTS entity_edges CASCADE',
+		'DROP TABLE IF EXISTS entity_aliases CASCADE',
+		'DROP TABLE IF EXISTS taxonomy CASCADE',
+		'DROP TABLE IF EXISTS entities CASCADE',
+		'DROP TABLE IF EXISTS stories CASCADE',
+		'DROP TABLE IF EXISTS source_steps CASCADE',
+		'DROP TABLE IF EXISTS sources CASCADE',
+		'DROP TABLE IF EXISTS mulder_migrations CASCADE',
+		'DROP EXTENSION IF EXISTS vector CASCADE',
+		'DROP EXTENSION IF EXISTS postgis CASCADE',
+		'DROP EXTENSION IF EXISTS pg_trgm CASCADE',
+	].join('; ');
+
+	spawnSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-c', dropSql], {
+		encoding: 'utf-8',
+		timeout: 15000,
+	});
+}
+
 function isPgAvailable(): boolean {
 	try {
 		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
@@ -145,8 +173,8 @@ describe('Spec 07: Database Client + Migration Runner', () => {
 			return;
 		}
 		tmpDir = mkdtempSync(join(tmpdir(), 'mulder-qa-07-'));
-		// Clean up any leftover state
-		dropMigrationsTable();
+		// Full reset to handle leftover state from prior test runs (spec 08 etc.)
+		resetDatabase();
 		cleanupTestTables();
 	});
 
@@ -155,7 +183,7 @@ describe('Spec 07: Database Client + Migration Runner', () => {
 			rmSync(tmpDir, { recursive: true, force: true });
 		}
 		if (pgAvailable) {
-			dropMigrationsTable();
+			resetDatabase();
 			cleanupTestTables();
 		}
 	});
@@ -277,8 +305,10 @@ describe('Spec 07: Database Client + Migration Runner', () => {
 		it('mulder_migrations table exists after runMigrations() on a fresh database', () => {
 			if (!pgAvailable) return;
 
-			// Drop the migrations table to start fresh
-			dropMigrationsTable();
+			// Full reset required: `db migrate` runs real migration files (001-008)
+			// which use CREATE TABLE (not IF NOT EXISTS). Dropping only mulder_migrations
+			// would cause "table already exists" errors from prior migration runs.
+			resetDatabase();
 
 			// Run migrate via CLI (which calls runMigrations internally)
 			const { exitCode } = runCli(['db', 'migrate', EXAMPLE_CONFIG]);
@@ -541,8 +571,10 @@ describe('Spec 07: Database Client + Migration Runner', () => {
 		it('prints summary of applied/skipped migrations, exits 0', () => {
 			if (!pgAvailable) return;
 
-			// Clean state
-			dropMigrationsTable();
+			// Full reset required: `db migrate` runs real migration files (001-008)
+			// which use CREATE TABLE (not IF NOT EXISTS). Dropping only mulder_migrations
+			// would cause "table already exists" errors from prior migration runs.
+			resetDatabase();
 
 			const { stdout, stderr, exitCode } = runCli(['db', 'migrate', EXAMPLE_CONFIG]);
 			const combined = stdout + stderr;
