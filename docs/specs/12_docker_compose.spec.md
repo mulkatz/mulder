@@ -4,7 +4,7 @@ title: Docker Compose — pgvector + PostGIS + Firestore Emulator
 roadmap_step: M1-A11
 functional_spec: ["§9.3", "§13", "§14"]
 scope: single
-issue: null
+issue: https://github.com/mulkatz/mulder/issues/24
 created: 2026-03-30
 ---
 
