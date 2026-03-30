@@ -48,6 +48,10 @@ const cloudSqlSchema = z.object({
 	instance_name: z.string().min(1),
 	database: z.string().min(1),
 	tier: z.string().default('db-custom-2-8192'),
+	host: z.string().min(1).default('localhost'),
+	port: z.number().int().positive().default(5432),
+	user: z.string().min(1).default('mulder'),
+	password: z.string().optional(),
 });
 
 const storageSchema = z.object({

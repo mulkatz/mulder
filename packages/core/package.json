@@ -11,12 +11,14 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"pg": "^8.13.0",
 		"pino": "^9.0.0",
 		"yaml": "^2.7.0",
 		"zod": "^3.24.0"
 	},
 	"devDependencies": {
 		"@types/node": "^22.0.0",
+		"@types/pg": "^8.11.0",
 		"pino-pretty": "^13.0.0"
 	}
 }
