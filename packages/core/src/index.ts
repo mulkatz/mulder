@@ -64,6 +64,9 @@ export {
 	updateSourceStatus,
 	upsertSourceStep,
 } from './database/index.js';
+export type { NativeTextDetectOptions, NativeTextResult } from './pipeline/index.js';
+// ── Pipeline utilities ─────────────────────────────────────
+export { detectNativeText } from './pipeline/index.js';
 export type {
 	ConfigErrorCode,
 	DatabaseErrorCode,
@@ -103,7 +106,6 @@ export type { RateLimiterOptions } from './shared/rate-limiter.js';
 export { RateLimiter } from './shared/rate-limiter.js';
 // ── Service abstraction ─────────────────────────────────────
 export { createServiceRegistry } from './shared/registry.js';
-
 export type { RetryOptions } from './shared/retry.js';
 // ── Retry ───────────────────────────────────────────────────
 export { withRetry } from './shared/retry.js';

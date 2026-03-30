@@ -15,6 +15,7 @@
 		"@google-cloud/firestore": "^8.3.0",
 		"@google-cloud/storage": "^7.19.0",
 		"@google/genai": "^1.47.0",
+		"pdf-parse": "^2.4.5",
 		"pg": "^8.20.0",
 		"pino": "^10.3.1",
 		"yaml": "^2.8.3",
