@@ -2,7 +2,7 @@
 spec: 01
 title: Demo App — Evidence Analysis UI (Spatio-Temporal, Contradictions, Corroboration)
 issue: https://github.com/mulkatz/mulder/issues/1
-status: draft
+status: complete
 created: 2026-03-26
 ---
 
