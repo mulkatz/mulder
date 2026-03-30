@@ -118,6 +118,8 @@ importers:
         specifier: workspace:*
         version: link:../pipeline
 
+  tests: {}
+
 packages:
 
   '@biomejs/biome@1.9.4':
