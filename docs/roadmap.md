@@ -22,7 +22,7 @@ No GCP, no LLM, no cost. Pure TypeScript scaffolding.
 | 🟢 | A6 | Database client + migration runner — dual connection pools | §4.2, §4.3, §4.6 |
 | 🟢 | A7 | Core schema migrations (001-008) — all tables, extensions, indexes | §4.3 |
 | 🟢 | A8 | Job queue + pipeline tracking migrations (012-014) | §4.3 (jobs, pipeline_runs), §4.3.1 |
-| 🟡 | A9 | Fixture directory structure — placeholders in `fixtures/` | §11 |
+| 🟢 | A9 | Fixture directory structure — placeholders in `fixtures/` | §11 |
 | ⚪ | A10 | Service abstraction — interfaces, registry, rate-limiter, retry | §4.5, §7.3 |
 | ⚪ | A11 | Docker Compose — pgvector + Firestore emulator | §9.3 |
 
