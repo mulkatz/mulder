@@ -83,3 +83,33 @@ export type {
 	ThresholdsConfig,
 	VisualIntelligenceConfig,
 } from './config/index.js';
+
+// ── Service abstraction ─────────────────────────────────────
+export { createServiceRegistry } from './shared/registry.js';
+
+export type {
+	DocumentAiResult,
+	DocumentAiService,
+	EmbeddingResult,
+	EmbeddingService,
+	FirestoreService,
+	GroundedGenerateOptions,
+	GroundedGenerateResult,
+	LlmService,
+	ServiceMode,
+	Services,
+	StorageListResult,
+	StorageService,
+	StructuredGenerateOptions,
+	TextGenerateOptions,
+} from './shared/services.js';
+
+// ── Retry ───────────────────────────────────────────────────
+export { withRetry } from './shared/retry.js';
+
+export type { RetryOptions } from './shared/retry.js';
+
+// ── Rate limiter ────────────────────────────────────────────
+export { RateLimiter } from './shared/rate-limiter.js';
+
+export type { RateLimiterOptions } from './shared/rate-limiter.js';
