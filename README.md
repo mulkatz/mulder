@@ -31,7 +31,7 @@
 ---
 
 <p align="center">
-  <img src="./docs/screenshots/01-dashboard-light.png" width="720" alt="Mulder Dashboard" />
+  <img src="./docs/notes/screenshots/01-dashboard-light.png" width="720" alt="Mulder Dashboard" />
 </p>
 
 ## What it does
