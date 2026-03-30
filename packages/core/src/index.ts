@@ -63,6 +63,7 @@ export type {
 	CloudSqlConfig,
 	ConfigIssue,
 	DeduplicationConfig,
+	DocumentAiConfig,
 	EmbeddingConfig,
 	EnrichmentConfig,
 	EntityResolutionConfig,
@@ -86,6 +87,7 @@ export type {
 
 // ── Service abstraction ─────────────────────────────────────
 export { createServiceRegistry } from './shared/registry.js';
+export { closeGcpClients } from './shared/gcp.js';
 
 export type {
 	DocumentAiResult,
