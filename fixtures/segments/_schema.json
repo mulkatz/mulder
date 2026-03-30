@@ -1,0 +1,11 @@
+{
+  "$schema": "fixture-schema",
+  "description": "Gemini segmentation output — per-story Markdown + metadata",
+  "api": "Vertex AI Gemini",
+  "api_version": "v1",
+  "structure": {
+    "{source-slug}/{segment-id}.md": "Story content as Markdown (the end format per story)",
+    "{source-slug}/{segment-id}.meta.json": "Segment metadata: page range, confidence, story type"
+  },
+  "notes": "Markdown is the end format per story. Metadata JSON has page boundaries and classification."
+}
