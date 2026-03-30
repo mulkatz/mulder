@@ -34,16 +34,35 @@ export {
 	mulderConfigSchema,
 } from './config/index.js';
 export type {
+	CreateSourceInput,
 	MigrationResult,
 	MigrationStatus,
+	Source,
+	SourceFilter,
+	SourceStatus,
+	SourceStep,
+	SourceStepStatus,
+	UpdateSourceInput,
+	UpsertSourceStepInput,
 } from './database/index.js';
 // ── Database ─────────────────────────────────────────────────
 export {
 	closeAllPools,
+	countSources,
+	createSource,
+	deleteSource,
+	findAllSources,
+	findSourceByHash,
+	findSourceById,
+	findSourceStep,
+	findSourceSteps,
 	getMigrationStatus,
 	getQueryPool,
 	getWorkerPool,
 	runMigrations,
+	updateSource,
+	updateSourceStatus,
+	upsertSourceStep,
 } from './database/index.js';
 export type {
 	ConfigErrorCode,
