@@ -29,7 +29,11 @@ terraform/terraform.tfstate*
 eval/metrics/*.json
 !eval/metrics/baseline.json
 
+# Test
+coverage/
+
 # Build outputs
 dist/
 *.tsbuildinfo
 .turbo/
+pnpm-debug.log*
