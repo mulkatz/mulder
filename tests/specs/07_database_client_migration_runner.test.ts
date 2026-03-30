@@ -124,6 +124,12 @@ function cleanupTestTables(): void {
  */
 function resetDatabase(): void {
 	const dropSql = [
+		'DROP FUNCTION IF EXISTS reset_pipeline_step CASCADE',
+		'DROP FUNCTION IF EXISTS gc_orphaned_entities CASCADE',
+		'DROP TABLE IF EXISTS pipeline_run_sources CASCADE',
+		'DROP TABLE IF EXISTS pipeline_runs CASCADE',
+		'DROP TABLE IF EXISTS jobs CASCADE',
+		'DROP TYPE IF EXISTS job_status CASCADE',
 		'DROP TABLE IF EXISTS chunks CASCADE',
 		'DROP TABLE IF EXISTS story_entities CASCADE',
 		'DROP TABLE IF EXISTS entity_edges CASCADE',
