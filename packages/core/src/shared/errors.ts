@@ -34,6 +34,8 @@ export type PipelineErrorCode = (typeof PIPELINE_ERROR_CODES)[keyof typeof PIPEL
 export const DATABASE_ERROR_CODES = {
 	DB_CONNECTION_FAILED: 'DB_CONNECTION_FAILED',
 	DB_MIGRATION_FAILED: 'DB_MIGRATION_FAILED',
+	DB_QUERY_FAILED: 'DB_QUERY_FAILED',
+	DB_NOT_FOUND: 'DB_NOT_FOUND',
 } as const;
 
 export type DatabaseErrorCode = (typeof DATABASE_ERROR_CODES)[keyof typeof DATABASE_ERROR_CODES];
