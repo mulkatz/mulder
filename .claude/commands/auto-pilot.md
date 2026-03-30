@@ -163,10 +163,7 @@ gh issue create \
 
 ## Branch
 
-`feat/{NUMBER}-short-descriptor`
-
----
-*Architected from [`docs/specs/NN_title.spec.md`](https://github.com/mulkatz/mulder/blob/main/docs/specs/NN_title.spec.md)*
+[`feat/{NUMBER}-short-descriptor`](https://github.com/mulkatz/mulder/tree/feat/{NUMBER}-short-descriptor)
 EOF
 )"
 ```
@@ -646,7 +643,18 @@ Merge commit preserves the atomic commit history (types, logic, integration, QA 
 
 The PR body already contains `Closes #{ISSUE_NUMBER}`, so the issue closes automatically on merge.
 
-**4. Update board status → Done:**
+**4. Check acceptance criteria checkboxes:**
+
+Before the issue closes, update all acceptance criteria checkboxes to checked. Fetch the current issue body, replace all `- [ ]` with `- [x]` in the Acceptance Criteria section, and update:
+
+```bash
+# Get current issue body, check all acceptance criteria boxes, update
+ISSUE_BODY=$(gh issue view {ISSUE_NUMBER} --json body --jq '.body')
+UPDATED_BODY=$(echo "$ISSUE_BODY" | sed 's/- \[ \] QA-/- [x] QA-/g')
+gh issue edit {ISSUE_NUMBER} --body "$UPDATED_BODY"
+```
+
+**5. Update board status → Done:**
 
 ```bash
 if [ -n "$GH_PROJECT_TOKEN" ]; then
@@ -660,7 +668,7 @@ if [ -n "$GH_PROJECT_TOKEN" ]; then
 fi
 ```
 
-**5. Return to main:**
+**6. Return to main:**
 
 ```bash
 git checkout main && git pull

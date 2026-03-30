@@ -263,16 +263,13 @@ gh issue create \
 
 ## Branch
 
-`feat/{NUMBER}-short-descriptor`
-
----
-*Architected from [`docs/specs/NN_title.spec.md`](https://github.com/mulkatz/mulder/blob/main/docs/specs/NN_title.spec.md)*
+[`feat/{NUMBER}-short-descriptor`](https://github.com/mulkatz/mulder/tree/feat/{NUMBER}-short-descriptor)
 EOF
 )"
 ```
 
 **After issue creation:**
-1. Edit the issue body — replace `{NUMBER}` with the actual issue number
+1. Edit the issue body — replace `{NUMBER}` with the actual issue number (both in branch name text and URL)
 2. Update the spec's frontmatter `issue:` field with the issue URL
 3. Add the issue to the GitHub Project board:
 
