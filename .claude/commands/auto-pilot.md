@@ -624,7 +624,17 @@ EOF
 git push
 ```
 
-**2. Devlog check:** Read `docs/roadmap.md` and check if TARGET_STEP is the last step in its milestone (all other steps are now 🟢). If yes, write a devlog entry at `devlog/{YYYY-MM-DD}-{milestone-slug}.md` summarizing what the milestone achieved (per CLAUDE.md devlog conventions). Commit and push it on the feature branch.
+**2. Devlog check:** Evaluate whether THIS step warrants a devlog entry — per CLAUDE.md devlog conventions, not per milestone. Write an entry when any of these apply to the just-completed step:
+- A new capability works (e.g., service abstraction, pipeline step, search)
+- An architecture decision was made or revised
+- A non-obvious problem was solved
+- A GCP service was first integrated
+- A significant refactor landed
+- A milestone was fully completed (all steps 🟢)
+
+Skip when: routine refactoring, bug fixes, dependency updates, formatting, repeated iterations.
+
+If a devlog entry is warranted, write it at `devlog/{YYYY-MM-DD}-{step-slug}.md` summarizing what this specific step achieved, key decisions, and anything non-obvious. Use type from: architecture | implementation | breakthrough | decision | refactor | integration | milestone. Commit and push it on the feature branch.
 
 **3. Squash merge + close:**
 
