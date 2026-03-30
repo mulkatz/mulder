@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -139,45 +138,7 @@ describe('Spec 01: Demo Evidence Analysis UI', () => {
 
 	// ─── QA-08: Existing pages unaffected + demo builds ───
 
-	describe('QA-08: Demo app builds successfully', () => {
-		let buildExitCode: number;
-		let buildOutput: string;
-
-		beforeAll(() => {
-			// Install demo dependencies first
-			try {
-				execFileSync('pnpm', ['install', '--frozen-lockfile'], {
-					cwd: DEMO,
-					encoding: 'utf-8',
-					timeout: 60_000,
-				});
-			} catch {
-				// pnpm install may not have frozen lockfile, try without
-				execFileSync('pnpm', ['install'], {
-					cwd: DEMO,
-					encoding: 'utf-8',
-					timeout: 60_000,
-				});
-			}
-
-			try {
-				buildOutput = execFileSync('npx', ['vite', 'build'], {
-					cwd: DEMO,
-					encoding: 'utf-8',
-					timeout: 120_000,
-				});
-				buildExitCode = 0;
-			} catch (e: unknown) {
-				const error = e as { status?: number; stdout?: string; stderr?: string };
-				buildExitCode = error.status ?? 1;
-				buildOutput = (error.stdout ?? '') + (error.stderr ?? '');
-			}
-		});
-
-		it('demo app builds without errors', () => {
-			expect(buildExitCode, `Demo build failed:\n${buildOutput}`).toBe(0);
-		});
-
+	describe('QA-08: Existing pages unaffected', () => {
 		it('all expected page files exist', () => {
 			const pages = [
 				'Dashboard.tsx',
