@@ -4,29 +4,36 @@
 
 If you discover a security vulnerability in Mulder, please report it responsibly.
 
-**Do not open a public GitHub issue for security vulnerabilities.**
+**Do NOT open a public GitHub issue for security vulnerabilities.**
 
-Instead, please email **security@mulkatz.dev** with:
+Instead, please email: franz.benthin.dev@gmail.com
 
-- A description of the vulnerability
+Include:
+- Description of the vulnerability
 - Steps to reproduce
 - Potential impact
-- Suggested fix (if any)
+- Suggested fix (if you have one)
 
-You will receive a response within 72 hours acknowledging receipt. We will work with you to understand and address the issue before any public disclosure.
+## Response Timeline
 
-## Scope
-
-This policy applies to the Mulder codebase and its official deployments. Third-party dependencies are managed via Dependabot and reviewed on a regular basis.
+- **Acknowledgment:** Within 48 hours
+- **Assessment:** Within 1 week
+- **Fix:** Depends on severity, but we aim for:
+    - Critical: 7 days
+    - High: 14 days
+    - Medium: 30 days
+    - Low: 90 days
 
 ## Supported Versions
 
 | Version | Supported |
 |---------|-----------|
-| main    | Yes       |
+| Latest  | Yes       |
+| Older   | No        |
 
-## Security Practices
+## Security Best Practices for Self-Hosting
 
-- **No secrets in code.** API keys, GCP credentials, and service account JSON must never be committed. All sensitive config uses environment variables or GCP IAM.
-- **`.gitignore` blocks** `.env*`, `terraform.tfstate*`, and `.mulder-cache.db`.
-- **Dependencies** are reviewed for known vulnerabilities via `pnpm audit`.
+- Never expose your `.env` file or GCP credentials
+- Use IAM roles with minimal permissions for the Cloud Run service account
+- Enable audit logging in your GCP project
+- Keep dependencies up to date
