@@ -58,20 +58,51 @@ describe('Spec 05: Logger Setup — Pino Structured JSON', () => {
 	}
 
 	/**
+	 * Shape of a parsed Pino log entry for type-safe access in tests.
+	 */
+	interface LogEntry {
+		level?: string | number;
+		time?: number;
+		msg?: string;
+		step?: string;
+		source_id?: string;
+		duration_ms?: number;
+		err?: {
+			code?: string;
+			context?: Record<string, unknown>;
+			type?: string;
+			[key: string]: unknown;
+		};
+		data?: {
+			api_key?: string;
+			[key: string]: unknown;
+		};
+		[key: string]: unknown;
+	}
+
+	/**
 	 * Helper: parse newline-delimited JSON from a string.
 	 */
-	function parseJsonLines(output: string): Record<string, unknown>[] {
+	function parseJsonLines(output: string): LogEntry[] {
 		return output
 			.split('\n')
 			.filter((line) => line.trim().length > 0)
 			.map((line) => {
 				try {
-					return JSON.parse(line);
+					return JSON.parse(line) as LogEntry;
 				} catch {
 					return null;
 				}
 			})
-			.filter((entry) => entry !== null);
+			.filter((entry): entry is LogEntry => entry !== null);
+	}
+
+	/**
+	 * Helper: assert a value is defined and return it narrowed.
+	 */
+	function defined<T>(value: T | undefined, message?: string): T {
+		expect(value, message).toBeDefined();
+		return value as T;
 	}
 
 	/**
@@ -95,8 +126,7 @@ const { createLogger, createChildLogger, withDuration, ConfigError } = core;`;
 			const lines = parseJsonLines(stdout);
 			expect(lines.length).toBeGreaterThanOrEqual(1);
 
-			const entry = lines.find((l) => l.msg === 'hello structured world');
-			expect(entry).toBeDefined();
+			const entry = defined(lines.find((l) => l.msg === 'hello structured world'));
 			expect(entry).toHaveProperty('level');
 			expect(entry).toHaveProperty('time');
 			expect(entry).toHaveProperty('msg');
@@ -141,8 +171,7 @@ const { createLogger, createChildLogger, withDuration, ConfigError } = core;`;
 			]);
 
 			const lines = parseJsonLines(stdout);
-			const entry = lines.find((l) => l.msg === 'processing document');
-			expect(entry).toBeDefined();
+			const entry = defined(lines.find((l) => l.msg === 'processing document'));
 			expect(entry.step).toBe('enrich');
 			expect(entry.source_id).toBe('abc-123');
 		});
@@ -161,14 +190,13 @@ const { createLogger, createChildLogger, withDuration, ConfigError } = core;`;
 			]);
 
 			const lines = parseJsonLines(stdout);
-			const entry = lines.find((l) => l.msg === 'failed to load config');
-			expect(entry).toBeDefined();
-			expect(entry.err).toBeDefined();
-			expect(entry.err.code).toBe('CONFIG_NOT_FOUND');
-			expect(entry.err.context).toBeDefined();
-			expect(entry.err.context.path).toBe('/missing');
-			expect(entry.err.type).toBeDefined();
-			expect(typeof entry.err.type).toBe('string');
+			const entry = defined(lines.find((l) => l.msg === 'failed to load config'));
+			const err = defined(entry.err);
+			expect(err.code).toBe('CONFIG_NOT_FOUND');
+			const ctx = defined(err.context);
+			expect(ctx.path).toBe('/missing');
+			expect(err.type).toBeDefined();
+			expect(typeof err.type).toBe('string');
 		});
 	});
 
@@ -184,12 +212,10 @@ const { createLogger, createChildLogger, withDuration, ConfigError } = core;`;
 			]);
 
 			const lines = parseJsonLines(stdout);
-			const entry = lines.find((l) => l.msg === 'request payload');
-			expect(entry).toBeDefined();
-
+			const entry = defined(lines.find((l) => l.msg === 'request payload'));
 			const raw = JSON.stringify(entry);
 			expect(raw).not.toContain('super-secret-key-123');
-			expect(entry.data.api_key).toBe('[Redacted]');
+			expect(defined(entry.data).api_key).toBe('[Redacted]');
 		});
 	});
 
@@ -210,8 +236,7 @@ const { createLogger, createChildLogger, withDuration, ConfigError } = core;`;
 			]);
 
 			const lines = parseJsonLines(stdout);
-			const durationEntry = lines.find((l) => typeof l.duration_ms === 'number');
-			expect(durationEntry).toBeDefined();
+			const durationEntry = defined(lines.find((l) => typeof l.duration_ms === 'number'));
 			expect(durationEntry.duration_ms).toBeGreaterThanOrEqual(0);
 			// Should be info level (level string "info" or numeric 30)
 			const level = durationEntry.level;
@@ -242,10 +267,9 @@ const { createLogger, createChildLogger, withDuration, ConfigError } = core;`;
 			expect(stderr).toContain('CAUGHT:boom');
 
 			const lines = parseJsonLines(stdout);
-			const errorEntry = lines.find(
-				(l) => typeof l.duration_ms === 'number' && (l.level === 'error' || l.level === 50),
+			const errorEntry = defined(
+				lines.find((l) => typeof l.duration_ms === 'number' && (l.level === 'error' || l.level === 50)),
 			);
-			expect(errorEntry).toBeDefined();
 			expect(errorEntry.duration_ms).toBeGreaterThanOrEqual(0);
 		});
 	});

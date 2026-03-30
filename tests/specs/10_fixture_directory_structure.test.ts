@@ -48,26 +48,21 @@ describe('Spec 10: Fixture Directory Structure', () => {
 
 	// ─── QA-02: Git preserves empty directories ───
 
-	describe('QA-02: Git preserves empty directories', () => {
-		it('every subdirectory has a .gitkeep file', () => {
-			for (const subdir of REQUIRED_SUBDIRS) {
-				const gitkeepPath = resolve(FIXTURES_ROOT, subdir, '.gitkeep');
-				expect(existsSync(gitkeepPath), `Missing .gitkeep in fixtures/${subdir}/`).toBe(true);
-			}
+	describe('QA-02: Git preserves directories', () => {
+		it('empty subdirectories have a .gitkeep file', () => {
+			// Only raw/ needs .gitkeep — other dirs have _schema.json which preserves them
+			const gitkeepPath = resolve(FIXTURES_ROOT, 'raw', '.gitkeep');
+			expect(existsSync(gitkeepPath), 'Missing .gitkeep in fixtures/raw/').toBe(true);
 		});
 
-		it('.gitkeep files are tracked in git', () => {
-			const gitOutput = execFileSync(
-				'git',
-				['ls-files', '--error-unmatch', ...REQUIRED_SUBDIRS.map((d) => `fixtures/${d}/.gitkeep`)],
-				{
+		it('every subdirectory has at least one tracked file', () => {
+			for (const subdir of REQUIRED_SUBDIRS) {
+				const gitOutput = execFileSync('git', ['ls-files', `fixtures/${subdir}/`], {
 					cwd: ROOT,
 					encoding: 'utf-8',
 					timeout: 10_000,
-				},
-			);
-			for (const subdir of REQUIRED_SUBDIRS) {
-				expect(gitOutput, `fixtures/${subdir}/.gitkeep not tracked in git`).toContain(`fixtures/${subdir}/.gitkeep`);
+				});
+				expect(gitOutput.trim().length, `fixtures/${subdir}/ has no tracked files`).toBeGreaterThan(0);
 			}
 		});
 	});
