@@ -8,6 +8,7 @@ import type {
 	analysisSchema,
 	cloudSqlSchema,
 	deduplicationSchema,
+	documentAiSchema,
 	embeddingSchema,
 	enrichmentSchema,
 	entityResolutionSchema,
@@ -35,6 +36,7 @@ export type ProjectConfig = z.infer<typeof projectSchema>;
 export type GcpConfig = z.infer<typeof gcpSchema>;
 export type CloudSqlConfig = z.infer<typeof cloudSqlSchema>;
 export type StorageConfig = z.infer<typeof storageSchema>;
+export type DocumentAiConfig = z.infer<typeof documentAiSchema>;
 export type IngestionConfig = z.infer<typeof ingestionSchema>;
 export type ExtractionConfig = z.infer<typeof extractionSchema>;
 export type EnrichmentConfig = z.infer<typeof enrichmentSchema>;

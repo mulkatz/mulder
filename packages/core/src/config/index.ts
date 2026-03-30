@@ -12,6 +12,7 @@ export type {
 	AnalysisConfig,
 	CloudSqlConfig,
 	DeduplicationConfig,
+	DocumentAiConfig,
 	EmbeddingConfig,
 	EnrichmentConfig,
 	EntityResolutionConfig,

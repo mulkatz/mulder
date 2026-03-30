@@ -18,6 +18,8 @@ gcp:
     tier: "db-custom-2-8192"         # 2 vCPU, 8GB RAM — sufficient for ~100k vectors
   storage:
     bucket: "mulder-my-project"
+  document_ai:
+    processor_id: "abc123def456"     # Document AI Layout Parser processor ID
 
 # --- Dev Mode ---
 # Set to true for local development with fixtures — no GCP calls, no cost.
