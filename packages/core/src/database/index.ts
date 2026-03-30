@@ -7,5 +7,5 @@
  */
 
 export { closeAllPools, getQueryPool, getWorkerPool } from './client.js';
-export { getMigrationStatus, runMigrations } from './migrate.js';
 export type { MigrationResult, MigrationStatus } from './migrate.js';
+export { getMigrationStatus, runMigrations } from './migrate.js';

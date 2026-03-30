@@ -18,6 +18,7 @@ dist/
 
 # Dev mode
 .mulder-cache.db
+mulder.config.yaml
 .env*
 !.env.example
 
@@ -31,6 +32,7 @@ eval/metrics/*.json
 
 # Test
 coverage/
+tests/data/
 
 # Build outputs
 dist/

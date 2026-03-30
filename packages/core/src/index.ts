@@ -1,62 +1,4 @@
 // ── Shared error hierarchy ──────────────────────────────────
-export {
-	MulderError,
-	ConfigError,
-	PipelineError,
-	DatabaseError,
-	ExternalServiceError,
-	CONFIG_ERROR_CODES,
-	PIPELINE_ERROR_CODES,
-	DATABASE_ERROR_CODES,
-	EXTERNAL_SERVICE_ERROR_CODES,
-	TAXONOMY_ERROR_CODES,
-	isMulderError,
-	isRetryableError,
-} from './shared/errors.js';
-
-export type {
-	ConfigErrorCode,
-	PipelineErrorCode,
-	DatabaseErrorCode,
-	ExternalServiceErrorCode,
-	TaxonomyErrorCode,
-	MulderErrorCode,
-} from './shared/errors.js';
-
-// ── Logger ──────────────────────────────────────────────────
-export {
-	createLogger,
-	createChildLogger,
-	withDuration,
-} from './shared/logger.js';
-
-export type {
-	Logger,
-	LoggerOptions,
-	ChildLoggerContext,
-} from './shared/logger.js';
-
-// ── Database ─────────────────────────────────────────────────
-export {
-	closeAllPools,
-	getQueryPool,
-	getWorkerPool,
-	getMigrationStatus,
-	runMigrations,
-} from './database/index.js';
-
-export type {
-	MigrationResult,
-	MigrationStatus,
-} from './database/index.js';
-
-// ── Config ──────────────────────────────────────────────────
-export {
-	ConfigValidationError,
-	CONFIG_DEFAULTS,
-	loadConfig,
-	mulderConfigSchema,
-} from './config/index.js';
 
 export type {
 	AnalysisConfig,
@@ -84,11 +26,68 @@ export type {
 	ThresholdsConfig,
 	VisualIntelligenceConfig,
 } from './config/index.js';
-
+// ── Config ──────────────────────────────────────────────────
+export {
+	CONFIG_DEFAULTS,
+	ConfigValidationError,
+	loadConfig,
+	mulderConfigSchema,
+} from './config/index.js';
+export type {
+	MigrationResult,
+	MigrationStatus,
+} from './database/index.js';
+// ── Database ─────────────────────────────────────────────────
+export {
+	closeAllPools,
+	getMigrationStatus,
+	getQueryPool,
+	getWorkerPool,
+	runMigrations,
+} from './database/index.js';
+export type {
+	ConfigErrorCode,
+	DatabaseErrorCode,
+	ExternalServiceErrorCode,
+	MulderErrorCode,
+	PipelineErrorCode,
+	TaxonomyErrorCode,
+} from './shared/errors.js';
+export {
+	CONFIG_ERROR_CODES,
+	ConfigError,
+	DATABASE_ERROR_CODES,
+	DatabaseError,
+	EXTERNAL_SERVICE_ERROR_CODES,
+	ExternalServiceError,
+	isMulderError,
+	isRetryableError,
+	MulderError,
+	PIPELINE_ERROR_CODES,
+	PipelineError,
+	TAXONOMY_ERROR_CODES,
+} from './shared/errors.js';
+export { closeGcpClients } from './shared/gcp.js';
+export type {
+	ChildLoggerContext,
+	Logger,
+	LoggerOptions,
+} from './shared/logger.js';
+// ── Logger ──────────────────────────────────────────────────
+export {
+	createChildLogger,
+	createLogger,
+	withDuration,
+} from './shared/logger.js';
+export type { RateLimiterOptions } from './shared/rate-limiter.js';
+// ── Rate limiter ────────────────────────────────────────────
+export { RateLimiter } from './shared/rate-limiter.js';
 // ── Service abstraction ─────────────────────────────────────
 export { createServiceRegistry } from './shared/registry.js';
-export { closeGcpClients } from './shared/gcp.js';
 
+export type { RetryOptions } from './shared/retry.js';
+// ── Retry ───────────────────────────────────────────────────
+export { withRetry } from './shared/retry.js';
 export type {
 	DocumentAiResult,
 	DocumentAiService,
@@ -105,13 +104,3 @@ export type {
 	StructuredGenerateOptions,
 	TextGenerateOptions,
 } from './shared/services.js';
-
-// ── Retry ───────────────────────────────────────────────────
-export { withRetry } from './shared/retry.js';
-
-export type { RetryOptions } from './shared/retry.js';
-
-// ── Rate limiter ────────────────────────────────────────────
-export { RateLimiter } from './shared/rate-limiter.js';
-
-export type { RateLimiterOptions } from './shared/rate-limiter.js';

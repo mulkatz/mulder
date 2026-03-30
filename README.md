@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./mulder-icon.svg" width="100" alt="Mulder" />
+  <img src="./public/mulder-icon.svg" width="100" alt="Mulder" />
 </p>
 
 <h1 align="center">Mulder</h1>
@@ -18,7 +18,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache_2.0-green?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/GCP-native-4285F4?style=flat-square&logo=googlecloud&logoColor=white" alt="GCP" />
-  <img src="https://img.shields.io/badge/status-building_M1-orange?style=flat-square" alt="Status" />
+  <img src="https://img.shields.io/badge/status-building_M2-orange?style=flat-square" alt="Status" />
 </p>
 
 <p align="center">
@@ -30,8 +30,30 @@
 
 ---
 
+<!-- PROGRESS:START — auto-updated by auto-pilot -->
+<table align="center">
+<tr><td>
+
+**Development Progress** &ensp; `12 / 81 steps`
+
+```
+M1 Foundation       ██████████████████████████████ 11/11 ✓
+M2 Ingest+Extract   ███░░░░░░░░░░░░░░░░░░░░░░░░░░  1/9
+M3 Segment+Enrich   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/10
+M4 Search (v1.0)    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/11
+M5 Curation         ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/5
+M6 Intelligence     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/7
+M7 API+Workers      ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/9
+M8 Operations       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/6
+M9 Multi-Format     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/13
+```
+
+</td></tr>
+</table>
+<!-- PROGRESS:END -->
+
 <p align="center">
-  <img src="./docs/notes/screenshots/01-dashboard-light.png" width="720" alt="Mulder Dashboard" />
+  <img src="./public/01-dashboard-light.png" width="720" alt="Mulder Dashboard" />
 </p>
 
 ## What it does
@@ -168,9 +190,9 @@ Everything beyond `project` and `ontology` has sensible defaults. See [`mulder.c
 
 Mulder's design phase is complete — [functional spec](./docs/functional-spec.md), [implementation roadmap](./docs/roadmap.md), and [config schema](./mulder.config.example.yaml) are finalized.
 
-Currently building **Milestone 1** (foundation: monorepo, config loader, database, CLI scaffold).
+Currently building **Milestone 2** (ingest + extract: first GCP integration, Document AI, Cloud Storage).
 
-See the [roadmap](./docs/roadmap.md) for all 8 milestones from foundation to production-ready.
+See the [roadmap](./docs/roadmap.md) for all 9 milestones from foundation to multi-format ingestion.
 
 ## Contributing
 

@@ -3,11 +3,11 @@
  * Public API: loadConfig, MulderConfig, ConfigValidationError, mulderConfigSchema
  */
 
-export { ConfigValidationError } from './errors.js';
+export { CONFIG_DEFAULTS } from './defaults.js';
 export type { ConfigIssue } from './errors.js';
+export { ConfigValidationError } from './errors.js';
 export { loadConfig } from './loader.js';
 export { mulderConfigSchema } from './schema.js';
-export { CONFIG_DEFAULTS } from './defaults.js';
 export type {
 	AnalysisConfig,
 	CloudSqlConfig,

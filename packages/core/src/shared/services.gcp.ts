@@ -9,15 +9,13 @@
  * @see docs/functional-spec.md §4.5, §4.6
  */
 
-import type { protos } from '@google-cloud/documentai';
-import type { DocumentProcessorServiceClient } from '@google-cloud/documentai';
+import type { GoogleGenAI } from '@google/genai';
+import type { DocumentProcessorServiceClient, protos } from '@google-cloud/documentai';
 import type { Firestore } from '@google-cloud/firestore';
 import type { Storage } from '@google-cloud/storage';
-import type { GenerateContentResult, VertexAI } from '@google-cloud/vertexai';
-import { GoogleAuth } from 'google-auth-library';
 import type { MulderConfig } from '../config/types.js';
 import { ExternalServiceError } from './errors.js';
-import { closeGcpClients, getDocumentAIClient, getFirestoreClient, getStorageClient, getVertexAI } from './gcp.js';
+import { closeGcpClients, getDocumentAIClient, getFirestoreClient, getGenAI, getStorageClient } from './gcp.js';
 import type { Logger } from './logger.js';
 import { withRetry } from './retry.js';
 import type {
@@ -54,15 +52,6 @@ function wrapGcpError(
 			originalMessage: cause instanceof Error ? cause.message : String(cause),
 		},
 	});
-}
-
-/**
- * Converts a JSON-serializable value to a target type via round-trip serialization.
- * Used for external API response boundaries where runtime values are trusted
- * but TypeScript cannot infer the type statically.
- */
-function jsonRoundTrip<T>(value: unknown): T {
-	return JSON.parse(JSON.stringify(value));
 }
 
 /**
@@ -255,18 +244,18 @@ class GcpDocumentAiService implements DocumentAiService {
 }
 
 // ────────────────────────────────────────────────────────────
-// GCP LLM Service
+// GCP LLM Service (Google GenAI SDK)
 // ────────────────────────────────────────────────────────────
 
 /**
- * Gemini via Vertex AI implementation.
+ * Gemini via Google GenAI SDK (Vertex AI backend).
  * Provides structured output, plain text, and grounded generation.
  */
 class GcpLlmService implements LlmService {
 	private static readonly DEFAULT_MODEL = 'gemini-2.5-flash';
 
 	constructor(
-		private readonly vertexAi: VertexAI,
+		private readonly ai: GoogleGenAI,
 		private readonly logger: Logger,
 	) {}
 
@@ -275,43 +264,21 @@ class GcpLlmService implements LlmService {
 			async () => {
 				this.logger.debug('GcpLlmService: generateStructured called');
 
-				// Convert schema via JSON round-trip (options.schema is Record, SDK expects ResponseSchema)
-				const generationConfig: Record<string, unknown> = {
-					responseMimeType: 'application/json',
-					responseSchema: JSON.parse(JSON.stringify(options.schema)),
-				};
+				// Build contents: simple string or multimodal parts
+				const contents = this.buildContents(options.prompt, options.media);
 
-				const model = this.vertexAi.getGenerativeModel({
+				const response = await this.ai.models.generateContent({
 					model: GcpLlmService.DEFAULT_MODEL,
-					generationConfig: jsonRoundTrip(generationConfig),
-					systemInstruction: options.systemInstruction
-						? { role: 'system', parts: [{ text: options.systemInstruction }] }
-						: undefined,
+					contents,
+					config: {
+						responseMimeType: 'application/json',
+						responseSchema: options.schema,
+						systemInstruction: options.systemInstruction,
+					},
 				});
 
-				const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [
-					{ text: options.prompt },
-				];
-
-				if (options.media) {
-					for (const m of options.media) {
-						parts.push({
-							inlineData: {
-								mimeType: m.mimeType,
-								data: m.data.toString('base64'),
-							},
-						});
-					}
-				}
-
-				const result: GenerateContentResult = await model.generateContent({
-					contents: [{ role: 'user', parts }],
-				});
-
-				const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
-
-				// Parse and return via round-trip (external API response pattern)
-				return jsonRoundTrip<T>(JSON.parse(responseText));
+				const responseText = response.text ?? '{}';
+				return JSON.parse(responseText);
 			},
 			{
 				onRetry: (err, attempt, delayMs) => {
@@ -328,18 +295,15 @@ class GcpLlmService implements LlmService {
 			async () => {
 				this.logger.debug('GcpLlmService: generateText called');
 
-				const model = this.vertexAi.getGenerativeModel({
+				const response = await this.ai.models.generateContent({
 					model: GcpLlmService.DEFAULT_MODEL,
-					systemInstruction: options.systemInstruction
-						? { role: 'system', parts: [{ text: options.systemInstruction }] }
-						: undefined,
+					contents: options.prompt,
+					config: {
+						systemInstruction: options.systemInstruction,
+					},
 				});
 
-				const result: GenerateContentResult = await model.generateContent({
-					contents: [{ role: 'user', parts: [{ text: options.prompt }] }],
-				});
-
-				return result.response.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+				return response.text ?? '';
 			},
 			{
 				onRetry: (err, attempt, delayMs) => {
@@ -356,22 +320,19 @@ class GcpLlmService implements LlmService {
 			async () => {
 				this.logger.debug('GcpLlmService: groundedGenerate called');
 
-				const model = this.vertexAi.getGenerativeModel({
+				const response = await this.ai.models.generateContent({
 					model: GcpLlmService.DEFAULT_MODEL,
-					tools: [{ googleSearchRetrieval: {} }],
-					systemInstruction: options.systemInstruction
-						? { role: 'system', parts: [{ text: options.systemInstruction }] }
-						: undefined,
+					contents: options.prompt,
+					config: {
+						tools: [{ googleSearch: {} }],
+						systemInstruction: options.systemInstruction,
+					},
 				});
 
-				const result: GenerateContentResult = await model.generateContent({
-					contents: [{ role: 'user', parts: [{ text: options.prompt }] }],
-				});
-
-				const candidate = result.response.candidates?.[0];
-				const text = candidate?.content?.parts?.[0]?.text ?? '';
-				const groundingMetadata: Record<string, unknown> = candidate?.groundingMetadata
-					? toRecord(JSON.parse(JSON.stringify(candidate.groundingMetadata)))
+				const text = response.text ?? '';
+				const metadata = response.candidates?.[0]?.groundingMetadata;
+				const groundingMetadata: Record<string, unknown> = metadata
+					? toRecord(JSON.parse(JSON.stringify(metadata)))
 					: {};
 
 				return { text, groundingMetadata };
@@ -385,46 +346,51 @@ class GcpLlmService implements LlmService {
 			throw wrapGcpError('EXT_VERTEX_AI_FAILED', 'Failed to generate grounded content', cause);
 		});
 	}
+
+	/**
+	 * Builds the contents parameter for generateContent.
+	 * Returns a simple string for text-only, or structured parts for multimodal.
+	 */
+	private buildContents(
+		prompt: string,
+		media?: Array<{ mimeType: string; data: Buffer }>,
+	): string | Array<{ role: string; parts: Array<Record<string, unknown>> }> {
+		if (!media || media.length === 0) {
+			return prompt;
+		}
+
+		const parts: Array<Record<string, unknown>> = [{ text: prompt }];
+		for (const m of media) {
+			parts.push({
+				inlineData: {
+					mimeType: m.mimeType,
+					data: m.data.toString('base64'),
+				},
+			});
+		}
+
+		return [{ role: 'user', parts }];
+	}
 }
 
 // ────────────────────────────────────────────────────────────
-// GCP Embedding Service
+// GCP Embedding Service (Google GenAI SDK)
 // ────────────────────────────────────────────────────────────
-
-/** Response shape from the Vertex AI text-embedding prediction API. */
-interface EmbeddingPrediction {
-	embeddings: {
-		values: number[];
-	};
-}
-
-/** Response from the Vertex AI prediction endpoint. */
-interface PredictionResponse {
-	predictions: EmbeddingPrediction[];
-}
 
 /**
- * Vertex AI text-embedding-004 implementation.
- * Uses the Vertex AI prediction REST API for embeddings since the
- * `@google-cloud/vertexai` SDK focuses on generative models.
+ * Vertex AI text-embedding-004 implementation via Google GenAI SDK.
+ * Uses native `ai.models.embedContent()` for embeddings.
  *
  * Passes `outputDimensionality` parameter from config (default 768).
  * NEVER truncates vectors manually.
  */
 class GcpEmbeddingService implements EmbeddingService {
-	private readonly auth: GoogleAuth;
-	private readonly endpoint: string;
-
 	constructor(
-		private readonly project: string,
-		private readonly location: string,
+		private readonly ai: GoogleGenAI,
 		private readonly model: string,
 		private readonly dimensions: number,
 		private readonly logger: Logger,
-	) {
-		this.auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
-		this.endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:predict`;
-	}
+	) {}
 
 	async embed(texts: string[]): Promise<EmbeddingResult[]> {
 		if (texts.length === 0) {
@@ -435,36 +401,18 @@ class GcpEmbeddingService implements EmbeddingService {
 			async () => {
 				this.logger.debug({ textCount: texts.length }, 'GcpEmbeddingService: embedding texts');
 
-				const client = await this.auth.getClient();
-				const token = await client.getAccessToken();
-
-				const body = {
-					instances: texts.map((text) => ({ content: text })),
-					parameters: {
+				const response = await this.ai.models.embedContent({
+					model: this.model,
+					contents: texts,
+					config: {
 						outputDimensionality: this.dimensions,
 					},
-				};
-
-				const response = await fetch(this.endpoint, {
-					method: 'POST',
-					headers: {
-						Authorization: `Bearer ${token.token}`,
-						'Content-Type': 'application/json',
-					},
-					body: JSON.stringify(body),
 				});
 
-				if (!response.ok) {
-					const errorText = await response.text();
-					throw new Error(`Embedding API returned ${String(response.status)}: ${errorText}`);
-				}
-
-				// Use JSON.parse(text) instead of response.json() to get proper typing
-				const data: PredictionResponse = JSON.parse(await response.text());
-
+				const embeddings = response.embeddings ?? [];
 				const results: EmbeddingResult[] = texts.map((text, i) => ({
 					text,
-					vector: data.predictions[i].embeddings.values,
+					vector: embeddings[i]?.values ?? [],
 				}));
 
 				this.logger.debug(
@@ -561,7 +509,7 @@ export function createGcpServices(config: MulderConfig, logger: Logger): Service
 	// Initialize SDK clients via connection manager
 	const storageClient = getStorageClient();
 	const documentAiClient = getDocumentAIClient();
-	const vertexAi = getVertexAI(projectId, region);
+	const ai = getGenAI(projectId, region);
 	const firestoreClient = getFirestoreClient(projectId);
 
 	// Embedding config with defaults
@@ -571,8 +519,8 @@ export function createGcpServices(config: MulderConfig, logger: Logger): Service
 	return {
 		storage: new GcpStorageService(storageClient, bucket, logger),
 		documentAi: new GcpDocumentAiService(documentAiClient, processorName, logger),
-		llm: new GcpLlmService(vertexAi, logger),
-		embedding: new GcpEmbeddingService(projectId, region, embeddingModel, embeddingDimensions, logger),
+		llm: new GcpLlmService(ai, logger),
+		embedding: new GcpEmbeddingService(ai, embeddingModel, embeddingDimensions, logger),
 		firestore: new GcpFirestoreService(firestoreClient, logger),
 	};
 }

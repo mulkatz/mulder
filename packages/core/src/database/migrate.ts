@@ -9,7 +9,7 @@
  * @see docs/functional-spec.md §4.2
  */
 
-import { readFile, readdir } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../shared/errors.js';

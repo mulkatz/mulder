@@ -33,13 +33,13 @@ function deepFreeze<T extends object>(obj: T): Readonly<T> {
  * Formats a Zod issue path to a dot-separated string.
  * Array indices are rendered as [n].
  */
-function formatZodPath(path: readonly (string | number)[]): string {
+function formatZodPath(path: readonly PropertyKey[]): string {
 	return path
 		.map((segment, i) => {
 			if (typeof segment === 'number') {
 				return `[${segment}]`;
 			}
-			return i === 0 ? segment : `.${segment}`;
+			return i === 0 ? String(segment) : `.${String(segment)}`;
 		})
 		.join('');
 }

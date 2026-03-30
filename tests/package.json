@@ -4,5 +4,8 @@
 	"type": "module",
 	"scripts": {
 		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@types/node": "^25.5.0"
 	}
 }

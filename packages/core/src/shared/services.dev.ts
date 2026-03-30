@@ -9,7 +9,7 @@
  * @see docs/functional-spec.md §4.5, §9.1
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { MulderConfig } from '../config/types.js';
 import type { Logger } from './logger.js';
@@ -103,7 +103,7 @@ class DevStorageService implements StorageService {
 		const paths = entries
 			.filter((entry) => entry.isFile())
 			.map((entry) => {
-				const entryDir = typeof entry.parentPath === 'string' ? entry.parentPath : entry.path;
+				const entryDir = entry.parentPath;
 				const relativePath = entryDir.replace(this.basePath, '').replace(/^\//, '');
 				return `${relativePath}/${entry.name}`;
 			});

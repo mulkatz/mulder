@@ -11,10 +11,10 @@
  * @see docs/functional-spec.md §4.6
  */
 
+import { GoogleGenAI } from '@google/genai';
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 import { Firestore } from '@google-cloud/firestore';
 import { Storage } from '@google-cloud/storage';
-import { VertexAI } from '@google-cloud/vertexai';
 
 // ────────────────────────────────────────────────────────────
 // Lazy singletons
@@ -22,7 +22,7 @@ import { VertexAI } from '@google-cloud/vertexai';
 
 let storageClient: Storage | undefined;
 let documentAiClient: DocumentProcessorServiceClient | undefined;
-let vertexAiClient: VertexAI | undefined;
+let genAiClient: GoogleGenAI | undefined;
 let firestoreClient: Firestore | undefined;
 
 /**
@@ -48,14 +48,14 @@ export function getDocumentAIClient(): DocumentProcessorServiceClient {
 }
 
 /**
- * Returns a lazily-initialized Vertex AI client.
+ * Returns a lazily-initialized Google GenAI client (Vertex AI backend).
  * Requires project and location from config at init time.
  */
-export function getVertexAI(project: string, location: string): VertexAI {
-	if (!vertexAiClient) {
-		vertexAiClient = new VertexAI({ project, location });
+export function getGenAI(project: string, location: string): GoogleGenAI {
+	if (!genAiClient) {
+		genAiClient = new GoogleGenAI({ vertexai: true, project, location });
 	}
-	return vertexAiClient;
+	return genAiClient;
 }
 
 /**
@@ -93,8 +93,8 @@ export async function closeGcpClients(): Promise<void> {
 	// Storage client does not have a close method — just reset
 	storageClient = undefined;
 
-	// VertexAI client does not have a close method — just reset
-	vertexAiClient = undefined;
+	// GoogleGenAI client does not have a close method — just reset
+	genAiClient = undefined;
 
 	await Promise.all(tasks);
 }

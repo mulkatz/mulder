@@ -6,6 +6,15 @@
 
 import { z } from 'zod';
 
+/**
+ * Zod 4 helper: `.default({})` no longer works because the default must match
+ * the OUTPUT type (all property defaults filled in). This helper parses `{}`
+ * through the schema to produce a correctly-typed default value.
+ */
+function defaults<T extends z.ZodObject<z.ZodRawShape>>(schema: T): z.output<T> {
+	return schema.parse({});
+}
+
 // --- Attribute Types ---
 
 const attributeTypeSchema = z.enum(['string', 'number', 'boolean', 'date', 'geo_point', 'string[]']);
@@ -72,12 +81,11 @@ const gcpSchema = z.object({
 
 // --- Ingestion ---
 
-const ingestionSchema = z
-	.object({
-		max_file_size_mb: z.number().positive().default(100),
-		max_pages: z.number().positive().int().default(2000),
-	})
-	.default({});
+const ingestionObj = z.object({
+	max_file_size_mb: z.number().positive().default(100),
+	max_pages: z.number().positive().int().default(2000),
+});
+const ingestionSchema = ingestionObj.default(defaults(ingestionObj));
 
 // --- Extraction ---
 
@@ -85,22 +93,20 @@ const segmentationConfigSchema = z.object({
 	model: z.string().default('gemini-2.5-flash'),
 });
 
-const extractionSchema = z
-	.object({
-		native_text_threshold: z.number().min(0).max(1).default(0.9),
-		max_vision_pages: z.number().positive().int().default(20),
-		segmentation: segmentationConfigSchema.default({}),
-	})
-	.default({});
+const extractionObj = z.object({
+	native_text_threshold: z.number().min(0).max(1).default(0.9),
+	max_vision_pages: z.number().positive().int().default(20),
+	segmentation: segmentationConfigSchema.default(defaults(segmentationConfigSchema)),
+});
+const extractionSchema = extractionObj.default(defaults(extractionObj));
 
 // --- Enrichment ---
 
-const enrichmentSchema = z
-	.object({
-		model: z.string().default('gemini-2.5-flash'),
-		max_story_tokens: z.number().positive().int().default(15000),
-	})
-	.default({});
+const enrichmentObj = z.object({
+	model: z.string().default('gemini-2.5-flash'),
+	max_story_tokens: z.number().positive().int().default(15000),
+});
+const enrichmentSchema = enrichmentObj.default(defaults(enrichmentObj));
 
 // --- Entity Resolution ---
 
@@ -111,16 +117,15 @@ const resolutionStrategySchema = z.object({
 	model: z.string().optional(),
 });
 
-const entityResolutionSchema = z
-	.object({
-		strategies: z.array(resolutionStrategySchema).default([
-			{ type: 'attribute_match', enabled: true },
-			{ type: 'embedding_similarity', enabled: true, threshold: 0.85 },
-			{ type: 'llm_assisted', enabled: true, model: 'gemini-2.5-flash' },
-		]),
-		cross_lingual: z.boolean().default(true),
-	})
-	.default({});
+const entityResolutionObj = z.object({
+	strategies: z.array(resolutionStrategySchema).default([
+		{ type: 'attribute_match', enabled: true },
+		{ type: 'embedding_similarity', enabled: true, threshold: 0.85 },
+		{ type: 'llm_assisted', enabled: true, model: 'gemini-2.5-flash' },
+	]),
+	cross_lingual: z.boolean().default(true),
+});
+const entityResolutionSchema = entityResolutionObj.default(defaults(entityResolutionObj));
 
 // --- Deduplication ---
 
@@ -134,25 +139,23 @@ const corroborationFilterSchema = z.object({
 	similarity_above_threshold_is_one_source: z.boolean().default(true),
 });
 
-const deduplicationSchema = z
-	.object({
-		enabled: z.boolean().default(true),
-		segment_level: segmentLevelSchema.default({}),
-		corroboration_filter: corroborationFilterSchema.default({}),
-	})
-	.default({});
+const deduplicationObj = z.object({
+	enabled: z.boolean().default(true),
+	segment_level: segmentLevelSchema.default(defaults(segmentLevelSchema)),
+	corroboration_filter: corroborationFilterSchema.default(defaults(corroborationFilterSchema)),
+});
+const deduplicationSchema = deduplicationObj.default(defaults(deduplicationObj));
 
 // --- Embedding ---
 
-const embeddingSchema = z
-	.object({
-		model: z.string().default('text-embedding-004'),
-		storage_dimensions: z.number().positive().int().default(768),
-		chunk_size_tokens: z.number().positive().int().default(512),
-		chunk_overlap_tokens: z.number().nonnegative().int().default(50),
-		questions_per_chunk: z.number().nonnegative().int().default(3),
-	})
-	.default({});
+const embeddingObj = z.object({
+	model: z.string().default('text-embedding-004'),
+	storage_dimensions: z.number().positive().int().default(768),
+	chunk_size_tokens: z.number().positive().int().default(512),
+	chunk_overlap_tokens: z.number().nonnegative().int().default(50),
+	questions_per_chunk: z.number().nonnegative().int().default(3),
+});
+const embeddingSchema = embeddingObj.default(defaults(embeddingObj));
 
 // --- Retrieval ---
 
@@ -177,55 +180,51 @@ const graphStrategySchema = z.object({
 });
 
 const retrievalStrategiesSchema = z.object({
-	vector: vectorStrategySchema.default({}),
-	fulltext: fulltextStrategySchema.default({}),
-	graph: graphStrategySchema.default({}),
+	vector: vectorStrategySchema.default(defaults(vectorStrategySchema)),
+	fulltext: fulltextStrategySchema.default(defaults(fulltextStrategySchema)),
+	graph: graphStrategySchema.default(defaults(graphStrategySchema)),
 });
 
-const retrievalSchema = z
-	.object({
-		default_strategy: z.enum(['vector', 'fulltext', 'graph', 'hybrid']).default('hybrid'),
-		top_k: z.number().positive().int().default(10),
-		rerank: rerankSchema.default({}),
-		strategies: retrievalStrategiesSchema.default({}),
-	})
-	.default({});
+const retrievalObj = z.object({
+	default_strategy: z.enum(['vector', 'fulltext', 'graph', 'hybrid']).default('hybrid'),
+	top_k: z.number().positive().int().default(10),
+	rerank: rerankSchema.default(defaults(rerankSchema)),
+	strategies: retrievalStrategiesSchema.default(defaults(retrievalStrategiesSchema)),
+});
+const retrievalSchema = retrievalObj.default(defaults(retrievalObj));
 
 // --- Grounding (v2.0) ---
 
-const groundingSchema = z
-	.object({
-		enabled: z.boolean().default(false),
-		mode: z.enum(['pipeline', 'on_demand', 'disabled']).default('on_demand'),
-		enrich_types: z.array(z.string().min(1)).default(['location', 'person', 'organization']),
-		cache_ttl_days: z.number().positive().int().default(30),
-	})
-	.default({});
+const groundingObj = z.object({
+	enabled: z.boolean().default(false),
+	mode: z.enum(['pipeline', 'on_demand', 'disabled']).default('on_demand'),
+	enrich_types: z.array(z.string().min(1)).default(['location', 'person', 'organization']),
+	cache_ttl_days: z.number().positive().int().default(30),
+});
+const groundingSchema = groundingObj.default(defaults(groundingObj));
 
 // --- Analysis (v2.0) ---
 
-const analysisSchema = z
-	.object({
-		enabled: z.boolean().default(false),
-		contradictions: z.boolean().default(true),
-		reliability: z.boolean().default(true),
-		evidence_chains: z.boolean().default(true),
-		spatio_temporal: z.boolean().default(true),
-		cluster_window_days: z.number().positive().int().default(30),
-	})
-	.default({});
+const analysisObj = z.object({
+	enabled: z.boolean().default(false),
+	contradictions: z.boolean().default(true),
+	reliability: z.boolean().default(true),
+	evidence_chains: z.boolean().default(true),
+	spatio_temporal: z.boolean().default(true),
+	cluster_window_days: z.number().positive().int().default(30),
+});
+const analysisSchema = analysisObj.default(defaults(analysisObj));
 
 // --- Thresholds ---
 
-const thresholdsSchema = z
-	.object({
-		taxonomy_bootstrap: z.number().nonnegative().int().default(25),
-		corroboration_meaningful: z.number().nonnegative().int().default(50),
-		graph_community_detection: z.number().nonnegative().int().default(100),
-		temporal_clustering: z.number().nonnegative().int().default(30),
-		source_reliability: z.number().nonnegative().int().default(50),
-	})
-	.default({});
+const thresholdsObj = z.object({
+	taxonomy_bootstrap: z.number().nonnegative().int().default(25),
+	corroboration_meaningful: z.number().nonnegative().int().default(50),
+	graph_community_detection: z.number().nonnegative().int().default(100),
+	temporal_clustering: z.number().nonnegative().int().default(30),
+	source_reliability: z.number().nonnegative().int().default(50),
+});
+const thresholdsSchema = thresholdsObj.default(defaults(thresholdsObj));
 
 // --- Pipeline ---
 
@@ -253,54 +252,50 @@ const errorHandlingSchema = z.object({
 	continue_on_page_error: z.boolean().default(true),
 });
 
-const pipelineSchema = z
-	.object({
-		concurrency: concurrencySchema.default({}),
-		batch_size: batchSizeSchema.default({}),
-		retry: retrySchema.default({}),
-		error_handling: errorHandlingSchema.default({}),
-	})
-	.default({});
+const pipelineObj = z.object({
+	concurrency: concurrencySchema.default(defaults(concurrencySchema)),
+	batch_size: batchSizeSchema.default(defaults(batchSizeSchema)),
+	retry: retrySchema.default(defaults(retrySchema)),
+	error_handling: errorHandlingSchema.default(defaults(errorHandlingSchema)),
+});
+const pipelineSchema = pipelineObj.default(defaults(pipelineObj));
 
 // --- Safety ---
 
-const safetySchema = z
-	.object({
-		max_pages_without_confirm: z.number().positive().int().default(500),
-		max_cost_without_confirm_usd: z.number().positive().default(20),
-		budget_alert_monthly_usd: z.number().positive().default(100),
-		block_production_calls_in_test: z.boolean().default(true),
-	})
-	.default({});
+const safetyObj = z.object({
+	max_pages_without_confirm: z.number().positive().int().default(500),
+	max_cost_without_confirm_usd: z.number().positive().default(20),
+	budget_alert_monthly_usd: z.number().positive().default(100),
+	block_production_calls_in_test: z.boolean().default(true),
+});
+const safetySchema = safetyObj.default(defaults(safetyObj));
 
 // --- Phase 2 (reserved) ---
 
-const visualIntelligenceSchema = z
-	.object({
-		enabled: z.boolean().default(false),
-		extract_images: z.boolean().default(true),
-		analyze_images: z.boolean().default(true),
-		image_embedding: z.boolean().default(true),
-		extract_from_maps: z.boolean().default(true),
-		extract_from_diagrams: z.boolean().default(true),
-	})
-	.default({});
+const visualIntelligenceObj = z.object({
+	enabled: z.boolean().default(false),
+	extract_images: z.boolean().default(true),
+	analyze_images: z.boolean().default(true),
+	image_embedding: z.boolean().default(true),
+	extract_from_maps: z.boolean().default(true),
+	extract_from_diagrams: z.boolean().default(true),
+});
+const visualIntelligenceSchema = visualIntelligenceObj.default(defaults(visualIntelligenceObj));
 
 const digestSchema = z.object({
 	enabled: z.boolean().default(false),
 	frequency: z.enum(['daily', 'weekly', 'monthly']).default('weekly'),
 });
 
-const patternDiscoverySchema = z
-	.object({
-		enabled: z.boolean().default(false),
-		run_after_batch: z.boolean().default(true),
-		anomaly_detection: z.boolean().default(true),
-		temporal_spikes: z.boolean().default(true),
-		subgraph_similarity: z.boolean().default(true),
-		digest: digestSchema.default({}),
-	})
-	.default({});
+const patternDiscoveryObj = z.object({
+	enabled: z.boolean().default(false),
+	run_after_batch: z.boolean().default(true),
+	anomaly_detection: z.boolean().default(true),
+	temporal_spikes: z.boolean().default(true),
+	subgraph_similarity: z.boolean().default(true),
+	digest: digestSchema.default(defaults(digestSchema)),
+});
+const patternDiscoverySchema = patternDiscoveryObj.default(defaults(patternDiscoveryObj));
 
 // --- Top-Level Config Schema ---
 
