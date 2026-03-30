@@ -36,6 +36,20 @@ export type {
 	ChildLoggerContext,
 } from './shared/logger.js';
 
+// ── Database ─────────────────────────────────────────────────
+export {
+	closeAllPools,
+	getQueryPool,
+	getWorkerPool,
+	getMigrationStatus,
+	runMigrations,
+} from './database/index.js';
+
+export type {
+	MigrationResult,
+	MigrationStatus,
+} from './database/index.js';
+
 // ── Config ──────────────────────────────────────────────────
 export {
 	ConfigValidationError,

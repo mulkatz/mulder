@@ -11,6 +11,7 @@
 
 import { Command } from 'commander';
 import { registerConfigCommands } from './commands/config.js';
+import { registerDbCommands } from './commands/db.js';
 
 const program = new Command()
 	.name('mulder')
@@ -18,5 +19,6 @@ const program = new Command()
 	.version('0.0.0');
 
 registerConfigCommands(program);
+registerDbCommands(program);
 
 program.parse();
