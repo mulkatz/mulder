@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg17
+    build: ./docker/postgres
     container_name: mulder-postgres
     ports:
       - "5432:5432"
