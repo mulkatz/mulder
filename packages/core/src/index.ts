@@ -71,6 +71,8 @@ export { createLlmCache, DEFAULT_CACHE_DB_PATH } from './llm-cache.js';
 export type { NativeTextDetectOptions, NativeTextResult } from './pipeline/index.js';
 // ── Pipeline utilities ─────────────────────────────────────
 export { detectNativeText } from './pipeline/index.js';
+// ── Prompt template engine ─────────────────────────────────
+export { clearPromptCaches, listTemplates, renderPrompt } from './prompts/index.js';
 // ── Cache hash ───────────────────────────────────────────────
 export type { CacheKeyParams } from './shared/cache-hash.js';
 export { computeCacheKey } from './shared/cache-hash.js';
@@ -81,6 +83,7 @@ export type {
 	IngestErrorCode,
 	MulderErrorCode,
 	PipelineErrorCode,
+	PromptErrorCode,
 	TaxonomyErrorCode,
 } from './shared/errors.js';
 export {
@@ -97,6 +100,8 @@ export {
 	MulderError,
 	PIPELINE_ERROR_CODES,
 	PipelineError,
+	PROMPT_ERROR_CODES,
+	PromptError,
 	TAXONOMY_ERROR_CODES,
 } from './shared/errors.js';
 export { closeGcpClients } from './shared/gcp.js';

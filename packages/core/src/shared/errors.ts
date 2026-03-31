@@ -68,6 +68,16 @@ export const INGEST_ERROR_CODES = {
 
 export type IngestErrorCode = (typeof INGEST_ERROR_CODES)[keyof typeof INGEST_ERROR_CODES];
 
+/** Prompt template engine error codes. */
+export const PROMPT_ERROR_CODES = {
+	TEMPLATE_NOT_FOUND: 'TEMPLATE_NOT_FOUND',
+	TEMPLATE_VARIABLE_MISSING: 'TEMPLATE_VARIABLE_MISSING',
+	LOCALE_FILE_NOT_FOUND: 'LOCALE_FILE_NOT_FOUND',
+	TEMPLATE_PARSE_ERROR: 'TEMPLATE_PARSE_ERROR',
+} as const;
+
+export type PromptErrorCode = (typeof PROMPT_ERROR_CODES)[keyof typeof PROMPT_ERROR_CODES];
+
 /** Union of all Mulder error codes. */
 export type MulderErrorCode =
 	| ConfigErrorCode
@@ -75,7 +85,8 @@ export type MulderErrorCode =
 	| DatabaseErrorCode
 	| ExternalServiceErrorCode
 	| TaxonomyErrorCode
-	| IngestErrorCode;
+	| IngestErrorCode
+	| PromptErrorCode;
 
 // ────────────────────────────────────────────────────────────
 // Error classes
@@ -177,6 +188,21 @@ export class IngestError extends MulderError {
 	) {
 		super(message, code, options);
 		this.name = 'IngestError';
+	}
+}
+
+/** Prompt template engine errors (missing templates, variables, locale files). */
+export class PromptError extends MulderError {
+	constructor(
+		message: string,
+		code: PromptErrorCode,
+		options?: {
+			context?: Record<string, unknown>;
+			cause?: unknown;
+		},
+	) {
+		super(message, code, options);
+		this.name = 'PromptError';
 	}
 }
 

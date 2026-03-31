@@ -43,7 +43,7 @@ First GCP integration. First real cost (Document AI).
 | 🟢 | B3 | Native text detection — `pdf-parse`, `has_native_text` flag | §2.1 |
 | 🟢 | B4 | Ingest step — `mulder ingest <path>` | §2.1, §4.3 (sources table), §1 (ingest cmd) |
 | 🟢 | B5 | Vertex AI wrapper + dev cache | §4.8 |
-| 🟡 | B6 | Prompt template engine — `renderPrompt()` | §4.7 |
+| 🟢 | B6 | Prompt template engine — `renderPrompt()` | §4.7 |
 | ⚪ | B7 | Extract step — output to GCS | §2.2, §4.4 |
 | ⚪ | B8 | Fixture generator — `mulder fixtures generate` | §11, §9.1 |
 | ⚪ | B9 | Golden test set: extraction — 5-10 annotated pages, Vitest assertions | §15.1, §15.2 |
