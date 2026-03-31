@@ -10,6 +10,7 @@
  */
 
 import { Command } from 'commander';
+import { registerCacheCommands } from './commands/cache.js';
 import { registerConfigCommands } from './commands/config.js';
 import { registerDbCommands } from './commands/db.js';
 import { registerIngestCommands } from './commands/ingest.js';
@@ -19,6 +20,7 @@ const program = new Command()
 	.description('Config-driven Document Intelligence Platform')
 	.version('0.0.0');
 
+registerCacheCommands(program);
 registerConfigCommands(program);
 registerDbCommands(program);
 registerIngestCommands(program);
