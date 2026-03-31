@@ -60,63 +60,81 @@ function emptyStubResponse<T>(): T {
 // ────────────────────────────────────────────────────────────
 
 /**
- * Reads/writes to local `fixtures/` directory instead of GCS.
- * Bucket paths are mapped to filesystem paths relative to `fixturesPath`.
+ * Dev storage with write/read path separation.
+ *
+ * - **Writes** always go to `storagePath` (`.local/storage/`) — runtime data
+ *   that is gitignored and never pollutes the checked-in fixtures directory.
+ * - **Reads** try `storagePath` first, then fall back to `fixturesPath`
+ *   (`fixtures/`) for pre-recorded test data.
  */
 class DevStorageService implements StorageService {
-	private readonly basePath: string;
+	private readonly storagePath: string;
+	private readonly fixturesPath: string;
 	private readonly logger: Logger;
 
-	constructor(fixturesPath: string, logger: Logger) {
-		this.basePath = fixturesPath;
+	constructor(storagePath: string, fixturesPath: string, logger: Logger) {
+		this.storagePath = storagePath;
+		this.fixturesPath = fixturesPath;
 		this.logger = logger;
 	}
 
+	/** Resolve a read path: prefer storagePath, fall back to fixturesPath. */
+	private resolvePath(bucketPath: string): string {
+		const primary = join(this.storagePath, bucketPath);
+		if (existsSync(primary)) return primary;
+		const fallback = join(this.fixturesPath, bucketPath);
+		if (existsSync(fallback)) return fallback;
+		return primary; // Return primary even if missing — let caller handle the error
+	}
+
 	async upload(bucketPath: string, content: Buffer | string, _contentType?: string): Promise<void> {
-		const fullPath = join(this.basePath, bucketPath);
+		const fullPath = join(this.storagePath, bucketPath);
 		const dir = fullPath.substring(0, fullPath.lastIndexOf('/'));
 		mkdirSync(dir, { recursive: true });
 		writeFileSync(fullPath, content);
-		this.logger.debug({ bucketPath }, 'DevStorageService: uploaded to fixtures');
+		this.logger.debug({ bucketPath }, 'DevStorageService: uploaded');
 	}
 
 	async download(bucketPath: string): Promise<Buffer> {
-		const fullPath = join(this.basePath, bucketPath);
-		this.logger.debug({ bucketPath }, 'DevStorageService: downloading from fixtures');
+		const fullPath = this.resolvePath(bucketPath);
+		this.logger.debug({ bucketPath, fullPath }, 'DevStorageService: downloading');
 		return readFileSync(fullPath);
 	}
 
 	async exists(bucketPath: string): Promise<boolean> {
-		const fullPath = join(this.basePath, bucketPath);
-		const result = existsSync(fullPath);
+		const primary = join(this.storagePath, bucketPath);
+		const fallback = join(this.fixturesPath, bucketPath);
+		const result = existsSync(primary) || existsSync(fallback);
 		this.logger.debug({ bucketPath, exists: result }, 'DevStorageService: checking existence');
 		return result;
 	}
 
 	async list(prefix: string): Promise<StorageListResult> {
-		const fullPath = join(this.basePath, prefix);
-		if (!existsSync(fullPath)) {
-			this.logger.debug({ prefix, count: 0 }, 'DevStorageService: listing (dir not found)');
-			return { paths: [] };
-		}
-		const entries = readdirSync(fullPath, { recursive: true, withFileTypes: true });
-		const paths = entries
-			.filter((entry) => entry.isFile())
-			.map((entry) => {
+		// Merge results from both storagePath and fixturesPath
+		const allPaths = new Set<string>();
+		for (const basePath of [this.storagePath, this.fixturesPath]) {
+			const fullPath = join(basePath, prefix);
+			if (!existsSync(fullPath)) continue;
+			const entries = readdirSync(fullPath, { recursive: true, withFileTypes: true });
+			for (const entry of entries) {
+				if (!entry.isFile()) continue;
 				const entryDir = entry.parentPath;
-				const relativePath = entryDir.replace(this.basePath, '').replace(/^\//, '');
-				return `${relativePath}/${entry.name}`;
-			});
+				const relativePath = entryDir.replace(basePath, '').replace(/^\//, '');
+				allPaths.add(`${relativePath}/${entry.name}`);
+			}
+		}
+		const paths = [...allPaths].sort();
 		this.logger.debug({ prefix, count: paths.length }, 'DevStorageService: listing');
 		return { paths };
 	}
 
 	async delete(bucketPath: string): Promise<void> {
-		const fullPath = join(this.basePath, bucketPath);
+		// Only delete from storagePath — never touch fixtures
+		const fullPath = join(this.storagePath, bucketPath);
 		if (existsSync(fullPath)) {
 			unlinkSync(fullPath);
 		}
-		this.logger.debug({ bucketPath }, 'DevStorageService: deleted from fixtures');
+		this.logger.debug({ bucketPath }, 'DevStorageService: deleted');
 	}
 }
 
@@ -271,14 +289,15 @@ class DevFirestoreService implements FirestoreService {
  * @returns A `Services` bundle with all fixture-based implementations.
  */
 export function createDevServices(config: MulderConfig, logger: Logger): Services {
-	// Resolve fixtures path relative to project root.
-	// In dev mode, fixtures/ is at the repo root.
+	// fixtures/ = checked-in test data (read-only, deterministic)
+	// .local/storage/ = runtime data from dev-mode pipeline runs (gitignored)
 	const fixturesPath = join(process.cwd(), 'fixtures');
+	const storagePath = join(process.cwd(), '.local', 'storage');
 
-	logger.debug({ fixturesPath }, 'Creating dev-mode services from fixtures');
+	logger.debug({ fixturesPath, storagePath }, 'Creating dev-mode services');
 
 	return {
-		storage: new DevStorageService(fixturesPath, logger),
+		storage: new DevStorageService(storagePath, fixturesPath, logger),
 		documentAi: new DevDocumentAiService(fixturesPath, logger),
 		llm: new DevLlmService(fixturesPath, logger),
 		embedding: new DevEmbeddingService(fixturesPath, logger),

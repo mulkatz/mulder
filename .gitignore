@@ -17,6 +17,7 @@ dist/
 .playwright-mcp/
 
 # Dev mode
+.local/
 .mulder-cache.db
 mulder.config.yaml
 .env*
