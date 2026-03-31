@@ -56,13 +56,26 @@ export const TAXONOMY_ERROR_CODES = {
 
 export type TaxonomyErrorCode = (typeof TAXONOMY_ERROR_CODES)[keyof typeof TAXONOMY_ERROR_CODES];
 
+/** Ingest step error codes. */
+export const INGEST_ERROR_CODES = {
+	INGEST_FILE_NOT_FOUND: 'INGEST_FILE_NOT_FOUND',
+	INGEST_NOT_PDF: 'INGEST_NOT_PDF',
+	INGEST_FILE_TOO_LARGE: 'INGEST_FILE_TOO_LARGE',
+	INGEST_TOO_MANY_PAGES: 'INGEST_TOO_MANY_PAGES',
+	INGEST_UPLOAD_FAILED: 'INGEST_UPLOAD_FAILED',
+	INGEST_DUPLICATE: 'INGEST_DUPLICATE',
+} as const;
+
+export type IngestErrorCode = (typeof INGEST_ERROR_CODES)[keyof typeof INGEST_ERROR_CODES];
+
 /** Union of all Mulder error codes. */
 export type MulderErrorCode =
 	| ConfigErrorCode
 	| PipelineErrorCode
 	| DatabaseErrorCode
 	| ExternalServiceErrorCode
-	| TaxonomyErrorCode;
+	| TaxonomyErrorCode
+	| IngestErrorCode;
 
 // ────────────────────────────────────────────────────────────
 // Error classes
@@ -149,6 +162,21 @@ export class ExternalServiceError extends MulderError {
 	) {
 		super(message, code, options);
 		this.name = 'ExternalServiceError';
+	}
+}
+
+/** Ingest step errors (file validation, upload, dedup). */
+export class IngestError extends MulderError {
+	constructor(
+		message: string,
+		code: IngestErrorCode,
+		options?: {
+			context?: Record<string, unknown>;
+			cause?: unknown;
+		},
+	) {
+		super(message, code, options);
+		this.name = 'IngestError';
 	}
 }
 

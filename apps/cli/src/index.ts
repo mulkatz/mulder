@@ -12,6 +12,7 @@
 import { Command } from 'commander';
 import { registerConfigCommands } from './commands/config.js';
 import { registerDbCommands } from './commands/db.js';
+import { registerIngestCommands } from './commands/ingest.js';
 
 const program = new Command()
 	.name('mulder')
@@ -20,5 +21,6 @@ const program = new Command()
 
 registerConfigCommands(program);
 registerDbCommands(program);
+registerIngestCommands(program);
 
 program.parse();
