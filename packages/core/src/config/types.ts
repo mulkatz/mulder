@@ -27,6 +27,7 @@ import type {
 	safetySchema,
 	storageSchema,
 	thresholdsSchema,
+	vertexSchema,
 	visualIntelligenceSchema,
 } from './schema.js';
 
@@ -49,6 +50,7 @@ export type AnalysisConfig = z.infer<typeof analysisSchema>;
 export type ThresholdsConfig = z.infer<typeof thresholdsSchema>;
 export type PipelineConfig = z.infer<typeof pipelineSchema>;
 export type SafetyConfig = z.infer<typeof safetySchema>;
+export type VertexConfig = z.infer<typeof vertexSchema>;
 export type VisualIntelligenceConfig = z.infer<typeof visualIntelligenceSchema>;
 export type PatternDiscoveryConfig = z.infer<typeof patternDiscoverySchema>;
 

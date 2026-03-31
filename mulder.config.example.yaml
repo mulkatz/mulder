@@ -192,6 +192,10 @@ pipeline:
     partial_results: true             # Preserve partial results (95/100 pages OK = keep 95)
     continue_on_page_error: true      # Single page errors don't abort the whole document
 
+# --- Vertex AI ---
+vertex:
+  max_concurrent_requests: 2             # Per-worker process Vertex AI concurrency limit (1-20)
+
 # --- Cost Safety ---
 safety:
   max_pages_without_confirm: 500      # Over 500 pages: CLI asks for confirmation
