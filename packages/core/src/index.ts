@@ -71,6 +71,7 @@ export type {
 	ConfigErrorCode,
 	DatabaseErrorCode,
 	ExternalServiceErrorCode,
+	IngestErrorCode,
 	MulderErrorCode,
 	PipelineErrorCode,
 	TaxonomyErrorCode,
@@ -82,6 +83,8 @@ export {
 	DatabaseError,
 	EXTERNAL_SERVICE_ERROR_CODES,
 	ExternalServiceError,
+	INGEST_ERROR_CODES,
+	IngestError,
 	isMulderError,
 	isRetryableError,
 	MulderError,
@@ -125,3 +128,4 @@ export type {
 	StructuredGenerateOptions,
 	TextGenerateOptions,
 } from './shared/services.js';
+export type { StepError } from './shared/types.js';
