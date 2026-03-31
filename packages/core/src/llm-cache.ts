@@ -79,6 +79,33 @@ const COUNT_SQL = 'SELECT COUNT(*) AS cnt FROM cache_entries';
 const SUM_TOKENS_SQL = 'SELECT COALESCE(SUM(tokens_saved), 0) AS total FROM cache_entries';
 
 // ────────────────────────────────────────────────────────────
+// Runtime validators for SQLite rows (better-sqlite3 returns unknown)
+// ────────────────────────────────────────────────────────────
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && value !== undefined && typeof value === 'object';
+}
+
+function isCacheEntry(row: unknown): row is CacheEntry {
+	if (!isRecord(row)) return false;
+	return (
+		typeof row.request_hash === 'string' &&
+		typeof row.response === 'string' &&
+		typeof row.model === 'string' &&
+		typeof row.tokens_saved === 'number' &&
+		typeof row.created_at === 'number'
+	);
+}
+
+function getNumericField(row: unknown, field: string): number {
+	if (isRecord(row) && field in row) {
+		const value = row[field];
+		if (typeof value === 'number') return value;
+	}
+	return 0;
+}
+
+// ────────────────────────────────────────────────────────────
 // Implementation
 // ────────────────────────────────────────────────────────────
 
@@ -112,8 +139,9 @@ export function createLlmCache(dbPath: string, logger: Logger): LlmCache {
 
 	return {
 		get(hash: string): CacheEntry | undefined {
-			const row = getStmt.get(hash) as CacheEntry | undefined;
-			return row;
+			const row = getStmt.get(hash);
+			if (isCacheEntry(row)) return row;
+			return undefined;
 		},
 
 		set(hash: string, entry: Omit<CacheEntry, 'request_hash' | 'created_at'>): void {
@@ -129,8 +157,8 @@ export function createLlmCache(dbPath: string, logger: Logger): LlmCache {
 		},
 
 		stats(): CacheStats {
-			const countRow = countStmt.get() as { cnt: number };
-			const sumRow = sumTokensStmt.get() as { total: number };
+			const countRow = countStmt.get();
+			const sumRow = sumTokensStmt.get();
 
 			let dbSizeBytes = 0;
 			try {
@@ -141,8 +169,8 @@ export function createLlmCache(dbPath: string, logger: Logger): LlmCache {
 			}
 
 			return {
-				entries: countRow.cnt,
-				totalTokensSaved: sumRow.total,
+				entries: getNumericField(countRow, 'cnt'),
+				totalTokensSaved: getNumericField(sumRow, 'total'),
 				dbSizeBytes,
 			};
 		},

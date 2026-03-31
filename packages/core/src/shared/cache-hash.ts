@@ -39,9 +39,11 @@ function sortKeys(value: unknown): unknown {
 		return value.map(sortKeys);
 	}
 	if (typeof value === 'object') {
+		const entries = Object.entries(value);
+		entries.sort(([a], [b]) => a.localeCompare(b));
 		const sorted: Record<string, unknown> = {};
-		for (const key of Object.keys(value).sort()) {
-			sorted[key] = sortKeys((value as Record<string, unknown>)[key]);
+		for (const [key, val] of entries) {
+			sorted[key] = sortKeys(val);
 		}
 		return sorted;
 	}
