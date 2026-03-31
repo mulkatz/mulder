@@ -24,6 +24,7 @@ export type {
 	SafetyConfig,
 	StorageConfig,
 	ThresholdsConfig,
+	VertexConfig,
 	VisualIntelligenceConfig,
 } from './config/index.js';
 // ── Config ──────────────────────────────────────────────────
@@ -64,9 +65,15 @@ export {
 	updateSourceStatus,
 	upsertSourceStep,
 } from './database/index.js';
+// ── LLM cache ────────────────────────────────────────────────
+export type { CacheEntry, CacheStats, LlmCache } from './llm-cache.js';
+export { createLlmCache } from './llm-cache.js';
 export type { NativeTextDetectOptions, NativeTextResult } from './pipeline/index.js';
 // ── Pipeline utilities ─────────────────────────────────────
 export { detectNativeText } from './pipeline/index.js';
+// ── Cache hash ───────────────────────────────────────────────
+export type { CacheKeyParams } from './shared/cache-hash.js';
+export { computeCacheKey } from './shared/cache-hash.js';
 export type {
 	ConfigErrorCode,
 	DatabaseErrorCode,
@@ -129,3 +136,6 @@ export type {
 	TextGenerateOptions,
 } from './shared/services.js';
 export type { StepError } from './shared/types.js';
+// ── Vertex AI wrapper ────────────────────────────────────────
+export type { VertexClient, VertexClientOptions } from './vertex.js';
+export { createVertexClient } from './vertex.js';

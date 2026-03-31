@@ -31,5 +31,6 @@ export type {
 	SafetyConfig,
 	StorageConfig,
 	ThresholdsConfig,
+	VertexConfig,
 	VisualIntelligenceConfig,
 } from './types.js';

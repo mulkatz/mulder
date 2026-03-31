@@ -2,18 +2,21 @@
  * GCP service implementations for the Mulder platform.
  *
  * Five classes implementing the service interfaces from `services.ts`.
- * Each receives raw SDK clients from `gcp.ts` via constructor injection,
- * uses `withRetry` for resilience, and throws `ExternalServiceError` on failure.
+ * LLM and Embedding services delegate to `VertexClient` (concurrency-limited,
+ * cache-aware wrapper). Storage, Document AI, and Firestore use raw SDK
+ * clients from `gcp.ts` with `withRetry` for resilience.
  *
  * @see docs/specs/13_gcp_service_implementations.spec.md §4.4
- * @see docs/functional-spec.md §4.5, §4.6
+ * @see docs/specs/17_vertex_ai_wrapper_dev_cache.spec.md §4.2
+ * @see docs/functional-spec.md §4.5, §4.6, §4.8
  */
 
-import type { GoogleGenAI } from '@google/genai';
 import type { DocumentProcessorServiceClient, protos } from '@google-cloud/documentai';
 import type { Firestore } from '@google-cloud/firestore';
 import type { Storage } from '@google-cloud/storage';
 import type { MulderConfig } from '../config/types.js';
+import { createLlmCache } from '../llm-cache.js';
+import { createVertexClient, type VertexClient } from '../vertex.js';
 import { ExternalServiceError } from './errors.js';
 import { closeGcpClients, getDocumentAIClient, getFirestoreClient, getGenAI, getStorageClient } from './gcp.js';
 import type { Logger } from './logger.js';
@@ -52,17 +55,6 @@ function wrapGcpError(
 			originalMessage: cause instanceof Error ? cause.message : String(cause),
 		},
 	});
-}
-
-/**
- * Converts an unknown JSON-parsed value into a plain `Record<string, unknown>`.
- * Returns an empty object if the value is not a plain object.
- */
-function toRecord(value: unknown): Record<string, unknown> {
-	if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-		return Object.fromEntries(Object.entries(value));
-	}
-	return {};
 }
 
 // ────────────────────────────────────────────────────────────
@@ -244,149 +236,59 @@ class GcpDocumentAiService implements DocumentAiService {
 }
 
 // ────────────────────────────────────────────────────────────
-// GCP LLM Service (Google GenAI SDK)
+// GCP LLM Service (delegating to VertexClient)
 // ────────────────────────────────────────────────────────────
 
 /**
- * Gemini via Google GenAI SDK (Vertex AI backend).
- * Provides structured output, plain text, and grounded generation.
+ * Gemini via VertexClient wrapper.
+ * Delegates all calls to the concurrency-limited, cache-aware VertexClient.
+ * Error wrapping is applied at this layer.
  */
 class GcpLlmService implements LlmService {
-	private static readonly DEFAULT_MODEL = 'gemini-2.5-flash';
-
 	constructor(
-		private readonly ai: GoogleGenAI,
+		private readonly vertexClient: VertexClient,
 		private readonly logger: Logger,
 	) {}
 
 	async generateStructured<T = unknown>(options: StructuredGenerateOptions): Promise<T> {
-		return withRetry(
-			async () => {
-				this.logger.debug('GcpLlmService: generateStructured called');
-
-				// Build contents: simple string or multimodal parts
-				const contents = this.buildContents(options.prompt, options.media);
-
-				const response = await this.ai.models.generateContent({
-					model: GcpLlmService.DEFAULT_MODEL,
-					contents,
-					config: {
-						responseMimeType: 'application/json',
-						responseSchema: options.schema,
-						systemInstruction: options.systemInstruction,
-					},
-				});
-
-				const responseText = response.text ?? '{}';
-				return JSON.parse(responseText);
-			},
-			{
-				onRetry: (err, attempt, delayMs) => {
-					this.logger.warn({ err, attempt, delayMs }, 'GcpLlmService: retrying generateStructured');
-				},
-			},
-		).catch((cause: unknown) => {
+		try {
+			this.logger.debug('GcpLlmService: generateStructured called');
+			return await this.vertexClient.generateStructured<T>(options);
+		} catch (cause: unknown) {
 			throw wrapGcpError('EXT_VERTEX_AI_FAILED', 'Failed to generate structured content', cause);
-		});
+		}
 	}
 
 	async generateText(options: TextGenerateOptions): Promise<string> {
-		return withRetry(
-			async () => {
-				this.logger.debug('GcpLlmService: generateText called');
-
-				const response = await this.ai.models.generateContent({
-					model: GcpLlmService.DEFAULT_MODEL,
-					contents: options.prompt,
-					config: {
-						systemInstruction: options.systemInstruction,
-					},
-				});
-
-				return response.text ?? '';
-			},
-			{
-				onRetry: (err, attempt, delayMs) => {
-					this.logger.warn({ err, attempt, delayMs }, 'GcpLlmService: retrying generateText');
-				},
-			},
-		).catch((cause: unknown) => {
+		try {
+			this.logger.debug('GcpLlmService: generateText called');
+			return await this.vertexClient.generateText(options);
+		} catch (cause: unknown) {
 			throw wrapGcpError('EXT_VERTEX_AI_FAILED', 'Failed to generate text', cause);
-		});
+		}
 	}
 
 	async groundedGenerate(options: GroundedGenerateOptions): Promise<GroundedGenerateResult> {
-		return withRetry(
-			async () => {
-				this.logger.debug('GcpLlmService: groundedGenerate called');
-
-				const response = await this.ai.models.generateContent({
-					model: GcpLlmService.DEFAULT_MODEL,
-					contents: options.prompt,
-					config: {
-						tools: [{ googleSearch: {} }],
-						systemInstruction: options.systemInstruction,
-					},
-				});
-
-				const text = response.text ?? '';
-				const metadata = response.candidates?.[0]?.groundingMetadata;
-				const groundingMetadata: Record<string, unknown> = metadata
-					? toRecord(JSON.parse(JSON.stringify(metadata)))
-					: {};
-
-				return { text, groundingMetadata };
-			},
-			{
-				onRetry: (err, attempt, delayMs) => {
-					this.logger.warn({ err, attempt, delayMs }, 'GcpLlmService: retrying groundedGenerate');
-				},
-			},
-		).catch((cause: unknown) => {
+		try {
+			this.logger.debug('GcpLlmService: groundedGenerate called');
+			return await this.vertexClient.groundedGenerate(options);
+		} catch (cause: unknown) {
 			throw wrapGcpError('EXT_VERTEX_AI_FAILED', 'Failed to generate grounded content', cause);
-		});
-	}
-
-	/**
-	 * Builds the contents parameter for generateContent.
-	 * Returns a simple string for text-only, or structured parts for multimodal.
-	 */
-	private buildContents(
-		prompt: string,
-		media?: Array<{ mimeType: string; data: Buffer }>,
-	): string | Array<{ role: string; parts: Array<Record<string, unknown>> }> {
-		if (!media || media.length === 0) {
-			return prompt;
 		}
-
-		const parts: Array<Record<string, unknown>> = [{ text: prompt }];
-		for (const m of media) {
-			parts.push({
-				inlineData: {
-					mimeType: m.mimeType,
-					data: m.data.toString('base64'),
-				},
-			});
-		}
-
-		return [{ role: 'user', parts }];
 	}
 }
 
 // ────────────────────────────────────────────────────────────
-// GCP Embedding Service (Google GenAI SDK)
+// GCP Embedding Service (delegating to VertexClient)
 // ────────────────────────────────────────────────────────────
 
 /**
- * Vertex AI text-embedding-004 implementation via Google GenAI SDK.
- * Uses native `ai.models.embedContent()` for embeddings.
- *
- * Passes `outputDimensionality` parameter from config (default 768).
- * NEVER truncates vectors manually.
+ * Vertex AI text-embedding-004 implementation via VertexClient wrapper.
+ * Delegates to VertexClient which handles concurrency limiting and caching.
  */
 class GcpEmbeddingService implements EmbeddingService {
 	constructor(
-		private readonly ai: GoogleGenAI,
+		private readonly vertexClient: VertexClient,
 		private readonly model: string,
 		private readonly dimensions: number,
 		private readonly logger: Logger,
@@ -397,39 +299,12 @@ class GcpEmbeddingService implements EmbeddingService {
 			return [];
 		}
 
-		return withRetry(
-			async () => {
-				this.logger.debug({ textCount: texts.length }, 'GcpEmbeddingService: embedding texts');
-
-				const response = await this.ai.models.embedContent({
-					model: this.model,
-					contents: texts,
-					config: {
-						outputDimensionality: this.dimensions,
-					},
-				});
-
-				const embeddings = response.embeddings ?? [];
-				const results: EmbeddingResult[] = texts.map((text, i) => ({
-					text,
-					vector: embeddings[i]?.values ?? [],
-				}));
-
-				this.logger.debug(
-					{ textCount: texts.length, dimensions: this.dimensions },
-					'GcpEmbeddingService: embedding complete',
-				);
-
-				return results;
-			},
-			{
-				onRetry: (err, attempt, delayMs) => {
-					this.logger.warn({ err, attempt, delayMs }, 'GcpEmbeddingService: retrying embed');
-				},
-			},
-		).catch((cause: unknown) => {
+		try {
+			this.logger.debug({ textCount: texts.length }, 'GcpEmbeddingService: embedding texts');
+			return await this.vertexClient.embed(texts, this.model, this.dimensions);
+		} catch (cause: unknown) {
 			throw wrapGcpError('EXT_VERTEX_AI_FAILED', 'Failed to embed texts', cause);
-		});
+		}
 	}
 }
 
@@ -481,10 +356,19 @@ class GcpFirestoreService implements FirestoreService {
 // ────────────────────────────────────────────────────────────
 
 /**
+ * Default path for the LLM response cache database.
+ * Located in the project root, gitignored via `.gitignore`.
+ */
+const DEFAULT_CACHE_DB_PATH = '.mulder-cache.db';
+
+/**
  * Creates GCP service implementations using real SDK clients.
  *
- * Constructs all GCP clients via `gcp.ts` getters, then creates
+ * Constructs all GCP clients via `gcp.ts` getters, creates a
+ * `VertexClient` (with optional dev cache), then creates
  * service instances. Returns the `Services` bundle.
+ *
+ * Cache is enabled via `MULDER_LLM_CACHE=true` environment variable.
  *
  * @param config - The validated Mulder configuration (gcp section must exist).
  * @param logger - Logger instance for service operation logging.
@@ -516,11 +400,26 @@ export function createGcpServices(config: MulderConfig, logger: Logger): Service
 	const embeddingModel = config.embedding.model;
 	const embeddingDimensions = config.embedding.storage_dimensions;
 
+	// Create LLM cache if enabled via env var
+	const cacheEnabled = process.env.MULDER_LLM_CACHE === 'true';
+	const cache = cacheEnabled ? createLlmCache(DEFAULT_CACHE_DB_PATH, logger) : undefined;
+
+	if (cacheEnabled) {
+		logger.info({ dbPath: DEFAULT_CACHE_DB_PATH }, 'LLM response cache enabled');
+	}
+
+	// Create VertexClient with concurrency limiter and optional cache
+	const vertexClient = createVertexClient(ai, {
+		maxConcurrentRequests: config.vertex.max_concurrent_requests,
+		cache,
+		logger,
+	});
+
 	return {
 		storage: new GcpStorageService(storageClient, bucket, logger),
 		documentAi: new GcpDocumentAiService(documentAiClient, processorName, logger),
-		llm: new GcpLlmService(ai, logger),
-		embedding: new GcpEmbeddingService(ai, embeddingModel, embeddingDimensions, logger),
+		llm: new GcpLlmService(vertexClient, logger),
+		embedding: new GcpEmbeddingService(vertexClient, embeddingModel, embeddingDimensions, logger),
 		firestore: new GcpFirestoreService(firestoreClient, logger),
 	};
 }

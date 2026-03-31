@@ -260,6 +260,13 @@ const pipelineObj = z.object({
 });
 const pipelineSchema = pipelineObj.default(defaults(pipelineObj));
 
+// --- Vertex AI ---
+
+const vertexObj = z.object({
+	max_concurrent_requests: z.number().int().min(1).max(20).default(2),
+});
+const vertexSchema = vertexObj.default(defaults(vertexObj));
+
 // --- Safety ---
 
 const safetyObj = z.object({
@@ -320,6 +327,7 @@ const baseMulderConfigSchema = z.object({
 	thresholds: thresholdsSchema,
 	pipeline: pipelineSchema,
 	safety: safetySchema,
+	vertex: vertexSchema,
 	visual_intelligence: visualIntelligenceSchema,
 	pattern_discovery: patternDiscoverySchema,
 });
@@ -388,5 +396,6 @@ export {
 	safetySchema,
 	storageSchema,
 	thresholdsSchema,
+	vertexSchema,
 	visualIntelligenceSchema,
 };
