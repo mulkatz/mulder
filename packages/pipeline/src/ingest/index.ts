@@ -108,7 +108,7 @@ function computeFileHash(buffer: Buffer): string {
 interface ProcessFileContext {
 	config: MulderConfig;
 	services: Services;
-	pool: pg.Pool;
+	pool: pg.Pool | undefined;
 	logger: Logger;
 	tags?: string[];
 	dryRun: boolean;
@@ -156,20 +156,22 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 	// d/e. Compute SHA-256 hash
 	const fileHash = computeFileHash(buffer);
 
-	// f. Check for duplicate
-	const existing = await findSourceByHash(ctx.pool, fileHash);
-	if (existing) {
-		log.info({ sourceId: existing.id, fileHash }, 'Duplicate file detected, skipping upload');
-		return {
-			sourceId: existing.id,
-			filename,
-			storagePath: existing.storagePath,
-			fileHash,
-			pageCount: existing.pageCount ?? 0,
-			hasNativeText: existing.hasNativeText,
-			nativeTextRatio: existing.nativeTextRatio,
-			duplicate: true,
-		};
+	// f. Check for duplicate (skip when pool is unavailable, e.g. dry-run)
+	if (ctx.pool) {
+		const existing = await findSourceByHash(ctx.pool, fileHash);
+		if (existing) {
+			log.info({ sourceId: existing.id, fileHash }, 'Duplicate file detected, skipping upload');
+			return {
+				sourceId: existing.id,
+				filename,
+				storagePath: existing.storagePath,
+				fileHash,
+				pageCount: existing.pageCount ?? 0,
+				hasNativeText: existing.hasNativeText,
+				nativeTextRatio: existing.nativeTextRatio,
+				duplicate: true,
+			};
+		}
 	}
 
 	// g. Native text detection (also gives us pageCount)
@@ -201,6 +203,15 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			nativeTextRatio: textResult.nativeTextRatio,
 			duplicate: false,
 		};
+	}
+
+	// Pool is required for non-dry-run operations (upload + DB insert).
+	// This guard narrows the type for TypeScript — reaching here without a
+	// pool would be a caller bug (dry-run bails out above).
+	if (!ctx.pool) {
+		throw new IngestError('Database pool is required for non-dry-run ingest', INGEST_ERROR_CODES.INGEST_UPLOAD_FAILED, {
+			context: { path: filePath },
+		});
 	}
 
 	// j. Upload to storage
@@ -288,7 +299,7 @@ export async function execute(
 	input: IngestInput,
 	config: MulderConfig,
 	services: Services,
-	pool: pg.Pool,
+	pool: pg.Pool | undefined,
 	logger: Logger,
 ): Promise<IngestResult> {
 	const log = createChildLogger(logger, { step: STEP_NAME });

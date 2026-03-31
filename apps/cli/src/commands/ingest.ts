@@ -77,7 +77,7 @@ export function registerIngestCommands(program: Command): void {
 						},
 						config,
 						services,
-						pool as import('pg').Pool,
+						pool,
 						logger,
 					);
 
