@@ -53,6 +53,9 @@ importers:
       '@mulder/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@mulder/pipeline':
+        specifier: workspace:*
+        version: link:../../packages/pipeline
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
