@@ -29,6 +29,11 @@
 		"task_description": "Score each candidate passage for relevance to the provided query. Consider semantic match, information completeness, and specificity.",
 		"output_format": "Return a JSON array of objects with passage_id and relevance_score (0.0 to 1.0)."
 	},
+	"vision_fallback": {
+		"system_role": "You are an expert document OCR correction system.",
+		"context_description": "You are reviewing a page image alongside low-confidence OCR text.",
+		"task_description": "Examine the page image and correct any OCR errors in the extracted text. Preserve the original formatting, paragraph breaks, and reading order. Return only the corrected text, nothing else."
+	},
 	"common": {
 		"language_instruction": "Respond in English.",
 		"json_instruction": "Return valid JSON only. No markdown fencing, no commentary, no explanation outside the JSON structure."

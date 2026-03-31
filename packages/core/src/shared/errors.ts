@@ -68,6 +68,19 @@ export const INGEST_ERROR_CODES = {
 
 export type IngestErrorCode = (typeof INGEST_ERROR_CODES)[keyof typeof INGEST_ERROR_CODES];
 
+/** Extract step error codes. */
+export const EXTRACT_ERROR_CODES = {
+	EXTRACT_SOURCE_NOT_FOUND: 'EXTRACT_SOURCE_NOT_FOUND',
+	EXTRACT_INVALID_STATUS: 'EXTRACT_INVALID_STATUS',
+	EXTRACT_DOCUMENT_AI_FAILED: 'EXTRACT_DOCUMENT_AI_FAILED',
+	EXTRACT_VISION_FALLBACK_FAILED: 'EXTRACT_VISION_FALLBACK_FAILED',
+	EXTRACT_NATIVE_TEXT_FAILED: 'EXTRACT_NATIVE_TEXT_FAILED',
+	EXTRACT_STORAGE_FAILED: 'EXTRACT_STORAGE_FAILED',
+	EXTRACT_PAGE_RENDER_FAILED: 'EXTRACT_PAGE_RENDER_FAILED',
+} as const;
+
+export type ExtractErrorCode = (typeof EXTRACT_ERROR_CODES)[keyof typeof EXTRACT_ERROR_CODES];
+
 /** Prompt template engine error codes. */
 export const PROMPT_ERROR_CODES = {
 	TEMPLATE_NOT_FOUND: 'TEMPLATE_NOT_FOUND',
@@ -86,6 +99,7 @@ export type MulderErrorCode =
 	| ExternalServiceErrorCode
 	| TaxonomyErrorCode
 	| IngestErrorCode
+	| ExtractErrorCode
 	| PromptErrorCode;
 
 // ────────────────────────────────────────────────────────────
@@ -188,6 +202,21 @@ export class IngestError extends MulderError {
 	) {
 		super(message, code, options);
 		this.name = 'IngestError';
+	}
+}
+
+/** Extract step errors (extraction failures, storage, page rendering). */
+export class ExtractError extends MulderError {
+	constructor(
+		message: string,
+		code: ExtractErrorCode,
+		options?: {
+			context?: Record<string, unknown>;
+			cause?: unknown;
+		},
+	) {
+		super(message, code, options);
+		this.name = 'ExtractError';
 	}
 }
 

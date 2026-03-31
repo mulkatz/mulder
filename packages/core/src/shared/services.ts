@@ -90,6 +90,8 @@ export interface TextGenerateOptions {
 	prompt: string;
 	/** Optional system instruction. */
 	systemInstruction?: string;
+	/** Optional media attachments (e.g., page images for vision fallback). */
+	media?: Array<{ mimeType: string; data: Buffer }>;
 }
 
 /** Options for grounded generation (web search). */

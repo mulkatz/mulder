@@ -8,6 +8,7 @@ export {
 	countSources,
 	createSource,
 	deleteSource,
+	deleteSourceStep,
 	findAllSources,
 	findSourceByHash,
 	findSourceById,

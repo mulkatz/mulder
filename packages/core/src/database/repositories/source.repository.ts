@@ -422,6 +422,29 @@ export async function findSourceSteps(pool: pg.Pool, sourceId: string): Promise<
 }
 
 /**
+ * Deletes a source step record by source ID and step name.
+ *
+ * @returns `true` if the record was deleted, `false` if it didn't exist.
+ */
+export async function deleteSourceStep(pool: pg.Pool, sourceId: string, stepName: string): Promise<boolean> {
+	const sql = 'DELETE FROM source_steps WHERE source_id = $1 AND step_name = $2';
+
+	try {
+		const result = await pool.query(sql, [sourceId, stepName]);
+		const deleted = (result.rowCount ?? 0) > 0;
+		if (deleted) {
+			repoLogger.debug({ sourceId, stepName }, 'Source step deleted');
+		}
+		return deleted;
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to delete source step', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { sourceId, stepName },
+		});
+	}
+}
+
+/**
  * Finds a single source step by source ID and step name.
  *
  * @returns The source step, or `null` if not found.
