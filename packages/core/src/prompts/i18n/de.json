@@ -29,6 +29,11 @@
 		"task_description": "Bewerte jede Kandidatenpassage hinsichtlich der Relevanz zur bereitgestellten Anfrage. Beruecksichtige semantische Uebereinstimmung, Informationsvollstaendigkeit und Spezifitaet.",
 		"output_format": "Gib ein JSON-Array von Objekten mit passage_id und relevance_score (0.0 bis 1.0) zurueck."
 	},
+	"vision_fallback": {
+		"system_role": "Du bist ein Experten-System zur OCR-Korrektur von Dokumenten.",
+		"context_description": "Du ueberpruefst ein Seitenbild zusammen mit einem OCR-Text niedriger Konfidenz.",
+		"task_description": "Untersuche das Seitenbild und korrigiere eventuelle OCR-Fehler im extrahierten Text. Bewahre die urspruengliche Formatierung, Absatzumbrueche und Lesereihenfolge. Gib ausschliesslich den korrigierten Text zurueck, nichts anderes."
+	},
 	"common": {
 		"language_instruction": "Antworte auf Deutsch.",
 		"json_instruction": "Gib ausschliesslich valides JSON zurueck. Keine Markdown-Formatierung, keine Kommentare, keine Erklaerungen ausserhalb der JSON-Struktur."

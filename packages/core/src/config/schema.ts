@@ -95,6 +95,7 @@ const segmentationConfigSchema = z.object({
 
 const extractionObj = z.object({
 	native_text_threshold: z.number().min(0).max(1).default(0.9),
+	confidence_threshold: z.number().min(0).max(1).default(0.85),
 	max_vision_pages: z.number().positive().int().default(20),
 	segmentation: segmentationConfigSchema.default(defaults(segmentationConfigSchema)),
 });

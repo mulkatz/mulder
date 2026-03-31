@@ -220,9 +220,10 @@ export function createVertexClient(ai: GoogleGenAI, options: VertexClientOptions
 				return limiter(async () => {
 					const response = await withRetry(
 						async () => {
+							const contents = buildContents(opts.prompt, opts.media);
 							return ai.models.generateContent({
 								model: DEFAULT_MODEL,
-								contents: opts.prompt,
+								contents,
 								config: {
 									systemInstruction: opts.systemInstruction,
 								},
@@ -251,9 +252,10 @@ export function createVertexClient(ai: GoogleGenAI, options: VertexClientOptions
 			return limiter(async () => {
 				const response = await withRetry(
 					async () => {
+						const contents = buildContents(opts.prompt, opts.media);
 						return ai.models.generateContent({
 							model: DEFAULT_MODEL,
-							contents: opts.prompt,
+							contents,
 							config: {
 								systemInstruction: opts.systemInstruction,
 							},

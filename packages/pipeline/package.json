@@ -11,6 +11,8 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@mulder/core": "workspace:*"
+		"@mulder/core": "workspace:*",
+		"pdf-parse": "^2.4.5",
+		"pdf-to-img": "^4.4.0"
 	}
 }

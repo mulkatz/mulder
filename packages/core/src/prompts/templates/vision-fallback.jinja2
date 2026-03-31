@@ -1,0 +1,16 @@
+{# Vision fallback prompt for correcting low-confidence OCR text #}
+{{ i18n.vision_fallback.system_role }}
+
+## Context
+{{ i18n.vision_fallback.context_description }}
+
+The automated OCR system extracted the following text with low confidence ({{ confidence }}):
+
+---
+{{ page_text }}
+---
+
+## Task
+{{ i18n.vision_fallback.task_description }}
+
+{{ i18n.common.language_instruction }}
