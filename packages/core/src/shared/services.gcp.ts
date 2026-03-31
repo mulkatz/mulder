@@ -15,7 +15,7 @@ import type { DocumentProcessorServiceClient, protos } from '@google-cloud/docum
 import type { Firestore } from '@google-cloud/firestore';
 import type { Storage } from '@google-cloud/storage';
 import type { MulderConfig } from '../config/types.js';
-import { createLlmCache } from '../llm-cache.js';
+import { createLlmCache, DEFAULT_CACHE_DB_PATH } from '../llm-cache.js';
 import { createVertexClient, type VertexClient } from '../vertex.js';
 import { ExternalServiceError } from './errors.js';
 import { closeGcpClients, getDocumentAIClient, getFirestoreClient, getGenAI, getStorageClient } from './gcp.js';
@@ -354,12 +354,6 @@ class GcpFirestoreService implements FirestoreService {
 // ────────────────────────────────────────────────────────────
 // Factory
 // ────────────────────────────────────────────────────────────
-
-/**
- * Default path for the LLM response cache database.
- * Located in the project root, gitignored via `.gitignore`.
- */
-const DEFAULT_CACHE_DB_PATH = '.mulder-cache.db';
 
 /**
  * Creates GCP service implementations using real SDK clients.

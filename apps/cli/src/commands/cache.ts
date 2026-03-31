@@ -9,13 +9,10 @@
  * @see docs/functional-spec.md §4.8
  */
 
-import { createLlmCache, createLogger } from '@mulder/core';
+import { createLlmCache, createLogger, DEFAULT_CACHE_DB_PATH } from '@mulder/core';
 import type { Command } from 'commander';
 import { withErrorHandler } from '../lib/errors.js';
 import { printSuccess } from '../lib/output.js';
-
-/** Default path for the LLM cache database. */
-const DEFAULT_CACHE_DB_PATH = '.mulder-cache.db';
 
 /**
  * Formats byte size into a human-readable string (KB, MB, etc.).

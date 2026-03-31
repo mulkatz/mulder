@@ -67,7 +67,7 @@ export {
 } from './database/index.js';
 // ── LLM cache ────────────────────────────────────────────────
 export type { CacheEntry, CacheStats, LlmCache } from './llm-cache.js';
-export { createLlmCache } from './llm-cache.js';
+export { createLlmCache, DEFAULT_CACHE_DB_PATH } from './llm-cache.js';
 export type { NativeTextDetectOptions, NativeTextResult } from './pipeline/index.js';
 // ── Pipeline utilities ─────────────────────────────────────
 export { detectNativeText } from './pipeline/index.js';

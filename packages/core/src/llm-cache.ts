@@ -19,6 +19,13 @@ import Database from 'better-sqlite3';
 import type { Logger } from './shared/logger.js';
 
 // ────────────────────────────────────────────────────────────
+// Constants
+// ────────────────────────────────────────────────────────────
+
+/** Default path for the LLM cache database (project root, gitignored). */
+export const DEFAULT_CACHE_DB_PATH = '.mulder-cache.db';
+
+// ────────────────────────────────────────────────────────────
 // Types
 // ────────────────────────────────────────────────────────────
 
