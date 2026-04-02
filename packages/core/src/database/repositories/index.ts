@@ -3,8 +3,41 @@
  *
  * @see docs/specs/14_source_repository.spec.md §4.4
  * @see docs/specs/22_story_repository.spec.md §4.2
+ * @see docs/specs/24_entity_alias_repositories.spec.md §4.6
  */
 
+export {
+	countEntities,
+	createEntity,
+	deleteEntitiesBySourceId,
+	deleteEntity,
+	findAllEntities,
+	findEntitiesByCanonicalId,
+	findEntitiesByType,
+	findEntityById,
+	updateEntity,
+	upsertEntityByNameType,
+} from './entity.repository.js';
+export type {
+	CreateEntityAliasInput,
+	CreateEntityInput,
+	Entity,
+	EntityAlias,
+	EntityFilter,
+	LinkStoryEntityInput,
+	StoryEntity,
+	StoryEntityWithEntity,
+	StoryEntityWithStory,
+	TaxonomyStatus,
+	UpdateEntityInput,
+} from './entity.types.js';
+export {
+	createEntityAlias,
+	deleteAliasesByEntityId,
+	deleteEntityAlias,
+	findAliasesByEntityId,
+	findEntityByAlias,
+} from './entity-alias.repository.js';
 export {
 	countSources,
 	createSource,
@@ -29,7 +62,6 @@ export type {
 	UpdateSourceInput,
 	UpsertSourceStepInput,
 } from './source.types.js';
-
 export {
 	countStories,
 	createStory,
@@ -48,3 +80,11 @@ export type {
 	StoryStatus,
 	UpdateStoryInput,
 } from './story.types.js';
+export {
+	deleteStoryEntitiesBySourceId,
+	deleteStoryEntitiesByStoryId,
+	findEntitiesByStoryId,
+	findStoriesByEntityId,
+	linkStoryEntity,
+	unlinkStoryEntity,
+} from './story-entity.repository.js';

@@ -22,7 +22,8 @@ const repoLogger = createChildLogger(logger, { module: 'story-repository' });
 // Row mapper (snake_case DB → camelCase TS)
 // ────────────────────────────────────────────────────────────
 
-interface StoryRow {
+/** @internal Exported for use by related repositories (story-entity). */
+export interface StoryRow {
 	id: string;
 	source_id: string;
 	title: string;
@@ -41,7 +42,8 @@ interface StoryRow {
 	updated_at: Date;
 }
 
-function mapStoryRow(row: StoryRow): Story {
+/** @internal Exported for use by related repositories (story-entity). */
+export function mapStoryRow(row: StoryRow): Story {
 	return {
 		id: row.id,
 		sourceId: row.source_id,
