@@ -4,8 +4,33 @@
  * @see docs/specs/14_source_repository.spec.md §4.4
  * @see docs/specs/22_story_repository.spec.md §4.2
  * @see docs/specs/24_entity_alias_repositories.spec.md §4.6
+ * @see docs/specs/25_edge_repository.spec.md §4.4
  */
 
+export {
+	countEdges,
+	createEdge,
+	deleteEdge,
+	deleteEdgesBySourceId,
+	deleteEdgesByStoryId,
+	findAllEdges,
+	findEdgeById,
+	findEdgesBetweenEntities,
+	findEdgesByEntityId,
+	findEdgesBySourceEntityId,
+	findEdgesByStoryId,
+	findEdgesByTargetEntityId,
+	findEdgesByType,
+	updateEdge,
+	upsertEdge,
+} from './edge.repository.js';
+export type {
+	CreateEdgeInput,
+	EdgeFilter,
+	EdgeType,
+	EntityEdge,
+	UpdateEdgeInput,
+} from './edge.types.js';
 export {
 	countEntities,
 	createEntity,
