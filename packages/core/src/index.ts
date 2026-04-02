@@ -128,6 +128,7 @@ export { createServiceRegistry } from './shared/registry.js';
 export type { RetryOptions } from './shared/retry.js';
 // ── Retry ───────────────────────────────────────────────────
 export { withRetry } from './shared/retry.js';
+export { createGcpServices } from './shared/services.gcp.js';
 export type {
 	DocumentAiResult,
 	DocumentAiService,

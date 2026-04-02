@@ -14,6 +14,7 @@ import { registerCacheCommands } from './commands/cache.js';
 import { registerConfigCommands } from './commands/config.js';
 import { registerDbCommands } from './commands/db.js';
 import { registerExtractCommands } from './commands/extract.js';
+import { registerFixtureCommands } from './commands/fixtures.js';
 import { registerIngestCommands } from './commands/ingest.js';
 
 const program = new Command()
@@ -25,6 +26,7 @@ registerCacheCommands(program);
 registerConfigCommands(program);
 registerDbCommands(program);
 registerExtractCommands(program);
+registerFixtureCommands(program);
 registerIngestCommands(program);
 
 program.parse();
