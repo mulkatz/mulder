@@ -509,7 +509,7 @@ describe('Spec 16 — Ingest Step', () => {
 
 	// ─── QA-10: Storage path convention ───
 
-	it('QA-10: storage_path follows pattern sources/{uuid}/original.pdf', () => {
+	it('QA-10: storage_path follows pattern raw/{uuid}/original.pdf', () => {
 		if (!pgAvailable) return;
 
 		cleanSourceData();
@@ -520,8 +520,8 @@ describe('Spec 16 — Ingest Step', () => {
 		const storagePath = runSql("SELECT storage_path FROM sources WHERE filename = 'native-text-sample.pdf';");
 		expect(storagePath).not.toBe('');
 
-		// Verify pattern: sources/{uuid}/original.pdf
-		const pattern = /^sources\/[a-f0-9-]{36}\/original\.pdf$/;
+		// Verify pattern: raw/{uuid}/original.pdf
+		const pattern = /^raw\/[a-f0-9-]{36}\/original\.pdf$/;
 		expect(storagePath).toMatch(pattern);
 	});
 });

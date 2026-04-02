@@ -189,7 +189,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 
 	// i. Dry run: skip upload and DB insert
 	const sourceId = randomUUID();
-	const storagePath = `sources/${sourceId}/original.pdf`;
+	const storagePath = `raw/${sourceId}/original.pdf`;
 
 	if (ctx.dryRun) {
 		log.info({ sourceId, filename, pageCount: textResult.pageCount }, 'Dry run — skipping upload and DB insert');

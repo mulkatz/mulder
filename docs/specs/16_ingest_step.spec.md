@@ -128,7 +128,7 @@ export interface IngestResult {
    g. Run `detectNativeText(buffer)` — gets `pageCount`, `hasNativeText`, `nativeTextRatio`
    h. Check page count against `config.ingestion.max_pages`
    i. If `dryRun`: add to results, skip upload and DB insert
-   j. Upload to storage: `services.storage.upload(`sources/${sourceId}/original.pdf`, buffer, 'application/pdf')`
+   j. Upload to storage: `services.storage.upload(`raw/${sourceId}/original.pdf`, buffer, 'application/pdf')`
       - Generate `sourceId` as UUID v4 before upload (so storage path is deterministic)
    k. Create source record via `createSource(pool, { ... })`
    l. Upsert source step: `upsertSourceStep(pool, { sourceId, stepName: 'ingest', status: 'completed' })`
@@ -236,4 +236,4 @@ Black-box tests interact via CLI execution and database queries only. No imports
 **QA-10: Storage path convention**
 - Given: A successfully ingested PDF
 - When: Checking the source record's `storage_path`
-- Then: Path follows pattern `sources/{uuid}/original.pdf`
+- Then: Path follows pattern `raw/{uuid}/original.pdf`

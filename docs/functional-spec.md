@@ -232,7 +232,7 @@ interface StepResult<T> {
    - Check page count against `ingestion.max_pages` (default: 2000). Reject if exceeded.
    - Validate PDF header (magic bytes `%PDF-`). Reject non-PDF files with PDF extension.
 2. **Native text detection:** Extract text via `pdf-parse` (or similar). Store boolean `has_native_text` and `native_text_ratio` (% of pages with extractable text) on the source record. This determines whether Document AI is needed in the Extract step.
-3. Upload to Cloud Storage (`gs://{bucket}/sources/{source_id}/original.pdf`)
+3. Upload to Cloud Storage (`gs://{bucket}/raw/{source_id}/original.pdf`)
 4. Create `sources` record in PostgreSQL (status: `ingested`, includes `has_native_text`)
 5. Create metadata record in Firestore (original filename, upload time, file hash for dedup)
 6. If `--watch`: set up file watcher, re-run on new files
@@ -1209,7 +1209,7 @@ export function createServiceRegistry(config: MulderConfig, logger: Logger): Ser
 
 | Layer | File | Role |
 |-------|------|------|
-| **Connection Manager** | `gcp.ts` | Holds lazy-initialized, singleton raw GCP SDK clients + PostgreSQL connection pools. Knows how to connect, nothing else. |
+| **Connection Manager** | `gcp.ts` | Holds lazy-initialized, singleton raw GCP SDK clients. Knows how to connect, nothing else. PostgreSQL pools live in `database/client.ts`. |
 | **Implementation Layer** | `services.gcp.ts` | Classes that inject raw clients from `gcp.ts` and implement the service interfaces from `services.ts`. Formats data, handles API specifics. |
 | **Dependency Injector** | `registry.ts` | Hands the pipeline either `services.gcp.ts` (production) or `services.dev.ts` (dev mode). Pipeline steps only see the interfaces. |
 
@@ -1229,15 +1229,19 @@ src/shared/
 // Lazy singletons — raw SDK clients, used by services.gcp.ts only
 export function getStorageClient(): Storage
 export function getDocumentAIClient(): DocumentProcessorServiceClient
-export function getVertexAI(): VertexAI
-export function getFirestore(): Firestore
+export function getGenAI(project: string, location: string): GoogleGenAI  // @google/genai unified SDK
+export function getFirestoreClient(project: string): Firestore
+```
 
+**`database/client.ts` connection pools:**
+
+```typescript
 // Two separate connection pools — critical for mixed OLTP/OLAP workloads.
 // Without separation, a heavy vector search or recursive CTE blocks the job queue poller.
-export function getWorkerPool(): Pool    // Small pool (2-3 connections), for job queue OLTP
-                                         // No statement_timeout — pipeline steps can run long
-export function getQueryPool(): Pool     // Larger pool (5-10 connections), for retrieval/search OLAP
-                                         // statement_timeout = 10s — queries that take longer are killed
+export function getWorkerPool(config: CloudSqlConfig): Pool    // Small pool (2-3 connections), for job queue OLTP
+                                                                // No statement_timeout — pipeline steps can run long
+export function getQueryPool(config: CloudSqlConfig): Pool     // Larger pool (5-10 connections), for retrieval/search OLAP
+                                                                // statement_timeout = 10s — queries that take longer are killed
 ```
 
 **Pipeline steps NEVER import `gcp.ts` directly.** They call service interfaces which are injected by the registry. Only `services.gcp.ts` imports from `gcp.ts`.
@@ -1278,12 +1282,12 @@ src/shared/
 ```
 
 **Functions:**
-- `generateStructured<T>(prompt, schema): T` — Gemini structured output with Zod validation of response
-- `generateText(prompt): string` — Plain text generation
-- `embed(texts: string[], dimensions?: number): number[][]` — Batch embedding via `text-embedding-004` with `outputDimensionality` parameter (default: 768). NEVER truncate vectors manually in application code.
-- `groundedGenerate(prompt, entity): GroundingResult` — Gemini with google_search_retrieval tool
+- `generateStructured<T>(options: StructuredGenerateOptions): T` — Gemini structured output. Accepts a JSON Schema for API-side enforcement and an optional Zod schema for client-side response validation.
+- `generateText(options: TextGenerateOptions): string` — Plain text generation (supports multimodal via media attachments)
+- `embed(texts: string[], model: string, dimensions: number): EmbeddingResult[]` — Batch embedding via `text-embedding-004` with `outputDimensionality` parameter (default: 768). Returns `{ text, vector }[]`. NEVER truncate vectors manually in application code.
+- `groundedGenerate(options: GroundedGenerateOptions): GroundedGenerateResult` — Gemini with Google Search grounding (NOT cached — web results are time-sensitive)
 
-Wraps the Vertex AI SDK with the shared `withRetry` (`retry.ts`) and `RateLimiter` (`rate-limiter.ts`) modules, plus a process-level concurrency limiter (see below). All pipeline steps call these functions, never the Vertex AI SDK directly.
+Wraps the `@google/genai` unified SDK with the shared `withRetry` (`retry.ts`) and `RateLimiter` (`rate-limiter.ts`) modules, plus a process-level concurrency limiter (see below). All pipeline steps call these functions via service interfaces, never the SDK directly.
 
 #### Vertex AI Concurrency Limiter (Thundering Herd Protection)
 
@@ -1593,9 +1597,9 @@ class ExternalServiceError extends MulderError { /* code: EXT_* */ }
 
 ### 7.3 Retry Strategy
 
-External service calls (Gemini, Document AI, Cloud Storage) use exponential backoff:
-- Max retries: 3
-- Base delay: 1s, multiplier: 2 (1s, 2s, 4s)
+External service calls (Gemini, Document AI, Cloud Storage) use exponential backoff with full jitter:
+- Max attempts: 3 (1 original + 2 retries)
+- Base delay: 1s, multiplier: 2, full jitter: `random(0, min(base * 2^attempt, 30s))`
 - Retry on: rate limits (429), server errors (500-503), network timeouts
 - No retry on: validation errors (400), auth errors (401/403), not found (404)
 

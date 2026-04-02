@@ -229,28 +229,36 @@ All files follow conventions. Source files are `kebab-case.ts`, types are `Pasca
 
 ## CLAUDE.md Consistency
 
-- **Storage Architecture:** CLAUDE.md states "raw/ — Original PDFs (immutable)" matching the spec, but the implementation uses `sources/` prefix. CLAUDE.md should be updated if the `sources/` path is intentional.
-- **Vertex AI:** CLAUDE.md says "Gemini 2.5 Flash via Vertex AI". Implementation uses `@google/genai` SDK (unified SDK) rather than `@google-cloud/vertexai`. CLAUDE.md should clarify the SDK choice.
-- All other CLAUDE.md statements match the implementation: service abstraction pattern, fixture-based dev mode, dual connection pools, retry via shared `withRetry`, rate limiter, Pino logging.
+- **Storage Architecture:** CLAUDE.md states "raw/ — Original PDFs (immutable)" — now matches both spec and implementation after the storage path fix.
+- All CLAUDE.md statements match the implementation: service abstraction pattern, fixture-based dev mode, dual connection pools, retry via shared `withRetry`, rate limiter, Pino logging.
 
 ---
 
-## Recommendations
+## Post-Review Resolutions
+
+The following divergences were resolved after the initial review:
+
+| DIV | Resolution |
+|-----|------------|
+| DIV-006 | **Fixed in code:** Storage path changed from `sources/{id}/original.pdf` to `raw/{id}/original.pdf` to match spec §4.4 |
+| DIV-007/008 | **Fixed in spec:** §4.6 updated to reflect `getGenAI()` and `getFirestoreClient()` naming |
+| DIV-009 | **Fixed in spec:** §4.6 updated to show pool functions in `database/client.ts` |
+| DIV-011 | **Fixed in code:** Added optional `responseValidator` to `StructuredGenerateOptions` for client-side validation |
+| DIV-012 | **Fixed in spec:** §4.8 updated to reflect actual `embed()` signature and `EmbeddingResult` type |
+| DIV-013 | **Fixed in spec:** §7.3 updated to "Max attempts: 3" with full jitter documentation |
+| DIV-014 | **Fixed in spec:** §7.3 now documents the full jitter algorithm |
+
+---
+
+## Remaining Recommendations
 
 ### Must Fix (Critical)
 1. **DIV-004:** Add lightweight PDF metadata extraction (e.g., `pdfinfo` from poppler-utils, or a minimal PDF header parser) to check page count BEFORE calling `pdf-parse`. This closes the PDF bomb security gap identified in the spec.
 
 ### Should Fix (Warning)
-2. **DIV-006:** Reconcile raw PDF storage path — update either the spec or the code. If `sources/{id}/original.pdf` is intentional, update §4.4 and CLAUDE.md.
-3. **DIV-011:** Add client-side Zod validation to `generateStructured()` in `vertex.ts`. The spec requires it as a safety net for malformed Gemini responses.
-4. **DIV-013:** Change `maxAttempts` default from 3 to 4 to match spec's "Max retries: 3" (4 total attempts).
-5. **DIV-007/DIV-008:** Update spec §4.6 to reflect actual SDK choice (`@google/genai` → `getGenAI()`) and Firestore naming (`getFirestoreClient()`), or update code to match spec names.
-6. **DIV-009:** Update spec §4.6 to show pool functions in `database/client.ts` rather than `gcp.ts`.
-7. **DIV-012:** Update spec §4.8 to reflect actual `embed()` signature and `EmbeddingResult` type.
-8. **DIV-001:** Add `--watch` flag to ingest command (or explicitly defer to a later milestone and note in roadmap).
+2. **DIV-001:** Add `--watch` flag to ingest command (or explicitly defer to a later milestone and note in roadmap).
 
 ### For Consideration (Note)
-9. **DIV-002/DIV-003:** Extra CLI subcommands (`cache stats`, `fixtures status`) are useful additions. Consider adding them to the spec for completeness.
-10. **DIV-010:** `vision-fallback.jinja2` template should be added to spec §4.7 template list.
-11. **DIV-014:** Full jitter backoff is an improvement over the spec's fixed delays. Consider updating §7.3 to document the actual algorithm.
-12. **DIV-015/DIV-016:** Fixture naming and placeholder approach are reasonable alternatives. No action needed unless standardization is desired.
+3. **DIV-002/DIV-003:** Extra CLI subcommands (`cache stats`, `fixtures status`) are useful additions. Consider adding them to the spec for completeness.
+4. **DIV-010:** `vision-fallback.jinja2` template should be added to spec §4.7 template list.
+5. **DIV-015/DIV-016:** Fixture naming and placeholder approach are reasonable alternatives. No action needed unless standardization is desired.

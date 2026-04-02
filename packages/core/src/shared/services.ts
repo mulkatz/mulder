@@ -76,12 +76,18 @@ export interface DocumentAiService {
 export interface StructuredGenerateOptions {
 	/** The prompt text to send. */
 	prompt: string;
-	/** JSON Schema that the output must conform to. */
+	/** JSON Schema that the output must conform to (sent to API for server-side enforcement). */
 	schema: Record<string, unknown>;
 	/** Optional system instruction. */
 	systemInstruction?: string;
 	/** Optional media attachments (e.g., page images). */
 	media?: Array<{ mimeType: string; data: Buffer }>;
+	/**
+	 * Optional client-side response validator (e.g., `zodSchema.parse`).
+	 * When provided, the parsed JSON response is passed through this function
+	 * before being returned. Throws on validation failure.
+	 */
+	responseValidator?: (data: unknown) => unknown;
 }
 
 /** Options for plain text LLM generation. */

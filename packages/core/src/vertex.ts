@@ -134,7 +134,9 @@ export function createVertexClient(ai: GoogleGenAI, options: VertexClientOptions
 						{ model: cached.model, tokensSaved: cached.tokens_saved },
 						'VertexClient: cache hit (generateStructured)',
 					);
-					return JSON.parse(cached.response);
+					const cachedParsed = JSON.parse(cached.response);
+					opts.responseValidator?.(cachedParsed);
+					return cachedParsed;
 				}
 
 				// Cache miss — make the API call through the limiter
@@ -168,7 +170,9 @@ export function createVertexClient(ai: GoogleGenAI, options: VertexClientOptions
 						tokens_saved: tokensSaved,
 					});
 
-					return JSON.parse(responseText);
+					const parsed = JSON.parse(responseText);
+					opts.responseValidator?.(parsed);
+					return parsed;
 				});
 			}
 
@@ -195,7 +199,9 @@ export function createVertexClient(ai: GoogleGenAI, options: VertexClientOptions
 				);
 
 				const responseText = response.text ?? '{}';
-				return JSON.parse(responseText);
+				const parsed = JSON.parse(responseText);
+				opts.responseValidator?.(parsed);
+				return parsed;
 			});
 		},
 

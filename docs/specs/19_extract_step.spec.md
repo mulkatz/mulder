@@ -169,7 +169,7 @@ export async function execute(
 
 1. **Load source:** `findSourceById(pool, input.sourceId)` — fail with `EXTRACT_SOURCE_NOT_FOUND` if null.
 2. **Validate status:** Source must have `status >= 'ingested'`. If already `extracted` and not `--force`, skip with info log. If `--force`, clean up first (see 4.7).
-3. **Download PDF:** `services.storage.download(`sources/${sourceId}/original.pdf`)` → Buffer.
+3. **Download PDF:** `services.storage.download(`raw/${sourceId}/original.pdf`)` → Buffer.
 4. **Choose extraction path** based on `source.native_text_ratio` vs `config.extraction.native_text_threshold`:
 
    **Path A — Native text (ratio >= threshold):**

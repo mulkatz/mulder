@@ -31,7 +31,7 @@ export interface IngestFileResult {
 	sourceId: string;
 	/** Original filename (basename). */
 	filename: string;
-	/** Storage path in GCS (e.g., `sources/{uuid}/original.pdf`). */
+	/** Storage path in GCS (e.g., `raw/{uuid}/original.pdf`). */
 	storagePath: string;
 	/** SHA-256 hash of the file content. */
 	fileHash: string;
