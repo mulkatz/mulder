@@ -362,9 +362,14 @@ WORKFLOW:
 
 IMPORTANT: Fix ONLY code that causes failing conditions. Do not rewrite everything.
 
-ESCAPE HATCH: If a failing test contradicts the spec (e.g., test asserts 200 but spec says 201),
-do NOT change code to match a wrong test. Instead, report:
-TEST_MISMATCH: <test file:line> asserts <X>, but spec Section 5 says <Y>
+ESCAPE HATCH: If a failing test contradicts the spec, do NOT change code to match a wrong test.
+- For QA-NN tests: compare against spec Section 5
+- For CLI-NN tests: compare against spec Section 5b
+- For SMOKE-NN tests: if the test assumes a flag combination should work but it legitimately
+  shouldn't (e.g., testing --force without a required value), the test is a false positive
+In all cases, report:
+TEST_MISMATCH: <test file:line> asserts <X>, but spec Section 5/5b says <Y>
+  (For SMOKE tests: "SMOKE test assumes <X> should succeed, but <reason> it shouldn't")
 The orchestrator will route this back to the verify agent for test correction.
 
 Report:
