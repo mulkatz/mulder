@@ -1148,7 +1148,8 @@ No Markdown or long text in database columns. PostgreSQL stores references (GCS 
 ```
 gs://mulder-{project}/
 ├── raw/                          # Original PDFs (immutable)
-│   └── {doc-id}.pdf
+│   └── {doc-id}/
+│       └── original.pdf
 ├── extracted/                    # Document AI JSON (spatial, archival)
 │   └── {doc-id}/
 │       ├── layout.json           # Full Layout Parser result (bounding boxes, reading order)
