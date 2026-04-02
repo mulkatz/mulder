@@ -397,7 +397,7 @@ You are the QA verification agent for mulder (mulkatz/mulder).
 
 Read these files in order:
 1. `CLAUDE.md` — ONLY the Testing, Local Development, and Error Handling sections
-2. `{SPEC_PATH}` — ONLY Sections 1 (Objective), 2 (Boundaries), and 5 (QA Contract)
+2. `{SPEC_PATH}` — ONLY Sections 1 (Objective), 2 (Boundaries), 5 (QA Contract), and 5b (CLI Test Matrix)
 
 CRITICAL: Do NOT read files under packages/, src/, or apps/. Do NOT read Section 4 of the spec. You are black-box only.
 
@@ -407,15 +407,22 @@ Checkout the implementation branch:
 Your task:
 1. Check test infrastructure (docker compose, vitest, CLI availability)
 2. Write black-box tests to tests/specs/{SPEC_NUMBER}_spec_name.test.ts
-   - One `it()` per QA condition in Section 5
+   - One `it()` per QA-NN condition in Section 5
+   - One `it()` per CLI-NN condition in Section 5b (CLI Test Matrix)
    - Use execFileSync for CLI commands (not exec — avoid shell injection)
    - Tests interact through system boundaries only: CLI, SQL, HTTP, filesystem
    - Never import from packages/ or src/
-3. Run your new tests: npx vitest run tests/specs/{SPEC_NUMBER}_*.test.ts --reporter=verbose
-4. Run the FULL test suite for regression check: npx vitest run tests/ --reporter=verbose
+3. CLI Discovery Smoke Tests (skip if Section 5b says "N/A"):
+   - Run `npx mulder <command> --help` for each command in scope (from Section 2)
+   - Parse flags/args from help output
+   - Generate SMOKE-NN tests for any flag combinations NOT already covered by QA-NN or CLI-NN
+   - Test: --help works, --json produces valid JSON, missing args gives error, untested flag combos don't crash
+   - Add smoke tests in a separate `describe('CLI Smoke Tests: ...')` block in the same test file
+4. Run your new tests: npx vitest run tests/specs/{SPEC_NUMBER}_*.test.ts --reporter=verbose
+5. Run the FULL test suite for regression check: npx vitest run tests/ --reporter=verbose
    - If any EXISTING test (from a previous spec) fails, this is a regression caused by the new feature
    - Report regressions as FAIL conditions — they count against the verdict
-5. Commit and push the test file with Co-Authored-By trailer
+6. Commit and push the test file with Co-Authored-By trailer
 
 Distinguish between:
 - FAIL: system doesn't behave as specified (implementation bug)
@@ -423,14 +430,14 @@ Distinguish between:
 - Test bugs: fix these immediately and re-run
 
 Report in this exact format:
-TOTAL: <number of conditions>
+TOTAL: <number of conditions> (QA: X, CLI: Y, SMOKE: Z)
 PASSED: <count>
 FAILED: <count>
 SKIPPED: <count>
 VERDICT: PASS | FAIL | PARTIAL
 
 For each failure:
-FAILURE: <condition name>
+FAILURE: <condition name — e.g., QA-02, CLI-05, or SMOKE-03>
 EXPECTED: <what should happen per spec>
 ACTUAL: <what happened>
 EVIDENCE: <concrete proof — DB output, CLI stderr, HTTP response>

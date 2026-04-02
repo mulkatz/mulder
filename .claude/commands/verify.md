@@ -164,6 +164,69 @@ describe('Spec NN: [Title from spec Section 1]', () => {
   it.skipIf(!dbAvailable)('QA-01: ...', async () => { ... });
   ```
 
+### Step 4b: CLI Discovery Smoke Tests
+
+**After writing tests from Section 5 and 5b**, run an automated CLI discovery pass to catch flag combinations the spec may have missed. This step is additive — it does NOT replace spec-driven tests, it supplements them.
+
+**Skip this step if** the spec's Section 5b says "N/A — no CLI commands in this step."
+
+**Procedure:**
+
+1. **Discover commands** relevant to this spec:
+   - Read the spec's Section 2 (Boundaries) for which CLI commands are in scope
+   - Run `npx mulder --help` to get the top-level command list
+   - For each relevant command group, run `npx mulder <group> --help` to get subcommands
+   - For each relevant subcommand, run `npx mulder <group> <sub> --help` to get all flags and arguments
+
+2. **Parse the help output** to extract:
+   - Required arguments (positional, no default)
+   - Optional flags (boolean flags, value flags with defaults)
+   - Already-tested combinations (cross-reference with Section 5b CLI-NN conditions)
+
+3. **Generate smoke tests** for combinations NOT already covered by Section 5/5b:
+   - `--help` for each command → exit 0, non-empty stdout
+   - Each untested boolean flag individually with valid input → exit 0
+   - Pairwise combinations of untested flags → exit 0
+   - `--json` flag (if present) → stdout parses as valid JSON
+   - Missing required args → exit non-zero, stderr contains usage info
+   - These smoke tests verify the command RUNS without crashing — they don't validate business logic (that's Section 5/5b's job)
+
+4. **Add smoke tests** to the same test file, in a separate `describe` block:
+
+```typescript
+describe('CLI Smoke Tests: mulder <command>', () => {
+  it('SMOKE-01: --help flag produces usage info', () => {
+    const result = execFileSync('npx', ['mulder', '<command>', '--help'], {
+      encoding: 'utf-8',
+    });
+    expect(result).toContain('Usage:');
+  });
+
+  it('SMOKE-02: --json flag produces valid JSON', () => {
+    const result = execFileSync('npx', ['mulder', '<command>', '<valid-args>', '--json'], {
+      encoding: 'utf-8',
+    });
+    expect(() => JSON.parse(result)).not.toThrow();
+  });
+
+  it('SMOKE-03: missing required args exits with error', () => {
+    try {
+      execFileSync('npx', ['mulder', '<command>'], {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      });
+      expect.unreachable('Should have thrown');
+    } catch (err: any) {
+      expect(err.status).not.toBe(0);
+    }
+  });
+
+  // ... one it() per untested combination
+});
+```
+
+5. **Naming convention**: smoke tests use `SMOKE-NN` prefix to distinguish from spec-driven `QA-NN` and `CLI-NN` conditions. They count toward the verdict — a SMOKE failure is a FAIL.
+
 ### Step 5: Run Tests
 
 ```bash
@@ -203,7 +266,7 @@ Output a structured report:
 ## QA Report: Spec NN — [Title]
 
 ### Summary
-- Total: N conditions
+- Total: N conditions (QA: X, CLI: Y, SMOKE: Z)
 - Passed: X
 - Failed: Y
 - Skipped: Z (infrastructure)
@@ -212,9 +275,12 @@ Output a structured report:
 
 | # | Condition | Status | Evidence |
 |---|-----------|--------|----------|
-| QA-01 | [Name from spec] | PASS | [key values that proved it — e.g., "row.status = 'completed', exit code 0"] |
+| QA-01 | [Name from spec Section 5] | PASS | [key values that proved it — e.g., "row.status = 'completed', exit code 0"] |
 | QA-02 | [Name] | FAIL | [what went wrong — e.g., "Expected status 'completed', got 'pending'"] |
-| QA-03 | [Name] | SKIP | [why — e.g., "PostgreSQL not running"] |
+| CLI-01 | [Name from spec Section 5b] | PASS | [e.g., "exit 0, stdout contains expected JSON"] |
+| CLI-02 | [Name] | FAIL | [e.g., "exit 1, expected exit 0 with --force flag"] |
+| SMOKE-01 | [Auto-discovered from --help] | PASS | [e.g., "--help produces usage info"] |
+| SMOKE-02 | [Auto-discovered flag combo] | FAIL | [e.g., "--json --verbose crashes with TypeError"] |
 
 ### Failed Conditions Detail
 
@@ -225,16 +291,22 @@ Output a structured report:
 - Actual: [what the system actually did]
 - Evidence: [concrete output — DB query results, CLI stderr, HTTP response body]
 
+**SMOKE-02: [Condition name]**
+- Command: [exact CLI invocation]
+- Expected: [exit 0 / valid output]
+- Actual: [what happened — crash, wrong exit code, malformed output]
+- Evidence: [stderr, stack trace]
+
 ### Verdict: PASS | FAIL | PARTIAL
 
-[PASS: all conditions met]
+[PASS: all conditions met (QA + CLI + SMOKE)]
 [FAIL: N conditions not met — implementation needs fixes]
 [PARTIAL: all non-skipped conditions passed, but N conditions could not be verified due to infrastructure]
 ```
 
 **Verdict rules:**
 - **PASS**: every condition is PASS (skipped conditions with infrastructure reasons don't count against)
-- **FAIL**: any condition is FAIL
+- **FAIL**: any condition (QA-NN, CLI-NN, or SMOKE-NN) is FAIL
 - **PARTIAL**: no FAILs, but some SKIPs due to infrastructure — the implementation might be correct but can't be fully verified
 
 ---

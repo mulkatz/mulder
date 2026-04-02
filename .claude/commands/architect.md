@@ -194,6 +194,38 @@ Each condition must be verifiable by a QA agent WITHOUT reading implementation c
    - When: [action attempted]
    - Then: [clear error indicating what's missing, not a crash]
 
+## 5b. CLI Test Matrix
+
+[**Include this section only if the step introduces or modifies CLI commands.** If no CLI commands are involved, replace with: "N/A — no CLI commands in this step."]
+
+Systematically test the CLI surface area introduced by this step. Every command, every flag, every meaningful combination. The verify agent writes one `it()` per CLI-NN condition.
+
+**How to build the matrix:**
+1. List every CLI command/subcommand this step creates or modifies
+2. For each command, list all positional arguments and flags (from the Commander.js definition)
+3. Generate test rows using these layers:
+   - **Happy path**: required args only (minimal valid invocation)
+   - **Individual flags**: each optional flag with valid input (one row per flag)
+   - **Pairwise combinations**: every pair of boolean flags tested together at least once (covers interaction bugs without cartesian explosion)
+   - **Output modes**: `--json` produces parseable JSON, default produces human-readable text
+   - **Error cases**: missing required args, invalid values, nonexistent paths, malformed input
+   - **Idempotency**: same command run twice produces same result (if applicable)
+
+### `mulder <command> <args>`
+
+| # | Args / Flags | Expected Behavior |
+|---|-------------|-------------------|
+| CLI-01 | `<required-args>` | Exit 0, [expected output/state] |
+| CLI-02 | `<required-args> --flag-a` | Exit 0, [how behavior changes] |
+| CLI-03 | `<required-args> --flag-b <value>` | Exit 0, [how behavior changes] |
+| CLI-04 | `<required-args> --flag-a --flag-b <value>` | Exit 0, [pairwise interaction] |
+| CLI-05 | `<required-args> --json` | Exit 0, valid JSON on stdout |
+| CLI-06 | *(no args)* | Exit 1, usage help on stderr |
+| CLI-07 | `<invalid-input>` | Exit 1, specific error code (e.g., ERR_FILE_NOT_FOUND) |
+| CLI-08 | `<required-args>` *(run twice)* | Exit 0, idempotent — same DB state |
+
+[Repeat table for each command/subcommand. Use concrete test values, not placeholders.]
+
 ## 6. Cost Considerations
 
 [If this step involves paid GCP API calls (Document AI, Gemini, Vertex AI, Cloud Storage writes), list:]
