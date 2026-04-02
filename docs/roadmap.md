@@ -62,7 +62,7 @@ Core intelligence. Where Mulder becomes more than an OCR tool.
 |--------|------|------|------|
 | 🟢 | C1 | Story repository — CRUD with GCS URIs | §4.3 (stories table), §2.3 |
 | 🟢 | C2 | Segment step — output Markdown + metadata to GCS | §2.3, §4.4 |
-| 🟡 | C3 | Entity + alias repositories — CRUD | §4.3 (entities, entity_aliases, story_entities), §2.4 |
+| 🟢 | C3 | Entity + alias repositories — CRUD | §4.3 (entities, entity_aliases, story_entities), §2.4 |
 | ⚪ | C4 | Edge repository — CRUD for `entity_edges` | §4.3 (entity_edges), §2.4 |
 | ⚪ | C5 | JSON Schema generator — `zod-to-json-schema` | §2.4, §14 (why zod-to-json-schema) |
 | ⚪ | C6 | Taxonomy normalization — `pg_trgm` matching | §6.2, §2.4 |
