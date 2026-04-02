@@ -226,7 +226,8 @@ describe('Issue #44: Lightweight PDF Metadata Extraction', () => {
 
 	// ─── QA-03: PDF metadata stored in sources.metadata JSONB ───
 
-	it.skipIf(!pgAvailable)('QA-03: PDF metadata fields stored in sources.metadata JSONB after ingest', () => {
+	it('QA-03: PDF metadata fields stored in sources.metadata JSONB after ingest', () => {
+		if (!pgAvailable) return;
 		// Given: A valid PDF with known metadata (created by pdf-lib)
 		// When: The PDF is ingested (non-dry-run, with DB)
 		// Then: The sources.metadata JSONB contains pdf_version, creator, creation_date etc.
