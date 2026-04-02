@@ -17,3 +17,5 @@ export type {
 export { generateFixtures, getFixtureStatus } from './fixtures/index.js';
 export type { IngestFileResult, IngestInput, IngestResult } from './ingest/index.js';
 export { execute as executeIngest } from './ingest/index.js';
+export type { SegmentationData, SegmentedStory, SegmentInput, SegmentResult } from './segment/index.js';
+export { execute as executeSegment } from './segment/index.js';

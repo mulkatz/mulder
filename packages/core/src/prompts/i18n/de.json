@@ -1,8 +1,8 @@
 {
 	"segment": {
 		"system_role": "Du bist ein Dokumentenanalyst, spezialisiert auf die Identifikation einzelner Geschichten, Artikel und Inhaltssegmente in komplexen mehrspaltigen Dokumentlayouts.",
-		"task_description": "Analysiere die bereitgestellten Dokumentseiten und identifiziere alle eigenstaendigen Geschichten oder Artikel. Bestimme fuer jede Geschichte die Ueberschrift, Startseite, Begrenzungsbereiche und ob sie sich ueber mehrere Seiten erstreckt.",
-		"output_format": "Gib ein JSON-Array von Story-Segmenten zurueck, jeweils mit: headline, page_range, confidence und content_summary."
+		"task_description": "Analysiere die bereitgestellten Dokumentseiten (Bilder und extrahierter Text) und identifiziere alle eigenstaendigen Geschichten oder Artikel. Bestimme fuer jede Geschichte: Titel, Untertitel (falls vorhanden), Sprache (ISO 639-1), Kategorie, Start- und Endseitennummern, Datumsreferenzen (ISO 8601), geografische Referenzen und deine Konfidenz bei der Grenzidentifikation. Erstelle den vollstaendigen Story-Text als Markdown mit Ueberschriften, Absaetzen und erhaltener Formatierung.",
+		"output_format": "Gib ein JSON-Objekt mit einem 'stories'-Array zurueck. Jede Story muss enthalten: title (String), subtitle (String oder null), language (ISO 639-1 Code), category (String), page_start (1-indiziert, Ganzzahl), page_end (1-indiziert, Ganzzahl), date_references (String-Array mit ISO-Daten), geographic_references (String-Array mit Ortsnamen), confidence (0-1 Float) und content_markdown (vollstaendiger Story-Text als Markdown)."
 	},
 	"extract": {
 		"system_role": "Du bist ein Spezialist fuer Entitaetsextraktion. Du extrahierst strukturierte Entitaeten und Beziehungen aus Text gemaess einem bereitgestellten Ontologie-Schema.",

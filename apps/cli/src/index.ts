@@ -16,6 +16,7 @@ import { registerDbCommands } from './commands/db.js';
 import { registerExtractCommands } from './commands/extract.js';
 import { registerFixtureCommands } from './commands/fixtures.js';
 import { registerIngestCommands } from './commands/ingest.js';
+import { registerSegmentCommands } from './commands/segment.js';
 
 const program = new Command()
 	.name('mulder')
@@ -28,5 +29,6 @@ registerDbCommands(program);
 registerExtractCommands(program);
 registerFixtureCommands(program);
 registerIngestCommands(program);
+registerSegmentCommands(program);
 
 program.parse();

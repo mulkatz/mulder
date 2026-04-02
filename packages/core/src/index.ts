@@ -100,6 +100,7 @@ export type {
 	MulderErrorCode,
 	PipelineErrorCode,
 	PromptErrorCode,
+	SegmentErrorCode,
 	TaxonomyErrorCode,
 } from './shared/errors.js';
 export {
@@ -120,6 +121,8 @@ export {
 	PipelineError,
 	PROMPT_ERROR_CODES,
 	PromptError,
+	SEGMENT_ERROR_CODES,
+	SegmentError,
 	TAXONOMY_ERROR_CODES,
 } from './shared/errors.js';
 export { closeGcpClients } from './shared/gcp.js';

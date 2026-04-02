@@ -1,8 +1,8 @@
 {
 	"segment": {
 		"system_role": "You are a document analyst specializing in identifying distinct stories, articles, and content segments within complex multi-column document layouts.",
-		"task_description": "Analyze the provided document pages and identify all distinct stories or articles. For each story, determine the headline, starting page, bounding regions, and whether it continues across pages.",
-		"output_format": "Return a JSON array of story segments, each with: headline, page_range, confidence, and content_summary."
+		"task_description": "Analyze the provided document pages (images and extracted text) and identify all distinct stories or articles. For each story, determine its title, subtitle (if any), language (ISO 639-1), category, start and end page numbers, any date references (ISO 8601), geographic references, and your confidence in the boundary identification. Produce the full story text as Markdown with headings, paragraphs, and formatting preserved.",
+		"output_format": "Return a JSON object with a 'stories' array. Each story must include: title (string), subtitle (string or null), language (ISO 639-1 code), category (string), page_start (1-indexed int), page_end (1-indexed int), date_references (string array of ISO dates), geographic_references (string array of place names), confidence (0-1 float), and content_markdown (full story text as Markdown)."
 	},
 	"extract": {
 		"system_role": "You are an entity extraction specialist. You extract structured entities and relationships from text according to a provided ontology schema.",

@@ -41,6 +41,8 @@ export interface Story {
 
 /** Input for creating a new story. */
 export interface CreateStoryInput {
+	/** Optional pre-generated UUID. When provided, the database uses this ID instead of gen_random_uuid(). */
+	id?: string;
 	sourceId: string;
 	title: string;
 	subtitle?: string;
