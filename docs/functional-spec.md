@@ -228,9 +228,9 @@ interface StepResult<T> {
 **Process:**
 1. **Pre-flight validation (security gate):**
    - Check file size against `ingestion.max_file_size_mb` (default: 100MB). Reject immediately if exceeded.
-   - Run lightweight metadata check via `pdfinfo` (poppler-utils) or equivalent BEFORE parsing content. Extract page count without decompressing the full PDF — this catches PDF bombs (decompression bombs that expand to gigabytes in memory).
-   - Check page count against `ingestion.max_pages` (default: 2000). Reject if exceeded.
    - Validate PDF header (magic bytes `%PDF-`). Reject non-PDF files with PDF extension.
+   - Run lightweight metadata extraction via `pdf-lib` (`PDFDocument.load()`) BEFORE parsing content. `pdf-lib` parses the document structure (xref, catalog, info dict) without decompressing page content streams — safe against PDF bombs. Extracts page count, title, author, creator, producer, dates, PDF version, encryption status. Stored in `sources.metadata` JSONB.
+   - Check page count against `ingestion.max_pages` (default: 2000). Reject if exceeded.
 2. **Native text detection:** Extract text via `pdf-parse` (or similar). Store boolean `has_native_text` and `native_text_ratio` (% of pages with extractable text) on the source record. This determines whether Document AI is needed in the Extract step.
 3. Upload to Cloud Storage (`gs://{bucket}/raw/{source_id}/original.pdf`)
 4. Create `sources` record in PostgreSQL (status: `ingested`, includes `has_native_text`)

@@ -247,16 +247,14 @@ The following divergences were resolved after the initial review:
 | DIV-012 | **Fixed in spec:** §4.8 updated to reflect actual `embed()` signature and `EmbeddingResult` type |
 | DIV-013 | **Fixed in spec:** §7.3 updated to "Max attempts: 3" with full jitter documentation |
 | DIV-014 | **Fixed in spec:** §7.3 now documents the full jitter algorithm |
+| DIV-004 | **Fixed in code (PR #45):** Added `pdf-lib` based metadata extractor that reads page count from document structure without decompressing page content. Ingest now gates page count check before `pdf-parse`. Tested against 10 diverse PDFs from 7 producers. Spec §2.1 updated. |
 
 ---
 
 ## Remaining Recommendations
 
-### Must Fix (Critical)
-1. **DIV-004:** Add lightweight PDF metadata extraction (e.g., `pdfinfo` from poppler-utils, or a minimal PDF header parser) to check page count BEFORE calling `pdf-parse`. This closes the PDF bomb security gap identified in the spec.
-
 ### Should Fix (Warning)
-2. **DIV-001:** Add `--watch` flag to ingest command (or explicitly defer to a later milestone and note in roadmap).
+1. **DIV-001:** Add `--watch` flag to ingest command (or explicitly defer to a later milestone and note in roadmap).
 
 ### For Consideration (Note)
 3. **DIV-002/DIV-003:** Extra CLI subcommands (`cache stats`, `fixtures status`) are useful additions. Consider adding them to the spec for completeness.
