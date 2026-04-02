@@ -450,21 +450,25 @@ describe('Spec 23 — Segment Step', () => {
 
 	it('QA-10: each story has non-null page_start and page_end with page_start <= page_end', () => {
 		if (!pgAvailable) return;
-		if (!extractedSourceId) return;
 
-		// If source not segmented, attempt segmentation — fail if it doesn't work
-		const sourceStatus = runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
-		if (sourceStatus !== 'segmented') {
-			const result = segmentSource(extractedSourceId);
+		// Use any segmented source — the shared extractedSourceId may have been
+		// cleaned up by QA-09. If none exists, create a fresh one.
+		let sourceId = runSql("SELECT id FROM sources WHERE status = 'segmented' LIMIT 1;");
+		if (!sourceId) {
+			cleanTestData();
+			cleanExtractedFixtures();
+			cleanSegmentFixtures();
+			sourceId = ingestAndExtractPdf(NATIVE_TEXT_PDF);
+			const result = segmentSource(sourceId);
 			expect(result.exitCode).toBe(0);
 		}
 
-		const storyCount = runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${extractedSourceId}';`);
+		const storyCount = runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`);
 		expect(Number.parseInt(storyCount, 10)).toBeGreaterThanOrEqual(1);
 
 		// Check that all stories have valid page ranges
 		const invalidPageRanges = runSql(
-			`SELECT COUNT(*) FROM stories WHERE source_id = '${extractedSourceId}' AND (page_start IS NULL OR page_end IS NULL OR page_start > page_end);`,
+			`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}' AND (page_start IS NULL OR page_end IS NULL OR page_start > page_end);`,
 		);
 		expect(Number.parseInt(invalidPageRanges, 10)).toBe(0);
 	});
@@ -509,32 +513,34 @@ describe('Spec 23 — Segment Step', () => {
 
 	it('QA-12: story GCS URIs match segments/{source-id}/{story-id}.md and .meta.json patterns', () => {
 		if (!pgAvailable) return;
-		if (!extractedSourceId) return;
 
-		// If source not segmented, attempt segmentation — fail if it doesn't work
-		const sourceStatus = runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
-		if (sourceStatus !== 'segmented') {
-			const result = segmentSource(extractedSourceId);
+		// Use any segmented source — the shared extractedSourceId may have been
+		// cleaned up by QA-09. If none exists, create a fresh one.
+		let sourceId = runSql("SELECT id FROM sources WHERE status = 'segmented' LIMIT 1;");
+		if (!sourceId) {
+			cleanTestData();
+			cleanExtractedFixtures();
+			cleanSegmentFixtures();
+			sourceId = ingestAndExtractPdf(NATIVE_TEXT_PDF);
+			const result = segmentSource(sourceId);
 			expect(result.exitCode).toBe(0);
 		}
 
-		const storyCount = runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${extractedSourceId}';`);
+		const storyCount = runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`);
 		expect(Number.parseInt(storyCount, 10)).toBeGreaterThanOrEqual(1);
 
 		// Get all story GCS URIs
-		const rows = runSql(
-			`SELECT id, gcs_markdown_uri, gcs_metadata_uri FROM stories WHERE source_id = '${extractedSourceId}';`,
-		);
+		const rows = runSql(`SELECT id, gcs_markdown_uri, gcs_metadata_uri FROM stories WHERE source_id = '${sourceId}';`);
 
 		for (const row of rows.split('\n').filter(Boolean)) {
 			const [_storyId, markdownUri, metadataUri] = row.split('|');
 
 			// Markdown URI pattern: segments/{source-id}/{story-id}.md
-			const expectedMdPattern = new RegExp(`^segments/${extractedSourceId}/[a-f0-9-]+\\.md$`);
+			const expectedMdPattern = new RegExp(`^segments/${sourceId}/[a-f0-9-]+\\.md$`);
 			expect(markdownUri).toMatch(expectedMdPattern);
 
 			// Metadata URI pattern: segments/{source-id}/{story-id}.meta.json
-			const expectedMetaPattern = new RegExp(`^segments/${extractedSourceId}/[a-f0-9-]+\\.meta\\.json$`);
+			const expectedMetaPattern = new RegExp(`^segments/${sourceId}/[a-f0-9-]+\\.meta\\.json$`);
 			expect(metadataUri).toMatch(expectedMetaPattern);
 		}
 	});

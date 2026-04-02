@@ -247,21 +247,23 @@ export async function execute(
 	// 6. Build segmentation prompt
 	const locale = config.project.supported_locales[0] ?? 'en';
 
-	// Pre-build page content as a string since the template engine
-	// uses simple placeholder interpolation, not Jinja2 for-loops
-	const pageContentLines: string[] = [];
+	// Render the base template (page_content is appended separately since
+	// the template engine uses simple placeholder interpolation, not Jinja2 for-loops)
+	const basePrompt = renderPrompt('segment', {
+		locale,
+		page_count: String(layoutDoc.pageCount),
+		has_native_text: String(layoutDoc.primaryMethod === 'native'),
+	});
+
+	// Append page content from layout JSON
+	const pageContentLines: string[] = ['', '## Page Content'];
 	for (const page of layoutDoc.pages) {
 		pageContentLines.push(`### Page ${page.pageNumber}`);
 		pageContentLines.push(page.text);
 		pageContentLines.push('');
 	}
 
-	const renderedPrompt = renderPrompt('segment', {
-		locale,
-		page_count: String(layoutDoc.pageCount),
-		has_native_text: String(layoutDoc.primaryMethod === 'native'),
-		page_content: pageContentLines.join('\n'),
-	});
+	const renderedPrompt = basePrompt + pageContentLines.join('\n');
 
 	// 7. Call Gemini structured output
 	const errors: StepError[] = [];
@@ -303,8 +305,9 @@ export async function execute(
 		);
 	}
 
-	// 8. Handle zero stories
-	if (segmentationResponse.stories.length === 0) {
+	// 8. Handle zero or missing stories
+	const stories = segmentationResponse.stories;
+	if (!Array.isArray(stories) || stories.length === 0) {
 		const durationMs = Math.round(performance.now() - startTime);
 		log.warn({ sourceId: input.sourceId }, 'Gemini returned zero stories — not updating source status');
 		return {
@@ -328,7 +331,7 @@ export async function execute(
 	// 9. Process each identified story
 	const segmentedStories: SegmentedStory[] = [];
 
-	for (const story of segmentationResponse.stories) {
+	for (const story of stories) {
 		const storyId = randomUUID();
 
 		// Build metadata JSON
