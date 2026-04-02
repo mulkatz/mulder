@@ -72,12 +72,13 @@ async function forceCleanup(sourceId: string, services: Services, pool: pg.Pool,
 // ────────────────────────────────────────────────────────────
 
 /**
- * Loads the layout.json from GCS and parses it as LayoutDocument.
+ * Loads the layout.json from GCS and parses it into a LayoutDocument.
  */
 async function loadLayoutDocument(sourceId: string, services: Services): Promise<LayoutDocument> {
 	const layoutUri = `extracted/${sourceId}/layout.json`;
 	const buffer = await services.storage.download(layoutUri);
-	return JSON.parse(buffer.toString('utf-8')) as LayoutDocument;
+	const doc: LayoutDocument = JSON.parse(buffer.toString('utf-8'));
+	return doc;
 }
 
 /**

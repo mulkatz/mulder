@@ -34,7 +34,7 @@ const segmentedStorySchemaV3 = z3.object({
 	confidence: z3.number().min(0).max(1).describe('Confidence in story boundary identification (0-1)'),
 	content_markdown: z3
 		.string()
-		.describe('Full story text as Markdown with headings, paragraphs, and formatting preserved'),
+		.describe('Full story text in Markdown format with headings, paragraphs, and formatting preserved'),
 });
 
 const segmentationResponseSchemaV3 = z3.object({
@@ -75,7 +75,8 @@ export type SegmentationResponse = z.infer<typeof segmentationResponseSchema>;
  * that Gemini can enforce server-side without `$ref` resolution.
  */
 export function getSegmentationJsonSchema(): Record<string, unknown> {
-	return zodToJsonSchema(segmentationResponseSchemaV3, {
+	const schema: Record<string, unknown> = zodToJsonSchema(segmentationResponseSchemaV3, {
 		$refStrategy: 'none',
-	}) as Record<string, unknown>;
+	});
+	return schema;
 }
