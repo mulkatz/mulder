@@ -1,0 +1,50 @@
+{
+  "sourceId": "scanned-sample-001",
+  "pageCount": 1,
+  "primaryMethod": "document_ai",
+  "extractedAt": "2026-04-02T10:00:00.000Z",
+  "pages": [
+    {
+      "pageNumber": 1,
+      "method": "document_ai",
+      "confidence": 0.91,
+      "text": "Protokoll der Gemeinderatssitzung\n\nSitzung vom 15. März 2024\nRathaus, Großer Sitzungssaal\n\nAnwesend: Bürgermeister Dr. Heinrich Müller (Vorsitz), Stadträte: Maria Schneider, Thomas Becker, Anna Hoffmann, Klaus Weber, Petra Fischer, Michael Schrnidt\n\nEntschuldigt: Stadtrat Jürgen Braun (erkrankt)\n\nTagesordnung:\n\n1. Genehmigung des Protokolls der letzten Sitzung\n2. Haushaltsentwurf 2025 - Erste Lesung\n3. Bebauungsplan \"Am Stadtpark\" - Beschluss\n4. Verschiedenes\n\nDie Sitzung wurde um 18:00 Uhr eröffnet. Der Bürgerrneister stellte die Beschlussfähigkeit fest.",
+      "blocks": [
+        {
+          "text": "Protokoll der Gemeinderatssitzung",
+          "type": "heading",
+          "boundingBox": { "x": 0.15, "y": 0.05, "width": 0.7, "height": 0.04 },
+          "confidence": 0.94
+        },
+        {
+          "text": "Sitzung vom 15. März 2024\nRathaus, Großer Sitzungssaal",
+          "type": "paragraph",
+          "boundingBox": { "x": 0.1, "y": 0.12, "width": 0.8, "height": 0.06 },
+          "confidence": 0.92
+        },
+        {
+          "text": "Anwesend: Bürgermeister Dr. Heinrich Müller (Vorsitz), Stadträte: Maria Schneider, Thomas Becker, Anna Hoffmann, Klaus Weber, Petra Fischer, Michael Schrnidt\n\nEntschuldigt: Stadtrat Jürgen Braun (erkrankt)",
+          "type": "paragraph",
+          "boundingBox": { "x": 0.1, "y": 0.2, "width": 0.8, "height": 0.12 },
+          "confidence": 0.89
+        },
+        {
+          "text": "Tagesordnung:\n\n1. Genehmigung des Protokolls der letzten Sitzung\n2. Haushaltsentwurf 2025 - Erste Lesung\n3. Bebauungsplan \"Am Stadtpark\" - Beschluss\n4. Verschiedenes",
+          "type": "list",
+          "boundingBox": { "x": 0.1, "y": 0.35, "width": 0.8, "height": 0.2 },
+          "confidence": 0.93
+        },
+        {
+          "text": "Die Sitzung wurde um 18:00 Uhr eröffnet. Der Bürgerrneister stellte die Beschlussfähigkeit fest.",
+          "type": "paragraph",
+          "boundingBox": { "x": 0.1, "y": 0.6, "width": 0.8, "height": 0.05 },
+          "confidence": 0.88
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "visionFallbackCount": 0,
+    "visionFallbackCapped": false
+  }
+}

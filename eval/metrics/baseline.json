@@ -1,0 +1,74 @@
+{
+	"timestamp": "2026-04-02T06:06:38.751Z",
+	"pages": [
+		{
+			"sourceSlug": "mixed-language-sample",
+			"pageNumber": 1,
+			"difficulty": "moderate",
+			"cer": 0.0034965034965034965,
+			"wer": 0.01834862385321101,
+			"charCount": 858,
+			"wordCount": 109
+		},
+		{
+			"sourceSlug": "multi-column-sample",
+			"pageNumber": 1,
+			"difficulty": "complex",
+			"cer": 0.004158004158004158,
+			"wer": 0.014925373134328358,
+			"charCount": 962,
+			"wordCount": 134
+		},
+		{
+			"sourceSlug": "native-text-sample",
+			"pageNumber": 1,
+			"difficulty": "simple",
+			"cer": 0,
+			"wer": 0,
+			"charCount": 563,
+			"wordCount": 67
+		},
+		{
+			"sourceSlug": "scanned-sample",
+			"pageNumber": 1,
+			"difficulty": "moderate",
+			"cer": 0.007233273056057866,
+			"wer": 0.02857142857142857,
+			"charCount": 553,
+			"wordCount": 70
+		},
+		{
+			"sourceSlug": "table-layout-sample",
+			"pageNumber": 1,
+			"difficulty": "complex",
+			"cer": 0.0028328611898017,
+			"wer": 0.008064516129032258,
+			"charCount": 706,
+			"wordCount": 124
+		}
+	],
+	"summary": {
+		"totalPages": 5,
+		"avgCer": 0.003544128380073444,
+		"avgWer": 0.013981988337600037,
+		"maxCer": 0.007233273056057866,
+		"maxWer": 0.02857142857142857,
+		"byDifficulty": {
+			"moderate": {
+				"avgCer": 0.0053648882762806814,
+				"avgWer": 0.02346002621231979,
+				"count": 2
+			},
+			"complex": {
+				"avgCer": 0.003495432673902929,
+				"avgWer": 0.011494944631680309,
+				"count": 2
+			},
+			"simple": {
+				"avgCer": 0,
+				"avgWer": 0,
+				"count": 1
+			}
+		}
+	}
+}

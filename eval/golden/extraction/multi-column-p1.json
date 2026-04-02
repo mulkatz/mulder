@@ -1,0 +1,13 @@
+{
+	"sourceSlug": "multi-column-sample",
+	"pageNumber": 1,
+	"difficulty": "complex",
+	"languages": ["de"],
+	"expectedText": "MUFON Deutschland\n\nAusgabe 47 / Dezember 2024\n\nLeitartikel: Die Phoenix-Lichter von 1997 — Eine Neubewertung\n\nAm 13. März 1997 beobachteten tausende Einwohner von Phoenix, Arizona eine Formation von Lichtern am Nachthimmel. Die Sichtungen erstreckten sich über einen Zeitraum von drei Stunden und wurden von Augenzeugen in einem Korridor von über 300 Meilen dokumentiert.\n\nDr. Lynne Kitei, die das Phänomen ausführlich dokumentiert hat, beschreibt die Lichter als \"bernsteinfarbene Kugeln, die in einer perfekten V-Formation schwebten\". Die offizielle Erklärung der US Air Force — Leuchtraketen des Barry Goldwater Range — wurde von vielen Forschern angezweifelt.\n\nNeue Radaraufzeichnungen\n\nErstmals veröffentlichte Radaraufzeichnungen der FAA zeigen eine Anomalie im Luftraum über Phoenix zwischen 20:15 und 20:45 Uhr Ortszeit. Die Daten legen nahe, dass sich ein Objekt mit einer geschätzten Spannweite von über einem Kilometer langsam in südlicher Richtung bewegte.",
+	"expectedBlockCount": 6,
+	"annotation": {
+		"author": "golden-set-v1",
+		"date": "2026-04-02",
+		"notes": "Multi-column magazine layout. Reading order across columns is critical. Domain-specific UFO content matching Mulder's origin use case."
+	}
+}

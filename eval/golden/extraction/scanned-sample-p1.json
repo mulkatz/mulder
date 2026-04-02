@@ -1,0 +1,13 @@
+{
+	"sourceSlug": "scanned-sample",
+	"pageNumber": 1,
+	"difficulty": "moderate",
+	"languages": ["de"],
+	"expectedText": "Protokoll der Gemeinderatssitzung\n\nSitzung vom 15. März 2024\nRathaus, Großer Sitzungssaal\n\nAnwesend: Bürgermeister Dr. Heinrich Müller (Vorsitz), Stadträte: Maria Schneider, Thomas Becker, Anna Hoffmann, Klaus Weber, Petra Fischer, Michael Schmidt\n\nEntschuldigt: Stadtrat Jürgen Braun (erkrankt)\n\nTagesordnung:\n\n1. Genehmigung des Protokolls der letzten Sitzung\n2. Haushaltsentwurf 2025 - Erste Lesung\n3. Bebauungsplan \"Am Stadtpark\" - Beschluss\n4. Verschiedenes\n\nDie Sitzung wurde um 18:00 Uhr eröffnet. Der Bürgermeister stellte die Beschlussfähigkeit fest.",
+	"expectedBlockCount": 5,
+	"annotation": {
+		"author": "golden-set-v1",
+		"date": "2026-04-02",
+		"notes": "Scanned municipal meeting protocol. German text, typical OCR challenges with proper names and special characters."
+	}
+}

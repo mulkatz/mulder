@@ -1,0 +1,13 @@
+{
+	"sourceSlug": "native-text-sample",
+	"pageNumber": 1,
+	"difficulty": "simple",
+	"languages": ["de"],
+	"expectedText": "Bundesamt für Flugsicherung\n\nJahresbericht 2024\n\nDie Flugsicherung in Deutschland hat im vergangenen Jahr insgesamt 3,2 Millionen Flugbewegungen koordiniert. Dies entspricht einem Anstieg von 4,7 Prozent gegenüber dem Vorjahr.\n\nDie wichtigsten Ergebnisse im Überblick:\n\n- Gesamtflugbewegungen: 3.200.000\n- Durchschnittliche Verspätung: 12,3 Minuten\n- Sicherheitsvorfälle: 47 (Kategorie A-C)\n- Personalbestand: 5.847 Mitarbeiter\n\nDer vorliegende Bericht fasst die wesentlichen Entwicklungen und Kennzahlen der deutschen Flugsicherung für das Berichtsjahr 2024 zusammen.",
+	"expectedBlockCount": 4,
+	"annotation": {
+		"author": "golden-set-v1",
+		"date": "2026-04-02",
+		"notes": "Simple single-column native PDF. German text with numbers and bullet points."
+	}
+}

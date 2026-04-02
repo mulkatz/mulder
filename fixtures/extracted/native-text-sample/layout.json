@@ -1,0 +1,44 @@
+{
+  "sourceId": "native-text-sample-001",
+  "pageCount": 1,
+  "primaryMethod": "native",
+  "extractedAt": "2026-04-02T10:00:00.000Z",
+  "pages": [
+    {
+      "pageNumber": 1,
+      "method": "native",
+      "confidence": 0.99,
+      "text": "Bundesamt für Flugsicherung\n\nJahresbericht 2024\n\nDie Flugsicherung in Deutschland hat im vergangenen Jahr insgesamt 3,2 Millionen Flugbewegungen koordiniert. Dies entspricht einem Anstieg von 4,7 Prozent gegenüber dem Vorjahr.\n\nDie wichtigsten Ergebnisse im Überblick:\n\n- Gesamtflugbewegungen: 3.200.000\n- Durchschnittliche Verspätung: 12,3 Minuten\n- Sicherheitsvorfälle: 47 (Kategorie A-C)\n- Personalbestand: 5.847 Mitarbeiter\n\nDer vorliegende Bericht fasst die wesentlichen Entwicklungen und Kennzahlen der deutschen Flugsicherung für das Berichtsjahr 2024 zusammen.",
+      "blocks": [
+        {
+          "text": "Bundesamt für Flugsicherung",
+          "type": "heading",
+          "boundingBox": { "x": 0.15, "y": 0.05, "width": 0.7, "height": 0.04 },
+          "confidence": 0.99
+        },
+        {
+          "text": "Jahresbericht 2024",
+          "type": "heading",
+          "boundingBox": { "x": 0.3, "y": 0.1, "width": 0.4, "height": 0.03 },
+          "confidence": 0.99
+        },
+        {
+          "text": "Die Flugsicherung in Deutschland hat im vergangenen Jahr insgesamt 3,2 Millionen Flugbewegungen koordiniert. Dies entspricht einem Anstieg von 4,7 Prozent gegenüber dem Vorjahr.\n\nDie wichtigsten Ergebnisse im Überblick:\n\n- Gesamtflugbewegungen: 3.200.000\n- Durchschnittliche Verspätung: 12,3 Minuten\n- Sicherheitsvorfälle: 47 (Kategorie A-C)\n- Personalbestand: 5.847 Mitarbeiter",
+          "type": "paragraph",
+          "boundingBox": { "x": 0.1, "y": 0.18, "width": 0.8, "height": 0.35 },
+          "confidence": 0.99
+        },
+        {
+          "text": "Der vorliegende Bericht fasst die wesentlichen Entwicklungen und Kennzahlen der deutschen Flugsicherung für das Berichtsjahr 2024 zusammen.",
+          "type": "paragraph",
+          "boundingBox": { "x": 0.1, "y": 0.58, "width": 0.8, "height": 0.06 },
+          "confidence": 0.99
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "visionFallbackCount": 0,
+    "visionFallbackCapped": false
+  }
+}
