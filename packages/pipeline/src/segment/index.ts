@@ -367,8 +367,9 @@ export async function execute(
 			continue;
 		}
 
-		// Create story record in PostgreSQL
+		// Create story record in PostgreSQL — pass the same UUID used for GCS paths
 		await createStory(pool, {
+			id: storyId,
 			sourceId: input.sourceId,
 			title: story.title,
 			subtitle: story.subtitle ?? undefined,
@@ -412,26 +413,7 @@ export async function execute(
 		);
 	}
 
-	// 10. Update database
-	await updateSourceStatus(pool, input.sourceId, 'segmented');
-	await upsertSourceStep(pool, {
-		sourceId: input.sourceId,
-		stepName: STEP_NAME,
-		status: 'completed',
-	});
-
-	// 11. Firestore observability (fire-and-forget)
-	services.firestore
-		.setDocument('documents', input.sourceId, {
-			status: 'segmented',
-			segmentedAt: new Date().toISOString(),
-			storyCount: segmentedStories.length,
-		})
-		.catch(() => {
-			// Silently swallow — Firestore is best-effort observability
-		});
-
-	// 12. Determine overall status
+	// 10. Determine overall status BEFORE updating database
 	let status: 'success' | 'partial' | 'failed';
 	if (errors.length === 0) {
 		status = 'success';
@@ -440,6 +422,34 @@ export async function execute(
 	} else {
 		status = 'failed';
 	}
+
+	// 11. Update database — only mark as segmented/completed when stories were persisted
+	if (status !== 'failed') {
+		await updateSourceStatus(pool, input.sourceId, 'segmented');
+		await upsertSourceStep(pool, {
+			sourceId: input.sourceId,
+			stepName: STEP_NAME,
+			status: 'completed',
+		});
+	} else {
+		// All stories failed GCS upload — leave source at 'extracted', mark step as failed
+		await upsertSourceStep(pool, {
+			sourceId: input.sourceId,
+			stepName: STEP_NAME,
+			status: 'failed',
+		});
+	}
+
+	// 12. Firestore observability (fire-and-forget)
+	services.firestore
+		.setDocument('documents', input.sourceId, {
+			status: status !== 'failed' ? 'segmented' : 'failed',
+			segmentedAt: new Date().toISOString(),
+			storyCount: segmentedStories.length,
+		})
+		.catch(() => {
+			// Silently swallow — Firestore is best-effort observability
+		});
 
 	const durationMs = Math.round(performance.now() - startTime);
 	const segmentationData: SegmentationData = {

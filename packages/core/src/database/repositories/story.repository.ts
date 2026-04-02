@@ -74,13 +74,23 @@ function mapStoryRow(row: StoryRow): Story {
  * record is returned with an updated `updated_at` timestamp.
  */
 export async function createStory(pool: pg.Pool, input: CreateStoryInput): Promise<Story> {
-	const sql = `
+	// When an explicit ID is provided (e.g. from the segment step), include it
+	// in the INSERT so the DB record matches GCS paths and metadata JSON.
+	const hasExplicitId = input.id !== undefined;
+	const sql = hasExplicitId
+		? `
+    INSERT INTO stories (id, source_id, title, subtitle, language, category, page_start, page_end, gcs_markdown_uri, gcs_metadata_uri, extraction_confidence, metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    ON CONFLICT (id) DO UPDATE SET updated_at = now()
+    RETURNING *
+  `
+		: `
     INSERT INTO stories (source_id, title, subtitle, language, category, page_start, page_end, gcs_markdown_uri, gcs_metadata_uri, extraction_confidence, metadata)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     ON CONFLICT (id) DO UPDATE SET updated_at = now()
     RETURNING *
   `;
-	const params = [
+	const baseParams = [
 		input.sourceId,
 		input.title,
 		input.subtitle ?? null,
@@ -93,6 +103,7 @@ export async function createStory(pool: pg.Pool, input: CreateStoryInput): Promi
 		input.extractionConfidence ?? null,
 		JSON.stringify(input.metadata ?? {}),
 	];
+	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
 
 	try {
 		const result = await pool.query<StoryRow>(sql, params);
