@@ -36,6 +36,7 @@ export {
 } from './config/index.js';
 export type {
 	CreateSourceInput,
+	CreateStoryInput,
 	MigrationResult,
 	MigrationStatus,
 	Source,
@@ -43,27 +44,40 @@ export type {
 	SourceStatus,
 	SourceStep,
 	SourceStepStatus,
+	Story,
+	StoryFilter,
+	StoryStatus,
 	UpdateSourceInput,
+	UpdateStoryInput,
 	UpsertSourceStepInput,
 } from './database/index.js';
 // ── Database ─────────────────────────────────────────────────
 export {
 	closeAllPools,
 	countSources,
+	countStories,
 	createSource,
+	createStory,
 	deleteSource,
 	deleteSourceStep,
+	deleteStoriesBySourceId,
+	deleteStory,
 	findAllSources,
+	findAllStories,
 	findSourceByHash,
 	findSourceById,
 	findSourceStep,
 	findSourceSteps,
+	findStoriesBySourceId,
+	findStoryById,
 	getMigrationStatus,
 	getQueryPool,
 	getWorkerPool,
 	runMigrations,
 	updateSource,
 	updateSourceStatus,
+	updateStory,
+	updateStoryStatus,
 	upsertSourceStep,
 } from './database/index.js';
 // ── LLM cache ────────────────────────────────────────────────
