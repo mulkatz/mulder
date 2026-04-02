@@ -153,9 +153,7 @@ describe('Spec 21 — Golden Test Set: Extraction', () => {
 	// ─── QA-05: WER computation is correct ───
 
 	it('QA-05: computeWER("the quick brown fox", "the quik brown") returns expected word error rate', () => {
-		const wer = evalExpr(
-			'evalPkg.computeWER("the quick brown fox", "the quik brown")',
-		) as number;
+		const wer = evalExpr('evalPkg.computeWER("the quick brown fox", "the quik brown")') as number;
 
 		// "the quick brown fox" = 4 words
 		// "the quik brown" = 3 words
@@ -175,12 +173,8 @@ describe('Spec 21 — Golden Test Set: Extraction', () => {
 	it('QA-06: computeCER and computeWER return 0.0 for identical strings', () => {
 		const testText = 'The quick brown fox jumps over the lazy dog';
 
-		const cer = evalExpr(
-			`evalPkg.computeCER(${JSON.stringify(testText)}, ${JSON.stringify(testText)})`,
-		) as number;
-		const wer = evalExpr(
-			`evalPkg.computeWER(${JSON.stringify(testText)}, ${JSON.stringify(testText)})`,
-		) as number;
+		const cer = evalExpr(`evalPkg.computeCER(${JSON.stringify(testText)}, ${JSON.stringify(testText)})`) as number;
+		const wer = evalExpr(`evalPkg.computeWER(${JSON.stringify(testText)}, ${JSON.stringify(testText)})`) as number;
 
 		expect(cer).toBe(0);
 		expect(wer).toBe(0);
