@@ -1,0 +1,17 @@
+{
+	"name": "@mulder/eval",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./dist/index.js"
+	},
+	"scripts": {
+		"build": "tsc --build",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@mulder/core": "workspace:*",
+		"@mulder/pipeline": "workspace:*"
+	}
+}
