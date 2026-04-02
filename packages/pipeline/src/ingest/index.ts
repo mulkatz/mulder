@@ -156,7 +156,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 
 	// d. Lightweight PDF metadata extraction (no page content decompression).
 	//    Reads page count from the trailer/page tree root — PDF bomb gate.
-	const pdfMeta = extractPdfMetadata(buffer);
+	const pdfMeta = await extractPdfMetadata(buffer);
 
 	// e. Check page count BEFORE full parse — rejects PDF bombs early
 	const maxPages = ctx.config.ingestion.max_pages;
