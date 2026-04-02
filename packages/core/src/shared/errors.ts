@@ -81,6 +81,18 @@ export const EXTRACT_ERROR_CODES = {
 
 export type ExtractErrorCode = (typeof EXTRACT_ERROR_CODES)[keyof typeof EXTRACT_ERROR_CODES];
 
+/** Segment step error codes. */
+export const SEGMENT_ERROR_CODES = {
+	SEGMENT_SOURCE_NOT_FOUND: 'SEGMENT_SOURCE_NOT_FOUND',
+	SEGMENT_INVALID_STATUS: 'SEGMENT_INVALID_STATUS',
+	SEGMENT_LAYOUT_NOT_FOUND: 'SEGMENT_LAYOUT_NOT_FOUND',
+	SEGMENT_LLM_FAILED: 'SEGMENT_LLM_FAILED',
+	SEGMENT_STORAGE_FAILED: 'SEGMENT_STORAGE_FAILED',
+	SEGMENT_NO_STORIES_FOUND: 'SEGMENT_NO_STORIES_FOUND',
+} as const;
+
+export type SegmentErrorCode = (typeof SEGMENT_ERROR_CODES)[keyof typeof SEGMENT_ERROR_CODES];
+
 /** Prompt template engine error codes. */
 export const PROMPT_ERROR_CODES = {
 	TEMPLATE_NOT_FOUND: 'TEMPLATE_NOT_FOUND',
@@ -100,6 +112,7 @@ export type MulderErrorCode =
 	| TaxonomyErrorCode
 	| IngestErrorCode
 	| ExtractErrorCode
+	| SegmentErrorCode
 	| PromptErrorCode;
 
 // ────────────────────────────────────────────────────────────
@@ -217,6 +230,21 @@ export class ExtractError extends MulderError {
 	) {
 		super(message, code, options);
 		this.name = 'ExtractError';
+	}
+}
+
+/** Segment step errors (segmentation failures, storage, LLM). */
+export class SegmentError extends MulderError {
+	constructor(
+		message: string,
+		code: SegmentErrorCode,
+		options?: {
+			context?: Record<string, unknown>;
+			cause?: unknown;
+		},
+	) {
+		super(message, code, options);
+		this.name = 'SegmentError';
 	}
 }
 
