@@ -5,7 +5,7 @@
  * @see docs/functional-spec.md §2.1
  */
 
-import type { StepError } from '@mulder/core';
+import type { PdfMetadata, StepError } from '@mulder/core';
 
 // ────────────────────────────────────────────────────────────
 // Input
@@ -43,6 +43,8 @@ export interface IngestFileResult {
 	nativeTextRatio: number;
 	/** True if this file hash already existed in the database. */
 	duplicate: boolean;
+	/** Lightweight PDF metadata extracted without decompressing page content. */
+	pdfMetadata?: PdfMetadata;
 }
 
 // ────────────────────────────────────────────────────────────

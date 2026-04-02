@@ -18,6 +18,7 @@ import {
 	createChildLogger,
 	createSource,
 	detectNativeText,
+	extractPdfMetadata,
 	findSourceByHash,
 	INGEST_ERROR_CODES,
 	IngestError,
@@ -153,10 +154,29 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		);
 	}
 
-	// d/e. Compute SHA-256 hash
+	// d. Lightweight PDF metadata extraction (no page content decompression).
+	//    Reads page count from the trailer/page tree root — PDF bomb gate.
+	const pdfMeta = extractPdfMetadata(buffer);
+
+	// e. Check page count BEFORE full parse — rejects PDF bombs early
+	const maxPages = ctx.config.ingestion.max_pages;
+	if (pdfMeta.pageCount > maxPages) {
+		throw new IngestError(
+			`Too many pages: ${filename} has ${pdfMeta.pageCount} pages, max is ${maxPages}`,
+			INGEST_ERROR_CODES.INGEST_TOO_MANY_PAGES,
+			{ context: { path: filePath, pageCount: pdfMeta.pageCount, maxPages } },
+		);
+	}
+
+	log.debug(
+		{ pageCount: pdfMeta.pageCount, pdfVersion: pdfMeta.pdfVersion, title: pdfMeta.title },
+		'PDF metadata extracted (lightweight)',
+	);
+
+	// f. Compute SHA-256 hash
 	const fileHash = computeFileHash(buffer);
 
-	// f. Check for duplicate (skip when pool is unavailable, e.g. dry-run)
+	// g. Check for duplicate (skip when pool is unavailable, e.g. dry-run)
 	if (ctx.pool) {
 		const existing = await findSourceByHash(ctx.pool, fileHash);
 		if (existing) {
@@ -170,22 +190,13 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 				hasNativeText: existing.hasNativeText,
 				nativeTextRatio: existing.nativeTextRatio,
 				duplicate: true,
+				pdfMetadata: pdfMeta,
 			};
 		}
 	}
 
-	// g. Native text detection (also gives us pageCount)
+	// h. Native text detection (now safe — page count already verified)
 	const textResult = await detectNativeText(buffer);
-
-	// h. Check page count
-	const maxPages = ctx.config.ingestion.max_pages;
-	if (textResult.pageCount > maxPages) {
-		throw new IngestError(
-			`Too many pages: ${filename} has ${textResult.pageCount} pages, max is ${maxPages}`,
-			INGEST_ERROR_CODES.INGEST_TOO_MANY_PAGES,
-			{ context: { path: filePath, pageCount: textResult.pageCount, maxPages } },
-		);
-	}
 
 	// i. Dry run: skip upload and DB insert
 	const sourceId = randomUUID();
@@ -202,6 +213,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			hasNativeText: textResult.hasNativeText,
 			nativeTextRatio: textResult.nativeTextRatio,
 			duplicate: false,
+			pdfMetadata: pdfMeta,
 		};
 	}
 
@@ -224,7 +236,17 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		});
 	}
 
-	// k. Create source record
+	// k. Create source record (store PDF metadata in JSONB column)
+	const pdfMetadataJson: Record<string, unknown> = {};
+	if (pdfMeta.pdfVersion) pdfMetadataJson.pdf_version = pdfMeta.pdfVersion;
+	if (pdfMeta.title) pdfMetadataJson.title = pdfMeta.title;
+	if (pdfMeta.author) pdfMetadataJson.author = pdfMeta.author;
+	if (pdfMeta.creator) pdfMetadataJson.creator = pdfMeta.creator;
+	if (pdfMeta.producer) pdfMetadataJson.producer = pdfMeta.producer;
+	if (pdfMeta.creationDate) pdfMetadataJson.creation_date = pdfMeta.creationDate.toISOString();
+	if (pdfMeta.modificationDate) pdfMetadataJson.modification_date = pdfMeta.modificationDate.toISOString();
+	if (pdfMeta.encrypted !== undefined) pdfMetadataJson.encrypted = pdfMeta.encrypted;
+
 	const source = await createSource(ctx.pool, {
 		filename,
 		storagePath,
@@ -233,6 +255,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		hasNativeText: textResult.hasNativeText,
 		nativeTextRatio: textResult.nativeTextRatio,
 		tags: ctx.tags,
+		metadata: pdfMetadataJson,
 	});
 
 	// l. Upsert source step
@@ -274,6 +297,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		hasNativeText: textResult.hasNativeText,
 		nativeTextRatio: textResult.nativeTextRatio,
 		duplicate: false,
+		pdfMetadata: pdfMeta,
 	};
 }
 
