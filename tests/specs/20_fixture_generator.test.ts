@@ -134,16 +134,25 @@ describe('Spec 20 — Fixture Generator', () => {
 	// ─── QA-02: Generate with defaults ───
 
 	it('QA-02: `mulder fixtures generate` discovers PDFs and attempts processing', () => {
-		// Run with defaults (fixtures/raw/ as input).
+		// Use a temp directory so pre-existing extracted fixtures (e.g. from eval golden sets)
+		// in the shared fixtures/extracted/ directory don't cause PDFs to be skipped.
+		const { rel, abs } = createTmpFixtureDir('generate');
+		trackTmpDir(abs);
+
+		// Add both real test PDFs
+		addTestPdf(abs, 'native-text-sample.pdf');
+		addTestPdf(abs, 'scanned-sample.pdf');
+
 		// Without valid GCP credentials, Document AI calls will fail,
 		// but we can verify the discovery and orchestration logic.
-		const { stdout, stderr, exitCode } = runCli(['fixtures', 'generate', '--verbose'], {
-			timeout: 60000,
-		});
+		const { stdout, stderr, exitCode } = runCli(
+			['fixtures', 'generate', '--input', `${rel}/raw`, '--output', rel, '--verbose'],
+			{ timeout: 60000 },
+		);
 
 		const combined = stdout + stderr;
 
-		// Should discover PDFs from fixtures/raw/
+		// Should discover PDFs
 		expect(combined).toMatch(/discover|pdf.*found|found.*pdf|pdfCount/i);
 
 		// Should attempt to process files (even though GCP calls will fail)
