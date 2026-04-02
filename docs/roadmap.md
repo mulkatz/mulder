@@ -46,7 +46,7 @@ First GCP integration. First real cost (Document AI).
 | 🟢 | B6 | Prompt template engine — `renderPrompt()` | §4.7 |
 | 🟢 | B7 | Extract step — output to GCS | §2.2, §4.4 |
 | 🟢 | B8 | Fixture generator — `mulder fixtures generate` | §11, §9.1 |
-| 🟡 | B9 | Golden test set: extraction — 5-10 annotated pages, Vitest assertions | §15.1, §15.2 |
+| 🟢 | B9 | Golden test set: extraction — 5-10 annotated pages, Vitest assertions | §15.1, §15.2 |
 
 **Also read for all M2 steps:** §2 (global step conventions), §4.5 (service abstraction), §7.3 (retry), §8 (logging), §11 (fixtures)
 

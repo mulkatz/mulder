@@ -1,0 +1,50 @@
+{
+  "sourceId": "mixed-language-sample-001",
+  "pageCount": 1,
+  "primaryMethod": "document_ai",
+  "extractedAt": "2026-04-02T10:00:00.000Z",
+  "pages": [
+    {
+      "pageNumber": 1,
+      "method": "document_ai",
+      "confidence": 0.92,
+      "text": "Forschungsbericht / Research Report\n\nInstitut für Anomalistik, Freiburg\n\nProjekt: Cross-Cultural Analysis of Unidentified Aerial Phenomena\n\nZusammenfassung\n\nDiese Studie untersucht UAP-Sichtungen in Deutschland und den USA über einen Zeitraum von fünf Jahren (2019-2024). Die Methodik basiert auf dem \"Standardized UAP Reporting Framework\" (SURF) der Scientific Coalition for UAP Studies.\n\nKey Findings\n\nThe analysis identified 847 verified reports across both countries. German reports showed a higher percentage of nocturnal sightings (73%) compared to US reports (61%). Cultural factors significantIy influenced the descriptive language used by witnesses.\n\nMethodik / Methodology\n\nDie Datenerhebung erfolgte durch standardisierte Fragebögen in Deutsch und Englisch. All reports were cross-referenced with aviation records, satellite data, and weather inforrnation.",
+      "blocks": [
+        {
+          "text": "Forschungsbericht / Research Report",
+          "type": "heading",
+          "boundingBox": { "x": 0.15, "y": 0.05, "width": 0.7, "height": 0.04 },
+          "confidence": 0.96
+        },
+        {
+          "text": "Institut für Anomalistik, Freiburg\n\nProjekt: Cross-Cultural Analysis of Unidentified Aerial Phenomena",
+          "type": "paragraph",
+          "boundingBox": { "x": 0.1, "y": 0.12, "width": 0.8, "height": 0.08 },
+          "confidence": 0.94
+        },
+        {
+          "text": "Zusammenfassung\n\nDiese Studie untersucht UAP-Sichtungen in Deutschland und den USA über einen Zeitraum von fünf Jahren (2019-2024). Die Methodik basiert auf dem \"Standardized UAP Reporting Framework\" (SURF) der Scientific Coalition for UAP Studies.",
+          "type": "paragraph",
+          "boundingBox": { "x": 0.1, "y": 0.24, "width": 0.8, "height": 0.15 },
+          "confidence": 0.93
+        },
+        {
+          "text": "Key Findings\n\nThe analysis identified 847 verified reports across both countries. German reports showed a higher percentage of nocturnal sightings (73%) compared to US reports (61%). Cultural factors significantIy influenced the descriptive language used by witnesses.",
+          "type": "paragraph",
+          "boundingBox": { "x": 0.1, "y": 0.42, "width": 0.8, "height": 0.15 },
+          "confidence": 0.90
+        },
+        {
+          "text": "Methodik / Methodology\n\nDie Datenerhebung erfolgte durch standardisierte Fragebögen in Deutsch und Englisch. All reports were cross-referenced with aviation records, satellite data, and weather inforrnation.",
+          "type": "paragraph",
+          "boundingBox": { "x": 0.1, "y": 0.6, "width": 0.8, "height": 0.12 },
+          "confidence": 0.91
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "visionFallbackCount": 0,
+    "visionFallbackCapped": false
+  }
+}

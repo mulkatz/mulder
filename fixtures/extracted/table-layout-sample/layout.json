@@ -1,0 +1,62 @@
+{
+  "sourceId": "table-layout-sample-001",
+  "pageCount": 1,
+  "primaryMethod": "document_ai",
+  "extractedAt": "2026-04-02T10:00:00.000Z",
+  "pages": [
+    {
+      "pageNumber": 1,
+      "method": "document_ai",
+      "confidence": 0.87,
+      "text": "Sichtungsdatenbank — Statistische Auswertung 2024\n\nTabelle 1: Sichtungen nach Bundesland\n\nBundesland | Anzahl | Anteil | Verifiziert\nBayern | 142 | 18,3% | 67\nNordrhein-Westfalen | 128 | 16,5% | 54\nBaden-Württemberg | 97 | 12,5% | 41\nNiedersachsen | 84 | 10,8% | 38\nHessen | 71 | 9,2% | 29\nSachsen | 58 | 7,5% | 22\nSonstige | 195 | 25,2% | 73\nGesamt | 775 | 100% | 324\n\nTabelle 2: Sichtungen nach Tageszeit\n\nZeitraum | Anzahl | Anteil\n00:00-06:00 | 187 | 24,1%\n06:00-12:00 | 58 | 7,5%\n12:00-18:00 | 93 | 12,0%\n18:00-24:00 | 437 | 56,4%\n\nAnmerkung: Die Verifizierungsrate liegt bei 41,8%. Nicht verifizierte Sichtungen wurden nicht aus der Datenbank entfernt, sondem mit dem Status \"unbestätigt\" gekennzeichnet.",
+      "blocks": [
+        {
+          "text": "Sichtungsdatenbank — Statistische Auswertung 2024",
+          "type": "heading",
+          "boundingBox": { "x": 0.1, "y": 0.05, "width": 0.8, "height": 0.04 },
+          "confidence": 0.93
+        },
+        {
+          "text": "Tabelle 1: Sichtungen nach Bundesland",
+          "type": "heading",
+          "boundingBox": { "x": 0.1, "y": 0.12, "width": 0.5, "height": 0.03 },
+          "confidence": 0.91
+        },
+        {
+          "text": "Bundesland | Anzahl | Anteil | Verifiziert\nBayern | 142 | 18,3% | 67\nNordrhein-Westfalen | 128 | 16,5% | 54\nBaden-Württemberg | 97 | 12,5% | 41\nNiedersachsen | 84 | 10,8% | 38\nHessen | 71 | 9,2% | 29\nSachsen | 58 | 7,5% | 22\nSonstige | 195 | 25,2% | 73\nGesamt | 775 | 100% | 324",
+          "type": "table",
+          "boundingBox": { "x": 0.1, "y": 0.17, "width": 0.8, "height": 0.3 },
+          "confidence": 0.85
+        },
+        {
+          "text": "Tabelle 2: Sichtungen nach Tageszeit",
+          "type": "heading",
+          "boundingBox": { "x": 0.1, "y": 0.5, "width": 0.5, "height": 0.03 },
+          "confidence": 0.90
+        },
+        {
+          "text": "Zeitraum | Anzahl | Anteil\n00:00-06:00 | 187 | 24,1%\n06:00-12:00 | 58 | 7,5%\n12:00-18:00 | 93 | 12,0%\n18:00-24:00 | 437 | 56,4%",
+          "type": "table",
+          "boundingBox": { "x": 0.1, "y": 0.55, "width": 0.8, "height": 0.18 },
+          "confidence": 0.86
+        },
+        {
+          "text": "Anmerkung: Die Verifizierungsrate liegt bei 41,8%. Nicht verifizierte Sichtungen wurden nicht aus der Datenbank entfernt, sondem mit dem Status \"unbestätigt\" gekennzeichnet.",
+          "type": "paragraph",
+          "boundingBox": { "x": 0.1, "y": 0.76, "width": 0.8, "height": 0.06 },
+          "confidence": 0.87
+        },
+        {
+          "text": "",
+          "type": "footer",
+          "boundingBox": { "x": 0.1, "y": 0.9, "width": 0.8, "height": 0.02 },
+          "confidence": 0.70
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "visionFallbackCount": 0,
+    "visionFallbackCapped": false
+  }
+}

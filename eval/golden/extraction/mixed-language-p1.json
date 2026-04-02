@@ -1,0 +1,13 @@
+{
+	"sourceSlug": "mixed-language-sample",
+	"pageNumber": 1,
+	"difficulty": "moderate",
+	"languages": ["de", "en"],
+	"expectedText": "Forschungsbericht / Research Report\n\nInstitut für Anomalistik, Freiburg\n\nProjekt: Cross-Cultural Analysis of Unidentified Aerial Phenomena\n\nZusammenfassung\n\nDiese Studie untersucht UAP-Sichtungen in Deutschland und den USA über einen Zeitraum von fünf Jahren (2019-2024). Die Methodik basiert auf dem \"Standardized UAP Reporting Framework\" (SURF) der Scientific Coalition for UAP Studies.\n\nKey Findings\n\nThe analysis identified 847 verified reports across both countries. German reports showed a higher percentage of nocturnal sightings (73%) compared to US reports (61%). Cultural factors significantly influenced the descriptive language used by witnesses.\n\nMethodik / Methodology\n\nDie Datenerhebung erfolgte durch standardisierte Fragebögen in Deutsch und Englisch. All reports were cross-referenced with aviation records, satellite data, and weather information.",
+	"expectedBlockCount": 5,
+	"annotation": {
+		"author": "golden-set-v1",
+		"date": "2026-04-02",
+		"notes": "Mixed German/English academic report. Tests multilingual handling. Alternates between DE and EN paragraphs."
+	}
+}

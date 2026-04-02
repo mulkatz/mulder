@@ -115,6 +115,15 @@ importers:
         specifier: ^13.1.3
         version: 13.1.3
 
+  packages/eval:
+    dependencies:
+      '@mulder/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mulder/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
+
   packages/evidence:
     dependencies:
       '@mulder/core':

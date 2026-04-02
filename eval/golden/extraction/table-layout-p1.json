@@ -1,0 +1,13 @@
+{
+	"sourceSlug": "table-layout-sample",
+	"pageNumber": 1,
+	"difficulty": "complex",
+	"languages": ["de"],
+	"expectedText": "Sichtungsdatenbank — Statistische Auswertung 2024\n\nTabelle 1: Sichtungen nach Bundesland\n\nBundesland | Anzahl | Anteil | Verifiziert\nBayern | 142 | 18,3% | 67\nNordrhein-Westfalen | 128 | 16,5% | 54\nBaden-Württemberg | 97 | 12,5% | 41\nNiedersachsen | 84 | 10,8% | 38\nHessen | 71 | 9,2% | 29\nSachsen | 58 | 7,5% | 22\nSonstige | 195 | 25,2% | 73\nGesamt | 775 | 100% | 324\n\nTabelle 2: Sichtungen nach Tageszeit\n\nZeitraum | Anzahl | Anteil\n00:00-06:00 | 187 | 24,1%\n06:00-12:00 | 58 | 7,5%\n12:00-18:00 | 93 | 12,0%\n18:00-24:00 | 437 | 56,4%\n\nAnmerkung: Die Verifizierungsrate liegt bei 41,8%. Nicht verifizierte Sichtungen wurden nicht aus der Datenbank entfernt, sondern mit dem Status \"unbestätigt\" gekennzeichnet.",
+	"expectedBlockCount": 7,
+	"annotation": {
+		"author": "golden-set-v1",
+		"date": "2026-04-02",
+		"notes": "Page with two data tables and surrounding text. Table structure preservation (columns, alignment) is key. Pipe-delimited table format used for ground truth."
+	}
+}
