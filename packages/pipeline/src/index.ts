@@ -1,3 +1,8 @@
+export {
+	generateExtractionSchema,
+	getEntityTypeNames,
+	getExtractionResponseSchema,
+} from './enrich/index.js';
 export type {
 	ExtractInput,
 	ExtractionData,
