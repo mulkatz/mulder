@@ -89,7 +89,7 @@ function collectAllAttributes(entityTypes: readonly EntityTypeConfig[]): Map<str
 	for (const entityType of entityTypes) {
 		for (const attr of entityType.attributes) {
 			if (!attributes.has(attr.name)) {
-				attributes.set(attr.name, attr.type as AttributeType);
+				attributes.set(attr.name, attr.type);
 			}
 		}
 	}
