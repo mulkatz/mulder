@@ -182,9 +182,7 @@ describe('Spec 25: Edge Repository', () => {
 		})) as Record<string, unknown>;
 
 		// UUID format check
-		expect(edge.id).toMatch(
-			/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-		);
+		expect(edge.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 		expect(edge.sourceEntityId).toBe(entityIds[0]);
 		expect(edge.targetEntityId).toBe(entityIds[1]);
 		expect(edge.relationship).toBe('works_with');
@@ -196,10 +194,7 @@ describe('Spec 25: Edge Repository', () => {
 		expect(edge.createdAt).toBeInstanceOf(Date);
 
 		// Verify in DB via raw SQL
-		const dbResult = await pool.query(
-			'SELECT COUNT(*) FROM entity_edges WHERE id = $1',
-			[edge.id],
-		);
+		const dbResult = await pool.query('SELECT COUNT(*) FROM entity_edges WHERE id = $1', [edge.id]);
 		expect(Number.parseInt(dbResult.rows[0].count, 10)).toBe(1);
 	});
 
@@ -250,9 +245,7 @@ describe('Spec 25: Edge Repository', () => {
 			storyId: storyIds[0],
 		})) as Record<string, unknown>;
 
-		expect(edge.id).toMatch(
-			/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-		);
+		expect(edge.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 		expect(edge.sourceEntityId).toBe(entityIds[0]);
 		expect(edge.targetEntityId).toBe(entityIds[1]);
 		expect(edge.relationship).toBe('sighted_at');
@@ -273,10 +266,7 @@ describe('Spec 25: Edge Repository', () => {
 			attributes: { detail: 'test' },
 		})) as Record<string, unknown>;
 
-		const found = (await findEdgeById(pool, created.id)) as Record<
-			string,
-			unknown
-		>;
+		const found = (await findEdgeById(pool, created.id)) as Record<string, unknown>;
 
 		expect(found).not.toBeNull();
 		// Verify camelCase mapping
@@ -296,10 +286,7 @@ describe('Spec 25: Edge Repository', () => {
 	it('QA-05: findEdgeById with non-existent UUID returns null', async () => {
 		if (!pgAvailable) return;
 
-		const found = await findEdgeById(
-			pool,
-			'00000000-0000-0000-0000-000000000000',
-		);
+		const found = await findEdgeById(pool, '00000000-0000-0000-0000-000000000000');
 		expect(found).toBeNull();
 	});
 
@@ -318,10 +305,7 @@ describe('Spec 25: Edge Repository', () => {
 			});
 		}
 
-		const edges = (await findEdgesBySourceEntityId(
-			pool,
-			entityIds[0],
-		)) as unknown[];
+		const edges = (await findEdgesBySourceEntityId(pool, entityIds[0])) as unknown[];
 		expect(edges).toHaveLength(3);
 	});
 
@@ -344,10 +328,7 @@ describe('Spec 25: Edge Repository', () => {
 			storyId: storyIds[0],
 		});
 
-		const edges = (await findEdgesByTargetEntityId(
-			pool,
-			entityIds[1],
-		)) as unknown[];
+		const edges = (await findEdgesByTargetEntityId(pool, entityIds[1])) as unknown[];
 		expect(edges).toHaveLength(2);
 	});
 
@@ -377,10 +358,7 @@ describe('Spec 25: Edge Repository', () => {
 			storyId: storyIds[0],
 		});
 
-		const edges = (await findEdgesByEntityId(
-			pool,
-			entityIds[0],
-		)) as unknown[];
+		const edges = (await findEdgesByEntityId(pool, entityIds[0])) as unknown[];
 		expect(edges).toHaveLength(3);
 	});
 
@@ -399,10 +377,7 @@ describe('Spec 25: Edge Repository', () => {
 			});
 		}
 
-		const edges = (await findEdgesByStoryId(
-			pool,
-			storyIds[0],
-		)) as unknown[];
+		const edges = (await findEdgesByStoryId(pool, storyIds[0])) as unknown[];
 		expect(edges).toHaveLength(4);
 	});
 
@@ -434,10 +409,7 @@ describe('Spec 25: Edge Repository', () => {
 			storyId: storyIds[0],
 		});
 
-		const edges = (await findEdgesByType(
-			pool,
-			'POTENTIAL_CONTRADICTION',
-		)) as unknown[];
+		const edges = (await findEdgesByType(pool, 'POTENTIAL_CONTRADICTION')) as unknown[];
 		expect(edges).toHaveLength(2);
 	});
 
@@ -468,11 +440,7 @@ describe('Spec 25: Edge Repository', () => {
 			storyId: storyIds[0],
 		});
 
-		const edges = (await findEdgesBetweenEntities(
-			pool,
-			entityIds[0],
-			entityIds[1],
-		)) as unknown[];
+		const edges = (await findEdgesBetweenEntities(pool, entityIds[0], entityIds[1])) as unknown[];
 		expect(edges).toHaveLength(2);
 	});
 
@@ -563,23 +531,17 @@ describe('Spec 25: Edge Repository', () => {
 		expect(count).toBe(3);
 
 		// Verify story 1 edges are gone
-		const remaining = (await findEdgesByStoryId(
-			pool,
-			storyIds[1],
-		)) as unknown[];
+		const remaining = (await findEdgesByStoryId(pool, storyIds[1])) as unknown[];
 		expect(remaining).toHaveLength(0);
 
 		// Verify story 0 edge survives
-		const otherEdges = (await findEdgesByStoryId(
-			pool,
-			storyIds[0],
-		)) as unknown[];
+		const otherEdges = (await findEdgesByStoryId(pool, storyIds[0])) as unknown[];
 		expect(otherEdges).toHaveLength(1);
 	});
 
 	// ─── QA-16: Delete edges by source ───
 
-	it('QA-16: deleteEdgesBySourceId returns 5 and all edges for that source\'s stories are deleted', async () => {
+	it("QA-16: deleteEdgesBySourceId returns 5 and all edges for that source's stories are deleted", async () => {
 		if (!pgAvailable) return;
 
 		// Create edges across multiple stories from sourceId
@@ -606,9 +568,7 @@ describe('Spec 25: Edge Repository', () => {
 		expect(count).toBe(5);
 
 		// Verify all edges are gone
-		const totalResult = await pool.query(
-			'SELECT COUNT(*) FROM entity_edges',
-		);
+		const totalResult = await pool.query('SELECT COUNT(*) FROM entity_edges');
 		expect(Number.parseInt(totalResult.rows[0].count, 10)).toBe(0);
 	});
 
@@ -679,17 +639,11 @@ describe('Spec 25: Edge Repository', () => {
 		await deleteStory(pool, storyIds[2]);
 
 		// Verify edges for story 2 are gone
-		const storyEdges = (await findEdgesByStoryId(
-			pool,
-			storyIds[2],
-		)) as unknown[];
+		const storyEdges = (await findEdgesByStoryId(pool, storyIds[2])) as unknown[];
 		expect(storyEdges).toHaveLength(0);
 
 		// Verify edge in story 0 survives
-		const survivorEdges = (await findEdgesByStoryId(
-			pool,
-			storyIds[0],
-		)) as unknown[];
+		const survivorEdges = (await findEdgesByStoryId(pool, storyIds[0])) as unknown[];
 		expect(survivorEdges).toHaveLength(1);
 
 		// Recreate story 2 for subsequent tests
@@ -714,18 +668,13 @@ describe('Spec 25: Edge Repository', () => {
 			edgeType: 'CONFIRMED_CONTRADICTION',
 		})) as Record<string, unknown>;
 
-		expect(edge.id).toMatch(
-			/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-		);
+		expect(edge.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 		expect(edge.storyId).toBeNull();
 		expect(edge.edgeType).toBe('CONFIRMED_CONTRADICTION');
 		expect(edge.relationship).toBe('analysis_link');
 
 		// Verify via raw SQL
-		const dbResult = await pool.query(
-			'SELECT story_id FROM entity_edges WHERE id = $1',
-			[edge.id],
-		);
+		const dbResult = await pool.query('SELECT story_id FROM entity_edges WHERE id = $1', [edge.id]);
 		expect(dbResult.rows[0].story_id).toBeNull();
 	});
 
@@ -758,11 +707,7 @@ describe('Spec 25: Edge Repository', () => {
 		expect(contra.edgeType).toBe('POTENTIAL_CONTRADICTION');
 
 		// Both should exist
-		const between = (await findEdgesBetweenEntities(
-			pool,
-			entityIds[0],
-			entityIds[1],
-		)) as unknown[];
+		const between = (await findEdgesBetweenEntities(pool, entityIds[0], entityIds[1])) as unknown[];
 		expect(between).toHaveLength(2);
 	});
 });

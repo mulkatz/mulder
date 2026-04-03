@@ -23,10 +23,7 @@ const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.yaml');
  * Returns stdout, stderr, and exitCode.
  * Uses spawnSync with no shell for safety (equivalent to execFileSync).
  */
-function runCli(
-	args: string[],
-	options?: { cwd?: string },
-): { stdout: string; stderr: string; exitCode: number } {
+function runCli(args: string[], options?: { cwd?: string }): { stdout: string; stderr: string; exitCode: number } {
 	const result = spawnSync('node', [CLI, ...args], {
 		cwd: options?.cwd ?? ROOT,
 		encoding: 'utf-8',
@@ -83,7 +80,7 @@ describe('Spec 26: JSON Schema Generator — QA Contract', () => {
 
 			const props = schema.properties as Record<string, Record<string, unknown>>;
 			const items = props.entities.items as Record<string, unknown>;
-			const itemProps = (items.properties as Record<string, Record<string, unknown>>);
+			const itemProps = items.properties as Record<string, Record<string, unknown>>;
 			const typeField = itemProps.type;
 
 			expect(typeField.enum).toBeDefined();
@@ -114,7 +111,7 @@ describe('Spec 26: JSON Schema Generator — QA Contract', () => {
 
 			const props = schema.properties as Record<string, Record<string, unknown>>;
 			const items = props.relationships.items as Record<string, unknown>;
-			const itemProps = (items.properties as Record<string, Record<string, unknown>>);
+			const itemProps = items.properties as Record<string, Record<string, unknown>>;
 			const relTypeField = itemProps.relationship_type;
 
 			expect(relTypeField.enum).toBeDefined();
@@ -135,9 +132,9 @@ describe('Spec 26: JSON Schema Generator — QA Contract', () => {
 		it('date maps to string, geo_point maps to object with lat/lng, string[] maps to array of strings', () => {
 			const props = schema.properties as Record<string, Record<string, unknown>>;
 			const items = props.entities.items as Record<string, unknown>;
-			const itemProps = (items.properties as Record<string, Record<string, unknown>>);
+			const itemProps = items.properties as Record<string, Record<string, unknown>>;
 			const attributes = itemProps.attributes;
-			const attrProps = (attributes.properties as Record<string, Record<string, unknown>>);
+			const attrProps = attributes.properties as Record<string, Record<string, unknown>>;
 
 			// date attribute (e.g., "date" on event entity) → type: "string"
 			expect(attrProps.date).toBeDefined();
@@ -170,16 +167,8 @@ describe('Spec 26: JSON Schema Generator — QA Contract', () => {
 
 	describe('QA-05: Schema is deterministic', () => {
 		it('same config generates byte-identical JSON output', () => {
-			const { stdout: stdout1, exitCode: exitCode1 } = runCli([
-				'config',
-				'schema',
-				EXAMPLE_CONFIG,
-			]);
-			const { stdout: stdout2, exitCode: exitCode2 } = runCli([
-				'config',
-				'schema',
-				EXAMPLE_CONFIG,
-			]);
+			const { stdout: stdout1, exitCode: exitCode1 } = runCli(['config', 'schema', EXAMPLE_CONFIG]);
+			const { stdout: stdout2, exitCode: exitCode2 } = runCli(['config', 'schema', EXAMPLE_CONFIG]);
 
 			expect(exitCode1).toBe(0);
 			expect(exitCode2).toBe(0);
@@ -237,7 +226,7 @@ describe('Spec 26: JSON Schema Generator — QA Contract', () => {
 		it('schema entity type enum does not allow unknown types', () => {
 			const props = schema.properties as Record<string, Record<string, unknown>>;
 			const items = props.entities.items as Record<string, unknown>;
-			const itemProps = (items.properties as Record<string, Record<string, unknown>>);
+			const itemProps = items.properties as Record<string, Record<string, unknown>>;
 			const typeField = itemProps.type;
 
 			const enumValues = typeField.enum as string[];
@@ -252,7 +241,7 @@ describe('Spec 26: JSON Schema Generator — QA Contract', () => {
 
 			// Also verify relationship_type has the same constraint
 			const relItems = props.relationships.items as Record<string, unknown>;
-			const relProps = (relItems.properties as Record<string, Record<string, unknown>>);
+			const relProps = relItems.properties as Record<string, Record<string, unknown>>;
 			const relTypeEnum = relProps.relationship_type.enum as string[];
 			expect(relTypeEnum).not.toContain('UNKNOWN_RELATIONSHIP');
 			expect(relTypeEnum.length).toBeGreaterThan(0);
@@ -307,17 +296,8 @@ describe('Spec 26: JSON Schema Generator — CLI Test Matrix', () => {
 
 	describe('CLI-02: mulder config schema --json produces same output', () => {
 		it('--json flag produces same output as without flag', () => {
-			const { stdout: withoutFlag, exitCode: exit1 } = runCli([
-				'config',
-				'schema',
-				EXAMPLE_CONFIG,
-			]);
-			const { stdout: withFlag, exitCode: exit2 } = runCli([
-				'config',
-				'schema',
-				EXAMPLE_CONFIG,
-				'--json',
-			]);
+			const { stdout: withoutFlag, exitCode: exit1 } = runCli(['config', 'schema', EXAMPLE_CONFIG]);
+			const { stdout: withFlag, exitCode: exit2 } = runCli(['config', 'schema', EXAMPLE_CONFIG, '--json']);
 
 			expect(exit1).toBe(0);
 			expect(exit2).toBe(0);
@@ -396,11 +376,7 @@ describe('CLI Smoke Tests: config schema', () => {
 
 	describe('SMOKE-03: missing config file gives error', () => {
 		it('exits non-zero when config file does not exist', () => {
-			const { exitCode, stderr } = runCli([
-				'config',
-				'schema',
-				'/nonexistent/path/mulder.config.yaml',
-			]);
+			const { exitCode, stderr } = runCli(['config', 'schema', '/nonexistent/path/mulder.config.yaml']);
 
 			expect(exitCode).not.toBe(0);
 			expect(stderr.length).toBeGreaterThan(0);
@@ -426,11 +402,7 @@ describe('CLI Smoke Tests: config schema', () => {
 	describe('SMOKE-05: config without ontology gives error', () => {
 		it('exits non-zero when config has no ontology section', () => {
 			const noOntologyPath = join(tmpDir, 'no-ontology.yaml');
-			writeFileSync(
-				noOntologyPath,
-				'project:\n  name: "test"\n  description: "test"\n',
-				'utf-8',
-			);
+			writeFileSync(noOntologyPath, 'project:\n  name: "test"\n  description: "test"\n', 'utf-8');
 
 			const { exitCode, stderr } = runCli(['config', 'schema', noOntologyPath]);
 

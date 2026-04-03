@@ -68,7 +68,7 @@ function isPgAvailable(): boolean {
 	}
 }
 
-const pgAvailable = isPgAvailable();
+const _pgAvailable = isPgAvailable();
 
 // ===========================================================================
 // 1. Top-Level CLI
@@ -200,12 +200,7 @@ describe('CLI Smoke: ingest', () => {
 	});
 
 	it.skipIf(!cliAvailable)('SMOKE-17: ingest --dry-run --cost-estimate combo', () => {
-		const { exitCode } = runCli([
-			'ingest',
-			'--dry-run',
-			'--cost-estimate',
-			NATIVE_TEXT_PDF,
-		]);
+		const { exitCode } = runCli(['ingest', '--dry-run', '--cost-estimate', NATIVE_TEXT_PDF]);
 		expect([0, 1]).toContain(exitCode);
 	});
 

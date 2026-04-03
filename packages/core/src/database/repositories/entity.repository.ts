@@ -18,6 +18,11 @@ import type { CreateEntityInput, Entity, EntityFilter, TaxonomyStatus, UpdateEnt
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'entity-repository' });
 
+/** Type guard for Record<string, unknown> — avoids `as` assertions. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 // ────────────────────────────────────────────────────────────
 // Row mapper (snake_case DB -> camelCase TS)
 // ────────────────────────────────────────────────────────────
@@ -507,9 +512,8 @@ export async function findCandidatesByAttributes(
 
 	// Geo point proximity (100m radius via PostGIS)
 	const geoPoint = attributes.geo_point;
-	if (geoPoint !== null && typeof geoPoint === 'object' && !Array.isArray(geoPoint)) {
-		const geo = geoPoint as Record<string, unknown>;
-		if (typeof geo.lat === 'number' && typeof geo.lng === 'number') {
+	if (isRecord(geoPoint)) {
+		if (typeof geoPoint.lat === 'number' && typeof geoPoint.lng === 'number') {
 			conditions.push(
 				`(attributes->'geo_point' IS NOT NULL
 				AND ST_DWithin(
@@ -518,7 +522,7 @@ export async function findCandidatesByAttributes(
 					100
 				))`,
 			);
-			params.push(geo.lng, geo.lat);
+			params.push(geoPoint.lng, geoPoint.lat);
 			paramIndex += 2;
 		}
 	}

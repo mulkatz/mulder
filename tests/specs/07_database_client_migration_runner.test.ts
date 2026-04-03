@@ -353,7 +353,7 @@ describe('Spec 07: Database Client + Migration Runner', () => {
 				'utf-8',
 			);
 
-			const { stdout, stderr, exitCode } = runScript(`
+			const { stdout, stderr } = runScript(`
 				import { getWorkerPool, closeAllPools } from '${DB_MODULE}';
 				import { runMigrations } from '${MIGRATE_MODULE}';
 

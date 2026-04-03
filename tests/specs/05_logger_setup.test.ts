@@ -248,7 +248,7 @@ const { createLogger, createChildLogger, withDuration, ConfigError } = core;`;
 
 	describe('QA-07: Duration helper logs on error', () => {
 		it('logs error-level entry with duration_ms and re-throws', () => {
-			const { stdout, stderr, exitCode } = runScriptFull([
+			const { stdout, stderr } = runScriptFull([
 				importCore,
 				'const logger = createLogger();',
 				'try {',

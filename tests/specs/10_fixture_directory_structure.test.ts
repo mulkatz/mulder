@@ -157,7 +157,7 @@ describe('Spec 10: Fixture Directory Structure', () => {
 
 	describe('QA-05: No regression — existing tests pass', () => {
 		it('fixture files do not interfere with TypeScript compilation (no .ts files in fixtures/)', () => {
-			let grepExitCode: number;
+			let _grepExitCode: number;
 			let grepOutput = '';
 			try {
 				grepOutput = execFileSync('find', [FIXTURES_ROOT, '-name', '*.ts', '-type', 'f'], {
@@ -165,10 +165,10 @@ describe('Spec 10: Fixture Directory Structure', () => {
 					encoding: 'utf-8',
 					timeout: 10_000,
 				});
-				grepExitCode = 0;
+				_grepExitCode = 0;
 			} catch (e: unknown) {
 				const error = e as { status?: number; stdout?: string };
-				grepExitCode = error.status ?? 1;
+				_grepExitCode = error.status ?? 1;
 				grepOutput = error.stdout ?? '';
 			}
 

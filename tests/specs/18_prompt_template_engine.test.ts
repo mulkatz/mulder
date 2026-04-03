@@ -1,7 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { resolve } from 'node:path';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 

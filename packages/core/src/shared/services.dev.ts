@@ -195,11 +195,9 @@ class DevDocumentAiService implements DocumentAiService {
  * JSON Schema properties and returns appropriate fixture data.
  */
 class DevLlmService implements LlmService {
-	private readonly basePath: string;
 	private readonly logger: Logger;
 
-	constructor(fixturesPath: string, logger: Logger) {
-		this.basePath = fixturesPath;
+	constructor(_fixturesPath: string, logger: Logger) {
 		this.logger = logger;
 	}
 
@@ -258,14 +256,12 @@ class DevLlmService implements LlmService {
  * Falls back to zero vectors if no fixture exists.
  */
 class DevEmbeddingService implements EmbeddingService {
-	private readonly basePath: string;
 	private readonly logger: Logger;
 
 	/** Dimensionality matching text-embedding-004 default. */
 	private static readonly VECTOR_DIM = 768;
 
-	constructor(fixturesPath: string, logger: Logger) {
-		this.basePath = join(fixturesPath, 'embeddings');
+	constructor(_fixturesPath: string, logger: Logger) {
 		this.logger = logger;
 	}
 
@@ -321,7 +317,7 @@ class DevFirestoreService implements FirestoreService {
  * @param logger - Logger instance for debug output.
  * @returns A `Services` bundle with all fixture-based implementations.
  */
-export function createDevServices(config: MulderConfig, logger: Logger): Services {
+export function createDevServices(_config: MulderConfig, logger: Logger): Services {
 	// fixtures/ = checked-in test data (read-only, deterministic)
 	// .local/storage/ = runtime data from dev-mode pipeline runs (gitignored)
 	const fixturesPath = join(process.cwd(), 'fixtures');

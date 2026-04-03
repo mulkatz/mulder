@@ -1,5 +1,5 @@
-import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -38,10 +38,10 @@ let pool: pg.Pool;
 
 // Dynamically imported repository functions (from @mulder/core)
 let createTaxonomyEntry: (...args: unknown[]) => Promise<unknown>;
-let findTaxonomyEntryById: (...args: unknown[]) => Promise<unknown>;
-let findTaxonomyEntryByName: (...args: unknown[]) => Promise<unknown>;
+let _findTaxonomyEntryById: (...args: unknown[]) => Promise<unknown>;
+let _findTaxonomyEntryByName: (...args: unknown[]) => Promise<unknown>;
 let findAllTaxonomyEntries: (...args: unknown[]) => Promise<unknown>;
-let countTaxonomyEntries: (...args: unknown[]) => Promise<unknown>;
+let _countTaxonomyEntries: (...args: unknown[]) => Promise<unknown>;
 let updateTaxonomyEntry: (...args: unknown[]) => Promise<unknown>;
 let deleteTaxonomyEntry: (...args: unknown[]) => Promise<unknown>;
 let searchTaxonomyBySimilarity: (...args: unknown[]) => Promise<unknown>;
@@ -101,10 +101,10 @@ describe('Spec 27: Taxonomy Normalization — QA Contract', () => {
 		const taxMod = await import(TAXONOMY_MODULE);
 
 		createTaxonomyEntry = dbMod.createTaxonomyEntry;
-		findTaxonomyEntryById = dbMod.findTaxonomyEntryById;
-		findTaxonomyEntryByName = dbMod.findTaxonomyEntryByName;
+		_findTaxonomyEntryById = dbMod.findTaxonomyEntryById;
+		_findTaxonomyEntryByName = dbMod.findTaxonomyEntryByName;
 		findAllTaxonomyEntries = dbMod.findAllTaxonomyEntries;
-		countTaxonomyEntries = dbMod.countTaxonomyEntries;
+		_countTaxonomyEntries = dbMod.countTaxonomyEntries;
 		updateTaxonomyEntry = dbMod.updateTaxonomyEntry;
 		deleteTaxonomyEntry = dbMod.deleteTaxonomyEntry;
 		searchTaxonomyBySimilarity = dbMod.searchTaxonomyBySimilarity;
@@ -145,10 +145,9 @@ describe('Spec 27: Taxonomy Normalization — QA Contract', () => {
 		expect(entry.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
 		// Verify via raw SQL
-		const dbResult = await pool.query(
-			'SELECT canonical_name, entity_type, status FROM taxonomy WHERE id = $1',
-			[entry.id],
-		);
+		const dbResult = await pool.query('SELECT canonical_name, entity_type, status FROM taxonomy WHERE id = $1', [
+			entry.id,
+		]);
 		expect(dbResult.rows).toHaveLength(1);
 		expect(dbResult.rows[0].canonical_name).toBe('Josef Allen Hynek');
 		expect(dbResult.rows[0].entity_type).toBe('person');
@@ -204,13 +203,9 @@ describe('Spec 27: Taxonomy Normalization — QA Contract', () => {
 		expect(updated).toBeDefined();
 
 		// Verify via raw SQL
-		const dbResult = await pool.query('SELECT status, updated_at FROM taxonomy WHERE id = $1', [
-			entry.id,
-		]);
+		const dbResult = await pool.query('SELECT status, updated_at FROM taxonomy WHERE id = $1', [entry.id]);
 		expect(dbResult.rows[0].status).toBe('confirmed');
-		expect(new Date(dbResult.rows[0].updated_at).getTime()).toBeGreaterThan(
-			originalUpdatedAt.getTime(),
-		);
+		expect(new Date(dbResult.rows[0].updated_at).getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
 	});
 
 	// ─── QA-04: Taxonomy CRUD — delete entry ───
@@ -249,26 +244,20 @@ describe('Spec 27: Taxonomy Normalization — QA Contract', () => {
 			entityType: 'location',
 		});
 
-		const results = (await searchTaxonomyBySimilarity(
-			pool,
-			'J. Allen Hynek',
-			'person',
-			0.3,
-		)) as Array<{ entry: Record<string, unknown>; similarity: number }>;
+		const results = (await searchTaxonomyBySimilarity(pool, 'J. Allen Hynek', 'person', 0.3)) as Array<{
+			entry: Record<string, unknown>;
+			similarity: number;
+		}>;
 
 		expect(results.length).toBeGreaterThanOrEqual(1);
 
 		// Must include Josef Allen Hynek with similarity > 0.3
-		const hynekMatch = results.find(
-			(r) => (r.entry as Record<string, unknown>).canonicalName === 'Josef Allen Hynek',
-		);
+		const hynekMatch = results.find((r) => (r.entry as Record<string, unknown>).canonicalName === 'Josef Allen Hynek');
 		expect(hynekMatch).toBeDefined();
-		expect(hynekMatch!.similarity).toBeGreaterThan(0.3);
+		expect(hynekMatch?.similarity).toBeGreaterThan(0.3);
 
 		// Must NOT include Roswell (wrong entity_type)
-		const roswellMatch = results.find(
-			(r) => (r.entry as Record<string, unknown>).canonicalName === 'Roswell',
-		);
+		const roswellMatch = results.find((r) => (r.entry as Record<string, unknown>).canonicalName === 'Roswell');
 		expect(roswellMatch).toBeUndefined();
 	});
 
@@ -283,20 +272,16 @@ describe('Spec 27: Taxonomy Normalization — QA Contract', () => {
 			aliases: ['München', 'Monaco di Baviera'],
 		});
 
-		const results = (await searchTaxonomyBySimilarity(
-			pool,
-			'München',
-			'location',
-			0.3,
-		)) as Array<{ entry: Record<string, unknown>; similarity: number }>;
+		const results = (await searchTaxonomyBySimilarity(pool, 'München', 'location', 0.3)) as Array<{
+			entry: Record<string, unknown>;
+			similarity: number;
+		}>;
 
 		expect(results.length).toBeGreaterThanOrEqual(1);
 
-		const munichMatch = results.find(
-			(r) => (r.entry as Record<string, unknown>).canonicalName === 'Munich',
-		);
+		const munichMatch = results.find((r) => (r.entry as Record<string, unknown>).canonicalName === 'Munich');
 		expect(munichMatch).toBeDefined();
-		expect(munichMatch!.similarity).toBeGreaterThan(0.3);
+		expect(munichMatch?.similarity).toBeGreaterThan(0.3);
 	});
 
 	// ─── QA-07: Trigram search — excludes rejected entries ───
@@ -312,17 +297,13 @@ describe('Spec 27: Taxonomy Normalization — QA Contract', () => {
 
 		await updateTaxonomyEntry(pool, entry.id, { status: 'rejected' });
 
-		const results = (await searchTaxonomyBySimilarity(
-			pool,
-			'Rejected Entity',
-			'person',
-			0.3,
-		)) as Array<{ entry: Record<string, unknown>; similarity: number }>;
+		const results = (await searchTaxonomyBySimilarity(pool, 'Rejected Entity', 'person', 0.3)) as Array<{
+			entry: Record<string, unknown>;
+			similarity: number;
+		}>;
 
 		// The rejected entry must NOT appear
-		const rejectedMatch = results.find(
-			(r) => (r.entry as Record<string, unknown>).id === entry.id,
-		);
+		const rejectedMatch = results.find((r) => (r.entry as Record<string, unknown>).id === entry.id);
 		expect(rejectedMatch).toBeUndefined();
 	});
 
@@ -338,18 +319,11 @@ describe('Spec 27: Taxonomy Normalization — QA Contract', () => {
 			status: 'auto',
 		});
 
-		const result = (await normalizeTaxonomy(
-			pool,
-			'J. Allen Hynek',
-			'person',
-			0.3,
-		)) as Record<string, unknown>;
+		const result = (await normalizeTaxonomy(pool, 'J. Allen Hynek', 'person', 0.3)) as Record<string, unknown>;
 
 		expect(result.action).toBe('matched');
 		expect(result.similarity).toBeGreaterThanOrEqual(0.3);
-		expect((result.taxonomyEntry as Record<string, unknown>).canonicalName).toBe(
-			'Josef Allen Hynek',
-		);
+		expect((result.taxonomyEntry as Record<string, unknown>).canonicalName).toBe('Josef Allen Hynek');
 	});
 
 	// ─── QA-09: Normalize — creates new entry when no match ───
@@ -358,12 +332,7 @@ describe('Spec 27: Taxonomy Normalization — QA Contract', () => {
 		if (!pgAvailable) return;
 
 		// Taxonomy table is empty (cleaned in beforeEach)
-		const result = (await normalizeTaxonomy(
-			pool,
-			'Bob Lazar',
-			'person',
-			0.4,
-		)) as Record<string, unknown>;
+		const result = (await normalizeTaxonomy(pool, 'Bob Lazar', 'person', 0.4)) as Record<string, unknown>;
 
 		expect(result.action).toBe('created');
 		expect(result.similarity).toBeNull();
@@ -395,12 +364,7 @@ describe('Spec 27: Taxonomy Normalization — QA Contract', () => {
 		})) as Record<string, unknown>;
 
 		// Normalize with a variant name
-		const result = (await normalizeTaxonomy(
-			pool,
-			'Dr. J. Allen Hynek',
-			'person',
-			0.3,
-		)) as Record<string, unknown>;
+		const result = (await normalizeTaxonomy(pool, 'Dr. J. Allen Hynek', 'person', 0.3)) as Record<string, unknown>;
 
 		expect(result.action).toBe('matched');
 
@@ -423,12 +387,7 @@ describe('Spec 27: Taxonomy Normalization — QA Contract', () => {
 			aliases: [],
 		})) as Record<string, unknown>;
 
-		const result = (await normalizeTaxonomy(
-			pool,
-			'J. Allen Hynek',
-			'person',
-			0.3,
-		)) as Record<string, unknown>;
+		const result = (await normalizeTaxonomy(pool, 'J. Allen Hynek', 'person', 0.3)) as Record<string, unknown>;
 
 		expect(result.action).toBe('matched');
 
@@ -481,7 +440,7 @@ describe('Spec 27: Taxonomy Normalization — QA Contract', () => {
 		if (!pgAvailable) return;
 
 		// Create entries with different statuses
-		const autoEntry = (await createTaxonomyEntry(pool, {
+		const _autoEntry = (await createTaxonomyEntry(pool, {
 			canonicalName: 'Auto Entry',
 			entityType: 'person',
 			status: 'auto',

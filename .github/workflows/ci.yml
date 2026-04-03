@@ -78,10 +78,19 @@ jobs:
       - name: Build packages
         run: pnpm build
 
+      - name: Install PostGIS into PostgreSQL container
+        run: |
+          PG_CONTAINER=$(docker ps -q --filter "ancestor=pgvector/pgvector:pg17")
+          docker exec "$PG_CONTAINER" bash -c "apt-get update && apt-get install -y --no-install-recommends postgresql-17-postgis-3 postgresql-17-postgis-3-scripts && rm -rf /var/lib/apt/lists/*"
+
       - name: Install PostgreSQL extensions
         run: |
           PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS vector;"
           PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+          PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+
+      - name: Setup test config
+        run: cp mulder.config.example.yaml mulder.config.yaml
 
       - name: Run tests
         run: pnpm test

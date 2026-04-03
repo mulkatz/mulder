@@ -184,7 +184,7 @@ describe('Spec 14: Source Repository', () => {
 
 			cleanSourceData();
 
-			const { stdout, stderr, exitCode } = runScript(`
+			const { stdout, stderr } = runScript(`
 				import { createSource, closeAllPools, getWorkerPool } from '${DB_MODULE}';
 
 				const config = ${DB_CONFIG_JSON};
@@ -243,7 +243,7 @@ describe('Spec 14: Source Repository', () => {
 
 			const fixedHash = 'hash_qa02_idempotent';
 
-			const { stdout, stderr, exitCode } = runScript(`
+			const { stdout, stderr } = runScript(`
 				import { createSource, closeAllPools, getWorkerPool } from '${DB_MODULE}';
 
 				const config = ${DB_CONFIG_JSON};
@@ -376,7 +376,7 @@ describe('Spec 14: Source Repository', () => {
 
 			cleanSourceData();
 
-			const uniqueHash = 'hash_qa05_' + Date.now();
+			const uniqueHash = `hash_qa05_${Date.now()}`;
 
 			const { stdout, stderr } = runScript(`
 				import { createSource, findSourceByHash, closeAllPools, getWorkerPool } from '${DB_MODULE}';
@@ -568,7 +568,7 @@ describe('Spec 14: Source Repository', () => {
 			// Extract source ID from output to verify via psql
 			const idMatch = combined.match(/SOURCE_ID:([a-f0-9-]+)/);
 			expect(idMatch).not.toBeNull();
-			const sourceId = idMatch![1];
+			const sourceId = idMatch?.[1];
 
 			// Verify source is gone
 			const sourceCount = runSql(`SELECT COUNT(*) FROM sources WHERE id = '${sourceId}';`);
@@ -689,7 +689,7 @@ describe('Spec 14: Source Repository', () => {
 			// Verify only one row exists via psql
 			const idMatch = combined.match(/SOURCE_ID:([a-f0-9-]+)/);
 			expect(idMatch).not.toBeNull();
-			const sourceId = idMatch![1];
+			const sourceId = idMatch?.[1];
 
 			const stepCount = runSql(
 				`SELECT COUNT(*) FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'extract';`,

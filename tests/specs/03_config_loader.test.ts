@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -96,14 +96,14 @@ describe('Spec 03: Config Loader + Zod Schemas', () => {
 	let tmpDir: string;
 	let loadConfig: (path?: string) => unknown;
 	let ConfigValidationError: new (...args: unknown[]) => Error;
-	let CONFIG_DEFAULTS: Record<string, unknown>;
+	let _CONFIG_DEFAULTS: Record<string, unknown>;
 
 	beforeAll(async () => {
 		// Dynamic import from the built @mulder/core package
 		const core = await import(resolve(ROOT, 'packages/core/dist/index.js'));
 		loadConfig = core.loadConfig;
 		ConfigValidationError = core.ConfigValidationError;
-		CONFIG_DEFAULTS = core.CONFIG_DEFAULTS;
+		_CONFIG_DEFAULTS = core.CONFIG_DEFAULTS;
 
 		// Create temp directory for test config files
 		tmpDir = mkdtempSync(join(tmpdir(), 'mulder-qa-03-'));

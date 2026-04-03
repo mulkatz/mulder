@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import pg from 'pg';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CORE_MODULE = resolve(ROOT, 'packages/core/dist/index.js');
@@ -353,9 +353,7 @@ describe('Spec 22: Story Repository', () => {
 		}
 
 		// Filter with limit
-		const limited = (await findAllStories(pool, { status: 'segmented', limit: 1 })) as Array<
-			Record<string, unknown>
-		>;
+		const limited = (await findAllStories(pool, { status: 'segmented', limit: 1 })) as Array<Record<string, unknown>>;
 		expect(limited.length).toBe(1);
 
 		// Filter by category
