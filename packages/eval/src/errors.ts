@@ -21,6 +21,10 @@ export const EVAL_ERROR_CODES = {
 	PAGE_NOT_FOUND: 'EVAL_PAGE_NOT_FOUND',
 	/** Golden directory does not exist or is empty. */
 	GOLDEN_DIR_EMPTY: 'EVAL_GOLDEN_DIR_EMPTY',
+	/** Segment metadata parse or structure error. */
+	SEGMENT_META_PARSE_ERROR: 'EVAL_SEGMENT_META_PARSE_ERROR',
+	/** Entity fixture parse or structure error. */
+	ENTITY_FIXTURE_PARSE_ERROR: 'EVAL_ENTITY_FIXTURE_PARSE_ERROR',
 } as const;
 
 export type EvalErrorCode = (typeof EVAL_ERROR_CODES)[keyof typeof EVAL_ERROR_CODES];
