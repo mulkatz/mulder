@@ -65,7 +65,7 @@ Core intelligence. Where Mulder becomes more than an OCR tool.
 | 🟢 | C3 | Entity + alias repositories — CRUD | §4.3 (entities, entity_aliases, story_entities), §2.4 |
 | 🟢 | C4 | Edge repository — CRUD for `entity_edges` | §4.3 (entity_edges), §2.4 |
 | 🟢 | C5 | JSON Schema generator — `zod-to-json-schema` | §2.4, §14 (why zod-to-json-schema) |
-| ⚪ | C6 | Taxonomy normalization — `pg_trgm` matching | §6.2, §2.4 |
+| 🟡 | C6 | Taxonomy normalization — `pg_trgm` matching | §6.2, §2.4 |
 | ⚪ | C7 | Cross-lingual entity resolution — 3-tier | §2.4 (resolution strategy), §4.8 (embedding calls) |
 | ⚪ | C8 | Enrich step — `mulder enrich <id>` | §2.4, §6 (especially §6.2), §1 (enrich cmd) |
 | ⚪ | C9 | Cascading reset function — PL/pgSQL | §4.3.1, §3.4 |
