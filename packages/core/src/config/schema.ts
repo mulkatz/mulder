@@ -109,6 +109,13 @@ const enrichmentObj = z.object({
 });
 const enrichmentSchema = enrichmentObj.default(defaults(enrichmentObj));
 
+// --- Taxonomy ---
+
+const taxonomyObj = z.object({
+	normalization_threshold: z.number().min(0).max(1).default(0.4),
+});
+const taxonomySchema = taxonomyObj.default(defaults(taxonomyObj));
+
 // --- Entity Resolution ---
 
 const resolutionStrategySchema = z.object({
@@ -319,6 +326,7 @@ const baseMulderConfigSchema = z.object({
 	ingestion: ingestionSchema,
 	extraction: extractionSchema,
 	enrichment: enrichmentSchema,
+	taxonomy: taxonomySchema,
 	entity_resolution: entityResolutionSchema,
 	deduplication: deduplicationSchema,
 	embedding: embeddingSchema,
@@ -396,6 +404,7 @@ export {
 	retrievalSchema,
 	safetySchema,
 	storageSchema,
+	taxonomySchema,
 	thresholdsSchema,
 	vertexSchema,
 	visualIntelligenceSchema,

@@ -30,6 +30,7 @@ export type {
 	RetrievalConfig,
 	SafetyConfig,
 	StorageConfig,
+	TaxonomyConfig,
 	ThresholdsConfig,
 	VertexConfig,
 	VisualIntelligenceConfig,
