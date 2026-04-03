@@ -5,6 +5,7 @@
  * @see docs/specs/22_story_repository.spec.md §4.2
  * @see docs/specs/24_entity_alias_repositories.spec.md §4.6
  * @see docs/specs/25_edge_repository.spec.md §4.4
+ * @see docs/specs/27_taxonomy_normalization.spec.md §4.5
  */
 
 export {
@@ -113,3 +114,22 @@ export {
 	linkStoryEntity,
 	unlinkStoryEntity,
 } from './story-entity.repository.js';
+export {
+	countTaxonomyEntries,
+	createTaxonomyEntry,
+	deleteTaxonomyEntry,
+	findAllTaxonomyEntries,
+	findTaxonomyEntryById,
+	findTaxonomyEntryByName,
+	searchTaxonomyBySimilarity,
+	updateTaxonomyEntry,
+} from './taxonomy.repository.js';
+export type {
+	CreateTaxonomyEntryInput,
+	NormalizationResult,
+	TaxonomyEntry,
+	TaxonomyEntryStatus,
+	TaxonomyFilter,
+	TaxonomySimilarityMatch,
+	UpdateTaxonomyEntryInput,
+} from './taxonomy.types.js';

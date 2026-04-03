@@ -26,6 +26,7 @@ import type {
 	retrievalSchema,
 	safetySchema,
 	storageSchema,
+	taxonomySchema,
 	thresholdsSchema,
 	vertexSchema,
 	visualIntelligenceSchema,
@@ -47,6 +48,7 @@ export type EmbeddingConfig = z.infer<typeof embeddingSchema>;
 export type RetrievalConfig = z.infer<typeof retrievalSchema>;
 export type GroundingConfig = z.infer<typeof groundingSchema>;
 export type AnalysisConfig = z.infer<typeof analysisSchema>;
+export type TaxonomyConfig = z.infer<typeof taxonomySchema>;
 export type ThresholdsConfig = z.infer<typeof thresholdsSchema>;
 export type PipelineConfig = z.infer<typeof pipelineSchema>;
 export type SafetyConfig = z.infer<typeof safetySchema>;

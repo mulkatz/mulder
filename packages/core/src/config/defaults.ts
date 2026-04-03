@@ -36,6 +36,10 @@ export const CONFIG_DEFAULTS = {
 		max_story_tokens: 15000,
 	},
 
+	taxonomy: {
+		normalization_threshold: 0.4,
+	},
+
 	entity_resolution: {
 		strategies: [
 			{ type: 'attribute_match' as const, enabled: true },

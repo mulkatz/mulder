@@ -162,6 +162,9 @@ importers:
       '@mulder/core':
         specifier: workspace:*
         version: link:../core
+      pg:
+        specifier: ^8.20.0
+        version: 8.20.0
 
   packages/worker:
     dependencies:
