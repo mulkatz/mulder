@@ -511,11 +511,12 @@ export async function findCandidatesByAttributes(
 		const geo = geoPoint as Record<string, unknown>;
 		if (typeof geo.lat === 'number' && typeof geo.lng === 'number') {
 			conditions.push(
-				`ST_DWithin(
-					ST_MakePoint((attributes->>'lng')::float, (attributes->>'lat')::float)::geography,
+				`(attributes->'geo_point' IS NOT NULL
+				AND ST_DWithin(
+					ST_MakePoint((attributes->'geo_point'->>'lng')::float, (attributes->'geo_point'->>'lat')::float)::geography,
 					ST_MakePoint($${paramIndex}, $${paramIndex + 1})::geography,
 					100
-				)`,
+				))`,
 			);
 			params.push(geo.lng, geo.lat);
 			paramIndex += 2;
