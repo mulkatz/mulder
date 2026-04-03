@@ -9,7 +9,14 @@
 
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { closeAllPools, getMigrationStatus, getWorkerPool, loadConfig, runMigrations } from '@mulder/core';
+import {
+	closeAllPools,
+	gcOrphanedEntities,
+	getMigrationStatus,
+	getWorkerPool,
+	loadConfig,
+	runMigrations,
+} from '@mulder/core';
 import type { Command } from 'commander';
 import { withErrorHandler } from '../lib/errors.js';
 import { printError, printSuccess } from '../lib/output.js';
@@ -106,6 +113,37 @@ export function registerDbCommands(program: Command): void {
 						const statusLabel = status.applied ? 'applied' : 'pending';
 						const appliedAt = status.appliedAt ? status.appliedAt.toISOString() : '-';
 						process.stdout.write(`${status.filename.padEnd(filenameWidth)}  ${statusLabel.padEnd(9)}  ${appliedAt}\n`);
+					}
+				} finally {
+					await closeAllPools();
+				}
+			}),
+		);
+
+	dbCmd
+		.command('gc')
+		.description('Garbage-collect orphaned entities (no story references)')
+		.option('--json', 'output result as JSON')
+		.argument('[config-path]', 'path to config file')
+		.action(
+			withErrorHandler(async (configPath?: string, options?: { json?: boolean }) => {
+				const config = loadConfig(configPath);
+
+				if (!config.gcp) {
+					printError('GCP configuration is required for database operations');
+					process.exit(1);
+					return;
+				}
+
+				const pool = getWorkerPool(config.gcp.cloud_sql);
+				try {
+					const deletedCount = await gcOrphanedEntities(pool);
+					if (options?.json) {
+						process.stdout.write(`${JSON.stringify({ deleted: deletedCount })}\n`);
+					} else if (deletedCount === 0) {
+						printSuccess('No orphaned entities found');
+					} else {
+						printSuccess(`Deleted ${deletedCount} orphaned entity(ies)`);
 					}
 				} finally {
 					await closeAllPools();

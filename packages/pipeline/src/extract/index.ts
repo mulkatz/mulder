@@ -16,11 +16,11 @@ import { performance } from 'node:perf_hooks';
 import type { DocumentAiResult, Logger, MulderConfig, Services, StepError } from '@mulder/core';
 import {
 	createChildLogger,
-	deleteSourceStep,
 	EXTRACT_ERROR_CODES,
 	ExtractError,
 	findSourceById,
 	renderPrompt,
+	resetPipelineStep,
 	updateSourceStatus,
 	upsertSourceStep,
 } from '@mulder/core';
@@ -301,6 +301,7 @@ async function runVisionFallback(
  * Deletes GCS extracted/ prefix and resets the source step.
  */
 async function forceCleanup(sourceId: string, services: Services, pool: pg.Pool, logger: Logger): Promise<void> {
+	// 1. GCS cleanup (not in DB function)
 	const prefix = `extracted/${sourceId}/`;
 	const existing = await services.storage.list(prefix);
 	for (const path of existing.paths) {
@@ -308,11 +309,8 @@ async function forceCleanup(sourceId: string, services: Services, pool: pg.Pool,
 	}
 	logger.debug({ sourceId, deletedFiles: existing.paths.length }, 'Deleted existing extraction artifacts');
 
-	// Delete the extract source step so it re-tracks as new
-	await deleteSourceStep(pool, sourceId, STEP_NAME);
-
-	// Update source status back to ingested
-	await updateSourceStatus(pool, sourceId, 'ingested');
+	// 2. Atomic DB reset — cascading-deletes stories, chunks, edges, ALL source_steps
+	await resetPipelineStep(pool, sourceId, 'extract');
 	logger.info({ sourceId }, 'Force cleanup complete — source status reset to ingested');
 }
 

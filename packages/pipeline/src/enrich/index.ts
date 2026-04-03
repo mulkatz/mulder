@@ -16,15 +16,13 @@ import type { Logger, MulderConfig, Services, StepError } from '@mulder/core';
 import {
 	createChildLogger,
 	deleteEdgesByStoryId,
-	deleteSourceStep,
-	deleteStoryEntitiesBySourceId,
 	deleteStoryEntitiesByStoryId,
 	ENRICH_ERROR_CODES,
 	EnrichError,
-	findStoriesBySourceId,
 	findStoryById,
 	linkStoryEntity,
 	renderPrompt,
+	resetPipelineStep,
 	updateEntity,
 	updateStoryStatus,
 	upsertEdge,
@@ -190,22 +188,8 @@ async function forceCleanupStory(storyId: string, pool: pg.Pool, logger: Logger)
  * Deletes story_entities and entity_edges, resets story statuses to segmented.
  */
 async function forceCleanupSource(sourceId: string, pool: pg.Pool, logger: Logger): Promise<void> {
-	const stories = await findStoriesBySourceId(pool, sourceId);
-	const deletedLinks = await deleteStoryEntitiesBySourceId(pool, sourceId);
-
-	let totalDeletedEdges = 0;
-	for (const story of stories) {
-		const deletedEdges = await deleteEdgesByStoryId(pool, story.id);
-		totalDeletedEdges += deletedEdges;
-		await updateStoryStatus(pool, story.id, 'segmented');
-	}
-
-	await deleteSourceStep(pool, sourceId, STEP_NAME);
-
-	logger.info(
-		{ sourceId, stories: stories.length, deletedLinks, deletedEdges: totalDeletedEdges },
-		'Force cleanup complete for source',
-	);
+	await resetPipelineStep(pool, sourceId, 'enrich');
+	logger.info({ sourceId }, 'Force cleanup complete — stories reset to segmented');
 }
 
 // ────────────────────────────────────────────────────────────
