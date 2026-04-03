@@ -1,73 +1,372 @@
 {
-	"timestamp": "2026-04-02T06:06:38.751Z",
-	"pages": [
-		{
-			"sourceSlug": "mixed-language-sample",
-			"pageNumber": 1,
-			"difficulty": "moderate",
-			"cer": 0.0034965034965034965,
-			"wer": 0.01834862385321101,
-			"charCount": 858,
-			"wordCount": 109
-		},
-		{
-			"sourceSlug": "multi-column-sample",
-			"pageNumber": 1,
-			"difficulty": "complex",
-			"cer": 0.004158004158004158,
-			"wer": 0.014925373134328358,
-			"charCount": 962,
-			"wordCount": 134
-		},
-		{
-			"sourceSlug": "native-text-sample",
-			"pageNumber": 1,
-			"difficulty": "simple",
-			"cer": 0,
-			"wer": 0,
-			"charCount": 563,
-			"wordCount": 67
-		},
-		{
-			"sourceSlug": "scanned-sample",
-			"pageNumber": 1,
-			"difficulty": "moderate",
-			"cer": 0.007233273056057866,
-			"wer": 0.02857142857142857,
-			"charCount": 553,
-			"wordCount": 70
-		},
-		{
-			"sourceSlug": "table-layout-sample",
-			"pageNumber": 1,
-			"difficulty": "complex",
-			"cer": 0.0028328611898017,
-			"wer": 0.008064516129032258,
-			"charCount": 706,
-			"wordCount": 124
+	"extraction": {
+		"timestamp": "2026-04-02T06:06:38.751Z",
+		"pages": [
+			{
+				"sourceSlug": "mixed-language-sample",
+				"pageNumber": 1,
+				"difficulty": "moderate",
+				"cer": 0.0034965034965034965,
+				"wer": 0.01834862385321101,
+				"charCount": 858,
+				"wordCount": 109
+			},
+			{
+				"sourceSlug": "multi-column-sample",
+				"pageNumber": 1,
+				"difficulty": "complex",
+				"cer": 0.004158004158004158,
+				"wer": 0.014925373134328358,
+				"charCount": 962,
+				"wordCount": 134
+			},
+			{
+				"sourceSlug": "native-text-sample",
+				"pageNumber": 1,
+				"difficulty": "simple",
+				"cer": 0,
+				"wer": 0,
+				"charCount": 563,
+				"wordCount": 67
+			},
+			{
+				"sourceSlug": "scanned-sample",
+				"pageNumber": 1,
+				"difficulty": "moderate",
+				"cer": 0.007233273056057866,
+				"wer": 0.02857142857142857,
+				"charCount": 553,
+				"wordCount": 70
+			},
+			{
+				"sourceSlug": "table-layout-sample",
+				"pageNumber": 1,
+				"difficulty": "complex",
+				"cer": 0.0028328611898017,
+				"wer": 0.008064516129032258,
+				"charCount": 706,
+				"wordCount": 124
+			}
+		],
+		"summary": {
+			"totalPages": 5,
+			"avgCer": 0.003544128380073444,
+			"avgWer": 0.013981988337600037,
+			"maxCer": 0.007233273056057866,
+			"maxWer": 0.02857142857142857,
+			"byDifficulty": {
+				"moderate": {
+					"avgCer": 0.0053648882762806814,
+					"avgWer": 0.02346002621231979,
+					"count": 2
+				},
+				"complex": {
+					"avgCer": 0.003495432673902929,
+					"avgWer": 0.011494944631680309,
+					"count": 2
+				},
+				"simple": {
+					"avgCer": 0,
+					"avgWer": 0,
+					"count": 1
+				}
+			}
 		}
-	],
-	"summary": {
-		"totalPages": 5,
-		"avgCer": 0.003544128380073444,
-		"avgWer": 0.013981988337600037,
-		"maxCer": 0.007233273056057866,
-		"maxWer": 0.02857142857142857,
-		"byDifficulty": {
-			"moderate": {
-				"avgCer": 0.0053648882762806814,
-				"avgWer": 0.02346002621231979,
-				"count": 2
+	},
+	"segmentation": {
+		"timestamp": "2026-04-03T18:59:30.588Z",
+		"documents": [
+			{
+				"sourceSlug": "magazine-issue-1",
+				"difficulty": "complex",
+				"boundaryAccuracy": 0.8333333333333334,
+				"segmentCountExact": true,
+				"actualSegmentCount": 3,
+				"expectedSegmentCount": 3
 			},
-			"complex": {
-				"avgCer": 0.003495432673902929,
-				"avgWer": 0.011494944631680309,
-				"count": 2
+			{
+				"sourceSlug": "mixed-content-issue",
+				"difficulty": "moderate",
+				"boundaryAccuracy": 1,
+				"segmentCountExact": true,
+				"actualSegmentCount": 2,
+				"expectedSegmentCount": 2
 			},
-			"simple": {
-				"avgCer": 0,
-				"avgWer": 0,
-				"count": 1
+			{
+				"sourceSlug": "single-story-report",
+				"difficulty": "simple",
+				"boundaryAccuracy": 1,
+				"segmentCountExact": true,
+				"actualSegmentCount": 1,
+				"expectedSegmentCount": 1
+			}
+		],
+		"summary": {
+			"totalDocuments": 3,
+			"avgBoundaryAccuracy": 0.9444444444444445,
+			"segmentCountExactRatio": 1,
+			"byDifficulty": {
+				"complex": {
+					"avgBoundaryAccuracy": 0.8333333333333334,
+					"count": 1
+				},
+				"moderate": {
+					"avgBoundaryAccuracy": 1,
+					"count": 1
+				},
+				"simple": {
+					"avgBoundaryAccuracy": 1,
+					"count": 1
+				}
+			}
+		}
+	},
+	"entities": {
+		"timestamp": "2026-04-03T18:59:30.591Z",
+		"segments": [
+			{
+				"segmentId": "seg-001",
+				"sourceSlug": "magazine-issue-1",
+				"difficulty": "moderate",
+				"byType": {
+					"person": {
+						"precision": 1,
+						"recall": 1,
+						"f1": 1
+					},
+					"event": {
+						"precision": 1,
+						"recall": 1,
+						"f1": 1
+					},
+					"location": {
+						"precision": 0.6666666666666666,
+						"recall": 0.6666666666666666,
+						"f1": 0.6666666666666666
+					},
+					"organization": {
+						"precision": 1,
+						"recall": 1,
+						"f1": 1
+					}
+				},
+				"overall": {
+					"precision": 0.8888888888888888,
+					"recall": 0.8888888888888888,
+					"f1": 0.8888888888888888
+				},
+				"relationships": {
+					"precision": 1,
+					"recall": 1,
+					"f1": 1
+				}
+			},
+			{
+				"segmentId": "seg-002",
+				"sourceSlug": "magazine-issue-1",
+				"difficulty": "moderate",
+				"byType": {
+					"person": {
+						"precision": 1,
+						"recall": 1,
+						"f1": 1
+					},
+					"event": {
+						"precision": 0.6666666666666666,
+						"recall": 1,
+						"f1": 0.8
+					},
+					"organization": {
+						"precision": 1,
+						"recall": 0.6666666666666666,
+						"f1": 0.8
+					},
+					"location": {
+						"precision": 1,
+						"recall": 1,
+						"f1": 1
+					}
+				},
+				"overall": {
+					"precision": 0.8888888888888888,
+					"recall": 0.8888888888888888,
+					"f1": 0.8888888888888888
+				},
+				"relationships": {
+					"precision": 1,
+					"recall": 1,
+					"f1": 1
+				}
+			},
+			{
+				"segmentId": "seg-003",
+				"sourceSlug": "magazine-issue-1",
+				"difficulty": "simple",
+				"byType": {
+					"person": {
+						"precision": 1,
+						"recall": 1,
+						"f1": 1
+					},
+					"location": {
+						"precision": 1,
+						"recall": 1,
+						"f1": 1
+					},
+					"organization": {
+						"precision": 1,
+						"recall": 1,
+						"f1": 1
+					}
+				},
+				"overall": {
+					"precision": 1,
+					"recall": 1,
+					"f1": 1
+				},
+				"relationships": {
+					"precision": 1,
+					"recall": 1,
+					"f1": 1
+				}
+			},
+			{
+				"segmentId": "seg-004",
+				"sourceSlug": "single-story-report",
+				"difficulty": "complex",
+				"byType": {
+					"person": {
+						"precision": 0.75,
+						"recall": 1,
+						"f1": 0.8571428571428571
+					},
+					"event": {
+						"precision": 1,
+						"recall": 1,
+						"f1": 1
+					},
+					"location": {
+						"precision": 1,
+						"recall": 1,
+						"f1": 1
+					},
+					"organization": {
+						"precision": 1,
+						"recall": 1,
+						"f1": 1
+					},
+					"document": {
+						"precision": 0,
+						"recall": 0,
+						"f1": 0
+					}
+				},
+				"overall": {
+					"precision": 0.875,
+					"recall": 0.875,
+					"f1": 0.875
+				},
+				"relationships": {
+					"precision": 1,
+					"recall": 1,
+					"f1": 1
+				}
+			},
+			{
+				"segmentId": "seg-005",
+				"sourceSlug": "mixed-content-issue",
+				"difficulty": "complex",
+				"byType": {
+					"person": {
+						"precision": 1,
+						"recall": 0.6666666666666666,
+						"f1": 0.8
+					},
+					"event": {
+						"precision": 1,
+						"recall": 1,
+						"f1": 1
+					},
+					"location": {
+						"precision": 0.5,
+						"recall": 1,
+						"f1": 0.6666666666666666
+					},
+					"organization": {
+						"precision": 1,
+						"recall": 0.75,
+						"f1": 0.8571428571428571
+					}
+				},
+				"overall": {
+					"precision": 0.875,
+					"recall": 0.7777777777777778,
+					"f1": 0.823529411764706
+				},
+				"relationships": {
+					"precision": 1,
+					"recall": 0.7142857142857143,
+					"f1": 0.8333333333333333
+				}
+			}
+		],
+		"summary": {
+			"totalSegments": 5,
+			"byType": {
+				"person": {
+					"avgPrecision": 0.95,
+					"avgRecall": 0.9333333333333333,
+					"avgF1": 0.9314285714285715,
+					"count": 5
+				},
+				"event": {
+					"avgPrecision": 0.9166666666666666,
+					"avgRecall": 1,
+					"avgF1": 0.95,
+					"count": 4
+				},
+				"location": {
+					"avgPrecision": 0.8333333333333333,
+					"avgRecall": 0.9333333333333332,
+					"avgF1": 0.8666666666666666,
+					"count": 5
+				},
+				"organization": {
+					"avgPrecision": 1,
+					"avgRecall": 0.8833333333333332,
+					"avgF1": 0.9314285714285713,
+					"count": 5
+				},
+				"document": {
+					"avgPrecision": 0,
+					"avgRecall": 0,
+					"avgF1": 0,
+					"count": 1
+				}
+			},
+			"overall": {
+				"avgPrecision": 0.9055555555555556,
+				"avgRecall": 0.8861111111111111,
+				"avgF1": 0.8952614379084967
+			},
+			"relationships": {
+				"avgPrecision": 1,
+				"avgRecall": 0.9428571428571428,
+				"avgF1": 0.9666666666666666
+			},
+			"byDifficulty": {
+				"moderate": {
+					"avgF1": 0.8888888888888888,
+					"count": 2
+				},
+				"simple": {
+					"avgF1": 1,
+					"count": 1
+				},
+				"complex": {
+					"avgF1": 0.849264705882353,
+					"count": 2
+				}
 			}
 		}
 	}
