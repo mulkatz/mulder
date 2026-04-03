@@ -1,0 +1,99 @@
+{
+	"entities": [
+		{
+			"name": "Maria Henderson",
+			"type": "person",
+			"confidence": 0.95,
+			"attributes": { "role": "witness" },
+			"mentions": ["Maria Henderson", "Henderson"]
+		},
+		{
+			"name": "Richard Haines",
+			"type": "person",
+			"confidence": 0.92,
+			"attributes": { "role": "researcher" },
+			"mentions": ["Dr. Richard Haines", "Haines"]
+		},
+		{
+			"name": "James Dalton",
+			"type": "person",
+			"confidence": 0.88,
+			"attributes": { "role": "witness" },
+			"mentions": ["James Dalton", "Dalton"]
+		},
+		{
+			"name": "Phoenix Lights",
+			"type": "event",
+			"confidence": 0.97,
+			"attributes": { "date": "1997-03-13", "location": "Arizona" },
+			"mentions": ["Phoenix Lights"]
+		},
+		{
+			"name": "Prescott Valley",
+			"type": "location",
+			"confidence": 0.93,
+			"attributes": { "region": "Arizona" },
+			"mentions": ["Prescott Valley"]
+		},
+		{
+			"name": "Tempe",
+			"type": "location",
+			"confidence": 0.90,
+			"attributes": { "region": "Arizona" },
+			"mentions": ["Tempe"]
+		},
+		{
+			"name": "Estrella Mountains",
+			"type": "location",
+			"confidence": 0.75,
+			"attributes": { "region": "Arizona" },
+			"mentions": ["Estrella Mountains"]
+		},
+		{
+			"name": "NASA",
+			"type": "organization",
+			"confidence": 0.96,
+			"attributes": { "type": "government_agency" },
+			"mentions": ["NASA"]
+		},
+		{
+			"name": "National Institute for Discovery Science",
+			"type": "organization",
+			"confidence": 0.85,
+			"attributes": { "type": "research_group" },
+			"mentions": ["National Institute for Discovery Science", "NIDS"]
+		}
+	],
+	"relationships": [
+		{
+			"source_entity": "Maria Henderson",
+			"target_entity": "Phoenix Lights",
+			"relationship_type": "WITNESSED",
+			"confidence": 0.93
+		},
+		{
+			"source_entity": "James Dalton",
+			"target_entity": "Phoenix Lights",
+			"relationship_type": "WITNESSED",
+			"confidence": 0.88
+		},
+		{
+			"source_entity": "Richard Haines",
+			"target_entity": "Phoenix Lights",
+			"relationship_type": "INVESTIGATED",
+			"confidence": 0.90
+		},
+		{
+			"source_entity": "Phoenix Lights",
+			"target_entity": "Prescott Valley",
+			"relationship_type": "OCCURRED_AT",
+			"confidence": 0.85
+		},
+		{
+			"source_entity": "Richard Haines",
+			"target_entity": "NASA",
+			"relationship_type": "AFFILIATED_WITH",
+			"confidence": 0.91
+		}
+	]
+}

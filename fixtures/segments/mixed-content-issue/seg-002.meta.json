@@ -1,0 +1,12 @@
+{
+	"id": "seg-002",
+	"title": "Hessdalen Lights: A Scientific Monitoring Campaign",
+	"subtitle": null,
+	"language": "en",
+	"category": "sighting_report",
+	"pageStart": 4,
+	"pageEnd": 8,
+	"dateReferences": ["1981-01-01", "1998-01-01", "2001-01-01", "2004-01-01"],
+	"geographicReferences": ["Hessdalen", "Norway"],
+	"extractionConfidence": 0.90
+}

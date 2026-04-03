@@ -1,0 +1,12 @@
+{
+	"id": "seg-003",
+	"title": "Letters to the Editor: Reader Sightings Roundup",
+	"subtitle": null,
+	"language": "en",
+	"category": "editorial",
+	"pageStart": 10,
+	"pageEnd": 12,
+	"dateReferences": ["2023-11-12", "2024-08-03"],
+	"geographicReferences": ["Lake Michigan", "Muskegon", "Black Forest", "Freiburg"],
+	"extractionConfidence": 0.91
+}
