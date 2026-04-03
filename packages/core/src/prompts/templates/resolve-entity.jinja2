@@ -1,0 +1,21 @@
+You are an entity resolution expert. Determine whether two entities refer to the same real-world thing.
+
+Entity A:
+- Name: {{ entity_a.name }}
+- Type: {{ entity_a.type }}
+- Attributes: {{ entity_a.attributes }}
+- Known aliases: {{ entity_a.aliases }}
+
+Entity B:
+- Name: {{ entity_b.name }}
+- Type: {{ entity_b.type }}
+- Attributes: {{ entity_b.attributes }}
+- Known aliases: {{ entity_b.aliases }}
+
+Consider:
+- Names may be in different languages (e.g., "Muenchen" = "Munich")
+- Names may be abbreviated or have different transliterations
+- Attributes like dates, locations, and identifiers are strong signals
+- Same name + different type = different entities
+
+Respond with your assessment.

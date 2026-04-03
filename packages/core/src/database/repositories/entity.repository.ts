@@ -437,3 +437,195 @@ export async function deleteEntitiesBySourceId(pool: pg.Pool, sourceId: string):
 		client.release();
 	}
 }
+
+// ────────────────────────────────────────────────────────────
+// Candidate search (cross-lingual entity resolution)
+// ────────────────────────────────────────────────────────────
+
+/** Row shape for attribute candidate queries, extends EntityRow with match_detail. */
+interface AttributeCandidateRow extends EntityRow {
+	match_detail: string;
+}
+
+/** Row shape for embedding candidate queries, extends EntityRow with similarity. */
+interface EmbeddingCandidateRow extends EntityRow {
+	similarity: number;
+}
+
+/** Result from attribute-based candidate search. */
+export interface AttributeCandidate {
+	entity: Entity;
+	matchDetail: string;
+}
+
+/** Result from embedding-based candidate search. */
+export interface EmbeddingCandidate {
+	entity: Entity;
+	similarity: number;
+}
+
+/**
+ * Finds candidate entities by matching structured attributes (Tier 1).
+ *
+ * Searches same-type entities for overlapping identifier attributes:
+ * - `wikidata_id`: exact JSONB containment
+ * - `geo_point`: PostGIS proximity within 100m
+ * - `iso_date`: exact JSONB containment
+ *
+ * Only searches for attribute keys that the incoming entity actually has.
+ *
+ * @param pool - PostgreSQL connection pool
+ * @param entityType - Entity type to search within
+ * @param attributes - The incoming entity's attributes
+ * @param excludeId - Entity ID to exclude from results (the entity itself)
+ * @param limit - Maximum candidates to return (default 10)
+ */
+export async function findCandidatesByAttributes(
+	pool: pg.Pool,
+	entityType: string,
+	attributes: Record<string, unknown>,
+	excludeId: string,
+	limit = 10,
+): Promise<AttributeCandidate[]> {
+	const conditions: string[] = [];
+	const params: unknown[] = [entityType, excludeId];
+	let paramIndex = 3;
+
+	// Wikidata ID exact match
+	if (typeof attributes.wikidata_id === 'string') {
+		conditions.push(`attributes @> $${paramIndex}::jsonb`);
+		params.push(JSON.stringify({ wikidata_id: attributes.wikidata_id }));
+		paramIndex++;
+	}
+
+	// ISO date exact match
+	if (typeof attributes.iso_date === 'string') {
+		conditions.push(`attributes @> $${paramIndex}::jsonb`);
+		params.push(JSON.stringify({ iso_date: attributes.iso_date }));
+		paramIndex++;
+	}
+
+	// Geo point proximity (100m radius via PostGIS)
+	const geoPoint = attributes.geo_point;
+	if (geoPoint !== null && typeof geoPoint === 'object' && !Array.isArray(geoPoint)) {
+		const geo = geoPoint as Record<string, unknown>;
+		if (typeof geo.lat === 'number' && typeof geo.lng === 'number') {
+			conditions.push(
+				`(attributes->'geo_point' IS NOT NULL
+				AND ST_DWithin(
+					ST_MakePoint((attributes->'geo_point'->>'lng')::float, (attributes->'geo_point'->>'lat')::float)::geography,
+					ST_MakePoint($${paramIndex}, $${paramIndex + 1})::geography,
+					100
+				))`,
+			);
+			params.push(geo.lng, geo.lat);
+			paramIndex += 2;
+		}
+	}
+
+	// No matchable attributes — return empty
+	if (conditions.length === 0) {
+		return [];
+	}
+
+	const whereClause = conditions.map((c) => `(${c})`).join(' OR ');
+	const sql = `
+		SELECT *, 'attribute_match' AS match_detail
+		FROM entities
+		WHERE type = $1 AND id != $2 AND canonical_id IS NULL AND (${whereClause})
+		LIMIT $${paramIndex}
+	`;
+	params.push(limit);
+
+	try {
+		const result = await pool.query<AttributeCandidateRow>(sql, params);
+		return result.rows.map((row) => ({
+			entity: mapEntityRow(row),
+			matchDetail: row.match_detail,
+		}));
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to find candidates by attributes', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { entityType, attributeKeys: Object.keys(attributes) },
+		});
+	}
+}
+
+/**
+ * Finds candidate entities by embedding cosine similarity (Tier 2).
+ *
+ * Queries pgvector HNSW index on `name_embedding` column.
+ * Uses `1 - (name_embedding <=> $embedding)` for cosine similarity.
+ *
+ * @param pool - PostgreSQL connection pool
+ * @param entityType - Entity type to search within
+ * @param embedding - The query embedding vector (768-dim)
+ * @param threshold - Minimum cosine similarity threshold (0-1)
+ * @param excludeId - Entity ID to exclude from results
+ * @param limit - Maximum candidates to return (default 10)
+ */
+export async function findCandidatesByEmbedding(
+	pool: pg.Pool,
+	entityType: string,
+	embedding: number[],
+	threshold: number,
+	excludeId: string,
+	limit = 10,
+): Promise<EmbeddingCandidate[]> {
+	const embeddingStr = `[${embedding.join(',')}]`;
+	const sql = `
+		SELECT *, 1 - (name_embedding <=> $1::vector) AS similarity
+		FROM entities
+		WHERE type = $2
+		  AND id != $3
+		  AND canonical_id IS NULL
+		  AND name_embedding IS NOT NULL
+		  AND 1 - (name_embedding <=> $1::vector) > $4
+		ORDER BY name_embedding <=> $1::vector ASC
+		LIMIT $5
+	`;
+	const params = [embeddingStr, entityType, excludeId, threshold, limit];
+
+	try {
+		const result = await pool.query<EmbeddingCandidateRow>(sql, params);
+		return result.rows.map((row) => ({
+			entity: mapEntityRow(row),
+			similarity: Number(row.similarity),
+		}));
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to find candidates by embedding', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { entityType, threshold },
+		});
+	}
+}
+
+/**
+ * Updates the name embedding vector for an entity (Tier 2 storage).
+ *
+ * @param pool - PostgreSQL connection pool
+ * @param entityId - The entity UUID
+ * @param embedding - The embedding vector (768-dim)
+ */
+export async function updateEntityEmbedding(pool: pg.Pool, entityId: string, embedding: number[]): Promise<void> {
+	const embeddingStr = `[${embedding.join(',')}]`;
+	const sql = 'UPDATE entities SET name_embedding = $1::vector, updated_at = now() WHERE id = $2';
+
+	try {
+		const result = await pool.query(sql, [embeddingStr, entityId]);
+		if ((result.rowCount ?? 0) === 0) {
+			throw new DatabaseError(`Entity not found: ${entityId}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+				context: { entityId },
+			});
+		}
+		repoLogger.debug({ entityId }, 'Entity name embedding updated');
+	} catch (error: unknown) {
+		if (error instanceof DatabaseError) {
+			throw error;
+		}
+		throw new DatabaseError('Failed to update entity embedding', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { entityId },
+		});
+	}
+}

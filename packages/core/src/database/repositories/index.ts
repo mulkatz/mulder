@@ -32,16 +32,20 @@ export type {
 	EntityEdge,
 	UpdateEdgeInput,
 } from './edge.types.js';
+export type { AttributeCandidate, EmbeddingCandidate } from './entity.repository.js';
 export {
 	countEntities,
 	createEntity,
 	deleteEntitiesBySourceId,
 	deleteEntity,
 	findAllEntities,
+	findCandidatesByAttributes,
+	findCandidatesByEmbedding,
 	findEntitiesByCanonicalId,
 	findEntitiesByType,
 	findEntityById,
 	updateEntity,
+	updateEntityEmbedding,
 	upsertEntityByNameType,
 } from './entity.repository.js';
 export type {
