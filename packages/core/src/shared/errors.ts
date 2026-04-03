@@ -93,6 +93,18 @@ export const SEGMENT_ERROR_CODES = {
 
 export type SegmentErrorCode = (typeof SEGMENT_ERROR_CODES)[keyof typeof SEGMENT_ERROR_CODES];
 
+/** Enrich step error codes. */
+export const ENRICH_ERROR_CODES = {
+	ENRICH_STORY_NOT_FOUND: 'ENRICH_STORY_NOT_FOUND',
+	ENRICH_INVALID_STATUS: 'ENRICH_INVALID_STATUS',
+	ENRICH_MARKDOWN_NOT_FOUND: 'ENRICH_MARKDOWN_NOT_FOUND',
+	ENRICH_LLM_FAILED: 'ENRICH_LLM_FAILED',
+	ENRICH_VALIDATION_FAILED: 'ENRICH_VALIDATION_FAILED',
+	ENRICH_ENTITY_WRITE_FAILED: 'ENRICH_ENTITY_WRITE_FAILED',
+} as const;
+
+export type EnrichErrorCode = (typeof ENRICH_ERROR_CODES)[keyof typeof ENRICH_ERROR_CODES];
+
 /** Prompt template engine error codes. */
 export const PROMPT_ERROR_CODES = {
 	TEMPLATE_NOT_FOUND: 'TEMPLATE_NOT_FOUND',
@@ -113,6 +125,7 @@ export type MulderErrorCode =
 	| IngestErrorCode
 	| ExtractErrorCode
 	| SegmentErrorCode
+	| EnrichErrorCode
 	| PromptErrorCode;
 
 // ────────────────────────────────────────────────────────────
@@ -245,6 +258,21 @@ export class SegmentError extends MulderError {
 	) {
 		super(message, code, options);
 		this.name = 'SegmentError';
+	}
+}
+
+/** Enrich step errors (entity extraction, taxonomy normalization, resolution). */
+export class EnrichError extends MulderError {
+	constructor(
+		message: string,
+		code: EnrichErrorCode,
+		options?: {
+			context?: Record<string, unknown>;
+			cause?: unknown;
+		},
+	) {
+		super(message, code, options);
+		this.name = 'EnrichError';
 	}
 }
 
