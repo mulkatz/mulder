@@ -69,7 +69,7 @@ Core intelligence. Where Mulder becomes more than an OCR tool.
 | 🟢 | C7 | Cross-lingual entity resolution — 3-tier | §2.4 (resolution strategy), §4.8 (embedding calls) |
 | 🟢 | C8 | Enrich step — `mulder enrich <id>` | §2.4, §6 (especially §6.2), §1 (enrich cmd) |
 | 🟢 | C9 | Cascading reset function — PL/pgSQL | §4.3.1, §3.4 |
-| 🟡 | C10 | Golden test set: segmentation + entities — Vitest assertions | §15.1, §15.2 |
+| 🟢 | C10 | Golden test set: segmentation + entities — Vitest assertions | §15.1, §15.2 |
 
 **Also read for all M3 steps:** §2 (global step conventions), §4.5 (service abstraction), §6 (taxonomy system), §7.3 (retry), §8 (logging)
 
