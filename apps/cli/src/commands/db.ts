@@ -123,7 +123,7 @@ export function registerDbCommands(program: Command): void {
 	dbCmd
 		.command('gc')
 		.description('Garbage-collect orphaned entities (no story references)')
-		.option('--json', 'output result as JSON')
+		.option('--json', 'output result in JSON format')
 		.argument('[config-path]', 'path to config file')
 		.action(
 			withErrorHandler(async (configPath?: string, options?: { json?: boolean }) => {
