@@ -45,7 +45,7 @@ describe('Spec 02: Monorepo Setup', () => {
 	// Expected internal dependency graph (from spec §4.2)
 	const EXPECTED_DEPS: Record<string, string[]> = {
 		'packages/core': [],
-		'packages/pipeline': ['@mulder/core'],
+		'packages/pipeline': ['@mulder/core', '@mulder/taxonomy'],
 		'packages/retrieval': ['@mulder/core'],
 		'packages/taxonomy': ['@mulder/core'],
 		'packages/worker': ['@mulder/core', '@mulder/pipeline'],
