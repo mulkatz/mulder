@@ -15,10 +15,9 @@ import type { Logger, MulderConfig, Services, StepError } from '@mulder/core';
 import {
 	createChildLogger,
 	createStory,
-	deleteSourceStep,
-	deleteStoriesBySourceId,
 	findSourceById,
 	renderPrompt,
+	resetPipelineStep,
 	SEGMENT_ERROR_CODES,
 	SegmentError,
 	updateSourceStatus,
@@ -47,11 +46,11 @@ const STEP_NAME = 'segment';
  * GCS segment prefix, and the source step record.
  */
 async function forceCleanup(sourceId: string, services: Services, pool: pg.Pool, logger: Logger): Promise<void> {
-	// 1. Delete story records (PostgreSQL cascading handles chunks, story_entities, edges)
-	const deletedCount = await deleteStoriesBySourceId(pool, sourceId);
-	logger.debug({ sourceId, deletedStories: deletedCount }, 'Deleted existing stories for source');
+	// 1. Atomic DB reset — cascading-deletes stories (+ chunks, story_entities, edges), resets source_steps
+	await resetPipelineStep(pool, sourceId, 'segment');
+	logger.debug({ sourceId }, 'DB reset complete for segment');
 
-	// 2. Delete GCS segment artifacts
+	// 2. GCS cleanup (not in DB function)
 	const prefix = `segments/${sourceId}/`;
 	const existing = await services.storage.list(prefix);
 	for (const path of existing.paths) {
@@ -59,11 +58,6 @@ async function forceCleanup(sourceId: string, services: Services, pool: pg.Pool,
 	}
 	logger.debug({ sourceId, deletedFiles: existing.paths.length }, 'Deleted existing segment artifacts');
 
-	// 3. Delete the segment source step so it re-tracks as new
-	await deleteSourceStep(pool, sourceId, STEP_NAME);
-
-	// 4. Update source status back to extracted
-	await updateSourceStatus(pool, sourceId, 'extracted');
 	logger.info({ sourceId }, 'Force cleanup complete — source status reset to extracted');
 }
 

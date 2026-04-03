@@ -68,6 +68,8 @@ export {
 	findAliasesByEntityId,
 	findEntityByAlias,
 } from './entity-alias.repository.js';
+export type { PipelineStep } from './pipeline-reset.js';
+export { gcOrphanedEntities, resetPipelineStep } from './pipeline-reset.js';
 export {
 	countSources,
 	createSource,
