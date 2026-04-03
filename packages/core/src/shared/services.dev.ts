@@ -55,6 +55,34 @@ function emptyStubResponse<T>(): T {
 	return JSON.parse('{}');
 }
 
+/**
+ * Safely reads a nested property from an unknown value.
+ * Returns `undefined` if the path doesn't exist or any intermediate is not an object.
+ */
+function getNestedProperty(obj: unknown, ...keys: string[]): unknown {
+	let current: unknown = obj;
+	for (const key of keys) {
+		if (current === null || current === undefined || typeof current !== 'object' || Array.isArray(current)) {
+			return undefined;
+		}
+		current = Object.getOwnPropertyDescriptor(current, key)?.value;
+	}
+	return current;
+}
+
+/**
+ * Extracts enum values from a JSON Schema's array items.
+ *
+ * Navigates: `schema.properties[arrayProp].items.properties[fieldProp].enum`
+ * Returns the enum values as a string array, or an empty array if the path
+ * doesn't exist or is not an array.
+ */
+function extractEnumValues(schema: Record<string, unknown>, arrayProp: string, fieldProp: string): string[] {
+	const enumValues = getNestedProperty(schema, 'properties', arrayProp, 'items', 'properties', fieldProp, 'enum');
+	if (!Array.isArray(enumValues)) return [];
+	return enumValues.filter((v): v is string => typeof v === 'string');
+}
+
 // ────────────────────────────────────────────────────────────
 // Dev Storage Service
 // ────────────────────────────────────────────────────────────
@@ -202,17 +230,20 @@ class DevLlmService implements LlmService {
 	}
 
 	async generateStructured<T = unknown>(options: StructuredGenerateOptions): Promise<T> {
-		// Detect segmentation schema by checking for a 'stories' property in the JSON Schema
 		const properties = options.schema.properties;
-		if (
+		const hasProperty = (name: string): boolean =>
 			properties !== null &&
 			properties !== undefined &&
 			typeof properties === 'object' &&
 			!Array.isArray(properties) &&
-			'stories' in properties
-		) {
+			name in properties;
+
+		let result: T;
+
+		// Detect segmentation schema by checking for a 'stories' property in the JSON Schema
+		if (hasProperty('stories')) {
 			this.logger.debug('DevLlmService: generateStructured — returning segmentation fixture');
-			return JSON.parse(
+			result = JSON.parse(
 				JSON.stringify({
 					stories: [
 						{
@@ -231,9 +262,81 @@ class DevLlmService implements LlmService {
 				}),
 			);
 		}
+		// Detect entity extraction schema by checking for 'entities' property
+		else if (hasProperty('entities')) {
+			this.logger.debug('DevLlmService: generateStructured — returning entity extraction fixture');
 
-		this.logger.debug('DevLlmService: generateStructured called (returning empty object)');
-		return emptyStubResponse<T>();
+			// Extract valid entity types and relationship types from the JSON Schema
+			const entityTypes = extractEnumValues(options.schema, 'entities', 'type');
+			const relationshipTypes = extractEnumValues(options.schema, 'relationships', 'relationship_type');
+
+			// Build entities using valid types from the schema
+			const entities: Array<Record<string, unknown>> = [];
+			if (entityTypes.includes('person')) {
+				entities.push({
+					name: 'Dev Test Person',
+					type: 'person',
+					confidence: 0.9,
+					attributes: { role: 'researcher' },
+					mentions: ['Dev Test Person'],
+				});
+			}
+			if (entityTypes.includes('location')) {
+				entities.push({
+					name: 'Dev Test Location',
+					type: 'location',
+					confidence: 0.85,
+					attributes: { region: 'Europe' },
+					mentions: ['Dev Test Location'],
+				});
+			}
+			// Fallback: if neither person nor location is in schema, use the first available type
+			if (entities.length === 0 && entityTypes.length > 0) {
+				entities.push({
+					name: 'Dev Test Entity',
+					type: entityTypes[0],
+					confidence: 0.9,
+					attributes: {},
+					mentions: ['Dev Test Entity'],
+				});
+			}
+
+			// Build relationships only if we have a valid relationship type and two entities
+			const relationships: Array<Record<string, unknown>> = [];
+			if (entities.length >= 2 && relationshipTypes.length > 0) {
+				relationships.push({
+					source_entity: String(entities[0].name),
+					target_entity: String(entities[1].name),
+					relationship_type: relationshipTypes[0],
+					confidence: 0.8,
+				});
+			}
+
+			result = JSON.parse(JSON.stringify({ entities, relationships }));
+		}
+		// Detect entity resolution schema by checking for 'same_entity' property
+		else if (hasProperty('same_entity')) {
+			this.logger.debug('DevLlmService: generateStructured — returning entity resolution fixture');
+			result = JSON.parse(
+				JSON.stringify({
+					same_entity: false,
+					confidence: 0.3,
+					reasoning: 'Dev mode stub: entities treated as distinct',
+				}),
+			);
+		} else {
+			this.logger.debug('DevLlmService: generateStructured called (returning empty object)');
+			result = emptyStubResponse<T>();
+		}
+
+		// Call responseValidator if provided, matching production behavior
+		if (options.responseValidator) {
+			const validated: unknown = options.responseValidator(result);
+			// Use JSON round-trip to produce the correct generic type without `as` assertion
+			result = JSON.parse(JSON.stringify(validated));
+		}
+
+		return result;
 	}
 
 	async generateText(_options: TextGenerateOptions): Promise<string> {

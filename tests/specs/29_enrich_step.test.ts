@@ -406,8 +406,13 @@ describe('Spec 29 — Enrich Step', () => {
 	it('QA-07: enrich on story with status=ingested rejects with ENRICH_INVALID_STATUS', () => {
 		if (!pgAvailable) return;
 
-		// Create a source that's only ingested (not segmented)
-		const sourceId = ingestPdf(NATIVE_TEXT_PDF);
+		// Create an isolated source + story via SQL to avoid dedup collision
+		// with the main test source (ingestPdf would return the existing source ID)
+		runSql(
+			`INSERT INTO sources (filename, file_hash, storage_path, page_count, status) ` +
+				`VALUES ('qa07-test.pdf', 'qa07-unique-hash', 'raw/qa07-test.pdf', 1, 'ingested');`,
+		);
+		const sourceId = runSql(`SELECT id FROM sources WHERE file_hash = 'qa07-unique-hash';`);
 
 		// Manually create a story with status 'ingested' (simulating pre-segmentation state)
 		runSql(
@@ -424,7 +429,7 @@ describe('Spec 29 — Enrich Step', () => {
 		expect(exitCode).not.toBe(0);
 		expect(combined).toMatch(/ENRICH_INVALID_STATUS|invalid status|not segmented|cannot enrich/i);
 
-		// Cleanup (delete all referencing rows before the source, using source-level deletes)
+		// Cleanup — scoped to the isolated source only
 		runSql(
 			`DELETE FROM story_entities WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');` +
 				` DELETE FROM entity_edges WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');` +

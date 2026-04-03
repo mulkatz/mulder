@@ -25,6 +25,7 @@ import {
 	findStoryById,
 	linkStoryEntity,
 	renderPrompt,
+	updateEntity,
 	updateStoryStatus,
 	upsertEdge,
 	upsertEntityByNameType,
@@ -434,6 +435,7 @@ export async function execute(
 			}
 
 			// 11c. Cross-lingual entity resolution
+			let wasMerged = false;
 			if (config.entity_resolution) {
 				const resolution = await resolveEntity({
 					entity,
@@ -444,9 +446,15 @@ export async function execute(
 
 				if (resolution.action === 'merged') {
 					entitiesResolved++;
+					wasMerged = true;
 					// Update the name-to-ID mapping to point to the canonical entity
 					entityNameToId.set(extracted.name, resolution.canonicalEntity.id);
 				}
+			}
+
+			// Set canonical_id to self if not merged (self-canonical)
+			if (!wasMerged && entity.canonicalId === null) {
+				await updateEntity(pool, entity.id, { canonicalId: entity.id });
 			}
 
 			// 11d. Link entity to story
