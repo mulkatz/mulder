@@ -1,0 +1,25 @@
+{
+	"sourceSlug": "mixed-content-issue",
+	"totalPages": 8,
+	"difficulty": "moderate",
+	"expectedSegmentCount": 2,
+	"expectedSegments": [
+		{
+			"title": "Editorial: The State of UFO Research in 2024",
+			"pageStart": 1,
+			"pageEnd": 3,
+			"category": "editorial"
+		},
+		{
+			"title": "Hessdalen Lights: A Scientific Monitoring Campaign",
+			"pageStart": 4,
+			"pageEnd": 8,
+			"category": "sighting_report"
+		}
+	],
+	"annotation": {
+		"author": "golden-set-v1",
+		"date": "2026-04-03",
+		"notes": "8-page issue with editorial + sighting report. Tests boundary detection between two different story types."
+	}
+}

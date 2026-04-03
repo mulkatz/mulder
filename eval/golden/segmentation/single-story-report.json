@@ -1,0 +1,19 @@
+{
+	"sourceSlug": "single-story-report",
+	"totalPages": 4,
+	"difficulty": "simple",
+	"expectedSegmentCount": 1,
+	"expectedSegments": [
+		{
+			"title": "Rendlesham Forest Incident: Official MOD Report",
+			"pageStart": 1,
+			"pageEnd": 4,
+			"category": "investigation"
+		}
+	],
+	"annotation": {
+		"author": "golden-set-v1",
+		"date": "2026-04-03",
+		"notes": "Single-story 4-page report. Simple case — the entire document is one story. Tests that segmentation does not over-split."
+	}
+}

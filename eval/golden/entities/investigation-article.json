@@ -1,0 +1,90 @@
+{
+	"segmentId": "seg-002",
+	"sourceSlug": "magazine-issue-1",
+	"difficulty": "moderate",
+	"languages": ["en"],
+	"expectedEntities": [
+		{
+			"name": "Robert Salas",
+			"type": "person",
+			"attributes": { "role": "military_personnel" }
+		},
+		{
+			"name": "Parviz Jafari",
+			"type": "person",
+			"attributes": { "role": "military_personnel" }
+		},
+		{
+			"name": "Malmstrom AFB Incident",
+			"type": "event",
+			"attributes": { "date": "1967-03-16", "location": "Montana" }
+		},
+		{
+			"name": "Tehran Incident",
+			"type": "event",
+			"attributes": { "date": "1976-09-19", "location": "Tehran" }
+		},
+		{
+			"name": "Project Blue Book",
+			"type": "organization",
+			"attributes": { "type": "government_program" }
+		},
+		{
+			"name": "United States Air Force",
+			"type": "organization",
+			"attributes": { "type": "military_branch" }
+		},
+		{
+			"name": "CIA",
+			"type": "organization",
+			"attributes": { "type": "government_agency" }
+		},
+		{
+			"name": "Malmstrom Air Force Base",
+			"type": "location",
+			"attributes": { "region": "Montana" }
+		},
+		{
+			"name": "Tehran",
+			"type": "location",
+			"attributes": { "region": "Iran" }
+		}
+	],
+	"expectedRelationships": [
+		{
+			"sourceEntity": "Robert Salas",
+			"targetEntity": "Malmstrom AFB Incident",
+			"relationshipType": "WITNESSED"
+		},
+		{
+			"sourceEntity": "Parviz Jafari",
+			"targetEntity": "Tehran Incident",
+			"relationshipType": "WITNESSED"
+		},
+		{
+			"sourceEntity": "Malmstrom AFB Incident",
+			"targetEntity": "Malmstrom Air Force Base",
+			"relationshipType": "OCCURRED_AT"
+		},
+		{
+			"sourceEntity": "Tehran Incident",
+			"targetEntity": "Tehran",
+			"relationshipType": "OCCURRED_AT"
+		},
+		{
+			"sourceEntity": "Malmstrom AFB Incident",
+			"targetEntity": "United States Air Force",
+			"relationshipType": "CLASSIFIED_BY"
+		},
+		{
+			"sourceEntity": "Robert Salas",
+			"targetEntity": "United States Air Force",
+			"relationshipType": "AFFILIATED_WITH"
+		}
+	],
+	"annotation": {
+		"author": "golden-set-v1",
+		"date": "2026-04-03",
+		"notes": "Investigation article with person, event, organization, location entities. Tests WITNESSED, OCCURRED_AT, CLASSIFIED_BY, AFFILIATED_WITH relationships."
+	}
+}

@@ -1,0 +1,31 @@
+{
+	"sourceSlug": "magazine-issue-1",
+	"totalPages": 12,
+	"difficulty": "complex",
+	"expectedSegmentCount": 3,
+	"expectedSegments": [
+		{
+			"title": "The Phoenix Lights Revisited: New Witness Testimony",
+			"pageStart": 1,
+			"pageEnd": 4,
+			"category": "sighting_report"
+		},
+		{
+			"title": "Inside Project Blue Book: Declassified Case Files",
+			"pageStart": 5,
+			"pageEnd": 9,
+			"category": "investigation"
+		},
+		{
+			"title": "Letters to the Editor: Reader Sightings Roundup",
+			"pageStart": 10,
+			"pageEnd": 12,
+			"category": "editorial"
+		}
+	],
+	"annotation": {
+		"author": "golden-set-v1",
+		"date": "2026-04-03",
+		"notes": "12-page magazine with 3 distinct stories spanning multiple pages. Tests multi-story boundary detection in a complex magazine layout."
+	}
+}
