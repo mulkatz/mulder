@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -41,15 +41,53 @@ function runCli(args: string[], options?: { cwd?: string }): { stdout: string; s
 // Section 5: QA Contract
 // ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Extract entity type and relationship names from the config YAML using the CLI.
+ * Runs `mulder config show --json` to get the parsed config as JSON, then
+ * extracts ontology entity_type names and relationship names.
+ */
+function parseConfigNames(configPath: string): { entityTypes: string[]; relationshipTypes: string[] } {
+	// Parse YAML with regex — match list items at 4-space indent (direct children of entity_types/relationships)
+	// Entity types: "  entity_types:" header, items at "    - name: ..."
+	// Attributes are at "        - name: ..." (8 spaces) — skipped by the 4-space match
+	const raw = readFileSync(configPath, 'utf-8');
+	const entityTypes: string[] = [];
+	const relationshipTypes: string[] = [];
+	let section = '';
+	for (const line of raw.split('\n')) {
+		if (/^\s{2}entity_types:\s*$/.test(line)) {
+			section = 'entities';
+			continue;
+		}
+		if (/^\s{2}relationships:\s*$/.test(line)) {
+			section = 'relationships';
+			continue;
+		}
+		// A new top-level or second-level key ends the section
+		if (/^[a-z]/.test(line) || (/^\s{2}[a-z]/.test(line) && !/^\s{4}/.test(line))) {
+			section = '';
+		}
+		// Match items at exactly 4 spaces: "    - name: "value""
+		const match = line.match(/^ {4}- name: "([^"]+)"/);
+		if (match) {
+			if (section === 'entities') entityTypes.push(match[1]);
+			if (section === 'relationships') relationshipTypes.push(match[1]);
+		}
+	}
+	return { entityTypes: entityTypes.sort(), relationshipTypes: relationshipTypes.sort() };
+}
+
 describe('Spec 26: JSON Schema Generator — QA Contract', () => {
 	let schema: Record<string, unknown>;
 	let schemaJson: string;
+	let configNames: { entityTypes: string[]; relationshipTypes: string[] };
 
 	beforeAll(() => {
 		const { stdout, exitCode } = runCli(['config', 'schema', EXAMPLE_CONFIG]);
 		expect(exitCode, 'CLI should exit 0 to generate schema for QA tests').toBe(0);
 		schema = JSON.parse(stdout) as Record<string, unknown>;
 		schemaJson = stdout;
+		configNames = parseConfigNames(EXAMPLE_CONFIG);
 	});
 
 	// ─── QA-01: Schema generates from default config ───
@@ -76,7 +114,7 @@ describe('Spec 26: JSON Schema Generator — QA Contract', () => {
 
 	describe('QA-02: Entity type enum matches config', () => {
 		it('entities.items.properties.type.enum contains config types, sorted', () => {
-			const expectedTypes = ['document', 'event', 'location', 'organization', 'person'];
+			const expectedTypes = configNames.entityTypes;
 
 			const props = schema.properties as Record<string, Record<string, unknown>>;
 			const items = props.entities.items as Record<string, unknown>;
@@ -99,15 +137,7 @@ describe('Spec 26: JSON Schema Generator — QA Contract', () => {
 
 	describe('QA-03: Relationship type enum matches config', () => {
 		it('relationships.items.properties.relationship_type.enum contains config types, sorted', () => {
-			const expectedRelTypes = [
-				'AFFILIATED_WITH',
-				'AUTHORED',
-				'CLASSIFIED_BY',
-				'INVESTIGATED',
-				'OCCURRED_AT',
-				'REFERENCES',
-				'WITNESSED',
-			];
+			const expectedRelTypes = configNames.relationshipTypes;
 
 			const props = schema.properties as Record<string, Record<string, unknown>>;
 			const items = props.relationships.items as Record<string, unknown>;
