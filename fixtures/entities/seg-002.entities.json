@@ -1,0 +1,105 @@
+{
+	"entities": [
+		{
+			"name": "Robert Salas",
+			"type": "person",
+			"confidence": 0.94,
+			"attributes": { "role": "military_personnel" },
+			"mentions": ["Captain Robert Salas", "Salas"]
+		},
+		{
+			"name": "Parviz Jafari",
+			"type": "person",
+			"confidence": 0.89,
+			"attributes": { "role": "military_personnel" },
+			"mentions": ["General Parviz Jafari", "Jafari"]
+		},
+		{
+			"name": "Malmstrom AFB Incident",
+			"type": "event",
+			"confidence": 0.91,
+			"attributes": { "date": "1967-03-16", "location": "Montana" },
+			"mentions": ["Malmstrom AFB Incident", "Echo Flight incident"]
+		},
+		{
+			"name": "Tehran Incident",
+			"type": "event",
+			"confidence": 0.87,
+			"attributes": { "date": "1976-09-19", "location": "Tehran" },
+			"mentions": ["Tehran Incident"]
+		},
+		{
+			"name": "Robertson Panel",
+			"type": "event",
+			"confidence": 0.72,
+			"attributes": { "date": "1953-01-01" },
+			"mentions": ["Robertson Panel"]
+		},
+		{
+			"name": "Project Blue Book",
+			"type": "organization",
+			"confidence": 0.96,
+			"attributes": { "type": "government_program" },
+			"mentions": ["Project Blue Book", "Blue Book"]
+		},
+		{
+			"name": "United States Air Force",
+			"type": "organization",
+			"confidence": 0.98,
+			"attributes": { "type": "military_branch" },
+			"mentions": ["United States Air Force", "USAF", "Air Force"]
+		},
+		{
+			"name": "Malmstrom Air Force Base",
+			"type": "location",
+			"confidence": 0.93,
+			"attributes": { "region": "Montana" },
+			"mentions": ["Malmstrom Air Force Base", "Malmstrom AFB"]
+		},
+		{
+			"name": "Tehran",
+			"type": "location",
+			"confidence": 0.95,
+			"attributes": { "region": "Iran" },
+			"mentions": ["Tehran"]
+		}
+	],
+	"relationships": [
+		{
+			"source_entity": "Robert Salas",
+			"target_entity": "Malmstrom AFB Incident",
+			"relationship_type": "WITNESSED",
+			"confidence": 0.92
+		},
+		{
+			"source_entity": "Parviz Jafari",
+			"target_entity": "Tehran Incident",
+			"relationship_type": "WITNESSED",
+			"confidence": 0.88
+		},
+		{
+			"source_entity": "Malmstrom AFB Incident",
+			"target_entity": "Malmstrom Air Force Base",
+			"relationship_type": "OCCURRED_AT",
+			"confidence": 0.95
+		},
+		{
+			"source_entity": "Tehran Incident",
+			"target_entity": "Tehran",
+			"relationship_type": "OCCURRED_AT",
+			"confidence": 0.93
+		},
+		{
+			"source_entity": "Malmstrom AFB Incident",
+			"target_entity": "United States Air Force",
+			"relationship_type": "CLASSIFIED_BY",
+			"confidence": 0.87
+		},
+		{
+			"source_entity": "Robert Salas",
+			"target_entity": "United States Air Force",
+			"relationship_type": "AFFILIATED_WITH",
+			"confidence": 0.94
+		}
+	]
+}

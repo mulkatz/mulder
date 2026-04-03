@@ -1,0 +1,53 @@
+{
+	"entities": [
+		{
+			"name": "Robert Kowalski",
+			"type": "person",
+			"confidence": 0.91,
+			"attributes": { "role": "witness" },
+			"mentions": ["Robert Kowalski"]
+		},
+		{
+			"name": "Ingrid Hoffmann",
+			"type": "person",
+			"confidence": 0.90,
+			"attributes": { "role": "witness" },
+			"mentions": ["Ingrid Hoffmann"]
+		},
+		{
+			"name": "Lake Michigan",
+			"type": "location",
+			"confidence": 0.95,
+			"attributes": { "region": "Michigan" },
+			"mentions": ["Lake Michigan"]
+		},
+		{
+			"name": "Black Forest",
+			"type": "location",
+			"confidence": 0.93,
+			"attributes": { "region": "Germany" },
+			"mentions": ["Black Forest"]
+		},
+		{
+			"name": "MUFON",
+			"type": "organization",
+			"confidence": 0.97,
+			"attributes": { "type": "research_group" },
+			"mentions": ["MUFON"]
+		}
+	],
+	"relationships": [
+		{
+			"source_entity": "Robert Kowalski",
+			"target_entity": "Lake Michigan",
+			"relationship_type": "WITNESSED",
+			"confidence": 0.88
+		},
+		{
+			"source_entity": "Ingrid Hoffmann",
+			"target_entity": "Black Forest",
+			"relationship_type": "WITNESSED",
+			"confidence": 0.86
+		}
+	]
+}

@@ -1,0 +1,85 @@
+{
+	"segmentId": "seg-004",
+	"sourceSlug": "single-story-report",
+	"difficulty": "complex",
+	"languages": ["en"],
+	"expectedEntities": [
+		{
+			"name": "Charles Halt",
+			"type": "person",
+			"attributes": { "role": "military_personnel", "affiliation": "USAF" }
+		},
+		{
+			"name": "Jim Penniston",
+			"type": "person",
+			"attributes": { "role": "military_personnel" }
+		},
+		{
+			"name": "John Burroughs",
+			"type": "person",
+			"attributes": { "role": "military_personnel" }
+		},
+		{
+			"name": "Rendlesham Forest Incident",
+			"type": "event",
+			"attributes": { "date": "1980-12-26", "location": "Suffolk", "classification": "close_encounter" }
+		},
+		{
+			"name": "Rendlesham Forest",
+			"type": "location",
+			"attributes": { "region": "Suffolk" }
+		},
+		{
+			"name": "RAF Woodbridge",
+			"type": "location",
+			"attributes": { "region": "Suffolk" }
+		},
+		{
+			"name": "Ministry of Defence",
+			"type": "organization",
+			"attributes": { "type": "government_agency" }
+		},
+		{
+			"name": "Halt Memo",
+			"type": "document",
+			"attributes": { "author": "Charles Halt", "publication_date": "1981-01-13", "document_type": "official_report" }
+		}
+	],
+	"expectedRelationships": [
+		{
+			"sourceEntity": "Jim Penniston",
+			"targetEntity": "Rendlesham Forest Incident",
+			"relationshipType": "WITNESSED"
+		},
+		{
+			"sourceEntity": "John Burroughs",
+			"targetEntity": "Rendlesham Forest Incident",
+			"relationshipType": "WITNESSED"
+		},
+		{
+			"sourceEntity": "Charles Halt",
+			"targetEntity": "Rendlesham Forest Incident",
+			"relationshipType": "INVESTIGATED"
+		},
+		{
+			"sourceEntity": "Rendlesham Forest Incident",
+			"targetEntity": "Rendlesham Forest",
+			"relationshipType": "OCCURRED_AT"
+		},
+		{
+			"sourceEntity": "Charles Halt",
+			"targetEntity": "Halt Memo",
+			"relationshipType": "AUTHORED"
+		},
+		{
+			"sourceEntity": "Halt Memo",
+			"targetEntity": "Rendlesham Forest Incident",
+			"relationshipType": "REFERENCES"
+		}
+	],
+	"annotation": {
+		"author": "golden-set-v1",
+		"date": "2026-04-03",
+		"notes": "Complex article with all 5 entity types (person, location, organization, event, document). Tests WITNESSED, INVESTIGATED, OCCURRED_AT, AUTHORED, REFERENCES relationships."
+	}
+}

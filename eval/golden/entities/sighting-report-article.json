@@ -1,0 +1,85 @@
+{
+	"segmentId": "seg-001",
+	"sourceSlug": "magazine-issue-1",
+	"difficulty": "moderate",
+	"languages": ["en"],
+	"expectedEntities": [
+		{
+			"name": "Maria Henderson",
+			"type": "person",
+			"attributes": { "role": "witness" }
+		},
+		{
+			"name": "Richard Haines",
+			"type": "person",
+			"attributes": { "role": "researcher" }
+		},
+		{
+			"name": "James Dalton",
+			"type": "person",
+			"attributes": { "role": "witness" }
+		},
+		{
+			"name": "Phoenix Lights",
+			"type": "event",
+			"attributes": { "date": "1997-03-13", "location": "Arizona" }
+		},
+		{
+			"name": "Prescott Valley",
+			"type": "location",
+			"attributes": { "region": "Arizona" }
+		},
+		{
+			"name": "Tempe",
+			"type": "location",
+			"attributes": { "region": "Arizona" }
+		},
+		{
+			"name": "Luke Air Force Base",
+			"type": "location",
+			"attributes": { "region": "Arizona" }
+		},
+		{
+			"name": "NASA",
+			"type": "organization",
+			"attributes": { "type": "government_agency" }
+		},
+		{
+			"name": "National Institute for Discovery Science",
+			"type": "organization",
+			"attributes": { "type": "research_group" }
+		}
+	],
+	"expectedRelationships": [
+		{
+			"sourceEntity": "Maria Henderson",
+			"targetEntity": "Phoenix Lights",
+			"relationshipType": "WITNESSED"
+		},
+		{
+			"sourceEntity": "James Dalton",
+			"targetEntity": "Phoenix Lights",
+			"relationshipType": "WITNESSED"
+		},
+		{
+			"sourceEntity": "Richard Haines",
+			"targetEntity": "Phoenix Lights",
+			"relationshipType": "INVESTIGATED"
+		},
+		{
+			"sourceEntity": "Phoenix Lights",
+			"targetEntity": "Prescott Valley",
+			"relationshipType": "OCCURRED_AT"
+		},
+		{
+			"sourceEntity": "Richard Haines",
+			"targetEntity": "NASA",
+			"relationshipType": "AFFILIATED_WITH"
+		}
+	],
+	"annotation": {
+		"author": "golden-set-v1",
+		"date": "2026-04-03",
+		"notes": "Sighting report with person, location, event, organization entities. Tests WITNESSED, INVESTIGATED, OCCURRED_AT, AFFILIATED_WITH relationships."
+	}
+}

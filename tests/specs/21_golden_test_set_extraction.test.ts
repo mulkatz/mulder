@@ -249,7 +249,11 @@ describe('Spec 21 — Golden Test Set: Extraction', () => {
 	it('QA-08: eval/metrics/baseline.json is valid JSON matching ExtractionEvalResult with totalPages >= 5', () => {
 		expect(existsSync(BASELINE_PATH)).toBe(true);
 
-		const baseline = JSON.parse(readFileSync(BASELINE_PATH, 'utf-8'));
+		const raw = JSON.parse(readFileSync(BASELINE_PATH, 'utf-8'));
+
+		// Baseline now has top-level keys: extraction, segmentation, entities (spec 31)
+		// Extract the extraction section for validation
+		const baseline = raw.extraction ?? raw;
 
 		// Must match ExtractionEvalResult schema
 		expect(baseline).toHaveProperty('timestamp');

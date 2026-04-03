@@ -1,0 +1,95 @@
+{
+	"segmentId": "seg-005",
+	"sourceSlug": "mixed-content-issue",
+	"difficulty": "complex",
+	"languages": ["en", "de"],
+	"expectedEntities": [
+		{
+			"name": "Erling Strand",
+			"type": "person",
+			"attributes": { "role": "researcher", "affiliation": "Ostfold University College" }
+		},
+		{
+			"name": "Massimo Teodorani",
+			"type": "person",
+			"attributes": { "role": "researcher" }
+		},
+		{
+			"name": "Jader Monari",
+			"type": "person",
+			"attributes": { "role": "researcher" }
+		},
+		{
+			"name": "Hessdalen Lights",
+			"type": "event",
+			"attributes": { "location": "Hessdalen" }
+		},
+		{
+			"name": "Hessdalen",
+			"type": "location",
+			"attributes": { "region": "Norway" }
+		},
+		{
+			"name": "Ostfold University College",
+			"type": "organization",
+			"attributes": { "type": "academic" }
+		},
+		{
+			"name": "Italian National Institute for Astrophysics",
+			"type": "organization",
+			"attributes": { "type": "research_institute" }
+		},
+		{
+			"name": "Institute of Radioastronomy",
+			"type": "organization",
+			"attributes": { "type": "research_institute" }
+		},
+		{
+			"name": "AARO",
+			"type": "organization",
+			"attributes": { "type": "government_agency" }
+		}
+	],
+	"expectedRelationships": [
+		{
+			"sourceEntity": "Erling Strand",
+			"targetEntity": "Hessdalen Lights",
+			"relationshipType": "INVESTIGATED"
+		},
+		{
+			"sourceEntity": "Massimo Teodorani",
+			"targetEntity": "Hessdalen Lights",
+			"relationshipType": "INVESTIGATED"
+		},
+		{
+			"sourceEntity": "Jader Monari",
+			"targetEntity": "Hessdalen Lights",
+			"relationshipType": "INVESTIGATED"
+		},
+		{
+			"sourceEntity": "Hessdalen Lights",
+			"targetEntity": "Hessdalen",
+			"relationshipType": "OCCURRED_AT"
+		},
+		{
+			"sourceEntity": "Erling Strand",
+			"targetEntity": "Ostfold University College",
+			"relationshipType": "AFFILIATED_WITH"
+		},
+		{
+			"sourceEntity": "Massimo Teodorani",
+			"targetEntity": "Italian National Institute for Astrophysics",
+			"relationshipType": "AFFILIATED_WITH"
+		},
+		{
+			"sourceEntity": "Jader Monari",
+			"targetEntity": "Institute of Radioastronomy",
+			"relationshipType": "AFFILIATED_WITH"
+		}
+	],
+	"annotation": {
+		"author": "golden-set-v1",
+		"date": "2026-04-03",
+		"notes": "Cross-lingual article with EN+DE content. Tests entity extraction across languages. Organization names appear in both English and Norwegian forms. Complex due to many researchers and institutions."
+	}
+}

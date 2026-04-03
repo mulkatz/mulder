@@ -1,0 +1,12 @@
+{
+	"id": "seg-002",
+	"title": "Inside Project Blue Book: Declassified Case Files",
+	"subtitle": null,
+	"language": "en",
+	"category": "investigation",
+	"pageStart": 5,
+	"pageEnd": 10,
+	"dateReferences": ["1969-12-01", "1967-03-16", "1976-09-19", "1953-01-01"],
+	"geographicReferences": ["Malmstrom AFB", "Montana", "Tehran"],
+	"extractionConfidence": 0.88
+}

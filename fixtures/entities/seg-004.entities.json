@@ -1,0 +1,98 @@
+{
+	"entities": [
+		{
+			"name": "Charles Halt",
+			"type": "person",
+			"confidence": 0.96,
+			"attributes": { "role": "military_personnel", "affiliation": "USAF" },
+			"mentions": ["Lieutenant Colonel Charles Halt", "Colonel Halt", "Halt"]
+		},
+		{
+			"name": "Jim Penniston",
+			"type": "person",
+			"confidence": 0.94,
+			"attributes": { "role": "military_personnel" },
+			"mentions": ["Staff Sergeant Jim Penniston", "Penniston"]
+		},
+		{
+			"name": "John Burroughs",
+			"type": "person",
+			"confidence": 0.91,
+			"attributes": { "role": "military_personnel" },
+			"mentions": ["Airman First Class John Burroughs", "Burroughs"]
+		},
+		{
+			"name": "Larry Warren",
+			"type": "person",
+			"confidence": 0.62,
+			"attributes": { "role": "military_personnel" },
+			"mentions": ["Larry Warren"]
+		},
+		{
+			"name": "Rendlesham Forest Incident",
+			"type": "event",
+			"confidence": 0.98,
+			"attributes": { "date": "1980-12-26", "location": "Suffolk", "classification": "close_encounter" },
+			"mentions": ["Rendlesham Forest Incident", "the incident"]
+		},
+		{
+			"name": "Rendlesham Forest",
+			"type": "location",
+			"confidence": 0.97,
+			"attributes": { "region": "Suffolk" },
+			"mentions": ["Rendlesham Forest"]
+		},
+		{
+			"name": "RAF Woodbridge",
+			"type": "location",
+			"confidence": 0.95,
+			"attributes": { "region": "Suffolk" },
+			"mentions": ["RAF Woodbridge"]
+		},
+		{
+			"name": "Ministry of Defence",
+			"type": "organization",
+			"confidence": 0.96,
+			"attributes": { "type": "government_agency" },
+			"mentions": ["Ministry of Defence", "MOD"]
+		}
+	],
+	"relationships": [
+		{
+			"source_entity": "Jim Penniston",
+			"target_entity": "Rendlesham Forest Incident",
+			"relationship_type": "WITNESSED",
+			"confidence": 0.95
+		},
+		{
+			"source_entity": "John Burroughs",
+			"target_entity": "Rendlesham Forest Incident",
+			"relationship_type": "WITNESSED",
+			"confidence": 0.93
+		},
+		{
+			"source_entity": "Charles Halt",
+			"target_entity": "Rendlesham Forest Incident",
+			"relationship_type": "INVESTIGATED",
+			"confidence": 0.96
+		},
+		{
+			"source_entity": "Rendlesham Forest Incident",
+			"target_entity": "Rendlesham Forest",
+			"relationship_type": "OCCURRED_AT",
+			"confidence": 0.98
+		},
+		{
+			"source_entity": "Charles Halt",
+			"target_entity": "Halt Memo",
+			"relationship_type": "AUTHORED",
+			"confidence": 0.94
+		},
+		{
+			"source_entity": "Halt Memo",
+			"target_entity": "Rendlesham Forest Incident",
+			"relationship_type": "REFERENCES",
+			"confidence": 0.92
+		}
+	]
+}

@@ -1,0 +1,50 @@
+{
+	"segmentId": "seg-003",
+	"sourceSlug": "magazine-issue-1",
+	"difficulty": "simple",
+	"languages": ["en"],
+	"expectedEntities": [
+		{
+			"name": "Robert Kowalski",
+			"type": "person",
+			"attributes": { "role": "witness" }
+		},
+		{
+			"name": "Ingrid Hoffmann",
+			"type": "person",
+			"attributes": { "role": "witness" }
+		},
+		{
+			"name": "Lake Michigan",
+			"type": "location",
+			"attributes": { "region": "Michigan" }
+		},
+		{
+			"name": "Black Forest",
+			"type": "location",
+			"attributes": { "region": "Germany" }
+		},
+		{
+			"name": "MUFON",
+			"type": "organization",
+			"attributes": { "type": "research_group" }
+		}
+	],
+	"expectedRelationships": [
+		{
+			"sourceEntity": "Robert Kowalski",
+			"targetEntity": "Lake Michigan",
+			"relationshipType": "WITNESSED"
+		},
+		{
+			"sourceEntity": "Ingrid Hoffmann",
+			"targetEntity": "Black Forest",
+			"relationshipType": "WITNESSED"
+		}
+	],
+	"annotation": {
+		"author": "golden-set-v1",
+		"date": "2026-04-03",
+		"notes": "Reader letters editorial. Simple extraction — person and location entities with straightforward WITNESSED relationships."
+	}
+}

@@ -1,0 +1,92 @@
+{
+	"entities": [
+		{
+			"name": "Erling Strand",
+			"type": "person",
+			"confidence": 0.93,
+			"attributes": { "role": "researcher", "affiliation": "Ostfold University College" },
+			"mentions": ["Professor Erling Strand", "Strand"]
+		},
+		{
+			"name": "Massimo Teodorani",
+			"type": "person",
+			"confidence": 0.91,
+			"attributes": { "role": "researcher" },
+			"mentions": ["Dr. Massimo Teodorani", "Teodorani"]
+		},
+		{
+			"name": "Hessdalen Lights",
+			"type": "event",
+			"confidence": 0.96,
+			"attributes": { "location": "Hessdalen" },
+			"mentions": ["Hessdalen Lights", "Hessdalen lights", "the lights"]
+		},
+		{
+			"name": "Hessdalen",
+			"type": "location",
+			"confidence": 0.97,
+			"attributes": { "region": "Norway" },
+			"mentions": ["Hessdalen", "Hessdalen valley"]
+		},
+		{
+			"name": "Norway",
+			"type": "location",
+			"confidence": 0.80,
+			"attributes": { "region": "Scandinavia" },
+			"mentions": ["Norway"]
+		},
+		{
+			"name": "Ostfold University College",
+			"type": "organization",
+			"confidence": 0.88,
+			"attributes": { "type": "academic" },
+			"mentions": ["Ostfold University College"]
+		},
+		{
+			"name": "Italian National Institute for Astrophysics",
+			"type": "organization",
+			"confidence": 0.85,
+			"attributes": { "type": "research_institute" },
+			"mentions": ["Italian National Institute for Astrophysics"]
+		},
+		{
+			"name": "Institute of Radioastronomy",
+			"type": "organization",
+			"confidence": 0.82,
+			"attributes": { "type": "research_institute" },
+			"mentions": ["Institute of Radioastronomy"]
+		}
+	],
+	"relationships": [
+		{
+			"source_entity": "Erling Strand",
+			"target_entity": "Hessdalen Lights",
+			"relationship_type": "INVESTIGATED",
+			"confidence": 0.94
+		},
+		{
+			"source_entity": "Massimo Teodorani",
+			"target_entity": "Hessdalen Lights",
+			"relationship_type": "INVESTIGATED",
+			"confidence": 0.90
+		},
+		{
+			"source_entity": "Hessdalen Lights",
+			"target_entity": "Hessdalen",
+			"relationship_type": "OCCURRED_AT",
+			"confidence": 0.96
+		},
+		{
+			"source_entity": "Erling Strand",
+			"target_entity": "Ostfold University College",
+			"relationship_type": "AFFILIATED_WITH",
+			"confidence": 0.92
+		},
+		{
+			"source_entity": "Massimo Teodorani",
+			"target_entity": "Italian National Institute for Astrophysics",
+			"relationship_type": "AFFILIATED_WITH",
+			"confidence": 0.89
+		}
+	]
+}

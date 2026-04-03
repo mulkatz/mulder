@@ -1,0 +1,12 @@
+{
+	"id": "seg-001",
+	"title": "Rendlesham Forest Incident: Official MOD Report",
+	"subtitle": null,
+	"language": "en",
+	"category": "investigation",
+	"pageStart": 1,
+	"pageEnd": 4,
+	"dateReferences": ["1980-12-26", "1981-01-13"],
+	"geographicReferences": ["Rendlesham Forest", "Suffolk", "RAF Woodbridge"],
+	"extractionConfidence": 0.96
+}
