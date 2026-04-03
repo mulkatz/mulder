@@ -1,7 +1,22 @@
+export type {
+	EnrichInput,
+	EnrichmentData,
+	EnrichResult,
+	ExtractedEntity,
+	ExtractedRelationship,
+	ExtractionResponse,
+	ResolutionCandidate,
+	ResolutionResult,
+	ResolutionTier,
+	ResolveEntityOptions,
+} from './enrich/index.js';
 export {
+	execute as executeEnrich,
+	forceCleanupSource as forceCleanupEnrichSource,
 	generateExtractionSchema,
 	getEntityTypeNames,
 	getExtractionResponseSchema,
+	resolveEntity,
 } from './enrich/index.js';
 export type {
 	ExtractInput,

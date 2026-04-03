@@ -12,6 +12,7 @@
 	},
 	"dependencies": {
 		"@mulder/core": "workspace:*",
+		"@mulder/taxonomy": "workspace:*",
 		"pdf-parse": "^2.4.5",
 		"pdf-to-img": "^4.4.0",
 		"zod": "^4.3.6",

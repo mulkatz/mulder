@@ -138,6 +138,9 @@ importers:
       '@mulder/core':
         specifier: workspace:*
         version: link:../core
+      '@mulder/taxonomy':
+        specifier: workspace:*
+        version: link:../taxonomy
       pdf-parse:
         specifier: ^2.4.5
         version: 2.4.5

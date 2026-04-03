@@ -172,6 +172,12 @@ function createMinimalPdf(pageCount: number): Buffer {
 beforeAll(() => {
 	tmpDir = mkdtempSync(join(tmpdir(), 'mulder-qa-44-'));
 	pgAvailable = isPgAvailable();
+	if (pgAvailable) {
+		// Ensure migrations are applied — the schema may have been destroyed by
+		// other specs (e.g., spec 12's docker compose down -v) during the full suite.
+		const configPath = writeTestConfig();
+		runCli(['db', 'migrate', configPath], { cwd: tmpDir });
+	}
 });
 
 afterAll(() => {
