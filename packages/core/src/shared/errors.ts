@@ -105,6 +105,18 @@ export const ENRICH_ERROR_CODES = {
 
 export type EnrichErrorCode = (typeof ENRICH_ERROR_CODES)[keyof typeof ENRICH_ERROR_CODES];
 
+/** Embed step error codes. */
+export const EMBED_ERROR_CODES = {
+	EMBED_STORY_NOT_FOUND: 'EMBED_STORY_NOT_FOUND',
+	EMBED_INVALID_STATUS: 'EMBED_INVALID_STATUS',
+	EMBED_MARKDOWN_NOT_FOUND: 'EMBED_MARKDOWN_NOT_FOUND',
+	EMBED_EMBEDDING_FAILED: 'EMBED_EMBEDDING_FAILED',
+	EMBED_QUESTION_GENERATION_FAILED: 'EMBED_QUESTION_GENERATION_FAILED',
+	EMBED_CHUNK_WRITE_FAILED: 'EMBED_CHUNK_WRITE_FAILED',
+} as const;
+
+export type EmbedErrorCode = (typeof EMBED_ERROR_CODES)[keyof typeof EMBED_ERROR_CODES];
+
 /** Prompt template engine error codes. */
 export const PROMPT_ERROR_CODES = {
 	TEMPLATE_NOT_FOUND: 'TEMPLATE_NOT_FOUND',
@@ -126,6 +138,7 @@ export type MulderErrorCode =
 	| ExtractErrorCode
 	| SegmentErrorCode
 	| EnrichErrorCode
+	| EmbedErrorCode
 	| PromptErrorCode;
 
 // ────────────────────────────────────────────────────────────
@@ -273,6 +286,21 @@ export class EnrichError extends MulderError {
 	) {
 		super(message, code, options);
 		this.name = 'EnrichError';
+	}
+}
+
+/** Embed step errors (chunking, embedding, question generation). */
+export class EmbedError extends MulderError {
+	constructor(
+		message: string,
+		code: EmbedErrorCode,
+		options?: {
+			context?: Record<string, unknown>;
+			cause?: unknown;
+		},
+	) {
+		super(message, code, options);
+		this.name = 'EmbedError';
 	}
 }
 
