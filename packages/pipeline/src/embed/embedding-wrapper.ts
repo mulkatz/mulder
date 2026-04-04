@@ -170,6 +170,7 @@ export async function generateQuestions(
 	for (const chunk of chunks) {
 		try {
 			const prompt = renderPrompt('generate-questions', {
+				locale: 'en',
 				chunk_text: chunk.content,
 				questions_per_chunk: questionsPerChunk,
 			});
