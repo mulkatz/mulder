@@ -77,6 +77,25 @@ Core intelligence. Where Mulder becomes more than an OCR tool.
 
 ---
 
+## ▮ QA Gate: Pre-Search Verification Checkpoint
+
+**Not a feature milestone.** Quality gate verifying M1-M3 + D1-D3 (31 steps) are 100% spec-conformant before building search/retrieval on top. Deliverable is test code + triage document — no production code changes unless bugs are found.
+
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| ⚪ | QA-1 | Schema conformance — DDL vs TypeScript types vs §4.3 | §4.3, §4.3.1, §6.2 |
+| ⚪ | QA-2 | Status state machine — source + story transitions | §2.1–§2.4, §3.2, §3.4 |
+| ⚪ | QA-3 | Cascading reset — all 5 reset paths end-to-end | §4.3.1, §3.4 |
+| ⚪ | QA-4 | Cross-step pipeline integration — ingest→enrich→chunk round-trip | §2.1–§2.4, §2.6 |
+| ⚪ | QA-5 | Error code coverage audit — defined vs thrown vs reserved | §7.1, §7.2 |
+| ⚪ | QA-6 | Known issues triage + documentation | — |
+
+**Also read for all QA steps:** §2 (global step conventions), §3 (pipeline composition), §4.3 (full schema), §7 (error handling)
+
+**Gate criteria:** QA-1 through QA-5 tests pass. QA-6 produces triage document. No critical/high bugs remain. D4 begins only after gate passes.
+
+---
+
 ## M4: "You can search" — v1.0 MVP
 
 First version worth showing to anyone.
@@ -231,15 +250,16 @@ Images, Office docs, emails, URLs — every format converges to the same Markdow
 M1 Foundation
  └→ M2 Ingest+Extract (+golden extraction tests)
      └→ M3 Segment+Enrich (+golden entity tests)
-         └→ M4 Search (v1.0 MVP) ← FIRST DEMO POINT
-             ├→ M5 Curation
-             ├→ M6 Intelligence (v2.0)
-             ├→ M7 API+Workers
-             ├→ M8 Operations
-             └→ M9 Multi-Format Ingestion
+         └→ ▮ QA Gate (verification checkpoint)
+             └→ M4 Search (v1.0 MVP) ← FIRST DEMO POINT
+                 ├→ M5 Curation
+                 ├→ M6 Intelligence (v2.0)
+                 ├→ M7 API+Workers
+                 ├→ M8 Operations
+                 └→ M9 Multi-Format Ingestion
 ```
 
-M1-M4 is the critical path. Everything after M4 can be reordered based on user feedback.
+M1-M4 is the critical path. The QA Gate is a zero-code checkpoint (unless bugs found). Everything after M4 can be reordered based on user feedback.
 
 ## Key decisions baked into this order
 
@@ -250,3 +270,4 @@ M1-M4 is the critical path. Everything after M4 can be reordered based on user f
 5. **Eval CLI last, eval data first.** The `mulder eval` reporter is M8 polish. The golden test data and Vitest assertions are M2/M3 necessities.
 6. **M4 is the pivot point.** If search results are bad, revisit extraction prompts (M3) before building APIs (M7).
 7. **Multi-format after MVP.** The PDF pipeline validates the full architecture. Adding formats is additive — only ingest/extract change, everything downstream stays identical.
+8. **QA gate before search.** Verified M1-M3 foundation before building retrieval on top. Cross-step integration tests, schema audit, and cascade verification catch compounding errors early.
