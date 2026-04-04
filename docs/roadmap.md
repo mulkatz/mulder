@@ -77,7 +77,7 @@ Core intelligence. Where Mulder becomes more than an OCR tool.
 
 ---
 
-## ▮ QA Gate: Pre-Search Verification Checkpoint
+## QA Gate: Pre-Search Verification Checkpoint
 
 **Not a feature milestone.** Quality gate verifying M1-M3 + D1-D3 (31 steps) are 100% spec-conformant before building search/retrieval on top. Deliverable is test code + triage document — no production code changes unless bugs are found.
 
@@ -250,7 +250,7 @@ Images, Office docs, emails, URLs — every format converges to the same Markdow
 M1 Foundation
  └→ M2 Ingest+Extract (+golden extraction tests)
      └→ M3 Segment+Enrich (+golden entity tests)
-         └→ ▮ QA Gate (verification checkpoint)
+         └→ QA Gate (verification checkpoint)
              └→ M4 Search (v1.0 MVP) ← FIRST DEMO POINT
                  ├→ M5 Curation
                  ├→ M6 Intelligence (v2.0)
