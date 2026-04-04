@@ -14,6 +14,7 @@
 
 /** Config domain error codes. */
 export const CONFIG_ERROR_CODES = {
+	/** @reserved Config file resolution in CLI commands */
 	CONFIG_NOT_FOUND: 'CONFIG_NOT_FOUND',
 	CONFIG_INVALID: 'CONFIG_INVALID',
 } as const;
@@ -22,9 +23,13 @@ export type ConfigErrorCode = (typeof CONFIG_ERROR_CODES)[keyof typeof CONFIG_ER
 
 /** Pipeline domain error codes. */
 export const PIPELINE_ERROR_CODES = {
+	/** @reserved D6 pipeline orchestrator */
 	PIPELINE_SOURCE_NOT_FOUND: 'PIPELINE_SOURCE_NOT_FOUND',
+	/** @reserved D6 pipeline orchestrator status checks */
 	PIPELINE_WRONG_STATUS: 'PIPELINE_WRONG_STATUS',
+	/** @reserved D6 pipeline orchestrator step failure wrapping */
 	PIPELINE_STEP_FAILED: 'PIPELINE_STEP_FAILED',
+	/** @reserved D6 pipeline orchestrator retry exhaustion */
 	PIPELINE_RATE_LIMITED: 'PIPELINE_RATE_LIMITED',
 } as const;
 
@@ -51,6 +56,7 @@ export type ExternalServiceErrorCode = (typeof EXTERNAL_SERVICE_ERROR_CODES)[key
 
 /** Taxonomy domain error codes (used by M3+). */
 export const TAXONOMY_ERROR_CODES = {
+	/** @reserved F1 taxonomy bootstrap command */
 	TAXONOMY_BOOTSTRAP_TOO_FEW: 'TAXONOMY_BOOTSTRAP_TOO_FEW',
 } as const;
 
@@ -63,6 +69,7 @@ export const INGEST_ERROR_CODES = {
 	INGEST_FILE_TOO_LARGE: 'INGEST_FILE_TOO_LARGE',
 	INGEST_TOO_MANY_PAGES: 'INGEST_TOO_MANY_PAGES',
 	INGEST_UPLOAD_FAILED: 'INGEST_UPLOAD_FAILED',
+	/** @reserved M9 cross-format dedup */
 	INGEST_DUPLICATE: 'INGEST_DUPLICATE',
 } as const;
 
@@ -76,6 +83,7 @@ export const EXTRACT_ERROR_CODES = {
 	EXTRACT_VISION_FALLBACK_FAILED: 'EXTRACT_VISION_FALLBACK_FAILED',
 	EXTRACT_NATIVE_TEXT_FAILED: 'EXTRACT_NATIVE_TEXT_FAILED',
 	EXTRACT_STORAGE_FAILED: 'EXTRACT_STORAGE_FAILED',
+	/** @reserved Real GCP page rendering failures */
 	EXTRACT_PAGE_RENDER_FAILED: 'EXTRACT_PAGE_RENDER_FAILED',
 } as const;
 
@@ -99,6 +107,7 @@ export const ENRICH_ERROR_CODES = {
 	ENRICH_INVALID_STATUS: 'ENRICH_INVALID_STATUS',
 	ENRICH_MARKDOWN_NOT_FOUND: 'ENRICH_MARKDOWN_NOT_FOUND',
 	ENRICH_LLM_FAILED: 'ENRICH_LLM_FAILED',
+	/** @reserved Gemini structured output validation */
 	ENRICH_VALIDATION_FAILED: 'ENRICH_VALIDATION_FAILED',
 	ENRICH_ENTITY_WRITE_FAILED: 'ENRICH_ENTITY_WRITE_FAILED',
 } as const;
@@ -107,11 +116,16 @@ export type EnrichErrorCode = (typeof ENRICH_ERROR_CODES)[keyof typeof ENRICH_ER
 
 /** Embed step error codes. */
 export const EMBED_ERROR_CODES = {
+	/** @reserved D4 embed step execute() */
 	EMBED_STORY_NOT_FOUND: 'EMBED_STORY_NOT_FOUND',
+	/** @reserved D4 embed step execute() */
 	EMBED_INVALID_STATUS: 'EMBED_INVALID_STATUS',
+	/** @reserved D4 embed step execute() */
 	EMBED_MARKDOWN_NOT_FOUND: 'EMBED_MARKDOWN_NOT_FOUND',
 	EMBED_EMBEDDING_FAILED: 'EMBED_EMBEDDING_FAILED',
+	/** @reserved D4 embed step execute() */
 	EMBED_QUESTION_GENERATION_FAILED: 'EMBED_QUESTION_GENERATION_FAILED',
+	/** @reserved D4 embed step execute() */
 	EMBED_CHUNK_WRITE_FAILED: 'EMBED_CHUNK_WRITE_FAILED',
 } as const;
 

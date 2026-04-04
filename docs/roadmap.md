@@ -83,12 +83,12 @@ Core intelligence. Where Mulder becomes more than an OCR tool.
 
 | Status | Step | What | Spec |
 |--------|------|------|------|
-| ⚪ | QA-1 | Schema conformance — DDL vs TypeScript types vs §4.3 | §4.3, §4.3.1, §6.2 |
-| ⚪ | QA-2 | Status state machine — source + story transitions | §2.1–§2.4, §3.2, §3.4 |
-| ⚪ | QA-3 | Cascading reset — all 5 reset paths end-to-end | §4.3.1, §3.4 |
-| ⚪ | QA-4 | Cross-step pipeline integration — ingest→enrich→chunk round-trip | §2.1–§2.4, §2.6 |
-| ⚪ | QA-5 | Error code coverage audit — defined vs thrown vs reserved | §7.1, §7.2 |
-| ⚪ | QA-6 | Known issues triage + documentation | — |
+| 🟢 | QA-1 | Schema conformance — DDL vs TypeScript types vs §4.3 | §4.3, §4.3.1, §6.2 |
+| 🟢 | QA-2 | Status state machine — source + story transitions | §2.1–§2.4, §3.2, §3.4 |
+| 🟢 | QA-3 | Cascading reset — all 5 reset paths end-to-end | §4.3.1, §3.4 |
+| 🟢 | QA-4 | Cross-step pipeline integration — ingest→enrich→chunk round-trip | §2.1–§2.4, §2.6 |
+| 🟢 | QA-5 | Error code coverage audit — defined vs thrown vs reserved | §7.1, §7.2 |
+| 🟢 | QA-6 | Known issues triage + documentation | — |
 
 **Also read for all QA steps:** §2 (global step conventions), §3 (pipeline composition), §4.3 (full schema), §7 (error handling)
 
