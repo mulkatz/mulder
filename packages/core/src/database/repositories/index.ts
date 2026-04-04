@@ -6,8 +6,30 @@
  * @see docs/specs/24_entity_alias_repositories.spec.md §4.6
  * @see docs/specs/25_edge_repository.spec.md §4.4
  * @see docs/specs/27_taxonomy_normalization.spec.md §4.5
+ * @see docs/specs/32_embedding_wrapper_semantic_chunker_chunk_repository.spec.md §4.5
  */
 
+export {
+	countChunks,
+	createChunk,
+	createChunks,
+	deleteChunksBySourceId,
+	deleteChunksByStoryId,
+	findChunkById,
+	findChunksBySourceId,
+	findChunksByStoryId,
+	searchByFts,
+	searchByVector,
+	updateChunkEmbedding,
+} from './chunk.repository.js';
+export type {
+	Chunk,
+	ChunkFilter,
+	ChunkRow,
+	CreateChunkInput,
+	FtsSearchResult,
+	VectorSearchResult,
+} from './chunk.types.js';
 export {
 	countEdges,
 	createEdge,
