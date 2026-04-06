@@ -24,27 +24,31 @@ interface StoryEntityAttributes {
 }
 
 /**
- * Loads attributes for a specific entity from all stories that mention it.
- * Each story_entity junction might have different attribute snapshots because
- * entities aggregate attributes from multiple sources.
+ * Loads attributes for entities in the same canonical group from other stories.
  *
- * We load the entity's attributes and then find all other stories that
- * also mention this entity. The entity itself has the merged attributes,
- * but we need per-story attribute snapshots to detect contradictions.
+ * A "canonical group" is the set of entity rows that represent the same
+ * real-world entity, linked via `canonical_id`. This includes:
+ * - The canonical entity itself (where `canonical_id IS NULL` or is the entity)
+ * - All entities whose `canonical_id` points to the same canonical entity
  *
- * Since story-level attributes are stored in the entity's consolidated
- * attributes JSONB, we look for contradictions by comparing the entity's
- * attributes across different story mentions. In practice, we compare
- * the enrichment metadata stored per story-entity link.
+ * We compare attributes across entities in the same canonical group that
+ * appear in different stories to detect contradictions.
  */
-async function loadEntityAttributesAcrossStories(
+async function loadCanonicalGroupAttributesAcrossStories(
 	pool: pg.Pool,
 	entityId: string,
+	canonicalId: string | null,
 	excludeStoryId: string,
 ): Promise<StoryEntityAttributes[]> {
-	// Load the entity's per-story attribute mentions
-	// story_entities stores confidence and mention_count, but entity attributes
-	// are on the entities table. We need to find stories that mention this entity.
+	// Determine the canonical root: if this entity has a canonical_id, use it;
+	// otherwise this entity IS the canonical root.
+	const canonicalRoot = canonicalId ?? entityId;
+
+	// Find all entities in the same canonical group that appear in other stories.
+	// The group includes:
+	// 1. The canonical root entity itself (id = canonicalRoot)
+	// 2. All entities whose canonical_id = canonicalRoot
+	// We exclude the current story to avoid self-comparison.
 	const result = await pool.query<{
 		story_id: string;
 		entity_id: string;
@@ -53,8 +57,9 @@ async function loadEntityAttributesAcrossStories(
 		`SELECT se.story_id, e.id as entity_id, e.attributes
 		 FROM story_entities se
 		 JOIN entities e ON e.id = se.entity_id
-		 WHERE se.entity_id = $1 AND se.story_id != $2`,
-		[entityId, excludeStoryId],
+		 WHERE (e.id = $1 OR e.canonical_id = $1)
+		   AND se.story_id != $2`,
+		[canonicalRoot, excludeStoryId],
 	);
 
 	return result.rows.map((row) => ({
@@ -114,20 +119,14 @@ function findAttributeDiffs(
  *
  * For each entity linked to the story:
  * 1. Load the entity's attributes as seen in this story
- * 2. Find other stories mentioning the same entity
+ * 2. Find other entities in the same canonical group (linked via canonical_id)
+ *    that appear in other stories
  * 3. Compare attributes — if values differ for the same key, flag it
  *
- * Note: Since entities aggregate attributes from all sources into a single
- * JSONB column, we detect contradictions by finding entities mentioned in
- * multiple stories and checking if the per-story enrichment produced
- * different attribute values. The enrichment step may have stored
- * per-story metadata in story_entities or via the attributes JSONB.
- *
- * In the current data model, entity attributes are merged. So contradictions
- * are detected when the same entity (by canonical_id or exact match) appears
- * with different attribute values extracted from different stories.
- * We use the attributes JSONB on the entities table and look for cases
- * where multiple stories' enrichment metadata disagree.
+ * Canonical groups are central to contradiction detection: different entity
+ * rows with the same canonical_id represent the same real-world entity as
+ * observed from different stories. When their attributes conflict, that is
+ * a potential contradiction.
  *
  * @param pool - PostgreSQL connection pool
  * @param storyId - The story to check for contradictions
@@ -142,10 +141,13 @@ export async function detectContradictions(pool: pg.Pool, storyId: string): Prom
 
 	const contradictions: ContradictionCandidate[] = [];
 
-	// 2. For each entity, check for attribute contradictions across stories
+	// 2. For each entity, check for attribute contradictions across stories.
+	//    We look for entities in the same canonical group (linked via canonical_id)
+	//    that appear in other stories with different attribute values.
 	for (const entity of entities) {
-		// Load the entity's attributes from other stories
-		const otherMentions = await loadEntityAttributesAcrossStories(pool, entity.id, storyId);
+		// Load attributes from other entities in the same canonical group
+		// that appear in different stories
+		const otherMentions = await loadCanonicalGroupAttributesAcrossStories(pool, entity.id, entity.canonicalId, storyId);
 
 		if (otherMentions.length === 0) {
 			continue;
