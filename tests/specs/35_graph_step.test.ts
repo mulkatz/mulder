@@ -208,10 +208,7 @@ describe('Spec 35 — Graph Step', () => {
 	beforeAll(() => {
 		pgAvailable = isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL container not available. Start with:\n' +
-					'  docker compose up -d',
-			);
+			console.warn('SKIP: PostgreSQL container not available. Start with:\n' + '  docker compose up -d');
 			return;
 		}
 
@@ -268,8 +265,8 @@ describe('Spec 35 — Graph Step', () => {
 		cleanTestData();
 		cleanStorageFixtures();
 
-		const sourceId1 = ingestExtractSegmentEnrichEmbed(NATIVE_TEXT_PDF);
-		const sourceId2 = ingestExtractSegmentEnrichEmbed(SCANNED_PDF);
+		ingestExtractSegmentEnrichEmbed(NATIVE_TEXT_PDF);
+		ingestExtractSegmentEnrichEmbed(SCANNED_PDF);
 
 		// Verify both have embedded stories
 		const embCount = runSql("SELECT COUNT(*) FROM stories WHERE status = 'embedded';");
@@ -409,9 +406,7 @@ describe('Spec 35 — Graph Step', () => {
 		const combined = stdout + stderr;
 
 		expect(exitCode).not.toBe(0);
-		expect(combined).toMatch(
-			/not supported|too dangerous|not allowed|cannot.*--force.*--all|--all --force/i,
-		);
+		expect(combined).toMatch(/not supported|too dangerous|not allowed|cannot.*--force.*--all|--all --force/i);
 	});
 
 	// ─── QA-08: Mutual exclusivity ───
@@ -502,9 +497,7 @@ describe('Spec 35 — Graph Step', () => {
 		// But A and C are duplicates → they collapse.
 		// So independent sources = 1 (only source 1 with stories A+B, source 2's story C is collapsed)
 		// Per spec: independent_source_count should be 1
-		const sourceCount = runSql(
-			`SELECT source_count FROM entities WHERE id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';`,
-		);
+		const sourceCount = runSql(`SELECT source_count FROM entities WHERE id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';`);
 		// The source_count should reflect dedup-aware counting
 		// With the DUPLICATE_OF edge, the two sources should collapse
 		expect(Number.parseInt(sourceCount, 10)).toBeLessThanOrEqual(2);
@@ -585,9 +578,7 @@ describe('Spec 35 — Graph Step', () => {
 		// Check for POTENTIAL_CONTRADICTION edges
 		// Per spec: entities sharing the same canonical_id with different attribute values
 		// should be flagged.
-		const contradictionCount = runSql(
-			`SELECT COUNT(*) FROM entity_edges WHERE edge_type = 'POTENTIAL_CONTRADICTION';`,
-		);
+		const contradictionCount = runSql(`SELECT COUNT(*) FROM entity_edges WHERE edge_type = 'POTENTIAL_CONTRADICTION';`);
 		expect(Number.parseInt(contradictionCount, 10)).toBeGreaterThanOrEqual(1);
 
 		// Verify the contradiction references the conflicting attribute
@@ -701,9 +692,7 @@ describe('CLI Test Matrix: graph', () => {
 		const combined = stdout + stderr;
 
 		expect(exitCode).not.toBe(0);
-		expect(combined).toMatch(
-			/not supported|too dangerous|not allowed|cannot.*--force.*--all|--all --force/i,
-		);
+		expect(combined).toMatch(/not supported|too dangerous|not allowed|cannot.*--force.*--all|--all --force/i);
 	});
 
 	// ─── CLI-05: --all + --source mutually exclusive ───
