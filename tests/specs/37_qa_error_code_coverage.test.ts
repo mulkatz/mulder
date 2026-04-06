@@ -216,6 +216,7 @@ describe('Spec 33 — QA-5: Error Code Coverage', () => {
 			SegmentError: { codeType: 'SegmentErrorCode', codeGroup: 'SEGMENT_ERROR_CODES' },
 			EnrichError: { codeType: 'EnrichErrorCode', codeGroup: 'ENRICH_ERROR_CODES' },
 			EmbedError: { codeType: 'EmbedErrorCode', codeGroup: 'EMBED_ERROR_CODES' },
+			GraphError: { codeType: 'GraphErrorCode', codeGroup: 'GRAPH_ERROR_CODES' },
 			PromptError: { codeType: 'PromptErrorCode', codeGroup: 'PROMPT_ERROR_CODES' },
 		};
 

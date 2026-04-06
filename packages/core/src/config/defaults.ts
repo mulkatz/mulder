@@ -59,6 +59,7 @@ export const CONFIG_DEFAULTS = {
 			same_author_is_one_source: true,
 			similarity_above_threshold_is_one_source: true,
 		},
+		min_independent_sources: 3,
 	},
 
 	embedding: {
@@ -119,6 +120,7 @@ export const CONFIG_DEFAULTS = {
 			extract: 10,
 			segment: 5,
 			embed: 50,
+			graph: 50,
 		},
 		retry: {
 			max_attempts: 3,

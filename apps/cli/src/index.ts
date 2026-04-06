@@ -17,6 +17,7 @@ import { registerEmbedCommands } from './commands/embed.js';
 import { registerEnrichCommands } from './commands/enrich.js';
 import { registerExtractCommands } from './commands/extract.js';
 import { registerFixtureCommands } from './commands/fixtures.js';
+import { registerGraphCommands } from './commands/graph.js';
 import { registerIngestCommands } from './commands/ingest.js';
 import { registerSegmentCommands } from './commands/segment.js';
 
@@ -32,6 +33,7 @@ registerEmbedCommands(program);
 registerEnrichCommands(program);
 registerExtractCommands(program);
 registerFixtureCommands(program);
+registerGraphCommands(program);
 registerIngestCommands(program);
 registerSegmentCommands(program);
 

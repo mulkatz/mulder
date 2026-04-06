@@ -104,7 +104,7 @@ First version worth showing to anyone.
 |--------|------|------|------|
 | 🟢 | D1-D3 | Embedding wrapper + semantic chunker + chunk repo | §2.6, §4.3 (chunks table) |
 | 🟢 | D4 | Embed step — `mulder embed <id>` | §2.6, §1 (embed cmd) |
-| 🟡 | D5 | Graph step — dedup + corroboration + contradiction flagging | §2.7, §1 (graph cmd) |
+| 🟢 | D5 | Graph step — dedup + corroboration + contradiction flagging | §2.7, §1 (graph cmd) |
 | ⚪ | D6 | Pipeline orchestrator — cursor-based | §3.1, §3.2, §3.3, §3.4, §3.5, §1 (pipeline cmd) |
 | ⚪ | D7 | Full-text search — generated tsvector on chunks | §4.3 (chunks.fts_vector), §5.1 |
 | ⚪ | E1 | Vector search — HNSW, pgvector cosine similarity | §5.1 (vector search), §4.3 (HNSW index) |

@@ -131,6 +131,24 @@ export const EMBED_ERROR_CODES = {
 
 export type EmbedErrorCode = (typeof EMBED_ERROR_CODES)[keyof typeof EMBED_ERROR_CODES];
 
+/** Graph step error codes. */
+export const GRAPH_ERROR_CODES = {
+	/** @reserved D5 graph step execute() */
+	GRAPH_STORY_NOT_FOUND: 'GRAPH_STORY_NOT_FOUND',
+	/** @reserved D5 graph step execute() */
+	GRAPH_INVALID_STATUS: 'GRAPH_INVALID_STATUS',
+	/** @reserved D5 graph step execute() */
+	GRAPH_EDGE_WRITE_FAILED: 'GRAPH_EDGE_WRITE_FAILED',
+	/** @reserved D5 graph step execute() */
+	GRAPH_DEDUP_FAILED: 'GRAPH_DEDUP_FAILED',
+	/** @reserved D5 graph step execute() */
+	GRAPH_CORROBORATION_FAILED: 'GRAPH_CORROBORATION_FAILED',
+	/** @reserved D5 graph step execute() */
+	GRAPH_CONTRADICTION_FAILED: 'GRAPH_CONTRADICTION_FAILED',
+} as const;
+
+export type GraphErrorCode = (typeof GRAPH_ERROR_CODES)[keyof typeof GRAPH_ERROR_CODES];
+
 /** Prompt template engine error codes. */
 export const PROMPT_ERROR_CODES = {
 	TEMPLATE_NOT_FOUND: 'TEMPLATE_NOT_FOUND',
@@ -153,6 +171,7 @@ export type MulderErrorCode =
 	| SegmentErrorCode
 	| EnrichErrorCode
 	| EmbedErrorCode
+	| GraphErrorCode
 	| PromptErrorCode;
 
 // ────────────────────────────────────────────────────────────
@@ -315,6 +334,21 @@ export class EmbedError extends MulderError {
 	) {
 		super(message, code, options);
 		this.name = 'EmbedError';
+	}
+}
+
+/** Graph step errors (dedup, corroboration, contradiction flagging). */
+export class GraphError extends MulderError {
+	constructor(
+		message: string,
+		code: GraphErrorCode,
+		options?: {
+			context?: Record<string, unknown>;
+			cause?: unknown;
+		},
+	) {
+		super(message, code, options);
+		this.name = 'GraphError';
 	}
 }
 

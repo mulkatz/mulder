@@ -151,6 +151,7 @@ const deduplicationObj = z.object({
 	enabled: z.boolean().default(true),
 	segment_level: segmentLevelSchema.default(defaults(segmentLevelSchema)),
 	corroboration_filter: corroborationFilterSchema.default(defaults(corroborationFilterSchema)),
+	min_independent_sources: z.number().positive().int().default(3),
 });
 const deduplicationSchema = deduplicationObj.default(defaults(deduplicationObj));
 
@@ -247,6 +248,7 @@ const batchSizeSchema = z.object({
 	extract: z.number().positive().int().default(10),
 	segment: z.number().positive().int().default(5),
 	embed: z.number().positive().int().default(50),
+	graph: z.number().positive().int().default(50),
 });
 
 const retrySchema = z.object({
