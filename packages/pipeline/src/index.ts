@@ -53,6 +53,18 @@ export type {
 	FixtureSourceStatus,
 } from './fixtures/index.js';
 export { generateFixtures, getFixtureStatus } from './fixtures/index.js';
+export type {
+	ContradictionCandidate,
+	CorroborationResult,
+	DuplicatePair,
+	GraphData,
+	GraphInput,
+	GraphResult,
+} from './graph/index.js';
+export {
+	execute as executeGraph,
+	forceCleanupSource as forceCleanupGraphSource,
+} from './graph/index.js';
 export type { IngestFileResult, IngestInput, IngestResult } from './ingest/index.js';
 export { execute as executeIngest } from './ingest/index.js';
 export type { SegmentationData, SegmentedStory, SegmentInput, SegmentResult } from './segment/index.js';
