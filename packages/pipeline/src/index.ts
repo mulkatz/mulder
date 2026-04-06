@@ -2,11 +2,20 @@ export type {
 	ChunkerConfig,
 	EmbedChunkInput,
 	EmbedChunkResult,
+	EmbeddingData,
 	EmbeddingWrapperConfig,
+	EmbedInput,
+	EmbedResult,
 	QuestionResult,
 	SemanticChunk,
 } from './embed/index.js';
-export { chunkStory, embedChunks, generateQuestions } from './embed/index.js';
+export {
+	chunkStory,
+	embedChunks,
+	execute as executeEmbed,
+	forceCleanupSource as forceCleanupEmbedSource,
+	generateQuestions,
+} from './embed/index.js';
 export type {
 	EnrichInput,
 	EnrichmentData,
