@@ -6,6 +6,10 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
-		"@types/node": "^25.5.0"
+		"@mulder/core": "workspace:*",
+		"@mulder/retrieval": "workspace:*",
+		"@types/node": "^25.5.0",
+		"@types/pg": "^8.20.0",
+		"pg": "^8.20.0"
 	}
 }
