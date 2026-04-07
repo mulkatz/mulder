@@ -94,3 +94,27 @@ export interface FulltextSearchOptions {
 	 */
 	includeQuestions?: boolean;
 }
+
+// ────────────────────────────────────────────────────────────
+// Graph search options
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Options for {@link graphSearch}. Requires seed entity IDs — the orchestrator
+ * (E6) is responsible for extracting entities from the user's query text.
+ *
+ * @see docs/specs/39_graph_traversal_retrieval.spec.md §4.1
+ * @see docs/functional-spec.md §5.1
+ */
+export interface GraphSearchOptions {
+	/** Seed entity IDs to start traversal from. Required, must be non-empty. */
+	entityIds: string[];
+	/** Maximum traversal depth. Default: `retrieval.strategies.graph.max_hops` from config (2). */
+	maxHops?: number;
+	/** Maximum total results. Default: `retrieval.top_k` from config (10). */
+	limit?: number;
+	/** Skip entities with source_count >= this value. Default: `retrieval.strategies.graph.supernode_threshold` from config (100). */
+	supernodeThreshold?: number;
+	/** Only return chunks from these stories. Optional filter. */
+	storyIds?: string[];
+}
