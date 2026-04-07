@@ -67,3 +67,30 @@ export interface VectorSearchOptions {
 	 */
 	contentOnly?: boolean;
 }
+
+// ────────────────────────────────────────────────────────────
+// Fulltext search options
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Options for {@link fulltextSearch}. The query string is required — full-text
+ * search has no precomputed-input alternative the way vector search does.
+ *
+ * By default, generated question chunks (`is_question = true`) are excluded
+ * from results because lexical matching against question text is noisy
+ * (functional spec §5.1). Set `includeQuestions: true` to opt back in.
+ */
+export interface FulltextSearchOptions {
+	/** Free-text BM25 query. Required. Whitespace-only is rejected. */
+	query: string;
+	/** Maximum number of results to return. Default: `retrieval.top_k` from config (10). */
+	limit?: number;
+	/** Optional filter: only search within chunks of these stories. */
+	storyIds?: string[];
+	/**
+	 * Include generated question chunks in the result set. Default: `false`
+	 * (content chunks only, per functional spec §5.1). Most callers should
+	 * leave this off — `true` exists for diagnostic / debug use.
+	 */
+	includeQuestions?: boolean;
+}
