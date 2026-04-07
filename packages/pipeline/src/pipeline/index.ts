@@ -100,6 +100,15 @@ const STEP_NAME = 'pipeline-orchestrator';
 // Pure helpers
 // ────────────────────────────────────────────────────────────
 
+/**
+ * Type guard: does `value` have a string `code` property? Used to read the
+ * `code` field off a caught `unknown` error without resorting to `as`
+ * assertions. Uses `Reflect.get` so no type assertions are needed.
+ */
+function hasStringCode(value: unknown): value is { code: string } {
+	return typeof value === 'object' && value !== null && typeof Reflect.get(value, 'code') === 'string';
+}
+
 function stepIndex(step: PipelineStepName): number {
 	return STEP_ORDER.indexOf(step);
 }
@@ -415,10 +424,7 @@ async function processSource(source: Source, ctx: ProcessSourceContext): Promise
 			});
 		} catch (cause: unknown) {
 			const message = cause instanceof Error ? cause.message : String(cause);
-			const code =
-				cause instanceof Error && 'code' in cause && typeof (cause as { code: unknown }).code === 'string'
-					? (cause as { code: string }).code
-					: PIPELINE_ERROR_CODES.PIPELINE_STEP_FAILED;
+			const code = hasStringCode(cause) ? cause.code : PIPELINE_ERROR_CODES.PIPELINE_STEP_FAILED;
 			lastError = { message, code };
 			sourceLog.warn({ step, errorCode: code, errorMessage: message }, 'pipeline.source.step.failed');
 			break;
@@ -612,100 +618,114 @@ export async function execute(
 		throw cause;
 	}
 
-	const { sources, ingestErrors } = enumeration;
-	const errors: StepError[] = [...ingestErrors];
+	// Phase 2 + finalisation are wrapped in a try/catch so that any
+	// unexpected throw (e.g. DB failure during `upsertPipelineRunSource`
+	// or `findStoriesBySourceId`) still marks the run as `failed` rather
+	// than leaving `pipeline_runs` stuck at `status='running'`. Spec §3.2
+	// requires crash-safe resume; without this guard an orphaned row
+	// would break `pipeline status` and `pipeline retry` until a reaper
+	// (M7/M8) exists. The nested `.catch(() => undefined)` is
+	// intentional: if the DB is down, we still want to surface the
+	// original error rather than masking it with a finalisation failure.
+	try {
+		const { sources, ingestErrors } = enumeration;
+		const errors: StepError[] = [...ingestErrors];
 
-	// Seed pending rows for all enumerated sources.
-	for (const src of sources) {
-		await upsertPipelineRunSource(pool, {
-			runId: run.id,
-			sourceId: src.id,
-			currentStep: 'ingest',
-			status: 'pending',
-		});
-	}
-
-	// 5. Process each source (Phase 2).
-	const sourceOutcomes: PipelineRunSourceOutcome[] = [];
-	let completedCount = 0;
-	let failedCount = 0;
-
-	const ctx: ProcessSourceContext = {
-		runId: run.id,
-		plannedSteps,
-		options,
-		config,
-		services,
-		pool,
-		logger: runLog,
-	};
-
-	for (const src of sources) {
-		const result = await processSource(src, ctx);
-		sourceOutcomes.push({
-			sourceId: src.id,
-			finalStep: result.finalStep,
-			status: result.status,
-			errorMessage: result.errorMessage,
-		});
-		if (result.status === 'completed') {
-			completedCount++;
-		} else {
-			failedCount++;
-			errors.push({
-				code: PIPELINE_ERROR_CODES.PIPELINE_STEP_FAILED,
-				message: result.errorMessage ?? 'unknown error',
+		// Seed pending rows for all enumerated sources.
+		for (const src of sources) {
+			await upsertPipelineRunSource(pool, {
+				runId: run.id,
+				sourceId: src.id,
+				currentStep: 'ingest',
+				status: 'pending',
 			});
 		}
-	}
 
-	// 6. Finalisation (Phase 3).
-	let runStatus: 'success' | 'partial' | 'failed';
-	if (sources.length === 0) {
-		runStatus = 'success';
-	} else if (failedCount === 0) {
-		runStatus = 'success';
-	} else if (completedCount === 0) {
-		runStatus = 'failed';
-	} else {
-		runStatus = 'partial';
-	}
+		// 5. Process each source (Phase 2).
+		const sourceOutcomes: PipelineRunSourceOutcome[] = [];
+		let completedCount = 0;
+		let failedCount = 0;
 
-	const finalRunStatus = runStatus === 'success' ? 'completed' : runStatus === 'partial' ? 'partial' : 'failed';
-	await finalizePipelineRun(pool, run.id, finalRunStatus);
-
-	const durationMs = Math.round(performance.now() - startTime);
-	runLog.info(
-		{
+		const ctx: ProcessSourceContext = {
 			runId: run.id,
-			status: finalRunStatus,
-			totalSources: sources.length,
-			completedSources: completedCount,
-			failedSources: failedCount,
-		},
-		'pipeline.run.finish',
-	);
-
-	return {
-		status: runStatus,
-		runId: run.id,
-		data: {
-			runId: run.id,
-			tag: run.tag,
 			plannedSteps,
-			totalSources: sources.length,
-			completedSources: completedCount,
-			failedSources: failedCount,
-			skippedSources: 0,
-			sources: sourceOutcomes,
-		},
-		errors,
-		metadata: {
-			duration_ms: durationMs,
-			items_processed: completedCount,
-			items_skipped: 0,
-		},
-	};
+			options,
+			config,
+			services,
+			pool,
+			logger: runLog,
+		};
+
+		for (const src of sources) {
+			const result = await processSource(src, ctx);
+			sourceOutcomes.push({
+				sourceId: src.id,
+				finalStep: result.finalStep,
+				status: result.status,
+				errorMessage: result.errorMessage,
+			});
+			if (result.status === 'completed') {
+				completedCount++;
+			} else {
+				failedCount++;
+				errors.push({
+					code: PIPELINE_ERROR_CODES.PIPELINE_STEP_FAILED,
+					message: result.errorMessage ?? 'unknown error',
+				});
+			}
+		}
+
+		// 6. Finalisation (Phase 3).
+		let runStatus: 'success' | 'partial' | 'failed';
+		if (sources.length === 0) {
+			runStatus = 'success';
+		} else if (failedCount === 0) {
+			runStatus = 'success';
+		} else if (completedCount === 0) {
+			runStatus = 'failed';
+		} else {
+			runStatus = 'partial';
+		}
+
+		const finalRunStatus = runStatus === 'success' ? 'completed' : runStatus === 'partial' ? 'partial' : 'failed';
+		await finalizePipelineRun(pool, run.id, finalRunStatus);
+
+		const durationMs = Math.round(performance.now() - startTime);
+		runLog.info(
+			{
+				runId: run.id,
+				status: finalRunStatus,
+				totalSources: sources.length,
+				completedSources: completedCount,
+				failedSources: failedCount,
+			},
+			'pipeline.run.finish',
+		);
+
+		return {
+			status: runStatus,
+			runId: run.id,
+			data: {
+				runId: run.id,
+				tag: run.tag,
+				plannedSteps,
+				totalSources: sources.length,
+				completedSources: completedCount,
+				failedSources: failedCount,
+				skippedSources: 0,
+				sources: sourceOutcomes,
+			},
+			errors,
+			metadata: {
+				duration_ms: durationMs,
+				items_processed: completedCount,
+				items_skipped: 0,
+			},
+		};
+	} catch (cause) {
+		await finalizePipelineRun(pool, run.id, 'failed').catch(() => undefined);
+		throw cause;
+	}
 }
 
 /** Serializes user-facing options to the JSONB column on `pipeline_runs`. */
