@@ -531,14 +531,10 @@ export async function searchByVectorWithEfSearch(
 		if (error instanceof DatabaseError) {
 			throw error;
 		}
-		throw new DatabaseError(
-			'Failed to search chunks by vector with ef_search',
-			DATABASE_ERROR_CODES.DB_QUERY_FAILED,
-			{
-				cause: error,
-				context: { limit, efSearch, hasFilter: !!filter?.storyIds },
-			},
-		);
+		throw new DatabaseError('Failed to search chunks by vector with ef_search', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { limit, efSearch, hasFilter: !!filter?.storyIds },
+		});
 	} finally {
 		client.release();
 	}
