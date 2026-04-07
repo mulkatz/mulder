@@ -244,6 +244,102 @@ Images, Office docs, emails, URLs — every format converges to the same Markdow
 
 ---
 
+## M10: "Provenance & Quality" — Pre-Archive Foundations
+
+Must complete before first real archive data ingest. Without these foundations, bulk imports create provenance gaps that are extremely expensive to backfill. Spec references point to [`functional-spec-addendum.md`](./functional-spec-addendum.md).
+
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| ⚪ | K1 | Content-addressed storage — GCS layout migration, SHA-256 dedup | §A2 |
+| ⚪ | K2 | Provenance tracking — `source_document_ids` on all artifacts | §A6.1 |
+| ⚪ | K3 | Document quality assessment step | §A4 |
+| ⚪ | K4 | Assertion classification in Enrich step | §A3 |
+| ⚪ | K5 | Sensitivity level tagging + auto-detection | §A5 |
+| ⚪ | K6 | Source rollback — soft-delete + cascading purge | §A6 |
+| ⚪ | K7 | Ingest provenance data model — AcquisitionContext, ArchiveLocation, Archive, CustodyChain | §A2.3 |
+| ⚪ | K8 | Collection management — create, tag, defaults | §A2.3 |
+| ⚪ | K9 | Golden tests — quality routing + assertion classification | §A3, §A4 |
+
+**Also read for all M10 steps:** §A1 (architecture principle), §A2 (storage design)
+
+**Testable:** Ingest documents with provenance metadata. Quality assessment routes documents to correct extraction path. Assertions are classified. Sensitivity detection flags PII. Soft-delete hides sources, purge removes downstream artifacts.
+
+---
+
+## M11: "Trust Layer" — Credibility, Contradictions, Review
+
+Builds the trust infrastructure. Depends on M10 foundations (provenance, assertions, sensitivity).
+
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| ⚪ | L1 | Credibility profile data model + LLM auto-generation | §A8 |
+| ⚪ | L2 | Contradiction management — ConflictNode entities, severity, resolution | §A9 |
+| ⚪ | L3 | Review workflow infrastructure — ReviewableArtifact, queues, events | §A13 |
+| ⚪ | L4 | Translation service — two paths, caching | §A7 |
+| ⚪ | L5 | RBAC implementation — roles, permissions, sensitivity-based filtering | §A5.3 |
+
+**Also read for all M11 steps:** §A3 (assertion types), §A5 (sensitivity)
+
+**Testable:** Credibility profiles auto-generated on ingest. Contradictions detected and modeled as graph entities. Review queues populated. Documents translatable. Role-based access filtering works.
+
+---
+
+## M12: "Discovery" — Patterns & Similarity
+
+Analysis features that generate research value from the combined data. Depends on M11.
+
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| ⚪ | N1 | Similar case discovery — multi-dimensional scoring, auto-discovery | §A10 |
+| ⚪ | N2 | Classification harmonization — cross-taxonomy mappings | §A11 |
+| ⚪ | N3 | Temporal pattern detection — anomaly detection, hotspot clustering | §A12 |
+| ⚪ | N4 | External data source plugin interface + correlation analysis | §A12 |
+
+**Also read for all M12 steps:** §A11 (taxonomy mappings), §D1 Rules 4 + 6
+
+**Testable:** Similar entities found across dimensions. Cross-taxonomy mappings enable cross-system queries. Temporal anomalies detected. External correlations computed with caveats.
+
+---
+
+## M13: "Observability & Exchange" — Versioning, Export, Import
+
+Graph audit trail and data interchange. Depends on M11, M10.
+
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| ⚪ | P1 | Graph change event log | §A14 |
+| ⚪ | P2 | Graph snapshots + diff queries | §A14 |
+| ⚪ | P3 | Export framework — formats, sensitivity filtering, audit | §A15 |
+| ⚪ | P4 | Import adapter framework — field mapping, dry run, post-import report | §A15 |
+| ⚪ | P5 | Stable ID architecture — external ID mapping | §A15 |
+
+**Also read for all M13 steps:** §A5 (sensitivity in export), §A4 (quality for imports)
+
+**Testable:** Graph changes logged. Exports in multiple formats. Imports through full pipeline. External IDs mapped.
+
+---
+
+## M14: "Research Agent" — Autonomous Analysis
+
+The agent system. Depends on all prior milestones.
+
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| ⚪ | Q1 | Research journal — data model, session briefing | §A16.4 |
+| ⚪ | Q2 | Agentic research loop — tool interface, LLM orchestration | §A16.2 |
+| ⚪ | Q3 | Exploration scheduler — heuristic + stochastic | §A16.3 |
+| ⚪ | Q4 | Source integration strategy — equal treatment, hypothesis testing | §A16.5 |
+| ⚪ | Q5 | External web research — Gemini grounding, evidence tiers | §A16.6 |
+| ⚪ | Q6 | Report generator — 4 report types, multi-format | §A16.7 |
+| ⚪ | Q7 | Agent safety controls — cost cap, iteration limit | §A16.8 |
+| ⚪ | Q8 | Agent golden tests + eval | §A16.9 |
+
+**Also read for all M14 steps:** §A5 (query gate), §A8 (credibility), §A3 (assertions)
+
+**Testable:** Agent explores graph autonomously. Findings persisted in journal. Web research respects sensitivity gate. Reports generated. Cost cap enforced.
+
+---
+
 ## Critical path
 
 ```
@@ -256,10 +352,15 @@ M1 Foundation
                  ├→ M6 Intelligence (v2.0)
                  ├→ M7 API+Workers
                  ├→ M8 Operations
-                 └→ M9 Multi-Format Ingestion
+                 ├→ M9 Multi-Format Ingestion
+                 └→ M10 Provenance & Quality ← BEFORE FIRST REAL ARCHIVE INGEST
+                     ├→ M11 Trust Layer
+                     │   ├→ M12 Discovery
+                     │   └→ M14 Research Agent (last)
+                     └→ M13 Observability & Exchange
 ```
 
-M1-M4 is the critical path. The QA Gate is a zero-code checkpoint (unless bugs found). Everything after M4 can be reordered based on user feedback.
+M1-M4 is the critical path to MVP. M10 is the critical path to production archive ingest. Everything after M4 can be reordered based on user feedback, except M10 must precede real data.
 
 ## Key decisions baked into this order
 
@@ -271,3 +372,5 @@ M1-M4 is the critical path. The QA Gate is a zero-code checkpoint (unless bugs f
 6. **M4 is the pivot point.** If search results are bad, revisit extraction prompts (M3) before building APIs (M7).
 7. **Multi-format after MVP.** The PDF pipeline validates the full architecture. Adding formats is additive — only ingest/extract change, everything downstream stays identical.
 8. **QA gate before search.** Verified M1-M3 foundation before building retrieval on top. Cross-step integration tests, schema audit, and cascade verification catch compounding errors early.
+9. **Provenance before archive ingest (M10).** Content-addressed storage, assertion classification, sensitivity tagging, and quality assessment must all be in place before bulk archive data enters the system. Retrofitting is prohibitively expensive.
+10. **Agent last (M14).** The research agent consumes everything — retrieval, credibility, contradictions, similarity, temporal patterns. It can only be built after the full data infrastructure is in place.
