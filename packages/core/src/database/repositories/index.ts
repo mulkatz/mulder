@@ -91,6 +91,8 @@ export {
 	findAliasesByEntityId,
 	findEntityByAlias,
 } from './entity-alias.repository.js';
+export type { GraphTraversalResult } from './graph-traversal.repository.js';
+export { traverseGraph } from './graph-traversal.repository.js';
 export type { PipelineStep } from './pipeline-reset.js';
 export { gcOrphanedEntities, resetPipelineStep } from './pipeline-reset.js';
 export {
