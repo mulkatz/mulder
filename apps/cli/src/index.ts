@@ -19,6 +19,7 @@ import { registerExtractCommands } from './commands/extract.js';
 import { registerFixtureCommands } from './commands/fixtures.js';
 import { registerGraphCommands } from './commands/graph.js';
 import { registerIngestCommands } from './commands/ingest.js';
+import { registerPipelineCommands } from './commands/pipeline.js';
 import { registerSegmentCommands } from './commands/segment.js';
 
 const program = new Command()
@@ -35,6 +36,7 @@ registerExtractCommands(program);
 registerFixtureCommands(program);
 registerGraphCommands(program);
 registerIngestCommands(program);
+registerPipelineCommands(program);
 registerSegmentCommands(program);
 
 program.parse();
