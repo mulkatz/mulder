@@ -549,12 +549,19 @@ export async function searchByVectorWithEfSearch(
  *
  * Uses `plainto_tsquery('simple', ...)` matching the generated column's
  * `to_tsvector('simple', content)`.
+ *
+ * The optional `filter.excludeQuestions` flag appends a WHERE clause
+ * restricting results to content chunks (`is_question = false`). It defaults
+ * to `false` so the legacy 3-arg call signature `searchByFts(pool, q, limit)`
+ * continues to return chunks regardless of `is_question`. The retrieval-layer
+ * wrapper (`@mulder/retrieval#fulltextSearch`) enables this flag by default
+ * per functional spec §5.1.
  */
 export async function searchByFts(
 	pool: pg.Pool,
 	query: string,
 	limit: number,
-	filter?: { storyIds?: string[] },
+	filter?: { storyIds?: string[]; excludeQuestions?: boolean },
 ): Promise<FtsSearchResult[]> {
 	const conditions = ["fts_vector @@ plainto_tsquery('simple', $1)"];
 	const params: unknown[] = [query, limit];
@@ -564,6 +571,12 @@ export async function searchByFts(
 		conditions.push(`story_id = ANY($${paramIndex}::uuid[])`);
 		params.push(filter.storyIds);
 		paramIndex++;
+	}
+
+	if (filter?.excludeQuestions === true) {
+		// Literal boolean predicate — no bind parameter needed and no SQL
+		// injection risk because the value is not user-controlled.
+		conditions.push('is_question = false');
 	}
 
 	const whereClause = conditions.join(' AND ');
@@ -585,7 +598,12 @@ export async function searchByFts(
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to search chunks by FTS', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause: error,
-			context: { query, limit, hasFilter: !!filter?.storyIds },
+			context: {
+				query,
+				limit,
+				hasFilter: !!filter?.storyIds,
+				excludeQuestions: filter?.excludeQuestions === true,
+			},
 		});
 	}
 }
