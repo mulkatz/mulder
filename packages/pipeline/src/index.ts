@@ -67,5 +67,13 @@ export {
 } from './graph/index.js';
 export type { IngestFileResult, IngestInput, IngestResult } from './ingest/index.js';
 export { execute as executeIngest } from './ingest/index.js';
+export type {
+	PipelineRunInput,
+	PipelineRunOptions,
+	PipelineRunResult,
+	PipelineRunSourceOutcome,
+	PipelineStepName,
+} from './pipeline/index.js';
+export { execute as executePipelineRun, STEP_ORDER, shouldRun } from './pipeline/index.js';
 export type { SegmentationData, SegmentedStory, SegmentInput, SegmentResult } from './segment/index.js';
 export { execute as executeSegment } from './segment/index.js';

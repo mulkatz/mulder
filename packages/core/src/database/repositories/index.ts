@@ -93,6 +93,25 @@ export {
 export type { PipelineStep } from './pipeline-reset.js';
 export { gcOrphanedEntities, resetPipelineStep } from './pipeline-reset.js';
 export {
+	countPipelineRunSourcesByStatus,
+	createPipelineRun,
+	finalizePipelineRun,
+	findLatestPipelineRun,
+	findLatestPipelineRunSourceForSource,
+	findPipelineRunById,
+	findPipelineRunSourceById,
+	findPipelineRunSourcesByRunId,
+	upsertPipelineRunSource,
+} from './pipeline-run.repository.js';
+export type {
+	CreatePipelineRunInput,
+	PipelineRun,
+	PipelineRunSource,
+	PipelineRunSourceStatus,
+	PipelineRunStatus,
+	UpsertPipelineRunSourceInput,
+} from './pipeline-run.types.js';
+export {
 	countSources,
 	createSource,
 	deleteSource,
