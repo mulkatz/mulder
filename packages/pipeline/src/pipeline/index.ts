@@ -86,7 +86,13 @@ const SOURCE_STATUS_ORDER: readonly SourceStatus[] = [
 ] as const;
 
 /** Story statuses ordered (the state *after* each per-story step). */
-const STORY_STATUS_ORDER: readonly StoryStatus[] = ['segmented', 'enriched', 'embedded', 'graphed', 'analyzed'] as const;
+const STORY_STATUS_ORDER: readonly StoryStatus[] = [
+	'segmented',
+	'enriched',
+	'embedded',
+	'graphed',
+	'analyzed',
+] as const;
 
 const STEP_NAME = 'pipeline-orchestrator';
 
@@ -583,11 +589,9 @@ export async function execute(
 	}
 
 	if (!pool) {
-		throw new PipelineError(
-			'Database pool is required for pipeline run',
-			PIPELINE_ERROR_CODES.PIPELINE_WRONG_STATUS,
-			{ context: { plannedSteps } },
-		);
+		throw new PipelineError('Database pool is required for pipeline run', PIPELINE_ERROR_CODES.PIPELINE_WRONG_STATUS, {
+			context: { plannedSteps },
+		});
 	}
 
 	// 3. Create the run row.

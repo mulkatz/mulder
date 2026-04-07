@@ -126,11 +126,7 @@ export async function createPipelineRun(pool: pg.Pool, input: CreatePipelineRunI
  *
  * @throws {DatabaseError} with `DB_NOT_FOUND` if no run row exists.
  */
-export async function finalizePipelineRun(
-	pool: pg.Pool,
-	id: string,
-	status: PipelineRunStatus,
-): Promise<PipelineRun> {
+export async function finalizePipelineRun(pool: pg.Pool, id: string, status: PipelineRunStatus): Promise<PipelineRun> {
 	const sql = `
     UPDATE pipeline_runs
     SET status = $1, finished_at = now()
@@ -232,13 +228,7 @@ export async function upsertPipelineRunSource(
       updated_at = now()
     RETURNING *
   `;
-	const params = [
-		input.runId,
-		input.sourceId,
-		input.currentStep,
-		input.status,
-		input.errorMessage ?? null,
-	];
+	const params = [input.runId, input.sourceId, input.currentStep, input.status, input.errorMessage ?? null];
 
 	try {
 		const result = await pool.query<PipelineRunSourceRow>(sql, params);
@@ -268,10 +258,7 @@ export async function upsertPipelineRunSource(
 /**
  * Returns all pipeline_run_sources rows for a run, in insertion order.
  */
-export async function findPipelineRunSourcesByRunId(
-	pool: pg.Pool,
-	runId: string,
-): Promise<PipelineRunSource[]> {
+export async function findPipelineRunSourcesByRunId(pool: pg.Pool, runId: string): Promise<PipelineRunSource[]> {
 	const sql = `
     SELECT * FROM pipeline_run_sources
     WHERE run_id = $1

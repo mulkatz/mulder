@@ -74,6 +74,6 @@ export type {
 	PipelineRunSourceOutcome,
 	PipelineStepName,
 } from './pipeline/index.js';
-export { execute as executePipelineRun, shouldRun, STEP_ORDER } from './pipeline/index.js';
+export { execute as executePipelineRun, STEP_ORDER, shouldRun } from './pipeline/index.js';
 export type { SegmentationData, SegmentedStory, SegmentInput, SegmentResult } from './segment/index.js';
 export { execute as executeSegment } from './segment/index.js';
