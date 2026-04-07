@@ -52,7 +52,10 @@ const VALID_STEPS = STEP_ORDER.slice(); // copy for error messages
 const RUN_FLAG_STEPS = STEP_ORDER.filter((s) => s !== 'ingest'); // --up-to / --from acceptable values
 
 function isPipelineStep(value: string): value is PipelineStepName {
-	return (STEP_ORDER as readonly string[]).includes(value);
+	for (const step of STEP_ORDER) {
+		if (step === value) return true;
+	}
+	return false;
 }
 
 function shortId(id: string): string {
@@ -81,25 +84,33 @@ function registerRunSubcommand(parent: Command): void {
 					return;
 				}
 
-				// Step name validation.
-				if (options.upTo !== undefined && !isPipelineStep(options.upTo)) {
-					printError(`Unknown step "${options.upTo}". Valid steps: ${VALID_STEPS.join(', ')}`);
-					process.exit(1);
-					return;
+				// Step name validation. Capture into local consts to keep narrowing.
+				let upToStep: PipelineStepName | undefined;
+				if (options.upTo !== undefined) {
+					if (!isPipelineStep(options.upTo)) {
+						printError(`Unknown step "${options.upTo}". Valid steps: ${VALID_STEPS.join(', ')}`);
+						process.exit(1);
+						return;
+					}
+					upToStep = options.upTo;
 				}
-				if (options.from !== undefined && !isPipelineStep(options.from)) {
-					printError(`Unknown step "${options.from}". Valid steps: ${VALID_STEPS.join(', ')}`);
-					process.exit(1);
-					return;
+				let fromStep: PipelineStepName | undefined;
+				if (options.from !== undefined) {
+					if (!isPipelineStep(options.from)) {
+						printError(`Unknown step "${options.from}". Valid steps: ${VALID_STEPS.join(', ')}`);
+						process.exit(1);
+						return;
+					}
+					fromStep = options.from;
 				}
 
 				// Ordering check (--from before --up-to).
-				if (options.from && options.upTo) {
-					const fromIdx = STEP_ORDER.indexOf(options.from as PipelineStepName);
-					const upToIdx = STEP_ORDER.indexOf(options.upTo as PipelineStepName);
+				if (fromStep && upToStep) {
+					const fromIdx = STEP_ORDER.indexOf(fromStep);
+					const upToIdx = STEP_ORDER.indexOf(upToStep);
 					if (fromIdx > upToIdx) {
 						printError(
-							`--from ${options.from} comes after --up-to ${options.upTo} in step order. Use a --from value that precedes --up-to.`,
+							`--from ${fromStep} comes after --up-to ${upToStep} in step order. Use a --from value that precedes --up-to.`,
 						);
 						process.exit(1);
 						return;
@@ -125,8 +136,8 @@ function registerRunSubcommand(parent: Command): void {
 
 				try {
 					const runOptions: PipelineRunOptions = {};
-					if (options.upTo) runOptions.upTo = options.upTo as PipelineStepName;
-					if (options.from) runOptions.from = options.from as PipelineStepName;
+					if (upToStep) runOptions.upTo = upToStep;
+					if (fromStep) runOptions.from = fromStep;
 					if (options.tag) runOptions.tag = options.tag;
 					if (options.dryRun) runOptions.dryRun = true;
 
@@ -228,12 +239,12 @@ function buildStatusJson(run: PipelineRun, sources: PipelineRunSource[]): Pipeli
 }
 
 function printStatusTable(run: PipelineRun, sources: PipelineRunSource[]): void {
-	const totals = {
+	const totals: Record<PipelineRunSourceStatus, number> = {
 		pending: 0,
 		processing: 0,
 		completed: 0,
 		failed: 0,
-	} as Record<PipelineRunSourceStatus, number>;
+	};
 	for (const src of sources) {
 		totals[src.status]++;
 	}
@@ -370,10 +381,14 @@ function registerRetrySubcommand(parent: Command): void {
 					return;
 				}
 
-				if (options.step !== undefined && !isPipelineStep(options.step)) {
-					printError(`Unknown step "${options.step}". Valid steps: ${VALID_STEPS.join(', ')}`);
-					process.exit(1);
-					return;
+				let stepFlag: PipelineStepName | undefined;
+				if (options.step !== undefined) {
+					if (!isPipelineStep(options.step)) {
+						printError(`Unknown step "${options.step}". Valid steps: ${VALID_STEPS.join(', ')}`);
+						process.exit(1);
+						return;
+					}
+					stepFlag = options.step;
 				}
 
 				const config = loadConfig();
@@ -404,8 +419,8 @@ function registerRetrySubcommand(parent: Command): void {
 
 					// Determine the step to retry.
 					let stepToRetry: PipelineStepName | null = null;
-					if (options.step) {
-						stepToRetry = options.step as PipelineStepName;
+					if (stepFlag) {
+						stepToRetry = stepFlag;
 					} else {
 						const latest = await findLatestPipelineRunSourceForSource(pool, sourceId);
 						if (!latest) {

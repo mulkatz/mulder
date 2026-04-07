@@ -49,14 +49,21 @@ interface PipelineRunSourceRow {
 	updated_at: Date;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function parseOptions(value: Record<string, unknown> | string | null): Record<string, unknown> {
 	if (value === null || value === undefined) {
 		return {};
 	}
 	if (typeof value === 'string') {
 		try {
-			const parsed = JSON.parse(value);
-			return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};
+			const parsed: unknown = JSON.parse(value);
+			if (isPlainObject(parsed)) {
+				return parsed;
+			}
+			return {};
 		} catch {
 			return {};
 		}
