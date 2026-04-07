@@ -107,7 +107,7 @@ First version worth showing to anyone.
 | 🟢 | D5 | Graph step — dedup + corroboration + contradiction flagging | §2.7, §1 (graph cmd) |
 | 🟢 | D6 | Pipeline orchestrator — cursor-based | §3.1, §3.2, §3.3, §3.4, §3.5, §1 (pipeline cmd) |
 | 🟢 | D7 | Full-text search — generated tsvector on chunks | §4.3 (chunks.fts_vector), §5.1 |
-| 🟡 | E1 | Vector search — HNSW, pgvector cosine similarity | §5.1 (vector search), §4.3 (HNSW index) |
+| 🟢 | E1 | Vector search — HNSW, pgvector cosine similarity | §5.1 (vector search), §4.3 (HNSW index) |
 | ⚪ | E2 | Full-text search wrapper — BM25 queries | §5.1 (full-text search) |
 | ⚪ | E3 | Graph traversal — recursive CTE, cycle detection | §5.1 (graph traversal SQL) |
 | ⚪ | E4 | RRF fusion — configurable weights | §5.2 |

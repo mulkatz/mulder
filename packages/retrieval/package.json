@@ -12,5 +12,12 @@
 	},
 	"dependencies": {
 		"@mulder/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/pg": "^8.20.0",
+		"pg": "^8.20.0"
+	},
+	"peerDependencies": {
+		"pg": "^8.20.0"
 	}
 }

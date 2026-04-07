@@ -159,6 +159,13 @@ importers:
       '@mulder/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
+      pg:
+        specifier: ^8.20.0
+        version: 8.20.0
 
   packages/taxonomy:
     dependencies:
@@ -180,9 +187,21 @@ importers:
 
   tests:
     devDependencies:
+      '@mulder/core':
+        specifier: workspace:*
+        version: link:../packages/core
+      '@mulder/retrieval':
+        specifier: workspace:*
+        version: link:../packages/retrieval
       '@types/node':
         specifier: ^25.5.0
         version: 25.5.0
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
+      pg:
+        specifier: ^8.20.0
+        version: 8.20.0
 
 packages:
 

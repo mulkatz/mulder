@@ -20,6 +20,7 @@ export {
 	findChunksByStoryId,
 	searchByFts,
 	searchByVector,
+	searchByVectorWithEfSearch,
 	updateChunkEmbedding,
 } from './chunk.repository.js';
 export type {
