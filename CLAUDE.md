@@ -6,12 +6,17 @@ Config-driven Document Intelligence Platform on GCP. Transforms document collect
 
 ## Implementation Workflow
 
-The functional spec (`docs/functional-spec.md`) is 2500+ lines. **Never read it fully.** Use the roadmap as an index instead.
+**Two spec documents:**
+- `docs/functional-spec.md` (§1–§18) — Core pipeline, M1–M9. 2500+ lines, **never read fully.**
+- `docs/functional-spec-addendum.md` (§A1–§A17) — Extended features, M10–M14. Extends but never contradicts the functional spec.
+- `docs/architecture-core-vs-domain.md` (§D1–§D5) — Architecture principle: core must be domain-agnostic.
+
+**Cross-reference conventions:** `§` = functional spec, `§A` = addendum, `§D` = architecture principles.
 
 **For every implementation step:**
 1. Read this file (CLAUDE.md) — loaded automatically, gives architecture + conventions + patterns
 2. Read `docs/roadmap.md` — find the current step, check its **Spec** column for section references
-3. Read **only the referenced sections** of `docs/functional-spec.md` (e.g., `§4.1` = Section 4.1)
+3. Read **only the referenced sections** of the appropriate spec document (e.g., `§4.1` = functional-spec Section 4.1, `§A3` = addendum Section A3)
 4. Also read the milestone's **"Also read"** cross-references (shared context for all steps in that milestone)
 5. Implement the step
 6. **Update status** in `docs/roadmap.md` — `⚪` → `🟡` when starting, `🟡` → `🟢` when done
@@ -20,6 +25,7 @@ The roadmap is the source of truth for what's been built. Always check it before
 
 ## Architecture Decisions
 
+- **Domain-agnostic core**: No domain-specific terms in code. All domain concepts (entity types, taxonomies, credibility dimensions, similarity dimensions) live in `mulder.config.yaml`. See `docs/architecture-core-vs-domain.md` (§D1–§D5).
 - **TypeScript** throughout (pipeline, API, CLI, config loader) — ESM, strict mode
 - **Monorepo**: pnpm + Turborepo
 - **Infra**: Terraform, modular (`terraform/modules/`)
@@ -203,8 +209,10 @@ mulder/
 │   └── {cloud-sql,storage,cloud-run,pubsub,firestore,budget,iam,networking}
 │
 ├── docs/
-│   ├── functional-spec.md        # Comprehensive functional specification
-│   └── improvements/             # Architecture delta documents
+│   ├── functional-spec.md             # Core pipeline specification (§1–§18, M1–M9)
+│   ├── functional-spec-addendum.md    # Extended features specification (§A1–§A17, M10–M14)
+│   ├── architecture-core-vs-domain.md # Architecture principle: domain-agnostic core (§D1–§D5)
+│   └── notes/improvements/            # Architecture delta documents (historical)
 │
 └── demo/                         # Demo UI
 ```
