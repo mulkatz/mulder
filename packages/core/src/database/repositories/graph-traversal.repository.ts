@@ -158,23 +158,28 @@ export async function traverseGraph(
       FROM traversal
       ORDER BY id, path_confidence DESC
     )
-    -- Join to story_entities → chunks to get the actual content
-    SELECT
-      c.id AS chunk_id,
-      c.story_id,
-      c.content,
-      c.is_question,
-      be.id AS entity_id,
-      be.name AS entity_name,
-      be.type AS entity_type,
-      be.depth,
-      be.path_confidence
-    FROM best_entities be
-    JOIN story_entities se ON se.entity_id = be.id
-    JOIN chunks c ON c.story_id = se.story_id
-    WHERE c.is_question = false
-      ${storyFilterClause}
-    ORDER BY be.path_confidence DESC, c.id
+    -- Join to story_entities → chunks, then deduplicate at chunk level
+    -- A single chunk can appear via multiple traversed entities; keep the
+    -- one with the highest path_confidence (DISTINCT ON + ORDER BY).
+    SELECT * FROM (
+      SELECT DISTINCT ON (c.id)
+        c.id AS chunk_id,
+        c.story_id,
+        c.content,
+        c.is_question,
+        be.id AS entity_id,
+        be.name AS entity_name,
+        be.type AS entity_type,
+        be.depth,
+        be.path_confidence
+      FROM best_entities be
+      JOIN story_entities se ON se.entity_id = be.id
+      JOIN chunks c ON c.story_id = se.story_id
+      WHERE c.is_question = false
+        ${storyFilterClause}
+      ORDER BY c.id, be.path_confidence DESC
+    ) deduped
+    ORDER BY deduped.path_confidence DESC, deduped.chunk_id
     LIMIT $3
   `;
 
