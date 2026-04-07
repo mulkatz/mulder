@@ -452,6 +452,98 @@ export async function searchByVector(
 	}
 }
 
+/**
+ * Same as `searchByVector` but sets `hnsw.ef_search` on the connection
+ * for the duration of the query. Use when the retrieval layer needs higher
+ * recall than the global default. Higher `efSearch` trades query speed
+ * for recall quality.
+ *
+ * Implementation notes:
+ *   - Acquires a dedicated client from the pool so that `SET LOCAL` applies
+ *     to the same session as the SELECT (sessions in pg's pool are not
+ *     shared across queries).
+ *   - Wraps the SET + SELECT in a single transaction so `SET LOCAL` is
+ *     scoped correctly and rolled back on error.
+ *   - The `efSearch` value is interpolated into the SQL string because
+ *     PostgreSQL `SET` does not accept bind parameters. To prevent SQL
+ *     injection, the caller-provided value is validated as a finite
+ *     positive integer before interpolation. This is the only place in
+ *     the codebase where SQL interpolation is unavoidable.
+ */
+export async function searchByVectorWithEfSearch(
+	pool: pg.Pool,
+	queryEmbedding: number[],
+	limit: number,
+	efSearch: number,
+	filter?: { storyIds?: string[] },
+): Promise<VectorSearchResult[]> {
+	// SQL-injection guard: SET cannot use bind parameters, so we must validate
+	// the integer client-side before string-interpolating it into the SQL.
+	if (!Number.isInteger(efSearch) || efSearch <= 0) {
+		throw new DatabaseError(
+			`Invalid hnsw.ef_search value: must be a positive integer, got ${String(efSearch)}`,
+			DATABASE_ERROR_CODES.DB_QUERY_FAILED,
+			{ context: { efSearch } },
+		);
+	}
+
+	const embeddingLiteral = formatEmbedding(queryEmbedding);
+	const conditions = ['embedding IS NOT NULL'];
+	const params: unknown[] = [embeddingLiteral, limit];
+	let paramIndex = 3;
+
+	if (filter?.storyIds && filter.storyIds.length > 0) {
+		conditions.push(`story_id = ANY($${paramIndex}::uuid[])`);
+		params.push(filter.storyIds);
+		paramIndex++;
+	}
+
+	const whereClause = conditions.join(' AND ');
+	const sql = `
+    SELECT *, embedding::text, (embedding <=> $1::vector) AS distance
+    FROM chunks
+    WHERE ${whereClause}
+    ORDER BY embedding <=> $1::vector
+    LIMIT $2
+  `;
+
+	const client = await pool.connect();
+	try {
+		await client.query('BEGIN');
+		try {
+			// Safe interpolation: efSearch was validated above as a positive integer.
+			await client.query(`SET LOCAL hnsw.ef_search = ${efSearch}`);
+			const result = await client.query<ChunkRow & { distance: number }>(sql, params);
+			await client.query('COMMIT');
+			return result.rows.map((row) => {
+				const distance = Number(row.distance);
+				return {
+					chunk: mapChunkRow(row),
+					distance,
+					similarity: 1 - distance,
+				};
+			});
+		} catch (innerError: unknown) {
+			await client.query('ROLLBACK');
+			throw innerError;
+		}
+	} catch (error: unknown) {
+		if (error instanceof DatabaseError) {
+			throw error;
+		}
+		throw new DatabaseError(
+			'Failed to search chunks by vector with ef_search',
+			DATABASE_ERROR_CODES.DB_QUERY_FAILED,
+			{
+				cause: error,
+				context: { limit, efSearch, hasFilter: !!filter?.storyIds },
+			},
+		);
+	} finally {
+		client.release();
+	}
+}
+
 // ────────────────────────────────────────────────────────────
 // Full-text search
 // ────────────────────────────────────────────────────────────

@@ -156,6 +156,7 @@ export {
 	runMigrations,
 	searchByFts,
 	searchByVector,
+	searchByVectorWithEfSearch,
 	searchTaxonomyBySimilarity,
 	unlinkStoryEntity,
 	updateChunkEmbedding,
