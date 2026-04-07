@@ -79,7 +79,7 @@ export const CONFIG_DEFAULTS = {
 			candidates: 20,
 		},
 		strategies: {
-			vector: { weight: 0.5 },
+			vector: { weight: 0.5, ef_search: 40 },
 			fulltext: { weight: 0.3 },
 			graph: { weight: 0.2, max_hops: 2, supernode_threshold: 100 },
 		},

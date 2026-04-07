@@ -194,6 +194,7 @@ export type {
 	MulderErrorCode,
 	PipelineErrorCode,
 	PromptErrorCode,
+	RetrievalErrorCode,
 	SegmentErrorCode,
 	TaxonomyErrorCode,
 } from './shared/errors.js';
@@ -221,6 +222,8 @@ export {
 	PipelineError,
 	PROMPT_ERROR_CODES,
 	PromptError,
+	RETRIEVAL_ERROR_CODES,
+	RetrievalError,
 	SEGMENT_ERROR_CODES,
 	SegmentError,
 	TAXONOMY_ERROR_CODES,

@@ -149,6 +149,16 @@ export const GRAPH_ERROR_CODES = {
 
 export type GraphErrorCode = (typeof GRAPH_ERROR_CODES)[keyof typeof GRAPH_ERROR_CODES];
 
+/** Retrieval domain error codes (vector/fulltext/graph search wrappers). */
+export const RETRIEVAL_ERROR_CODES = {
+	RETRIEVAL_INVALID_INPUT: 'RETRIEVAL_INVALID_INPUT',
+	RETRIEVAL_EMBEDDING_FAILED: 'RETRIEVAL_EMBEDDING_FAILED',
+	RETRIEVAL_QUERY_FAILED: 'RETRIEVAL_QUERY_FAILED',
+	RETRIEVAL_DIMENSION_MISMATCH: 'RETRIEVAL_DIMENSION_MISMATCH',
+} as const;
+
+export type RetrievalErrorCode = (typeof RETRIEVAL_ERROR_CODES)[keyof typeof RETRIEVAL_ERROR_CODES];
+
 /** Prompt template engine error codes. */
 export const PROMPT_ERROR_CODES = {
 	TEMPLATE_NOT_FOUND: 'TEMPLATE_NOT_FOUND',
@@ -172,6 +182,7 @@ export type MulderErrorCode =
 	| EnrichErrorCode
 	| EmbedErrorCode
 	| GraphErrorCode
+	| RetrievalErrorCode
 	| PromptErrorCode;
 
 // ────────────────────────────────────────────────────────────
@@ -349,6 +360,21 @@ export class GraphError extends MulderError {
 	) {
 		super(message, code, options);
 		this.name = 'GraphError';
+	}
+}
+
+/** Retrieval errors (vector/fulltext/graph search input validation, query, embedding). */
+export class RetrievalError extends MulderError {
+	constructor(
+		message: string,
+		code: RetrievalErrorCode,
+		options?: {
+			context?: Record<string, unknown>;
+			cause?: unknown;
+		},
+	) {
+		super(message, code, options);
+		this.name = 'RetrievalError';
 	}
 }
 

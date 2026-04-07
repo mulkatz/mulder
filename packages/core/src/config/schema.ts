@@ -176,6 +176,7 @@ const rerankSchema = z.object({
 
 const vectorStrategySchema = z.object({
 	weight: z.number().min(0).max(1).default(0.5),
+	ef_search: z.number().int().positive().default(40),
 });
 
 const fulltextStrategySchema = z.object({
