@@ -464,7 +464,19 @@ describe('Spec 39 — Graph Traversal Retrieval', () => {
 			return;
 		}
 
-		cleanTestData();
+		// Ensure migrations are applied (another test may have dropped the database)
+		spawnSync('npx', ['mulder', 'db', 'migrate', '--config', EXAMPLE_CONFIG], {
+			cwd: ROOT,
+			encoding: 'utf-8',
+			timeout: 30_000,
+			stdio: 'pipe',
+		});
+
+		try {
+			cleanTestData();
+		} catch {
+			// Tables may not exist yet if migrations failed
+		}
 		seed = await seedFixture();
 		cycleSeed = await seedCycleFixture();
 		baseConfig = makeConfig();
