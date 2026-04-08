@@ -1,7 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureSchema } from '../lib/schema.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -12,7 +14,7 @@ const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
-const PG_CONTAINER = 'mulder-postgres';
+const PG_CONTAINER = 'mulder-pg-test';
 const PG_USER = 'mulder';
 const PG_PASSWORD = 'mulder';
 
@@ -212,11 +214,7 @@ describe('Spec 35 — Graph Step', () => {
 			return;
 		}
 
-		// Run migrations
-		const { exitCode, stdout, stderr } = runCli(['db', 'migrate', EXAMPLE_CONFIG]);
-		if (exitCode !== 0) {
-			throw new Error(`Migration failed: ${stdout} ${stderr}`);
-		}
+		ensureSchema();
 
 		// Clean state
 		cleanTestData();
@@ -646,6 +644,112 @@ describe('Spec 35 — Graph Step', () => {
 		expect(exitCode).not.toBe(0);
 		expect(combined).toMatch(/story-id|--all|--source|provide|missing|required/i);
 	});
+
+	// ─── QA-13 / QA-14: cooccurrence_fallback config flag ───
+
+	/**
+	 * Seed a story with N entities linked via `story_entities` but zero
+	 * `entity_edges` so the graph step hits the "no enrich relationships"
+	 * branch. Returns the story ID. Caller is responsible for cleanup via
+	 * the returned sourceId.
+	 */
+	function seedStoryWithNoRelationships(sourceId: string, storyId: string, entityIds: string[]): void {
+		runSql(
+			`INSERT INTO sources (id, filename, file_hash, storage_path, page_count, status) ` +
+				`VALUES ('${sourceId}', 'qa13-cooccurrence.pdf', 'qa13-${sourceId}', 'raw/${sourceId}/original.pdf', 1, 'embedded');`,
+		);
+		runSql(
+			`INSERT INTO stories (id, source_id, title, gcs_markdown_uri, gcs_metadata_uri, status) ` +
+				`VALUES ('${storyId}', '${sourceId}', 'qa13-story', 's/qa13.md', 's/qa13.meta.json', 'embedded');`,
+		);
+		const entityValues = entityIds.map((id, i) => `('${id}', 'Entity ${i}', 'person', '{}')`).join(', ');
+		runSql(`INSERT INTO entities (id, name, type, attributes) VALUES ${entityValues};`);
+		const linkValues = entityIds.map((id) => `('${storyId}', '${id}', 0.9)`).join(', ');
+		runSql(`INSERT INTO story_entities (story_id, entity_id, confidence) VALUES ${linkValues};`);
+	}
+
+	function cleanupCooccurrenceFixture(sourceId: string, entityIds: string[]): void {
+		const idList = entityIds.map((id) => `'${id}'`).join(',');
+		runSql(
+			`DELETE FROM entity_edges WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');` +
+				` DELETE FROM story_entities WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');` +
+				(idList ? ` DELETE FROM entities WHERE id IN (${idList});` : '') +
+				` DELETE FROM stories WHERE source_id = '${sourceId}';` +
+				` DELETE FROM source_steps WHERE source_id = '${sourceId}';` +
+				` DELETE FROM sources WHERE id = '${sourceId}';`,
+		);
+	}
+
+	/**
+	 * Materialize a temporary mulder config file that overrides the
+	 * `graph.cooccurrence_fallback` flag. Returns the absolute path.
+	 */
+	function writeConfigWithCooccurrenceFallback(enabled: boolean): string {
+		const base = readFileSync(EXAMPLE_CONFIG, 'utf-8');
+		const patched = base.replace(/(graph:\s*\n(?:[^\n]*\n)*?\s*cooccurrence_fallback:\s*)(true|false)/, `$1${enabled}`);
+		const dir = mkdtempSync(join(tmpdir(), 'mulder-qa13-'));
+		const path = join(dir, 'mulder.config.yaml');
+		writeFileSync(path, patched);
+		return path;
+	}
+
+	it('QA-13: graph.cooccurrence_fallback=false — no co_occurs_with edges fabricated', () => {
+		if (!pgAvailable) return;
+
+		const sourceId = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+		const storyId = 'ddd11111-dddd-dddd-dddd-dddddddddddd';
+		const entityIds = [
+			'ddd22221-dddd-dddd-dddd-dddddddddddd',
+			'ddd22222-dddd-dddd-dddd-dddddddddddd',
+			'ddd22223-dddd-dddd-dddd-dddddddddddd',
+		];
+
+		cleanupCooccurrenceFixture(sourceId, entityIds);
+		seedStoryWithNoRelationships(sourceId, storyId, entityIds);
+
+		// Run with the example config (cooccurrence_fallback defaults to false).
+		const result = runCli(['graph', storyId], { timeout: 60_000 });
+		expect(result.exitCode).toBe(0);
+
+		const edgeCount = runSql(
+			`SELECT COUNT(*) FROM entity_edges WHERE story_id = '${storyId}' AND relationship = 'co_occurs_with';`,
+		);
+		expect(Number.parseInt(edgeCount, 10)).toBe(0);
+
+		cleanupCooccurrenceFixture(sourceId, entityIds);
+	}, 120_000);
+
+	it('QA-14: graph.cooccurrence_fallback=true — fabricates n*(n-1)/2 co_occurs_with edges', () => {
+		if (!pgAvailable) return;
+
+		const sourceId = 'eeeeeeee-eeee-eeee-eeee-eeeeeeee0000';
+		const storyId = 'eee11111-eeee-eeee-eeee-eeeeeeee0000';
+		const entityIds = [
+			'eee22221-eeee-eeee-eeee-eeeeeeee0000',
+			'eee22222-eeee-eeee-eeee-eeeeeeee0000',
+			'eee22223-eeee-eeee-eeee-eeeeeeee0000',
+		];
+		const n = entityIds.length;
+		const expectedEdges = (n * (n - 1)) / 2;
+
+		cleanupCooccurrenceFixture(sourceId, entityIds);
+		seedStoryWithNoRelationships(sourceId, storyId, entityIds);
+
+		const customConfig = writeConfigWithCooccurrenceFallback(true);
+		const result = runCli(['graph', storyId], {
+			timeout: 60_000,
+			env: { MULDER_CONFIG: customConfig },
+		});
+		expect(result.exitCode).toBe(0);
+
+		const edgeCount = runSql(
+			`SELECT COUNT(*) FROM entity_edges WHERE story_id = '${storyId}' AND relationship = 'co_occurs_with';`,
+		);
+		expect(Number.parseInt(edgeCount, 10)).toBe(expectedEdges);
+
+		cleanupCooccurrenceFixture(sourceId, entityIds);
+		rmSync(customConfig.substring(0, customConfig.lastIndexOf('/')), { recursive: true, force: true });
+	}, 120_000);
 });
 
 // ---------------------------------------------------------------------------
