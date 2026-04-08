@@ -1,0 +1,24 @@
+{
+	"queryId": "q009-de-hessdalen",
+	"queryText": "Lichterscheinungen in Norwegen wissenschaftlich untersucht",
+	"language": "de",
+	"queryType": "exploratory",
+	"difficulty": "complex",
+	"expectedHits": [
+		{
+			"contentContains": "Hessdalen",
+			"storyTitle": "Hessdalen Lights: A Scientific Monitoring Campaign",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "Norway",
+			"storyTitle": "Hessdalen Lights: A Scientific Monitoring Campaign",
+			"relevance": "secondary"
+		}
+	],
+	"annotation": {
+		"author": "qa-gate-post-mvp",
+		"date": "2026-04-08",
+		"notes": "German query against English corpus — tests multilingual embedding (text-embedding-004 claims 100+ languages). No expected BM25 matches (different language)."
+	}
+}

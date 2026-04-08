@@ -14,9 +14,25 @@ export {
 	levenshteinDistance,
 	normalizeWhitespace,
 } from './extraction-metrics.js';
+export {
+	computeMRR,
+	computeNDCG10,
+	computeRetrievalMetricsAtK,
+	countPrimaryRecall,
+	findExpectedRanks,
+	hitMatches,
+} from './retrieval-metrics.js';
+export {
+	loadRetrievalGoldenSet,
+	type RetrievalQueryRunner,
+	type RetrievalRunOptions,
+	runRetrievalEval,
+} from './retrieval-runner.js';
 export { computeBoundaryAccuracy, loadActualSegments } from './segmentation-metrics.js';
 export { loadSegmentationGoldenSet, runSegmentationEval } from './segmentation-runner.js';
 export type {
+	ActualRetrievalHit,
+	ActualRetrievalRun,
 	ActualSegment,
 	DifficultyLevel,
 	DifficultyStats,
@@ -25,11 +41,18 @@ export type {
 	EntityMetricResult,
 	ExpectedEntity,
 	ExpectedRelationship,
+	ExpectedRetrievalHit,
 	ExpectedSegment,
 	ExtractionEvalResult,
 	ExtractionGolden,
 	ExtractionMetricResult,
 	PRF1,
+	RetrievalEvalResult,
+	RetrievalGolden,
+	RetrievalMetricAtK,
+	RetrievalMetricResult,
+	RetrievalQueryType,
+	RetrievalRelevance,
 	SegmentationEvalResult,
 	SegmentationGolden,
 	SegmentationMetricResult,

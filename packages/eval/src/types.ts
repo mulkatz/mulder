@@ -218,3 +218,141 @@ export interface EntityEvalResult {
 		byDifficulty: Record<string, { avgF1: number; count: number }>;
 	};
 }
+
+// ────────────────────────────────────────────────────────────
+// Retrieval golden annotations (Phase 3, D5)
+// ────────────────────────────────────────────────────────────
+
+/** Relevance level of an expected retrieval hit. */
+export type RetrievalRelevance = 'primary' | 'secondary' | 'tangential';
+
+/**
+ * A chunk that is expected to show up for a query. Identified by a stable
+ * content excerpt so golden files are independent of generated chunk IDs.
+ *
+ * The eval runner treats a result as "matching" a golden hit if the result's
+ * content contains `contentContains` as a substring (case-insensitive). The
+ * optional `storyTitle` is used only when the runner cannot determine story
+ * identity from content alone (e.g., when deduping across multiple runs).
+ */
+export interface ExpectedRetrievalHit {
+	/** Substring that uniquely identifies the expected chunk in the corpus. */
+	contentContains: string;
+	/** Optional: story title for disambiguation. */
+	storyTitle?: string;
+	/** Relevance label (`primary` ≈ "must appear", `secondary` ≈ "should appear"). */
+	relevance: RetrievalRelevance;
+}
+
+/** Query type taxonomy — used for per-category reporting. */
+export type RetrievalQueryType = 'factual' | 'exploratory' | 'relational' | 'negative';
+
+/** Ground-truth annotation for a single retrieval query. */
+export interface RetrievalGolden {
+	/** Stable identifier for the query. */
+	queryId: string;
+	/** Natural-language query text passed verbatim to `hybridRetrieve`. */
+	queryText: string;
+	/** Locale of the query. */
+	language: 'de' | 'en';
+	/** Query category for reporting. */
+	queryType: RetrievalQueryType;
+	/** Difficulty level for reporting. */
+	difficulty: DifficultyLevel;
+	/**
+	 * Expected chunks, in no particular order. A `negative` query has
+	 * `expectedHits: []` and the metric runner flips the assertion — any
+	 * non-empty result is a miss.
+	 */
+	expectedHits: ExpectedRetrievalHit[];
+	/** Entities the orchestrator should extract from the query (optional check). */
+	expectedEntities?: string[];
+	/** Annotation metadata. */
+	annotation: {
+		author: string;
+		date: string;
+		notes?: string;
+	};
+}
+
+// ────────────────────────────────────────────────────────────
+// Retrieval actual results (runner input)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * A single retrieval hit as observed in the system under test. Mirrors the
+ * shape of `RerankedResult` from `@mulder/retrieval` but trimmed to what the
+ * runner needs — we deliberately avoid importing from `@mulder/retrieval` to
+ * keep the eval package free of a retrieval dependency.
+ */
+export interface ActualRetrievalHit {
+	chunkId: string;
+	storyId: string;
+	content: string;
+	/** 1-based rank in the final result list. */
+	rank: number;
+	/** Final score (RRF or reranker, depending on pipeline config). */
+	score: number;
+}
+
+/** Actual retrieval results for one golden query. */
+export interface ActualRetrievalRun {
+	queryId: string;
+	hits: ActualRetrievalHit[];
+}
+
+// ────────────────────────────────────────────────────────────
+// Retrieval metric results
+// ────────────────────────────────────────────────────────────
+
+/** Precision@k, Recall@k, F1@k metric tuple. */
+export interface RetrievalMetricAtK {
+	k: number;
+	precision: number;
+	recall: number;
+	f1: number;
+}
+
+/** Per-query retrieval metric result. */
+export interface RetrievalMetricResult {
+	queryId: string;
+	queryText: string;
+	queryType: RetrievalQueryType;
+	difficulty: string;
+	/** Metrics at the configured k values (default: k = 5 and k = 10). */
+	atK: RetrievalMetricAtK[];
+	/** Mean Reciprocal Rank of the first primary hit. 0 if no primary hit found. */
+	mrr: number;
+	/** nDCG@10. 0 if no expected hits are primary. */
+	ndcg10: number;
+	/** Number of expected `primary` hits that appeared anywhere in results. */
+	primaryRecall: number;
+	/** Total number of `primary` expected hits for this query. */
+	primaryTotal: number;
+	/** True if the query was negative (expected empty) and no results appeared. */
+	negativeSatisfied?: boolean;
+}
+
+/** Aggregate retrieval eval results. */
+export interface RetrievalEvalResult {
+	timestamp: string;
+	queries: RetrievalMetricResult[];
+	summary: {
+		totalQueries: number;
+		/** Averages across all non-negative queries. */
+		averages: {
+			precisionAt5: number;
+			precisionAt10: number;
+			recallAt5: number;
+			recallAt10: number;
+			mrr: number;
+			ndcg10: number;
+		};
+		/** Negative-query satisfaction ratio (none/positive results for `negative` queries). */
+		negativeSatisfiedRatio: number;
+		/** Per query-type averaged MRR + Precision@5. */
+		byType: Record<string, { avgMrr: number; avgPrecisionAt5: number; count: number }>;
+		/** Per difficulty averaged MRR. */
+		byDifficulty: Record<string, { avgMrr: number; count: number }>;
+	};
+}

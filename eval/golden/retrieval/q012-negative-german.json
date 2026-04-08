@@ -1,0 +1,13 @@
+{
+	"queryId": "q012-negative-german",
+	"queryText": "Rezept für Apfelstrudel mit Vanillesauce",
+	"language": "de",
+	"queryType": "negative",
+	"difficulty": "simple",
+	"expectedHits": [],
+	"annotation": {
+		"author": "qa-gate-post-mvp",
+		"date": "2026-04-08",
+		"notes": "Negative query in German — unrelated culinary topic. Should not return UFO corpus hits even if multilingual embedding matches some surface features."
+	}
+}

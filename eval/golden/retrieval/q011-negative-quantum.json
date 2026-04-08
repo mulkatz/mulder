@@ -1,0 +1,13 @@
+{
+	"queryId": "q011-negative-quantum",
+	"queryText": "quantum computing benchmark performance results",
+	"language": "en",
+	"queryType": "negative",
+	"difficulty": "simple",
+	"expectedHits": [],
+	"annotation": {
+		"author": "qa-gate-post-mvp",
+		"date": "2026-04-08",
+		"notes": "Negative query — topic completely absent from UFO corpus. Should return either empty results or 'low confidence'. Regression fence-post against over-confident retrieval."
+	}
+}

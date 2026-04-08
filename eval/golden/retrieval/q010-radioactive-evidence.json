@@ -1,0 +1,29 @@
+{
+	"queryId": "q010-radioactive-evidence",
+	"queryText": "Physical evidence including radiation measurements and ground markings",
+	"language": "en",
+	"queryType": "exploratory",
+	"difficulty": "moderate",
+	"expectedHits": [
+		{
+			"contentContains": "Radiation readings",
+			"storyTitle": "Rendlesham Forest Incident: Official MOD Report",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "circular depressions",
+			"storyTitle": "Rendlesham Forest Incident: Official MOD Report",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "landing gear impressions",
+			"storyTitle": "Rendlesham Forest Incident: Official MOD Report",
+			"relevance": "secondary"
+		}
+	],
+	"annotation": {
+		"author": "qa-gate-post-mvp",
+		"date": "2026-04-08",
+		"notes": "Exploratory query — no single keyword matches. Tests semantic retrieval (embedding strength)."
+	}
+}

@@ -7,6 +7,7 @@ Ground-truth annotations for evaluating pipeline quality. Each JSON file in a su
 - `extraction/` — Ground truth for extraction step (CER/WER metrics)
 - `segmentation/` — Ground truth for segment boundaries (Boundary Accuracy, Segment Count)
 - `entities/` — Ground truth for entity extraction (Precision/Recall/F1 per type)
+- `retrieval/` — Ground truth for hybrid retrieval (Precision@k, Recall@k, MRR, nDCG@10)
 
 ## Annotation Formats
 
@@ -81,6 +82,37 @@ Ground-truth annotations for evaluating pipeline quality. Each JSON file in a su
   }
 }
 ```
+
+### Retrieval (`retrieval/*.json`)
+
+```json
+{
+  "queryId": "string — stable identifier used for reporting",
+  "queryText": "string — natural-language query passed verbatim to hybridRetrieve",
+  "language": "de | en",
+  "queryType": "factual | exploratory | relational | negative",
+  "difficulty": "simple | moderate | complex",
+  "expectedHits": [
+    {
+      "contentContains": "string — substring that uniquely identifies the expected chunk",
+      "storyTitle": "string (optional) — disambiguation hint",
+      "relevance": "primary | secondary | tangential"
+    }
+  ],
+  "expectedEntities": ["string (optional) — entities the orchestrator should extract from the query"],
+  "annotation": {
+    "author": "string",
+    "date": "string — ISO date",
+    "notes": "string (optional) — rationale / category"
+  }
+}
+```
+
+Matching is **case-insensitive substring match** on chunk content — generated
+chunk IDs change between runs, so content-based matching is the only robust
+option. The three relevance levels use gains `{primary: 3, secondary: 2,
+tangential: 1}` for nDCG computation. Negative queries have
+`expectedHits: []` and are satisfied only when the system returns no results.
 
 ## Difficulty Levels
 

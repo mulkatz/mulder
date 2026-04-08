@@ -1,0 +1,25 @@
+{
+	"queryId": "q008-nasa-affiliation",
+	"queryText": "NASA researcher analyzing UFO radar returns",
+	"language": "en",
+	"queryType": "relational",
+	"difficulty": "complex",
+	"expectedHits": [
+		{
+			"contentContains": "former NASA research scientist",
+			"storyTitle": "The Phoenix Lights Revisited: New Witness Testimony",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "Dr. Richard Haines",
+			"storyTitle": "The Phoenix Lights Revisited: New Witness Testimony",
+			"relevance": "primary"
+		}
+	],
+	"expectedEntities": ["NASA", "Richard Haines"],
+	"annotation": {
+		"author": "qa-gate-post-mvp",
+		"date": "2026-04-08",
+		"notes": "Graph-traversal-favorable: org (NASA) → person (Haines) → story. Tests that graph strategy contributes seed entities."
+	}
+}
