@@ -1,0 +1,8 @@
+---
+date: 2026-04-08
+type: milestone
+title: Hybrid retrieval orchestrator + `mulder query` — M4 complete, v1.0 MVP ships
+tags: [retrieval, cli, rrf, rerank, m4, milestone]
+---
+
+M4 is done. `hybridRetrieve()` wires the three retrieval strategies (vector E1, fulltext E2, graph E3), RRF fusion (E4), and Gemini Flash re-ranking (E5) behind a single library call, and `mulder query "<question>"` lands the same pipeline in the user's terminal with `--strategy`, `--top-k`, `--no-rerank`, `--explain`, and `--json` flags. The orchestrator runs active strategies in parallel via `Promise.allSettled`, so a single-strategy failure (say the embedding service hiccupping) is captured in the explain block without crashing the call — the only path that throws `RETRIEVAL_ORCHESTRATOR_FAILED` is when every active strategy either fails or is skipped. Query entity extraction for the graph strategy is deliberately keyword-based, not LLM-based: tokenize the query on whitespace + punctuation, generate 1/2/3-gram phrases capped at 100, look each up via `findEntityByAlias` with original-case-then-lowercase fallback, and cap the final seed list at 20 to bound traversal fan-out. No LLM cost on the query path, fully deterministic, trivially testable. Every result carries the §5.3 confidence object (`corpus_size`, `taxonomy_status`, `corroboration_reliability`, `graph_density`, `degraded`) so consumers know whether to trust the ranking at the current corpus scale. From ingest to `mulder query` is now a working end-to-end v1.0 MVP — M5 (taxonomy curation), M6 (intelligence layer), M7 (API + workers), and beyond can all reorder based on user feedback.
