@@ -218,3 +218,81 @@ export interface GraphSearchOptions {
 	/** Only return chunks from these stories. Optional filter. */
 	storyIds?: string[];
 }
+
+// ────────────────────────────────────────────────────────────
+// Hybrid orchestrator types (E6)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Strategy selector for the orchestrator. Maps to the `--strategy` CLI flag.
+ *
+ * - `vector` — pgvector cosine similarity only
+ * - `fulltext` — tsvector BM25 only
+ * - `graph` — recursive CTE traversal only (requires seed entities from query)
+ * - `hybrid` — all three strategies, fused via RRF
+ *
+ * @see docs/specs/42_hybrid_retrieval_orchestrator.spec.md §4.3
+ * @see docs/functional-spec.md §5
+ */
+export type RetrievalStrategyMode = 'vector' | 'fulltext' | 'graph' | 'hybrid';
+
+/**
+ * Options for {@link hybridRetrieve}. All fields optional; defaults are picked
+ * up from the active `MulderConfig`.
+ */
+export interface HybridRetrieveOptions {
+	/** Which strategies to run. Default: `config.retrieval.default_strategy` (usually `hybrid`). */
+	strategy?: RetrievalStrategyMode;
+	/** Final result count. Default: `config.retrieval.top_k`. */
+	topK?: number;
+	/** Skip LLM re-ranking even when the feature flag is enabled. */
+	noRerank?: boolean;
+	/** Populate per-result strategy contributions in the explain block. */
+	explain?: boolean;
+}
+
+/**
+ * Confidence object returned alongside results. Reflects how much to trust
+ * the results given the current corpus size and graph density.
+ *
+ * @see docs/functional-spec.md §5.3
+ */
+export interface QueryConfidence {
+	corpus_size: number;
+	taxonomy_status: 'not_started' | 'bootstrapping' | 'active' | 'mature';
+	corroboration_reliability: 'insufficient' | 'low' | 'moderate' | 'high';
+	graph_density: number;
+	degraded: boolean;
+}
+
+/**
+ * Per-strategy diagnostic breakdown. Always present in the result, but
+ * per-result scoring details are only populated when `options.explain === true`.
+ */
+export interface HybridRetrievalExplain {
+	/** Hit count per strategy actually executed (skipped/failed strategies omitted). */
+	counts: Partial<Record<RetrievalStrategy, number>>;
+	/** Strategies that were skipped with reason (e.g. `graph:no_seeds`). */
+	skipped: string[];
+	/** Strategies that failed with the error code observed (e.g. `vector: RETRIEVAL_QUERY_FAILED`). */
+	failures: Partial<Record<RetrievalStrategy, string>>;
+	/** Seed entity IDs used by graph strategy. Empty array when graph was skipped or not active. */
+	seedEntityIds: string[];
+	/** Per-result contributions, only populated when options.explain === true. */
+	contributions?: Array<{
+		chunkId: string;
+		rerankScore: number;
+		rrfScore: number;
+		strategies: Array<{ strategy: RetrievalStrategy; rank: number; score: number }>;
+	}>;
+}
+
+/** Final output of {@link hybridRetrieve}. */
+export interface HybridRetrievalResult {
+	query: string;
+	strategy: RetrievalStrategyMode;
+	topK: number;
+	results: RerankedResult[];
+	confidence: QueryConfidence;
+	explain: HybridRetrievalExplain;
+}
