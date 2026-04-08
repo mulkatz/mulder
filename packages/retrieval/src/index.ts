@@ -15,11 +15,14 @@
 export { fulltextSearch } from './fulltext.js';
 export { rrfFuse } from './fusion.js';
 export { graphSearch } from './graph.js';
+export { rerank } from './reranker.js';
 export type {
 	FulltextSearchOptions,
 	FusedResult,
 	FusionOptions,
 	GraphSearchOptions,
+	RerankedResult,
+	RerankOptions,
 	RetrievalResult,
 	RetrievalStrategy,
 	StrategyContribution,

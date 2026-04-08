@@ -141,6 +141,61 @@ export interface FusionOptions {
 }
 
 // ────────────────────────────────────────────────────────────
+// LLM re-ranking types
+// ────────────────────────────────────────────────────────────
+
+/**
+ * A result that has been re-ranked by Gemini Flash after RRF fusion.
+ *
+ * - `score` is the original RRF score (preserved for debugging/provenance).
+ * - `rerankScore` is the Gemini relevance score (0.0–1.0).
+ * - `rank` is the 1-based position in the re-ranked list.
+ * - `contributions` is carried over unchanged from the upstream `FusedResult`.
+ *
+ * @see docs/specs/41_llm_reranking.spec.md §4.1
+ * @see docs/functional-spec.md §5.2
+ */
+export interface RerankedResult {
+	chunkId: string;
+	storyId: string;
+	content: string;
+	/** Original RRF fused score, preserved for debugging. */
+	score: number;
+	/** Gemini relevance score (0.0 to 1.0). */
+	rerankScore: number;
+	/** 1-based rank in the re-ranked result list. */
+	rank: number;
+	/** Strategies that contributed this chunk (carried over from RRF fusion). */
+	contributions: StrategyContribution[];
+	/** Strategy-specific metadata (carried over from RRF fusion). */
+	metadata?: Record<string, unknown>;
+}
+
+/**
+ * Options for the {@link rerank} function.
+ *
+ * @see docs/specs/41_llm_reranking.spec.md §4.1
+ */
+export interface RerankOptions {
+	/**
+	 * Maximum number of candidates to send to Gemini. Defaults to
+	 * `config.retrieval.rerank.candidates` (default: 20).
+	 * Input results are truncated (by RRF rank) to this count before prompting.
+	 */
+	candidates?: number;
+	/**
+	 * Maximum number of results to return after re-ranking. Defaults to
+	 * `config.retrieval.top_k` (default: 10).
+	 */
+	limit?: number;
+	/**
+	 * Override the template locale. Defaults to `'en'`. Must be a locale that
+	 * exists in `packages/core/src/prompts/i18n/`.
+	 */
+	locale?: string;
+}
+
+// ────────────────────────────────────────────────────────────
 // Graph search options
 // ────────────────────────────────────────────────────────────
 
