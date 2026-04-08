@@ -149,7 +149,7 @@ export const GRAPH_ERROR_CODES = {
 
 export type GraphErrorCode = (typeof GRAPH_ERROR_CODES)[keyof typeof GRAPH_ERROR_CODES];
 
-/** Retrieval domain error codes (vector/fulltext/graph search wrappers + fusion). */
+/** Retrieval domain error codes (vector/fulltext/graph search wrappers + fusion + re-ranking). */
 export const RETRIEVAL_ERROR_CODES = {
 	RETRIEVAL_INVALID_INPUT: 'RETRIEVAL_INVALID_INPUT',
 	RETRIEVAL_EMBEDDING_FAILED: 'RETRIEVAL_EMBEDDING_FAILED',
@@ -157,6 +157,8 @@ export const RETRIEVAL_ERROR_CODES = {
 	RETRIEVAL_DIMENSION_MISMATCH: 'RETRIEVAL_DIMENSION_MISMATCH',
 	RETRIEVAL_FUSION_INVALID_WEIGHTS: 'RETRIEVAL_FUSION_INVALID_WEIGHTS',
 	RETRIEVAL_FUSION_INVALID_K: 'RETRIEVAL_FUSION_INVALID_K',
+	RETRIEVAL_RERANK_FAILED: 'RETRIEVAL_RERANK_FAILED',
+	RETRIEVAL_RERANK_INVALID_RESPONSE: 'RETRIEVAL_RERANK_INVALID_RESPONSE',
 } as const;
 
 export type RetrievalErrorCode = (typeof RETRIEVAL_ERROR_CODES)[keyof typeof RETRIEVAL_ERROR_CODES];
