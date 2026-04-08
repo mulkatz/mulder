@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -15,6 +16,8 @@ const PG_USER = 'mulder';
 const PG_PASSWORD = 'mulder';
 
 let tmpDir: string;
+let storageRawSnapshot: StorageSnapshot;
+const STORAGE_RAW_DIR = resolve(resolve(import.meta.dirname, '../..'), '.local/storage/raw');
 
 /**
  * Black-box QA tests for Spec 16: Ingest Step
@@ -245,6 +248,10 @@ describe('Spec 16 — Ingest Step', () => {
 		}
 		tmpDir = mkdtempSync(join(tmpdir(), 'mulder-qa-16-'));
 
+		// Snapshot the dev-mode storage dir so afterAll can remove only the
+		// entries this test creates.
+		storageRawSnapshot = snapshotStorageDir(STORAGE_RAW_DIR);
+
 		// Run migrations to ensure schema exists
 		const { exitCode, stdout, stderr } = runCli(['db', 'migrate', resolve(ROOT, 'mulder.config.example.yaml')]);
 		if (exitCode !== 0) {
@@ -263,6 +270,10 @@ describe('Spec 16 — Ingest Step', () => {
 			} catch {
 				// Ignore cleanup errors
 			}
+		}
+		// Remove any raw-storage directories this test created.
+		if (storageRawSnapshot) {
+			cleanStorageDirSince(storageRawSnapshot);
 		}
 	});
 
