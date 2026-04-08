@@ -15,6 +15,7 @@
  * @see docs/functional-spec.md §15 (quality evaluation)
  */
 
+import { EVAL_ERROR_CODES, MulderEvalError } from './errors.js';
 import type { ActualRetrievalHit, ExpectedRetrievalHit, RetrievalMetricAtK } from './types.js';
 
 // ────────────────────────────────────────────────────────────
@@ -73,7 +74,11 @@ export function computeRetrievalMetricsAtK(
 	k: number,
 ): RetrievalMetricAtK {
 	if (k <= 0 || !Number.isInteger(k)) {
-		throw new Error(`computeRetrievalMetricsAtK: k must be a positive integer, got ${k}`);
+		throw new MulderEvalError(
+			`computeRetrievalMetricsAtK: k must be a positive integer, got ${k}`,
+			EVAL_ERROR_CODES.INVALID_ARGUMENT,
+			{ context: { k } },
+		);
 	}
 
 	// Negative query — expected to return nothing.

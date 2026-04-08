@@ -503,7 +503,7 @@ This triage completes the Post-MVP QA Gate. The following artifacts are the auth
 | D9 Docs audit | `docs/reviews/post-mvp-docs-audit.md` |
 | D10 Triage (this doc) | `docs/reviews/post-mvp-qa-triage.md` |
 | D11 Roadmap update | `docs/roadmap.md` (QA Gate: Post-MVP Verification section) |
-| D12 GitHub issues | Prepared in §7; awaiting user approval to execute |
+| D12 GitHub issues | ✅ created as #92–#101 + #102–#104 (2026-04-08) |
 
 **Gate verdict:** PASS_WITH_FINDINGS
 **M5 may begin:** YES

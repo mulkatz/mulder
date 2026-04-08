@@ -17,9 +17,11 @@ import {
 	computeNDCG10,
 	computeRetrievalMetricsAtK,
 	countPrimaryRecall,
+	EVAL_ERROR_CODES,
 	type ExpectedRetrievalHit,
 	hitMatches,
 	loadRetrievalGoldenSet,
+	MulderEvalError,
 } from '@mulder/eval';
 import { describe, expect, it } from 'vitest';
 
@@ -145,10 +147,17 @@ describe('Spec 43 — retrieval metrics — computeRetrievalMetricsAtK', () => {
 		expect(m.f1).toBe(0);
 	});
 
-	it('QA-12: invalid k is rejected', () => {
-		expect(() => computeRetrievalMetricsAtK([primary('x')], [], 0)).toThrow(/positive integer/);
-		expect(() => computeRetrievalMetricsAtK([primary('x')], [], -1)).toThrow(/positive integer/);
-		expect(() => computeRetrievalMetricsAtK([primary('x')], [], 1.5)).toThrow(/positive integer/);
+	it('QA-12: invalid k is rejected with typed MulderEvalError(EVAL_INVALID_ARGUMENT)', () => {
+		for (const invalidK of [0, -1, 1.5]) {
+			try {
+				computeRetrievalMetricsAtK([primary('x')], [], invalidK);
+				throw new Error(`expected computeRetrievalMetricsAtK to throw for k=${invalidK}`);
+			} catch (err) {
+				expect(err).toBeInstanceOf(MulderEvalError);
+				expect((err as MulderEvalError).code).toBe(EVAL_ERROR_CODES.INVALID_ARGUMENT);
+				expect((err as MulderEvalError).message).toMatch(/positive integer/);
+			}
+		}
 	});
 });
 
