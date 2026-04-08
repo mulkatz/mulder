@@ -121,6 +121,14 @@ deduplication:
     same_author_is_one_source: true
     similarity_above_threshold_is_one_source: true
 
+# --- Graph Step ---
+graph:
+  # When true, stories with no explicit enrich relationships get an O(n²)
+  # co_occurs_with edge between every entity pair. A 50-entity story
+  # produces 1225 edges; a 100-entity story 4950. Disabled by default —
+  # enable only if a downstream consumer needs co-occurrence fallback.
+  cooccurrence_fallback: false
+
 # --- Embedding ---
 embedding:
   model: "text-embedding-004"

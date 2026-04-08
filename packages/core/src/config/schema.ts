@@ -155,6 +155,21 @@ const deduplicationObj = z.object({
 });
 const deduplicationSchema = deduplicationObj.default(defaults(deduplicationObj));
 
+// --- Graph Step ---
+
+const graphObj = z.object({
+	/**
+	 * When true, the graph step creates an O(n²) `co_occurs_with` edge between
+	 * every pair of entities in a story that has no explicit relationships
+	 * from enrich. A 50-entity story produces 1225 edges; a 100-entity story
+	 * produces 4950. Only enable this if you have a specific downstream
+	 * consumer that needs co-occurrence fallback data; otherwise leave it off
+	 * to keep `entity_edges` signal-dense at archive scale.
+	 */
+	cooccurrence_fallback: z.boolean().default(false),
+});
+const graphSchema = graphObj.default(defaults(graphObj));
+
 // --- Embedding ---
 
 const embeddingObj = z.object({
@@ -332,6 +347,7 @@ const baseMulderConfigSchema = z.object({
 	taxonomy: taxonomySchema,
 	entity_resolution: entityResolutionSchema,
 	deduplication: deduplicationSchema,
+	graph: graphSchema,
 	embedding: embeddingSchema,
 	retrieval: retrievalSchema,
 	grounding: groundingSchema,
@@ -397,6 +413,7 @@ export {
 	entityTypeSchema,
 	extractionSchema,
 	gcpSchema,
+	graphSchema,
 	groundingSchema,
 	ingestionSchema,
 	ontologySchema,

@@ -195,9 +195,13 @@ export async function execute(
 				edgesUpdated++;
 			}
 
-			// If no explicit relationships exist from enrichment, create
-			// co-occurrence edges for entity pairs in the same story
-			if (existingRelationships.rows.length === 0) {
+			// Optional fallback: when no explicit enrich relationships exist,
+			// fabricate an O(n²) co_occurs_with edge between every entity pair
+			// in the story. Disabled by default because a 50-entity story
+			// produces 1225 edges and a 100-entity story 4950 — signal-dilute
+			// at archive scale. Enable only when a downstream consumer needs
+			// co-occurrence data.
+			if (config.graph.cooccurrence_fallback && existingRelationships.rows.length === 0) {
 				for (let i = 0; i < entityIds.length; i++) {
 					for (let j = i + 1; j < entityIds.length; j++) {
 						await upsertEdge(pool, {
