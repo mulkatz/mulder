@@ -4,6 +4,7 @@ import { loadConfig, type MulderConfig, mulderConfigSchema, RetrievalError, sear
 import { fulltextSearch } from '@mulder/retrieval';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureSchema } from '../lib/schema.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
@@ -227,6 +228,8 @@ describe('Spec 38 — Full-Text Search Retrieval', () => {
 			);
 			return;
 		}
+
+		ensureSchema();
 
 		cleanTestData();
 		seed = await seedFixture();
