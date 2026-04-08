@@ -120,6 +120,25 @@ First version worth showing to anyone.
 
 ---
 
+## QA Gate: Post-MVP Verification Checkpoint
+
+**Not a feature milestone.** Exhaustive quality assessment of the M1–M4 MVP (48 roadmap steps) across six phases: baseline, milestone reviews M3 + M4, test gap closure, real-GCP smoketest, quality evaluation, documentation audit. Deliverable is a set of review documents (`docs/reviews/post-mvp-*.md`) + a triage report with 47 findings classified and prioritized. No production code changes were made during the gate — all findings are parked for a post-gate fix PR. See [`docs/reviews/post-mvp-qa-triage.md`](./reviews/post-mvp-qa-triage.md) for the gate verdict.
+
+| Status | Step | What | Deliverable |
+|--------|------|------|-------------|
+| 🟢 | QA-P1 | Baseline & coverage audit — build/typecheck/lint/test + 48-step coverage matrix | `post-mvp-baseline.md`, `post-mvp-coverage-matrix.md` |
+| 🟢 | QA-P2 | Milestone reviews M3 + M4 — spec conformance, cross-cutting conventions, CLAUDE.md consistency | `m3-review.md`, `m4-review.md` |
+| 🟢 | QA-P3 | Test gap closure — golden retrieval set + runner + E2E pipeline test + CLI smoke tests | `eval/golden/retrieval/`, `packages/eval/src/retrieval-{metrics,runner}.ts`, `tests/specs/43/44/45.test.ts` |
+| 🟢 | QA-P4 | GCP smoketest — Frontiers of Science PDF through full pipeline on `mulder-platform`, 15 queries, cost ≪ €3 cap | `post-mvp-gcp-smoketest.md` |
+| 🟢 | QA-P5 | Quality evaluation — extraction/segmentation/entity evals vs baseline; zero regression | `post-mvp-phase5-eval.md` |
+| 🟢 | QA-P6 | Documentation audit — README, CLAUDE.md, roadmap, config example, CLI help, error messages, devlog | `post-mvp-docs-audit.md` |
+| 🟢 | QA-P7 | Triage & gate verdict — 47 findings aggregated, classified, prioritized; gate verdict | `post-mvp-qa-triage.md` |
+
+**Gate criteria:** Zero P0 findings, all exit criteria met, triage document complete.
+**Verdict:** PASS_WITH_FINDINGS. 0 Critical, 18 Warning, 26 Note across the gate. 11 P1 findings flagged for a post-gate fix PR. **M5 may begin.**
+
+---
+
 ## M5: "Curated knowledge" — Taxonomy + Entity Management
 
 Human-in-the-loop taxonomy curation. Entity management for production use.
@@ -346,18 +365,19 @@ The agent system. Depends on all prior milestones.
 M1 Foundation
  └→ M2 Ingest+Extract (+golden extraction tests)
      └→ M3 Segment+Enrich (+golden entity tests)
-         └→ QA Gate (verification checkpoint)
+         └→ QA Gate: Pre-Search (verification checkpoint)
              └→ M4 Search (v1.0 MVP) ← FIRST DEMO POINT
-                 ├→ M5 Curation
-                 ├→ M6 Intelligence (v2.0)
-                 ├→ M7 API+Workers
-                 ├→ M8 Operations
-                 ├→ M9 Multi-Format Ingestion
-                 └→ M10 Provenance & Quality ← BEFORE FIRST REAL ARCHIVE INGEST
-                     ├→ M11 Trust Layer
-                     │   ├→ M12 Discovery
-                     │   └→ M14 Research Agent (last)
-                     └→ M13 Observability & Exchange
+                 └→ QA Gate: Post-MVP (verification checkpoint) ← we are here
+                     ├→ M5 Curation
+                     ├→ M6 Intelligence (v2.0)
+                     ├→ M7 API+Workers
+                     ├→ M8 Operations
+                     ├→ M9 Multi-Format Ingestion
+                     └→ M10 Provenance & Quality ← BEFORE FIRST REAL ARCHIVE INGEST
+                         ├→ M11 Trust Layer
+                         │   ├→ M12 Discovery
+                         │   └→ M14 Research Agent (last)
+                         └→ M13 Observability & Exchange
 ```
 
 M1-M4 is the critical path to MVP. M10 is the critical path to production archive ingest. Everything after M4 can be reordered based on user feedback, except M10 must precede real data.
