@@ -112,7 +112,7 @@ First version worth showing to anyone.
 | 🟢 | E3 | Graph traversal — recursive CTE, cycle detection | §5.1 (graph traversal SQL) |
 | 🟢 | E4 | RRF fusion — configurable weights | §5.2 |
 | 🟢 | E5 | LLM re-ranking — Gemini Flash | §5.2, §4.8 |
-| 🟡 | E6 | Hybrid retrieval orchestrator — `mulder query` | §5 (full section), §1 (query cmd) |
+| 🟢 | E6 | Hybrid retrieval orchestrator — `mulder query` | §5 (full section), §1 (query cmd) |
 
 **Also read for all M4 steps:** §2 (global step conventions), §5.3 (sparse graph degradation), §14 (design decisions — HNSW, 768-dim, dedup before corroboration)
 
