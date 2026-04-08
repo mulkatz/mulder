@@ -4,6 +4,7 @@ import { loadConfig, type MulderConfig, mulderConfigSchema, RetrievalError, trav
 import { graphSearch } from '@mulder/retrieval';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureSchema } from '../lib/schema.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
@@ -464,19 +465,9 @@ describe('Spec 39 — Graph Traversal Retrieval', () => {
 			return;
 		}
 
-		// Ensure migrations are applied (another test may have dropped the database)
-		spawnSync('npx', ['mulder', 'db', 'migrate', '--config', EXAMPLE_CONFIG], {
-			cwd: ROOT,
-			encoding: 'utf-8',
-			timeout: 30_000,
-			stdio: 'pipe',
-		});
+		ensureSchema();
 
-		try {
-			cleanTestData();
-		} catch {
-			// Tables may not exist yet if migrations failed
-		}
+		cleanTestData();
 		seed = await seedFixture();
 		cycleSeed = await seedCycleFixture();
 		baseConfig = makeConfig();

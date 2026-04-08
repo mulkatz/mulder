@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureSchema } from '../lib/schema.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -155,9 +156,16 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 	});
 
 	afterAll(() => {
-		// Leave the database in a clean state for other test suites
+		// Reset and re-migrate so downstream specs inherit a valid schema
+		// regardless of file execution order.
 		if (pgAvailable && extensionsAvailable) {
 			resetDatabase();
+			try {
+				ensureSchema();
+			} catch {
+				// Downstream specs call ensureSchema() themselves; teardown must
+				// not throw.
+			}
 		}
 	});
 
