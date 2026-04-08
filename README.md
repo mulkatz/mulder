@@ -18,7 +18,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache_2.0-green?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/GCP-native-4285F4?style=flat-square&logo=googlecloud&logoColor=white" alt="GCP" />
-  <img src="https://img.shields.io/badge/status-building_M2-orange?style=flat-square" alt="Status" />
+  <img src="https://img.shields.io/badge/status-v1.0_complete-green?style=flat-square" alt="Status" />
 </p>
 
 <p align="center">
@@ -87,8 +87,8 @@ mulder.config.yaml  →  terraform apply  →  mulder pipeline run ./pdfs/  → 
 | 8 | **Cross-Lingual Resolution** | 3-tier entity resolution (attribute match, embedding similarity, LLM-assisted) across 100+ languages |
 | 9 | **Deduplication** | MinHash/SimHash near-duplicate detection, dedup-aware corroboration scoring |
 | 10 | **Schema Evolution** | Config-hash tracking per document per step, selective reprocessing after config changes |
-| 11 | **Visual Intelligence** | Image extraction, Gemini analysis, image embeddings, map/diagram data extraction |
-| 12 | **Pattern Discovery** | Cluster anomalies, temporal spikes, subgraph similarity, proactive insights |
+| 11 | **Visual Intelligence** _(v3.0 / Phase 2)_ | Image extraction, Gemini analysis, image embeddings, map/diagram data extraction |
+| 12 | **Pattern Discovery** _(v3.0 / Phase 2)_ | Cluster anomalies, temporal spikes, subgraph similarity, proactive insights |
 
 ## Pipeline
 
@@ -195,11 +195,9 @@ Everything beyond `project` and `ontology` has sensible defaults. See [`mulder.c
 
 ## Status
 
-Mulder's design phase is complete — [functional spec](./docs/functional-spec.md), [implementation roadmap](./docs/roadmap.md), and [config schema](./mulder.config.example.yaml) are finalized.
+Mulder's **v1.0 MVP (M4)** is complete — the full pipeline from ingest through hybrid retrieval is operational. PDFs go in, a knowledge graph comes out, and natural-language queries return ranked passages with LLM re-ranking. The [functional spec](./docs/functional-spec.md), [implementation roadmap](./docs/roadmap.md), and [config schema](./mulder.config.example.yaml) are finalized.
 
-Currently building **Milestone 2** (ingest + extract: first GCP integration, Document AI, Cloud Storage).
-
-See the [roadmap](./docs/roadmap.md) for all 9 milestones from foundation to multi-format ingestion.
+See the [roadmap](./docs/roadmap.md) for all 14 milestones from foundation to autonomous research agent.
 
 ## Contributing
 

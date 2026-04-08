@@ -50,6 +50,8 @@ The roadmap is the source of truth for what's been built. Always check it before
 
 ## Infrastructure
 
+> **Note:** Terraform modules are planned for M8 (Operations). The `terraform/` directory does not yet exist in the repository. The architecture described below is the target state; during M1–M7 the services are provisioned manually via `gcloud` for development.
+
 Mulder runs on a minimal GCP footprint. All capabilities are feature-flagged in `mulder.config.yaml` — enable what you need, disable what you don't. No tiers, no paywalls.
 
 **Core (always deployed):**
