@@ -96,6 +96,51 @@ export interface FulltextSearchOptions {
 }
 
 // ────────────────────────────────────────────────────────────
+// RRF fusion types
+// ────────────────────────────────────────────────────────────
+
+/**
+ * A result that has been through RRF fusion. Extends the retrieval layer with
+ * provenance tracking: which strategies contributed this chunk and their
+ * individual ranks/scores.
+ *
+ * @see docs/specs/40_rrf_fusion.spec.md §4.1
+ * @see docs/functional-spec.md §5.2
+ */
+export interface FusedResult {
+	chunkId: string;
+	storyId: string;
+	content: string;
+	/** RRF score: Σ (weight_i / (k + rank_i)) across contributing strategies. */
+	score: number;
+	/** 1-based rank in the fused result list. */
+	rank: number;
+	/** Strategies that contributed this chunk, with their individual rank and score. */
+	contributions: StrategyContribution[];
+	/** Strategy-specific metadata merged from all contributing results. */
+	metadata?: Record<string, unknown>;
+}
+
+/** Tracks a single strategy's contribution to a fused result. */
+export interface StrategyContribution {
+	strategy: RetrievalStrategy;
+	/** 1-based rank within this strategy's result list. */
+	rank: number;
+	/** Strategy-native score (cosine sim, ts_rank, path confidence). */
+	score: number;
+}
+
+/** Options for the RRF fusion function. */
+export interface FusionOptions {
+	/** RRF constant k. Default: 60. */
+	k?: number;
+	/** Maximum number of fused results to return. Default: config `retrieval.top_k`. */
+	limit?: number;
+	/** Per-strategy weights. Default: from config. */
+	weights?: Partial<Record<RetrievalStrategy, number>>;
+}
+
+// ────────────────────────────────────────────────────────────
 // Graph search options
 // ────────────────────────────────────────────────────────────
 
