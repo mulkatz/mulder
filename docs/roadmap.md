@@ -110,7 +110,7 @@ First version worth showing to anyone.
 | 🟢 | E1 | Vector search — HNSW, pgvector cosine similarity | §5.1 (vector search), §4.3 (HNSW index) |
 | 🟢 | E2 | Full-text search wrapper — BM25 queries | §5.1 (full-text search) |
 | 🟢 | E3 | Graph traversal — recursive CTE, cycle detection | §5.1 (graph traversal SQL) |
-| 🟡 | E4 | RRF fusion — configurable weights | §5.2 |
+| 🟢 | E4 | RRF fusion — configurable weights | §5.2 |
 | ⚪ | E5 | LLM re-ranking — Gemini Flash | §5.2, §4.8 |
 | ⚪ | E6 | Hybrid retrieval orchestrator — `mulder query` | §5 (full section), §1 (query cmd) |
 
