@@ -7,6 +7,8 @@
 	},
 	"devDependencies": {
 		"@mulder/core": "workspace:*",
+		"@mulder/eval": "workspace:*",
+		"@mulder/pipeline": "workspace:*",
 		"@mulder/retrieval": "workspace:*",
 		"@types/node": "^25.5.0",
 		"@types/pg": "^8.20.0",

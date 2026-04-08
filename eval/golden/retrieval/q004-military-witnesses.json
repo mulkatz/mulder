@@ -1,0 +1,34 @@
+{
+	"queryId": "q004-military-witnesses",
+	"queryText": "Which military personnel reported UFO encounters?",
+	"language": "en",
+	"queryType": "exploratory",
+	"difficulty": "moderate",
+	"expectedHits": [
+		{
+			"contentContains": "Captain Robert Salas",
+			"storyTitle": "Inside Project Blue Book: Declassified Case Files",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "General Parviz Jafari",
+			"storyTitle": "Inside Project Blue Book: Declassified Case Files",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "Lieutenant Colonel Charles Halt",
+			"storyTitle": "Rendlesham Forest Incident: Official MOD Report",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "Staff Sergeant Jim Penniston",
+			"storyTitle": "Rendlesham Forest Incident: Official MOD Report",
+			"relevance": "primary"
+		}
+	],
+	"annotation": {
+		"author": "qa-gate-post-mvp",
+		"date": "2026-04-08",
+		"notes": "Cross-story exploratory query. Should pull hits from at least 2 different stories — tests fusion's ability to merge."
+	}
+}

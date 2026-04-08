@@ -1,0 +1,25 @@
+{
+	"queryId": "q001-phoenix-lights-date",
+	"queryText": "When did the Phoenix Lights incident happen?",
+	"language": "en",
+	"queryType": "factual",
+	"difficulty": "simple",
+	"expectedHits": [
+		{
+			"contentContains": "March 13, 1997",
+			"storyTitle": "The Phoenix Lights Revisited: New Witness Testimony",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "V-shaped formation of lights",
+			"storyTitle": "The Phoenix Lights Revisited: New Witness Testimony",
+			"relevance": "secondary"
+		}
+	],
+	"expectedEntities": ["Phoenix Lights"],
+	"annotation": {
+		"author": "qa-gate-post-mvp",
+		"date": "2026-04-08",
+		"notes": "Baseline factual query — single date, single story, must be top-1 or top-2."
+	}
+}

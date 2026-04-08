@@ -1,0 +1,30 @@
+{
+	"queryId": "q002-maria-henderson-witness",
+	"queryText": "Who is Maria Henderson and what did she witness?",
+	"language": "en",
+	"queryType": "relational",
+	"difficulty": "simple",
+	"expectedHits": [
+		{
+			"contentContains": "Maria Henderson",
+			"storyTitle": "The Phoenix Lights Revisited: New Witness Testimony",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "retired airline pilot",
+			"storyTitle": "The Phoenix Lights Revisited: New Witness Testimony",
+			"relevance": "secondary"
+		},
+		{
+			"contentContains": "Prescott Valley",
+			"storyTitle": "The Phoenix Lights Revisited: New Witness Testimony",
+			"relevance": "tangential"
+		}
+	],
+	"expectedEntities": ["Maria Henderson"],
+	"annotation": {
+		"author": "qa-gate-post-mvp",
+		"date": "2026-04-08",
+		"notes": "Person-centric relational query. Graph traversal should find this via entity match."
+	}
+}

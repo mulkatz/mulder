@@ -1,0 +1,30 @@
+{
+	"queryId": "q005-malmstrom-missiles",
+	"queryText": "Minuteman missiles going offline at Malmstrom",
+	"language": "en",
+	"queryType": "factual",
+	"difficulty": "moderate",
+	"expectedHits": [
+		{
+			"contentContains": "Minuteman ICBMs",
+			"storyTitle": "Inside Project Blue Book: Declassified Case Files",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "Malmstrom Air Force Base",
+			"storyTitle": "Inside Project Blue Book: Declassified Case Files",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "simultaneously went offline",
+			"storyTitle": "Inside Project Blue Book: Declassified Case Files",
+			"relevance": "secondary"
+		}
+	],
+	"expectedEntities": ["Malmstrom AFB Incident"],
+	"annotation": {
+		"author": "qa-gate-post-mvp",
+		"date": "2026-04-08",
+		"notes": "Technical-vocab query — tests BM25 against specific terminology."
+	}
+}

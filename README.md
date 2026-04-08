@@ -34,13 +34,15 @@
 <table align="center">
 <tr><td>
 
-**Development Progress** &ensp; `41 / 112 steps`
+**Development Progress** &ensp; `54 / 125 steps`
 
 ```
 M1  Foundation       ██████████████████████████████ 11/11 ✓
 M2  Ingest+Extract   ██████████████████████████████  9/9  ✓
 M3  Segment+Enrich   ██████████████████████████████ 10/10 ✓
+QA Gate: Pre-Search  ██████████████████████████████  6/6  ✓
 M4  Search (v1.0)    ██████████████████████████████ 11/11 ✓
+QA Gate: Post-MVP    ██████████████████████████████  7/7  ✓
 M5  Curation         ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/5
 M6  Intelligence     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/7
 M7  API+Workers      ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/9

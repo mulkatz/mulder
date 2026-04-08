@@ -1,0 +1,30 @@
+{
+	"queryId": "q007-radar-data-analysis",
+	"queryText": "Radar tracking data from Arizona sightings",
+	"language": "en",
+	"queryType": "relational",
+	"difficulty": "moderate",
+	"expectedHits": [
+		{
+			"contentContains": "Luke Air Force Base",
+			"storyTitle": "The Phoenix Lights Revisited: New Witness Testimony",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "Estrella Mountains",
+			"storyTitle": "The Phoenix Lights Revisited: New Witness Testimony",
+			"relevance": "secondary"
+		},
+		{
+			"contentContains": "Dr. Richard Haines",
+			"storyTitle": "The Phoenix Lights Revisited: New Witness Testimony",
+			"relevance": "secondary"
+		}
+	],
+	"expectedEntities": ["Richard Haines"],
+	"annotation": {
+		"author": "qa-gate-post-mvp",
+		"date": "2026-04-08",
+		"notes": "Composite query — Arizona + radar should both point at the same story. Tests query-entity extraction of 'Arizona'."
+	}
+}

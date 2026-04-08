@@ -1,0 +1,34 @@
+{
+	"queryId": "q006-scientific-monitoring",
+	"queryText": "Scientific monitoring of unexplained luminous phenomena",
+	"language": "en",
+	"queryType": "exploratory",
+	"difficulty": "complex",
+	"expectedHits": [
+		{
+			"contentContains": "Hessdalen",
+			"storyTitle": "Hessdalen Lights: A Scientific Monitoring Campaign",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "automated measurement station",
+			"storyTitle": "Hessdalen Lights: A Scientific Monitoring Campaign",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "spectral analysis",
+			"storyTitle": "Hessdalen Lights: A Scientific Monitoring Campaign",
+			"relevance": "secondary"
+		},
+		{
+			"contentContains": "Erling Strand",
+			"storyTitle": "Hessdalen Lights: A Scientific Monitoring Campaign",
+			"relevance": "tangential"
+		}
+	],
+	"annotation": {
+		"author": "qa-gate-post-mvp",
+		"date": "2026-04-08",
+		"notes": "Semantic query — no exact keyword match in story titles. Tests vector search / embedding quality."
+	}
+}

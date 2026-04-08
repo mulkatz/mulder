@@ -25,6 +25,10 @@ export const EVAL_ERROR_CODES = {
 	SEGMENT_META_PARSE_ERROR: 'EVAL_SEGMENT_META_PARSE_ERROR',
 	/** Entity fixture parse or structure error. */
 	ENTITY_FIXTURE_PARSE_ERROR: 'EVAL_ENTITY_FIXTURE_PARSE_ERROR',
+	/** Retrieval golden file was referenced from an actual-run file that does not line up with it. */
+	RETRIEVAL_RUN_MISMATCH: 'EVAL_RETRIEVAL_RUN_MISMATCH',
+	/** Programmer error: invalid argument passed to a metric function. */
+	INVALID_ARGUMENT: 'EVAL_INVALID_ARGUMENT',
 } as const;
 
 export type EvalErrorCode = (typeof EVAL_ERROR_CODES)[keyof typeof EVAL_ERROR_CODES];

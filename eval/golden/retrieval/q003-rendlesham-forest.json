@@ -1,0 +1,35 @@
+{
+	"queryId": "q003-rendlesham-forest",
+	"queryText": "Rendlesham Forest incident MOD report",
+	"language": "en",
+	"queryType": "factual",
+	"difficulty": "simple",
+	"expectedHits": [
+		{
+			"contentContains": "Rendlesham Forest",
+			"storyTitle": "Rendlesham Forest Incident: Official MOD Report",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "RAF Woodbridge",
+			"storyTitle": "Rendlesham Forest Incident: Official MOD Report",
+			"relevance": "primary"
+		},
+		{
+			"contentContains": "December 26, 1980",
+			"storyTitle": "Rendlesham Forest Incident: Official MOD Report",
+			"relevance": "secondary"
+		},
+		{
+			"contentContains": "Halt Memo",
+			"storyTitle": "Rendlesham Forest Incident: Official MOD Report",
+			"relevance": "secondary"
+		}
+	],
+	"expectedEntities": ["Rendlesham Forest"],
+	"annotation": {
+		"author": "qa-gate-post-mvp",
+		"date": "2026-04-08",
+		"notes": "Keyword-heavy — should work for both BM25 and vector search."
+	}
+}
