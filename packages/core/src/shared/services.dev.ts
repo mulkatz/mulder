@@ -324,6 +324,16 @@ class DevLlmService implements LlmService {
 					reasoning: 'Dev mode stub: entities treated as distinct',
 				}),
 			);
+		}
+		// Detect re-ranking schema by checking for a 'rankings' property.
+		// Dev mode cannot inspect prompt text to extract passage IDs, so it
+		// returns an empty rankings array. The reranker contract assigns a
+		// fallback score to all passages when none are in the response, which
+		// makes dev-mode behavior effectively passthrough (RRF order preserved).
+		// See docs/specs/41_llm_reranking.spec.md §4.5.
+		else if (hasProperty('rankings')) {
+			this.logger.debug('DevLlmService: generateStructured — returning rerank fixture (empty rankings)');
+			result = JSON.parse(JSON.stringify({ rankings: [] }));
 		} else {
 			this.logger.debug('DevLlmService: generateStructured called (returning empty object)');
 			result = emptyStubResponse<T>();
