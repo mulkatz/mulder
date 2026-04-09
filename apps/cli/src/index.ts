@@ -9,6 +9,10 @@
  * @see docs/specs/06_cli_scaffold.spec.md §4.4
  */
 
+// MUST be the first import — sets MULDER_LOG_LEVEL=silent for pure-display
+// commands BEFORE any @mulder/core module loads. See silence-log.ts for why.
+import './lib/silence-log.js';
+
 import { Command } from 'commander';
 import { registerCacheCommands } from './commands/cache.js';
 import { registerConfigCommands } from './commands/config.js';
