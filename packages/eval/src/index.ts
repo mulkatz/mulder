@@ -1,9 +1,5 @@
 export type { PerTypeMetrics } from './entity-metrics.js';
-export {
-	computeEntityPrecisionRecallF1,
-	computeRelationshipPrecisionRecallF1,
-	normalizeEntityName,
-} from './entity-metrics.js';
+export { computeEntityPrecisionRecallF1, normalizeEntityName } from './entity-metrics.js';
 export { loadActualEntities, loadEntityGoldenSet, runEntityEval } from './entity-runner.js';
 export type { EvalErrorCode } from './errors.js';
 export { EVAL_ERROR_CODES, MulderEvalError } from './errors.js';
@@ -14,6 +10,7 @@ export {
 	levenshteinDistance,
 	normalizeWhitespace,
 } from './extraction-metrics.js';
+export { computeRelationshipPrecisionRecallF1 } from './relationship-metrics.js';
 export {
 	computeMRR,
 	computeNDCG10,

@@ -40,6 +40,14 @@ export function registerIngestCommands(program: Command): void {
 		.option('--dry-run', 'validate without uploading or creating DB records')
 		.option('--tag <tag>', 'tag ingested sources (repeatable)', collect, [])
 		.option('--cost-estimate', 'estimate pipeline cost before ingesting')
+		.addHelpText(
+			'after',
+			`
+Examples:
+  $ mulder ingest ./my-pdfs/                       # Ingest every PDF in a directory
+  $ mulder ingest paper.pdf --tag review --tag q1  # Tag a single ingest with two tags
+  $ mulder ingest paper.pdf --dry-run              # Validate without writing to GCS or the DB`,
+		)
 		.action(
 			withErrorHandler(async (inputPath: string, options: IngestOptions) => {
 				if (options.costEstimate) {

@@ -107,6 +107,14 @@ export function registerQueryCommands(program: Command): void {
 		.option('--no-rerank', 'Skip LLM re-ranking')
 		.option('--explain', 'Show retrieval strategy breakdown per result')
 		.option('--json', 'Emit JSON output')
+		.addHelpText(
+			'after',
+			`
+Examples:
+  $ mulder query "When did the Phoenix Lights happen?"           # Default hybrid + rerank
+  $ mulder query "radar detections" --strategy fulltext --top-k 5
+  $ mulder query "Allan Hendry" --explain --json                 # Per-strategy contributions in JSON output`,
+		)
 		.action(
 			withErrorHandler(async (question: string, options: QueryOptions) => {
 				// 1. Question must be a non-empty string after trimming.

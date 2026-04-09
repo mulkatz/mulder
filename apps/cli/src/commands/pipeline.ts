@@ -75,6 +75,14 @@ function registerRunSubcommand(parent: Command): void {
 		.option('--from <step>', `Resume from this step (one of: ${RUN_FLAG_STEPS.join('|')})`)
 		.option('--dry-run', 'Print the planned steps and source count without executing')
 		.option('--tag <tag>', 'Tag this run for later lookup')
+		.addHelpText(
+			'after',
+			`
+Examples:
+  $ mulder pipeline run ./pdfs/                          # Full pipeline on every PDF in a directory
+  $ mulder pipeline run paper.pdf --up-to enrich         # Stop after entity extraction
+  $ mulder pipeline run paper.pdf --from embed           # Resume after enrich on an existing source`,
+		)
 		.action(
 			withErrorHandler(async (path: string | undefined, options: PipelineRunCliOptions) => {
 				// Path is required (we keep UX simple in v1).

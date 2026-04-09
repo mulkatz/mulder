@@ -9,8 +9,9 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ExtractedEntity, ExtractedRelationship, ExtractionResponse } from '@mulder/pipeline';
-import { computeEntityPrecisionRecallF1, computeRelationshipPrecisionRecallF1 } from './entity-metrics.js';
+import { computeEntityPrecisionRecallF1 } from './entity-metrics.js';
 import { EVAL_ERROR_CODES, MulderEvalError } from './errors.js';
+import { computeRelationshipPrecisionRecallF1 } from './relationship-metrics.js';
 import type { EntityEvalResult, EntityGolden, EntityMetricResult } from './types.js';
 
 // ────────────────────────────────────────────────────────────
