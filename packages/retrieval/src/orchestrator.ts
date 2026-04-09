@@ -246,6 +246,30 @@ export async function hybridRetrieve(
 	const graphHitCount = strategyResults.get('graph')?.length ?? 0;
 	const confidence = await computeQueryConfidence(pool, config, { graphHitCount });
 
+	// 12a. Negative-query gate: when the top reranker score is below the
+	// configured floor AND the query is already flagged as degraded, drop
+	// the result list and surface the gating reason via confidence.message.
+	// Default min_score is 0.0 so existing pipelines see no behavior change
+	// until they explicitly opt in.
+	const minRerankScore = config.retrieval.rerank.min_score;
+	if (
+		minRerankScore > 0 &&
+		confidence.degraded &&
+		reranked.length > 0 &&
+		(reranked[0]?.rerankScore ?? 0) < minRerankScore
+	) {
+		logger.info(
+			{
+				query: trimmedQuery,
+				topRerankScore: reranked[0]?.rerankScore,
+				minRerankScore,
+			},
+			'hybridRetrieve: gating result list below rerank min_score on degraded query',
+		);
+		reranked = [];
+		confidence.message = 'no_meaningful_matches';
+	}
+
 	// 13. Build counts map for explain.
 	const counts: Partial<Record<RetrievalStrategy, number>> = {};
 	for (const [name, results] of strategyResults) {

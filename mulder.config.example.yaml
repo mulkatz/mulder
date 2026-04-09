@@ -146,6 +146,7 @@ retrieval:
     enabled: true
     model: "gemini-2.5-flash"
     candidates: 20                    # Top N from RRF sent to reranker
+    min_score: 0.0                    # Drop results when top rerank score is below this AND the query is degraded — set to e.g. 0.3 to filter off-corpus queries
   strategies:
     vector:
       weight: 0.5
