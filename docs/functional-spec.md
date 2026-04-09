@@ -345,8 +345,9 @@ interface StepResult<T> {
 5. Send to Gemini with structured output → get entities + relationships with confidence scores. If pre-chunked: send each sub-chunk separately, merge results.
 6. **Taxonomy normalization** (inline):
    - For each extracted entity, search taxonomy for matching canonical entry (via `pg_trgm` similarity)
-   - If match found (similarity > threshold): assign `canonical_id`, add as alias
-   - If no match: create new taxonomy entry with status `auto`
+   - If match found (similarity > threshold): assign the matched taxonomy entry to the entity row via `entities.taxonomy_id`, and add the extracted name as an alias on the taxonomy entry if it is not already present
+   - If no match: create a new taxonomy entry with status `auto` and link the entity row to it via `entities.taxonomy_id`
+   - Two entity rows in different stories that normalize to the same taxonomy entry share the same `taxonomy_id`, enabling cross-story grouping queries (e.g. "find every story mentioning Allan Hendry"). Note: this is grouping via FK, not row-level deduplication of the entity rows themselves — that remains the cross-lingual resolver's job (step 7).
 7. **Cross-lingual entity resolution** (cross-document, language-agnostic):
    Three-tier strategy that works across all languages, not just `supported_locales`:
    - **Tier 1 — Attribute match** (deterministic): Entities with identical normalized attributes (GPS coordinates, ISO dates, Wikidata IDs) are merged. Grounding provides these attributes. Works for any language Google Search covers.
@@ -1519,9 +1520,10 @@ All entities (after ~25 docs) → Gemini clustering prompt → Taxonomy tree
 
 For each extracted entity during enrichment:
 1. Search `taxonomy` table by name similarity (trigram: `pg_trgm`)
-2. If match > threshold: assign `canonical_id` from taxonomy entry, add as alias
-3. If no match: create new `auto` entry
-4. Never modify `confirmed` entries automatically
+2. If match > threshold: link the entity row to the taxonomy entry via `entities.taxonomy_id` and add the extracted name as a new alias on the taxonomy entry if it is not already present
+3. If no match: create a new `auto` taxonomy entry and link the entity row to it via `entities.taxonomy_id`
+4. Never modify `confirmed` entries automatically (but `auto` entries get alias additions)
+5. Two entity rows in different stories that normalize to the same taxonomy entry share the same `taxonomy_id`. This is cross-story **grouping** via FK, not row-level deduplication of the entity rows — row-level merging is handled by the cross-lingual resolver (§2.4 step 7).
 
 ### 6.3 Curation Workflow
 
