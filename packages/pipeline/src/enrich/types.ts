@@ -41,6 +41,13 @@ export interface EnrichmentData {
 	entitiesResolved: number;
 	relationshipsCreated: number;
 	taxonomyEntriesAdded: number;
+	/**
+	 * Number of entity rows in this story whose `taxonomy_id` was set
+	 * (linked to a canonical taxonomy entry). Cross-story duplicates of the
+	 * same canonical entity share the same `taxonomy_id`, enabling
+	 * grouping queries downstream.
+	 */
+	taxonomyLinked: number;
 	/** 1 if no pre-chunking, N if pre-chunked. */
 	chunksUsed: number;
 }
