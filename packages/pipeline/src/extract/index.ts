@@ -60,25 +60,58 @@ async function extractNativeText(pdfBuffer: Buffer, logger: Logger): Promise<str
 }
 
 /**
- * Renders page images from a PDF buffer using pdf-to-img.
+ * Renders page images from a PDF buffer using pdfjs-dist + @napi-rs/canvas.
  * Returns an array of PNG buffers, one per page.
  *
- * If pdf-to-img fails (e.g. missing system canvas deps in CI),
- * returns empty 1x1 PNG placeholders so the step still completes.
+ * Both dependencies ship prebuilt binaries with no system-library
+ * compilation, so this works on macOS arm64, Linux, and CI without any
+ * `brew install` or `apt-get install` step.
+ *
+ * If rendering fails for an unexpected reason, the function logs the error
+ * and returns an empty array so downstream steps can continue with
+ * text-only processing.
  */
 async function renderPageImages(pdfBuffer: Buffer, logger: Logger): Promise<Buffer[]> {
 	try {
-		const { pdf } = await import('pdf-to-img');
+		// Dynamic imports keep pdfjs-dist out of the cold-start path for
+		// callers that never reach this branch.
+		const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+		const { createCanvas } = await import('@napi-rs/canvas');
+
+		const loadingTask = pdfjs.getDocument({
+			data: new Uint8Array(pdfBuffer),
+			useSystemFonts: true,
+			isEvalSupported: false,
+		});
+		const doc = await loadingTask.promise;
+
 		const pages: Buffer[] = [];
-		const doc = await pdf(pdfBuffer, { scale: 2 });
-		for await (const image of doc) {
-			pages.push(Buffer.from(image));
+		const scale = 2;
+
+		for (let i = 1; i <= doc.numPages; i++) {
+			const page = await doc.getPage(i);
+			const viewport = page.getViewport({ scale });
+			const width = Math.ceil(viewport.width);
+			const height = Math.ceil(viewport.height);
+
+			// @napi-rs/canvas implements the HTMLCanvasElement contract at
+			// runtime; the structural cast lets pdfjs-dist render into it
+			// without pulling DOM types into the tsconfig.
+			const napiCanvas = createCanvas(width, height);
+			// biome-ignore lint/suspicious/noExplicitAny: cross-runtime canvas type bridge
+			await page.render({ canvas: napiCanvas as any, viewport }).promise;
+
+			pages.push(napiCanvas.toBuffer('image/png'));
+			page.cleanup();
 		}
-		logger.debug({ pageCount: pages.length }, 'Page images rendered via pdf-to-img');
+
+		await doc.cleanup();
+		await doc.destroy();
+
+		logger.debug({ pageCount: pages.length }, 'Page images rendered via pdfjs-dist + @napi-rs/canvas');
 		return pages;
 	} catch (error: unknown) {
-		logger.warn({ err: error }, 'pdf-to-img rendering failed — using placeholder images');
-		// Return empty array; caller should handle missing images gracefully
+		logger.warn({ err: error }, 'PDF page rendering failed — downstream steps will run text-only');
 		return [];
 	}
 }
