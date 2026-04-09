@@ -334,4 +334,81 @@ describe('Spec 13: GCP + Dev Service Implementations', () => {
 		expect(processorName).not.toContain('europe-west1');
 		expect(processorName).toContain('processors/test-processor');
 	});
+
+	// ─── QA-12: Document AI client uses regional apiEndpoint ───
+	// Given a config with document_ai.location='eu', when createGcpServices
+	// runs, then the DocumentProcessorServiceClient inside GcpDocumentAiService
+	// is constructed with apiEndpoint='eu-documentai.googleapis.com'. The
+	// SDK's default global endpoint routes to `us` — calling an EU-located
+	// processor through it returns 404 PROCESSOR_NOT_FOUND even when the
+	// processor name string is correct. QA-11 only validates the name; this
+	// case catches the endpoint half of the fix.
+	//
+	// Note on introspection: the SDK's public `client.apiEndpoint` getter
+	// returns the hardcoded default service path ('documentai.' + universeDomain)
+	// and does NOT reflect a user-supplied apiEndpoint. The effective endpoint
+	// is stored on the private `_opts` field (the options object after the
+	// constructor's Object.assign). This test reads `_opts.apiEndpoint` and
+	// cross-checks `_providedCustomServicePath`, both of which are the
+	// real signals that the regional endpoint was wired through.
+	//
+	// Also verifies the `us` branch resolves to `us-documentai.googleapis.com`.
+	// Uses closeGcpClients between runs so each construction produces a fresh
+	// client keyed to the configured location.
+	it('QA-12: Document AI client is constructed with the matching regional apiEndpoint', async () => {
+		const gcpServicesModule = await import(resolve(ROOT, 'packages/core/dist/shared/services.gcp.js'));
+		const gcpModule = await import(resolve(ROOT, 'packages/core/dist/shared/gcp.js'));
+
+		// Walk the service's fields to find the wrapped DocumentProcessorServiceClient.
+		// Identify it by the presence of the private `_opts` + `_providedCustomServicePath`
+		// pair set by the gax constructor.
+		const findDocAiClient = (svc: unknown): Record<string, unknown> | undefined => {
+			const s = svc as Record<string, unknown>;
+			for (const key of Object.keys(s)) {
+				const v = s[key] as Record<string, unknown> | undefined;
+				if (v && typeof v === 'object' && '_opts' in v && '_providedCustomServicePath' in v) {
+					return v;
+				}
+			}
+			return undefined;
+		};
+
+		const assertRegionalEndpoint = (svc: unknown, expected: string): void => {
+			const client = findDocAiClient(svc);
+			expect(client, 'Could not locate DocumentProcessorServiceClient on GcpDocumentAiService').toBeDefined();
+			const opts = (client as Record<string, unknown>)._opts as Record<string, unknown>;
+			expect(opts.apiEndpoint, `_opts.apiEndpoint should be ${expected}`).toBe(expected);
+			// servicePath is resolved by the constructor from apiEndpoint — both
+			// should line up.
+			expect(opts.servicePath, `_opts.servicePath should be ${expected}`).toBe(expected);
+			expect(
+				(client as Record<string, unknown>)._providedCustomServicePath,
+				'_providedCustomServicePath should be true when a regional apiEndpoint is passed',
+			).toBe(true);
+		};
+
+		// EU branch (default)
+		await gcpModule.closeGcpClients();
+		const euConfig = VALID_CONFIG_WITH_DOCAI.replace(
+			'document_ai:\n    processor_id: "test-processor"',
+			'document_ai:\n    processor_id: "test-processor"\n    location: "eu"',
+		);
+		const euConfigPath = writeTempConfig(euConfig, 'qa12-location-eu.yaml');
+		const loadedEu = loadConfig(euConfigPath) as Record<string, any>;
+		const euServices = gcpServicesModule.createGcpServices(loadedEu, silentLogger);
+		assertRegionalEndpoint(euServices.documentAi, 'eu-documentai.googleapis.com');
+
+		// US branch
+		await gcpModule.closeGcpClients();
+		const usConfig = VALID_CONFIG_WITH_DOCAI.replace(
+			'document_ai:\n    processor_id: "test-processor"',
+			'document_ai:\n    processor_id: "test-processor"\n    location: "us"',
+		);
+		const usConfigPath = writeTempConfig(usConfig, 'qa12-location-us.yaml');
+		const loadedUs = loadConfig(usConfigPath) as Record<string, any>;
+		const usServices = gcpServicesModule.createGcpServices(loadedUs, silentLogger);
+		assertRegionalEndpoint(usServices.documentAi, 'us-documentai.googleapis.com');
+
+		await gcpModule.closeGcpClients();
+	});
 });
