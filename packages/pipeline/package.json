@@ -13,8 +13,9 @@
 	"dependencies": {
 		"@mulder/core": "workspace:*",
 		"@mulder/taxonomy": "workspace:*",
+		"@napi-rs/canvas": "^0.1.79",
 		"pdf-parse": "^2.4.5",
-		"pdf-to-img": "^4.4.0",
+		"pdfjs-dist": "^5.4.296",
 		"zod": "^4.3.6",
 		"zod-to-json-schema": "^3.24.5"
 	}
