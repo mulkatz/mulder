@@ -2,7 +2,7 @@
 
 This document defines architectural constraints that apply to **all** Mulder code. It establishes the boundary between the domain-agnostic core and the domain-specific configuration layer. Every data structure, pipeline step, and feature must respect this boundary.
 
-Referenced by both the functional spec (`docs/functional-spec.md`) and the feature spec addendum (`docs/feature-spec-addendum.md`). All sections use the **§D** prefix to avoid collisions with other spec documents.
+Referenced by both the functional spec (`docs/functional-spec.md`) and the functional spec addendum (`docs/functional-spec-addendum.md`). All sections use the **§D** prefix to avoid collisions with other spec documents.
 
 ---
 
