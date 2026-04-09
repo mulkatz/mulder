@@ -54,8 +54,9 @@ describe('Spec 02: Monorepo Setup', () => {
 			'@mulder/core',
 			'@mulder/pipeline',
 			'@mulder/retrieval',
-			// Additional deps (@mulder/taxonomy, @mulder/evidence,
-			// @mulder/worker) are added as those packages are implemented.
+			'@mulder/taxonomy',
+			// Additional deps (@mulder/evidence, @mulder/worker) are added
+			// as those packages are implemented.
 		],
 		'apps/api': ['@mulder/core', '@mulder/retrieval', '@mulder/taxonomy', '@mulder/evidence', '@mulder/worker'],
 	};

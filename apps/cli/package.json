@@ -17,6 +17,7 @@
 		"@mulder/core": "workspace:*",
 		"@mulder/pipeline": "workspace:*",
 		"@mulder/retrieval": "workspace:*",
+		"@mulder/taxonomy": "workspace:*",
 		"chalk": "^5.6.2",
 		"commander": "^14.0.3",
 		"yaml": "^2.8.3"
