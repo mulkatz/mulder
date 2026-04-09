@@ -305,4 +305,39 @@ describe('Spec 11: Service Abstraction', () => {
 		expect(core.RateLimiter).toBeDefined();
 		expect(typeof core.RateLimiter).toBe('function');
 	});
+
+	// ─── QA-14: LlmService.countTokens is exposed and produces non-Latin-aware estimates ───
+	// The previous chars/4 heuristic underestimated non-Latin scripts (German
+	// compound nouns, CJK) by 2-3×, which risked silent mid-JSON truncation
+	// when Gemini received over-budget inputs. countTokens is the contract.
+
+	it('QA-14: LlmService exposes countTokens and dev impl returns a non-zero estimate for German text', async () => {
+		const devConfig = { ...exampleConfig, dev_mode: true };
+		const savedEnv = process.env.NODE_ENV;
+		process.env.NODE_ENV = 'test';
+		try {
+			const services = createServiceRegistry(devConfig, silentLogger);
+			expect(typeof services.llm.countTokens).toBe('function');
+
+			const germanCompound =
+				'Die Bezirkshauptmannschaftsangestelltengewerkschaftsversammlung ' +
+				'fand in Donaudampfschifffahrtskapitänsbüro statt. ' +
+				'Der Lebensversicherungsgesellschaftsangestellte sprach über ' +
+				'Rindfleischetikettierungsüberwachungsaufgabenübertragungsgesetze.';
+
+			const tokens = await services.llm.countTokens(germanCompound);
+
+			// Dev impl uses Math.ceil(text.length / 2) — strictly larger than
+			// the chars/4 heuristic that this fix replaces.
+			expect(tokens).toBeGreaterThan(0);
+			expect(tokens).toBeGreaterThanOrEqual(Math.ceil(germanCompound.length / 2));
+			expect(tokens).toBeGreaterThan(Math.ceil(germanCompound.length / 4));
+
+			// Empty input returns 0.
+			const empty = await services.llm.countTokens('');
+			expect(empty).toBe(0);
+		} finally {
+			process.env.NODE_ENV = savedEnv;
+		}
+	});
 });

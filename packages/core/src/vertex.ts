@@ -56,6 +56,8 @@ export interface VertexClient {
 	groundedGenerate(options: GroundedGenerateOptions): Promise<GroundedGenerateResult>;
 	/** Embed texts into vectors. */
 	embed(texts: string[], model: string, dimensions: number): Promise<EmbeddingResult[]>;
+	/** Count tokens for the given text against the model's tokenizer. */
+	countTokens(text: string): Promise<number>;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -388,6 +390,25 @@ export function createVertexClient(ai: GoogleGenAI, options: VertexClientOptions
 					text,
 					vector: embeddings[i]?.values ?? [],
 				}));
+			});
+		},
+
+		async countTokens(text: string): Promise<number> {
+			return limiter(async () => {
+				const response = await withRetry(
+					async () => {
+						return ai.models.countTokens({
+							model: DEFAULT_MODEL,
+							contents: text,
+						});
+					},
+					{
+						onRetry: (err, attempt, delayMs) => {
+							logger.warn({ err, attempt, delayMs }, 'VertexClient: retrying countTokens');
+						},
+					},
+				);
+				return response.totalTokens ?? 0;
 			});
 		},
 	};

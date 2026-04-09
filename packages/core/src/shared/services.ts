@@ -129,6 +129,14 @@ export interface LlmService {
 
 	/** Generate text with Google Search grounding. */
 	groundedGenerate(options: GroundedGenerateOptions): Promise<GroundedGenerateResult>;
+
+	/**
+	 * Count tokens for the given text against the LLM's tokenizer. Used by
+	 * pre-LLM-call guards (e.g. enrich's pre-chunking check) where a
+	 * character heuristic underestimates non-Latin scripts by 2-3× and risks
+	 * silent mid-JSON truncation. Returns the exact tokenizer count.
+	 */
+	countTokens(text: string): Promise<number>;
 }
 
 // ────────────────────────────────────────────────────────────
