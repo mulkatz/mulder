@@ -302,7 +302,7 @@ interface StepResult<T> {
        "id": "seg-abc123",
        "document_id": "doc-xyz",
        "title": "...",
-       "author": "...",
+       "subtitle": "...",
        "language": "de",
        "category": "sighting_report",
        "pages": [12, 13, 14],
@@ -311,6 +311,7 @@ interface StepResult<T> {
        "extraction_confidence": 0.92
      }
      ```
+     **Note on `pages`:** the array is a contiguous range from `page_start` to `page_end` of the segment. Stories that span an interrupting page (e.g. an ad on page 13 between content on 12 and 14) still get a contiguous list — gap detection is intentionally not supported at this layer because the segment-level page span is the unit downstream consumers care about.
 7. Create `stories` records in PostgreSQL with GCS URIs (no inline text), linked to source
 8. Update source status to `segmented` in PostgreSQL (authoritative). Fire Firestore observability update (fire-and-forget).
 
@@ -356,7 +357,7 @@ interface StepResult<T> {
    - If match found at any tier: merge → update `canonical_id`, add as language-specific alias variant
    - If no match: create new entity
    - **Taxonomy as cross-lingual anchor:** Canonical taxonomy entries have no language — they have an ID and variants in any number of languages. `supported_locales` controls UI/prompt language only, not entity resolution.
-   - **Deadlock prevention:** Sort all entity upserts lexicographically by `(entity_type, canonical_name)` before writing to PostgreSQL. This guarantees consistent lock ordering when multiple CLI processes or workers enrich stories concurrently, preventing transaction deadlocks.
+   - **Deadlock prevention:** Sort all entity upserts lexicographically by `(type, name)` before writing to PostgreSQL. This guarantees consistent lock ordering when multiple CLI processes or workers enrich stories concurrently, preventing transaction deadlocks. The fields are the upsert input keys (`extracted.type`, `extracted.name`), not the canonical taxonomy fields — they sort the same way in practice but the wording matches the actual code.
 8. Write entities to `entities` table, relationships to `entity_edges` table
 9. Write entity-story links to `story_entities` junction table
 10. Update story status to `enriched`
@@ -912,7 +913,7 @@ CREATE TABLE chunks (
   page_start      INTEGER,
   page_end        INTEGER,
   embedding       vector(768),             -- text-embedding-004 with outputDimensionality: 768; configurable via embedding.storage_dimensions
-  fts_vector      tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED,  -- BM25 on same table as vectors
+  fts_vector      tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED,  -- BM25 on same table as vectors. Uses 'simple' (no stemming, no stopwords) deliberately: Mulder is multilingual, and language-specific dictionaries (`german`, `english`) would split word forms unevenly across the corpus and degrade cross-language recall. 'simple' produces more tokens but they are language-agnostic.
   is_question     BOOLEAN DEFAULT false,   -- true = generated question, false = content chunk
   parent_chunk_id UUID REFERENCES chunks(id) ON DELETE CASCADE,  -- question → parent content chunk
   metadata        JSONB DEFAULT '{}',
@@ -1472,7 +1473,7 @@ thresholds:
 **Degradation behavior:**
 - **Taxonomy** < threshold: Entities are extracted but not normalized. Raw entity names in the graph.
 - **Corroboration** < threshold: Score returned as `null` / `"insufficient_data"`, not `1`.
-- **Hybrid Retrieval** with sparse data: Falls back to pure vector search. BM25 and graph expansion remain active but with honest confidence ("graph expansion returned 0 additional results").
+- **Hybrid Retrieval** with sparse data: All three strategies (vector, fulltext, graph) still execute. The graph strategy naturally returns 0 hits when there are no entities to seed traversal — this is the "fallback to pure vector search" behavior in practice. RRF fusion handles the empty-strategy case correctly: only the strategies that returned results contribute to the fused list. The `confidence.degraded` flag is set so the orchestrator and clients can react.
 - **Evidence chains** < threshold: Feature disabled, API endpoint returns `501 Not Yet Available` with explanation.
 
 **API response `confidence` object:**
@@ -1483,12 +1484,14 @@ thresholds:
     "corpus_size": 12,
     "taxonomy_status": "bootstrapping",
     "corroboration_reliability": "low",
-    "graph_density": 0.03
+    "graph_density": 0.03,
+    "degraded": true,
+    "message": "no_meaningful_matches"
   }
 }
 ```
 
-Values for `taxonomy_status`: `"not_started"` | `"bootstrapping"` | `"active"` | `"mature"`. Values for `corroboration_reliability`: `"insufficient"` | `"low"` | `"moderate"` | `"high"`.
+Values for `taxonomy_status`: `"not_started"` | `"bootstrapping"` | `"active"` | `"mature"`. Values for `corroboration_reliability`: `"insufficient"` | `"low"` | `"moderate"` | `"high"`. The `degraded` boolean is set to `true` when `corpus_size < taxonomy_bootstrap` OR the graph strategy returned zero hits — clients can use it to soften phrasing in the UI. The optional `message` field is set by the orchestrator's negative-query gate (`retrieval.rerank.min_score`) when the result list is empty because every reranker score fell below the configured floor on a degraded query.
 
 ---
 
