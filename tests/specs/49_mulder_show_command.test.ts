@@ -20,9 +20,9 @@
  *   - Built `apps/cli/dist/index.js`.
  */
 
-import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -168,9 +168,7 @@ function seedSyntheticSource(filename: string): string {
 	const fileHash = `qa-49-${id}`;
 	runSql(
 		`INSERT INTO sources (id, filename, storage_path, file_hash, status, page_count)
-		 VALUES (${sqlQuote(id)}, ${sqlQuote(filename)}, ${sqlQuote(storagePath)}, ${sqlQuote(
-			fileHash,
-		)}, 'extracted', 1);`,
+		 VALUES (${sqlQuote(id)}, ${sqlQuote(filename)}, ${sqlQuote(storagePath)}, ${sqlQuote(fileHash)}, 'extracted', 1);`,
 	);
 	return id;
 }
@@ -280,38 +278,32 @@ describe('Spec 49 — `mulder show` command', () => {
 	// ═══════════════════════════════════════════════════════════════════════
 
 	// ─── QA-01: Happy path with ANSI formatting ───
-	it.skipIf(!isPgAvailable())(
-		'QA-01: show <id> → exit 0, body text present, contains ANSI escape',
-		() => {
-			// FORCE_COLOR=1 propagates through to chalk so ANSI is emitted
-			// even though stdout is a pipe, not a TTY.
-			const result = runCli(['show', srcId], { forceColor: true });
-			expect(result.exitCode).toBe(0);
-			expect(result.stdout.length).toBeGreaterThan(0);
-			// Known body content from the extracted native-text-sample.pdf.
-			expect(result.stdout).toContain(NATIVE_TEXT_BODY_MARKER);
-			// At least one ANSI escape sequence (from chalk's formatting).
-			expect(result.stdout).toContain('\x1b[');
-		},
-	);
+	it.skipIf(!isPgAvailable())('QA-01: show <id> → exit 0, body text present, contains ANSI escape', () => {
+		// FORCE_COLOR=1 propagates through to chalk so ANSI is emitted
+		// even though stdout is a pipe, not a TTY.
+		const result = runCli(['show', srcId], { forceColor: true });
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout.length).toBeGreaterThan(0);
+		// Known body content from the extracted native-text-sample.pdf.
+		expect(result.stdout).toContain(NATIVE_TEXT_BODY_MARKER);
+		// At least one ANSI escape sequence (from chalk's formatting).
+		expect(result.stdout).toContain('\x1b[');
+	});
 
 	// ─── QA-02: --raw produces byte-identical markdown, zero ANSI ───
-	it.skipIf(!isPgAvailable())(
-		'QA-02: show <id> --raw → byte-identical to stored layout.md, no ANSI',
-		() => {
-			const rawFile = readFileSync(join(EXTRACTED_STORAGE_DIR, srcId, 'layout.md'), 'utf-8');
-			const result = runCli(['show', srcId, '--raw']);
-			expect(result.exitCode).toBe(0);
+	it.skipIf(!isPgAvailable())('QA-02: show <id> --raw → byte-identical to stored layout.md, no ANSI', () => {
+		const rawFile = readFileSync(join(EXTRACTED_STORAGE_DIR, srcId, 'layout.md'), 'utf-8');
+		const result = runCli(['show', srcId, '--raw']);
+		expect(result.exitCode).toBe(0);
 
-			// No ANSI escape sequences at all.
-			expect(result.stdout.includes('\x1b[')).toBe(false);
+		// No ANSI escape sequences at all.
+		expect(result.stdout.includes('\x1b[')).toBe(false);
 
-			// Normalize an optional single trailing newline on either side and
-			// compare byte-for-byte.
-			const norm = (s: string) => (s.endsWith('\n') ? s : `${s}\n`);
-			expect(norm(result.stdout)).toBe(norm(rawFile));
-		},
-	);
+		// Normalize an optional single trailing newline on either side and
+		// compare byte-for-byte.
+		const norm = (s: string) => (s.endsWith('\n') ? s : `${s}\n`);
+		expect(norm(result.stdout)).toBe(norm(rawFile));
+	});
 
 	// ─── QA-03: --help prints usage information ───
 	it('QA-03: show --help → exit 0, usage info includes arg + flags', () => {
@@ -325,15 +317,12 @@ describe('Spec 49 — `mulder show` command', () => {
 	});
 
 	// ─── QA-04: Nonexistent source ID → exit 1, clear error ───
-	it.skipIf(!isPgAvailable())(
-		'QA-04: show <nonexistent-uuid> → exit 1, stderr "Source not found" + UUID',
-		() => {
-			const result = runCli(['show', NONEXISTENT_UUID]);
-			expect(result.exitCode).toBe(1);
-			expect(result.stderr).toContain('Source not found');
-			expect(result.stderr).toContain(NONEXISTENT_UUID);
-		},
-	);
+	it.skipIf(!isPgAvailable())('QA-04: show <nonexistent-uuid> → exit 1, stderr "Source not found" + UUID', () => {
+		const result = runCli(['show', NONEXISTENT_UUID]);
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain('Source not found');
+		expect(result.stderr).toContain(NONEXISTENT_UUID);
+	});
 
 	// ─── QA-05: Source exists but layout.md missing → exit 1, clear error ───
 	it.skipIf(!isPgAvailable())(
@@ -347,28 +336,22 @@ describe('Spec 49 — `mulder show` command', () => {
 	);
 
 	// ─── QA-06: Formatter is deterministic (idempotency) ───
-	it.skipIf(!isPgAvailable())(
-		'QA-06: show <id> twice → byte-identical stdouts',
-		() => {
-			const first = runCli(['show', srcId]);
-			const second = runCli(['show', srcId]);
-			expect(first.exitCode).toBe(0);
-			expect(second.exitCode).toBe(0);
-			expect(second.stdout).toBe(first.stdout);
-		},
-	);
+	it.skipIf(!isPgAvailable())('QA-06: show <id> twice → byte-identical stdouts', () => {
+		const first = runCli(['show', srcId]);
+		const second = runCli(['show', srcId]);
+		expect(first.exitCode).toBe(0);
+		expect(second.exitCode).toBe(0);
+		expect(second.stdout).toBe(first.stdout);
+	});
 
 	// ─── QA-07: --pager with PAGER=cat does not crash, produces output ───
-	it.skipIf(!isPgAvailable())(
-		'QA-07: show <id> --pager (PAGER=cat) → exit 0, body text passed through',
-		() => {
-			const result = runCli(['show', srcId, '--pager'], { env: { PAGER: 'cat' } });
-			expect(result.exitCode).toBe(0);
-			// The cat pager passes formatted output through, so the body text
-			// is still in stdout.
-			expect(result.stdout).toContain(NATIVE_TEXT_BODY_MARKER);
-		},
-	);
+	it.skipIf(!isPgAvailable())('QA-07: show <id> --pager (PAGER=cat) → exit 0, body text passed through', () => {
+		const result = runCli(['show', srcId, '--pager'], { env: { PAGER: 'cat' } });
+		expect(result.exitCode).toBe(0);
+		// The cat pager passes formatted output through, so the body text
+		// is still in stdout.
+		expect(result.stdout).toContain(NATIVE_TEXT_BODY_MARKER);
+	});
 
 	// ─── QA-08: GFM table separator row is dimmed ───
 	it.skipIf(!isPgAvailable())(
@@ -389,10 +372,10 @@ describe('Spec 49 — `mulder show` command', () => {
 			const lines = result.stdout.split('\n');
 
 			// Helper: strip chalk ANSI escapes to recover the bare line text
-			// for identification.
-			const strip = (s: string): string =>
-				// eslint-disable-next-line no-control-regex
-				s.replace(/\x1b\[[0-9;]*m/g, '');
+			// for identification. The literal ESC (\x1b) control character is
+			// intentional — ANSI escape sequences start with it.
+			// biome-ignore lint/suspicious/noControlCharactersInRegex: matching literal ANSI escape sequences
+			const strip = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, '');
 
 			const sepIdx = lines.findIndex((l) => {
 				const bare = strip(l).trim();
@@ -430,46 +413,37 @@ describe('Spec 49 — `mulder show` command', () => {
 		});
 
 		// ─── CLI-02: --raw → byte-identical, no ANSI ───
-		it.skipIf(!isPgAvailable())(
-			'CLI-02: show $SRC_ID --raw → byte-identical to stored layout.md, no ANSI',
-			() => {
-				const rawFile = readFileSync(join(EXTRACTED_STORAGE_DIR, srcId, 'layout.md'), 'utf-8');
-				const result = runCli(['show', srcId, '--raw']);
-				expect(result.exitCode).toBe(0);
-				expect(result.stdout.includes('\x1b[')).toBe(false);
+		it.skipIf(!isPgAvailable())('CLI-02: show $SRC_ID --raw → byte-identical to stored layout.md, no ANSI', () => {
+			const rawFile = readFileSync(join(EXTRACTED_STORAGE_DIR, srcId, 'layout.md'), 'utf-8');
+			const result = runCli(['show', srcId, '--raw']);
+			expect(result.exitCode).toBe(0);
+			expect(result.stdout.includes('\x1b[')).toBe(false);
 
-				const norm = (s: string) => (s.endsWith('\n') ? s : `${s}\n`);
-				expect(norm(result.stdout)).toBe(norm(rawFile));
-			},
-		);
+			const norm = (s: string) => (s.endsWith('\n') ? s : `${s}\n`);
+			expect(norm(result.stdout)).toBe(norm(rawFile));
+		});
 
 		// ─── CLI-03: --pager (PAGER=cat) → exit 0, body in stdout ───
-		it.skipIf(!isPgAvailable())(
-			'CLI-03: show $SRC_ID --pager (PAGER=cat) → exit 0, body text present',
-			() => {
-				const result = runCli(['show', srcId, '--pager'], { env: { PAGER: 'cat' } });
-				expect(result.exitCode).toBe(0);
-				expect(result.stdout).toContain(NATIVE_TEXT_BODY_MARKER);
-			},
-		);
+		it.skipIf(!isPgAvailable())('CLI-03: show $SRC_ID --pager (PAGER=cat) → exit 0, body text present', () => {
+			const result = runCli(['show', srcId, '--pager'], { env: { PAGER: 'cat' } });
+			expect(result.exitCode).toBe(0);
+			expect(result.stdout).toContain(NATIVE_TEXT_BODY_MARKER);
+		});
 
 		// ─── CLI-04: --raw --pager (PAGER=cat) → raw markdown, no ANSI ───
-		it.skipIf(!isPgAvailable())(
-			'CLI-04: show $SRC_ID --raw --pager (PAGER=cat) → raw markdown, no ANSI',
-			() => {
-				const rawFile = readFileSync(join(EXTRACTED_STORAGE_DIR, srcId, 'layout.md'), 'utf-8');
-				const result = runCli(['show', srcId, '--raw', '--pager'], {
-					env: { PAGER: 'cat' },
-				});
-				expect(result.exitCode).toBe(0);
-				expect(result.stdout.includes('\x1b[')).toBe(false);
-				// `cat` passes the raw markdown through unchanged.
-				expect(result.stdout).toContain(NATIVE_TEXT_BODY_MARKER);
-				// Substring match (cat may or may not append a trailing newline,
-				// and the pager path could add one more).
-				expect(result.stdout.replace(/\n+$/, '')).toContain(rawFile.replace(/\n+$/, ''));
-			},
-		);
+		it.skipIf(!isPgAvailable())('CLI-04: show $SRC_ID --raw --pager (PAGER=cat) → raw markdown, no ANSI', () => {
+			const rawFile = readFileSync(join(EXTRACTED_STORAGE_DIR, srcId, 'layout.md'), 'utf-8');
+			const result = runCli(['show', srcId, '--raw', '--pager'], {
+				env: { PAGER: 'cat' },
+			});
+			expect(result.exitCode).toBe(0);
+			expect(result.stdout.includes('\x1b[')).toBe(false);
+			// `cat` passes the raw markdown through unchanged.
+			expect(result.stdout).toContain(NATIVE_TEXT_BODY_MARKER);
+			// Substring match (cat may or may not append a trailing newline,
+			// and the pager path could add one more).
+			expect(result.stdout.replace(/\n+$/, '')).toContain(rawFile.replace(/\n+$/, ''));
+		});
 
 		// ─── CLI-05: --help → exit 0, usage info ───
 		it('CLI-05: show --help → exit 0, usage info with all expected strings', () => {
@@ -493,15 +467,12 @@ describe('Spec 49 — `mulder show` command', () => {
 		});
 
 		// ─── CLI-07: nonexistent UUID → exit 1, Source not found + UUID ───
-		it.skipIf(!isPgAvailable())(
-			'CLI-07: show <nonexistent-uuid> → exit 1, stderr "Source not found" + UUID',
-			() => {
-				const result = runCli(['show', NONEXISTENT_UUID]);
-				expect(result.exitCode).toBe(1);
-				expect(result.stderr).toContain('Source not found');
-				expect(result.stderr).toContain(NONEXISTENT_UUID);
-			},
-		);
+		it.skipIf(!isPgAvailable())('CLI-07: show <nonexistent-uuid> → exit 1, stderr "Source not found" + UUID', () => {
+			const result = runCli(['show', NONEXISTENT_UUID]);
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toContain('Source not found');
+			expect(result.stderr).toContain(NONEXISTENT_UUID);
+		});
 
 		// ─── CLI-08: ingested-but-not-extracted → exit 1, layout.md not found ───
 		it.skipIf(!isPgAvailable())(
@@ -515,15 +486,12 @@ describe('Spec 49 — `mulder show` command', () => {
 		);
 
 		// ─── CLI-09: run twice → byte-identical stdouts ───
-		it.skipIf(!isPgAvailable())(
-			'CLI-09: show $SRC_ID twice → both exit 0, byte-identical stdouts',
-			() => {
-				const first = runCli(['show', srcId]);
-				const second = runCli(['show', srcId]);
-				expect(first.exitCode).toBe(0);
-				expect(second.exitCode).toBe(0);
-				expect(second.stdout).toBe(first.stdout);
-			},
-		);
+		it.skipIf(!isPgAvailable())('CLI-09: show $SRC_ID twice → both exit 0, byte-identical stdouts', () => {
+			const first = runCli(['show', srcId]);
+			const second = runCli(['show', srcId]);
+			expect(first.exitCode).toBe(0);
+			expect(second.exitCode).toBe(0);
+			expect(second.stdout).toBe(first.stdout);
+		});
 	});
 });
