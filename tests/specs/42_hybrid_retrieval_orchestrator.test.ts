@@ -268,6 +268,11 @@ class StubLlmService implements LlmService {
 		throw new Error('groundedGenerate not implemented in stub');
 	}
 
+	async countTokens(text: string): Promise<number> {
+		// Stub returns the same conservative chars/2 estimate as DevLlmService.
+		return Math.ceil(text.length / 2);
+	}
+
 	get callCount(): number {
 		return this.calls.length;
 	}
