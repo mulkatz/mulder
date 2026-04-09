@@ -37,6 +37,7 @@ export interface EntityRow {
 	corroboration_score: number | null;
 	source_count: number;
 	taxonomy_status: TaxonomyStatus;
+	taxonomy_id: string | null;
 	created_at: Date;
 	updated_at: Date;
 }
@@ -52,6 +53,7 @@ export function mapEntityRow(row: EntityRow): Entity {
 		corroborationScore: row.corroboration_score,
 		sourceCount: row.source_count,
 		taxonomyStatus: row.taxonomy_status,
+		taxonomyId: row.taxonomy_id,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -72,14 +74,14 @@ export async function createEntity(pool: pg.Pool, input: CreateEntityInput): Pro
 	const hasExplicitId = input.id !== undefined;
 	const sql = hasExplicitId
 		? `
-    INSERT INTO entities (id, name, type, canonical_id, attributes, taxonomy_status)
-    VALUES ($1, $2, $3, $4, $5, $6)
+    INSERT INTO entities (id, name, type, canonical_id, attributes, taxonomy_status, taxonomy_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
     ON CONFLICT (id) DO UPDATE SET updated_at = now()
     RETURNING *
   `
 		: `
-    INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id)
+    VALUES ($1, $2, $3, $4, $5, $6)
     ON CONFLICT (id) DO UPDATE SET updated_at = now()
     RETURNING *
   `;
@@ -89,6 +91,7 @@ export async function createEntity(pool: pg.Pool, input: CreateEntityInput): Pro
 		input.canonicalId ?? null,
 		JSON.stringify(input.attributes ?? {}),
 		input.taxonomyStatus ?? 'auto',
+		input.taxonomyId ?? null,
 	];
 	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
 
@@ -115,11 +118,12 @@ export async function createEntity(pool: pg.Pool, input: CreateEntityInput): Pro
  */
 export async function upsertEntityByNameType(pool: pg.Pool, input: CreateEntityInput): Promise<Entity> {
 	const sql = `
-    INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id)
+    VALUES ($1, $2, $3, $4, $5, $6)
     ON CONFLICT (name, type) WHERE canonical_id IS NULL DO UPDATE SET
       attributes = COALESCE(NULLIF($4::jsonb, '{}'::jsonb), entities.attributes),
       taxonomy_status = COALESCE($5, entities.taxonomy_status),
+      taxonomy_id = COALESCE($6, entities.taxonomy_id),
       updated_at = now()
     RETURNING *
   `;
@@ -129,6 +133,7 @@ export async function upsertEntityByNameType(pool: pg.Pool, input: CreateEntityI
 		input.canonicalId ?? null,
 		JSON.stringify(input.attributes ?? {}),
 		input.taxonomyStatus ?? 'auto',
+		input.taxonomyId ?? null,
 	];
 
 	try {

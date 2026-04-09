@@ -31,6 +31,13 @@ export interface Entity {
 	corroborationScore: number | null;
 	sourceCount: number;
 	taxonomyStatus: TaxonomyStatus;
+	/**
+	 * FK to the canonical taxonomy entry this entity normalizes to. Two
+	 * entity rows that mention the same canonical entity (e.g. "Allan
+	 * Hendry" in two stories) share the same `taxonomyId` after enrich
+	 * runs taxonomy normalization, enabling cross-story grouping queries.
+	 */
+	taxonomyId: string | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -44,6 +51,8 @@ export interface CreateEntityInput {
 	canonicalId?: string;
 	attributes?: Record<string, unknown>;
 	taxonomyStatus?: TaxonomyStatus;
+	/** Optional FK to the canonical taxonomy entry. */
+	taxonomyId?: string | null;
 }
 
 /** Input for updating an entity. Partial -- only provided fields are updated. */
@@ -56,6 +65,8 @@ export interface UpdateEntityInput {
 	corroborationScore?: number | null;
 	sourceCount?: number;
 	taxonomyStatus?: TaxonomyStatus;
+	/** Set to `null` to clear the taxonomy FK. */
+	taxonomyId?: string | null;
 }
 
 /** Filters for querying entities. */

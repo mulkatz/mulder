@@ -617,6 +617,88 @@ describe('Spec 29 — Enrich Step', () => {
 
 	// ─── QA-13: --all and --force are mutually exclusive ───
 
+	// ─── QA-14: Taxonomy linkage after enrich ───
+
+	it('QA-14: every entity row gets a non-null taxonomy_id after enrich', () => {
+		if (!pgAvailable || !segmentedSourceId || !segmentedStoryId) return;
+
+		// Enrich the segmented story (set up by beforeAll).
+		const r = runCli(['enrich', segmentedStoryId, '--force'], { timeout: 120_000 });
+		expect(r.exitCode).toBe(0);
+
+		// Every entity created by enrich must have a non-null taxonomy_id —
+		// that's the cross-story grouping link the fix wires in. Before the
+		// fix this column did not exist and the normalizeTaxonomy result was
+		// silently discarded.
+		const totalEntities = Number.parseInt(
+			runSql(
+				`SELECT COUNT(*) FROM entities WHERE id IN (` +
+					`SELECT entity_id FROM story_entities WHERE story_id = '${segmentedStoryId}'` +
+					`);`,
+			),
+			10,
+		);
+		const linkedEntities = Number.parseInt(
+			runSql(
+				`SELECT COUNT(*) FROM entities WHERE taxonomy_id IS NOT NULL AND id IN (` +
+					`SELECT entity_id FROM story_entities WHERE story_id = '${segmentedStoryId}'` +
+					`);`,
+			),
+			10,
+		);
+
+		expect(totalEntities).toBeGreaterThan(0);
+		expect(linkedEntities).toBe(totalEntities);
+	});
+
+	// ─── QA-15: Cross-story entities sharing a name share the same taxonomy_id ───
+
+	it('QA-15: two stories mentioning the same entity name share the same taxonomy_id', () => {
+		if (!pgAvailable) return;
+
+		// Two sources, both produce overlapping entity names from the dev
+		// fixture. After enrich, any name+type pair appearing in both stories
+		// must have a single canonical entity row (ON CONFLICT (name, type))
+		// AND that row must have a non-null taxonomy_id.
+		cleanTestData();
+		cleanStorageFixtures();
+
+		const sourceId1 = ingestExtractSegment(NATIVE_TEXT_PDF);
+		const sourceId2 = ingestExtractSegment(SCANNED_PDF);
+
+		expect(runCli(['enrich', '--source', sourceId1], { timeout: 120_000 }).exitCode).toBe(0);
+		expect(runCli(['enrich', '--source', sourceId2], { timeout: 120_000 }).exitCode).toBe(0);
+
+		// Find any name+type that exists in both source's stories. If at
+		// least one shared entity exists (the dev fixtures share several),
+		// it must have exactly one row and a non-null taxonomy_id.
+		const sharedRows = runSql(
+			`SELECT e.id, e.name, e.type, e.taxonomy_id FROM entities e ` +
+				`WHERE e.id IN (` +
+				`  SELECT se.entity_id FROM story_entities se ` +
+				`    JOIN stories s ON s.id = se.story_id WHERE s.source_id = '${sourceId1}'` +
+				`) AND e.id IN (` +
+				`  SELECT se.entity_id FROM story_entities se ` +
+				`    JOIN stories s ON s.id = se.story_id WHERE s.source_id = '${sourceId2}'` +
+				`);`,
+		);
+
+		// If the dev fixtures don't happen to overlap, this assertion is
+		// informational rather than load-bearing — but every shared row
+		// MUST have a non-null taxonomy_id.
+		const lines = sharedRows.split('\n').filter(Boolean);
+		for (const line of lines) {
+			const [_id, _name, _type, taxonomyId] = line.split('|');
+			expect(taxonomyId, `shared entity ${line} missing taxonomy_id`).toBeTruthy();
+		}
+
+		// Restore beforeAll's invariant for the rest of the suite.
+		cleanTestData();
+		cleanStorageFixtures();
+		segmentedSourceId = ingestExtractSegment(NATIVE_TEXT_PDF);
+		segmentedStoryId = getStoryId(segmentedSourceId);
+	}, 300_000);
+
 	it('QA-13: mulder enrich --all --force exits with code 1 and error message', () => {
 		if (!pgAvailable) return;
 

@@ -397,28 +397,36 @@ export async function execute(
 		return a.name.localeCompare(b.name);
 	});
 
-	// 11. Process each entity: upsert, normalize, resolve, link
+	// 11. Process each entity: normalize taxonomy, upsert with link, resolve, link to story
 	const normalizationThreshold = config.taxonomy?.normalization_threshold ?? 0.4;
 	let entitiesResolved = 0;
 	let taxonomyEntriesAdded = 0;
+	let taxonomyLinked = 0;
 
 	/** Map from entity name to entity ID for relationship resolution. */
 	const entityNameToId = new Map<string, string>();
 
 	for (const extracted of sortedEntities) {
 		try {
-			// 11a. Upsert entity
+			// 11a. Taxonomy normalization (must run before upsert so the
+			// resulting entity row carries the canonical taxonomy_id from
+			// the start; cross-story queries can then group entities that
+			// share the same canonical reference).
+			const normResult = await normalizeTaxonomy(pool, extracted.name, extracted.type, normalizationThreshold);
+			if (normResult.action === 'created') {
+				taxonomyEntriesAdded++;
+			}
+
+			// 11b. Upsert entity with the taxonomy link populated.
 			const entity = await upsertEntityByNameType(pool, {
 				name: extracted.name,
 				type: extracted.type,
 				attributes: extracted.attributes,
+				taxonomyId: normResult.taxonomyEntry.id,
 			});
 			entityNameToId.set(extracted.name, entity.id);
-
-			// 11b. Taxonomy normalization
-			const normResult = await normalizeTaxonomy(pool, extracted.name, extracted.type, normalizationThreshold);
-			if (normResult.action === 'created') {
-				taxonomyEntriesAdded++;
+			if (entity.taxonomyId) {
+				taxonomyLinked++;
 			}
 
 			// 11c. Cross-lingual entity resolution
@@ -556,6 +564,7 @@ export async function execute(
 		entitiesResolved,
 		relationshipsCreated,
 		taxonomyEntriesAdded,
+		taxonomyLinked,
 		chunksUsed: textChunks.length,
 	};
 
@@ -566,6 +575,7 @@ export async function execute(
 			entitiesResolved,
 			relationshipsCreated,
 			taxonomyEntriesAdded,
+			taxonomyLinked,
 			chunksUsed: textChunks.length,
 			errors: errors.length,
 			duration_ms: durationMs,
