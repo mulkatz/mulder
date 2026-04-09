@@ -460,7 +460,7 @@ interface StepResult<T> {
    - Update `entities.corroboration_score`
 6. **Contradiction flagging** (attribute diff, no LLM):
    - For each entity with multiple source mentions, compare key attributes (date, location, description)
-   - If attributes conflict (e.g., different dates for the same event): create `POTENTIAL_CONTRADICTION` edge between the two claims
+   - If attributes conflict (e.g., different dates for the same event): create a `POTENTIAL_CONTRADICTION` edge attached to the canonical entity (a self-loop on `entities.id`). The two conflicting claims are encoded in `attributes`: `storyIdA` / `storyIdB` identify the source stories, and `attribute` / `valueA` / `valueB` describe the conflict. A claim is the tuple `(entity_id, story_id)` — claims are not first-class rows, so the edge sits on the entity and the story IDs live in JSONB. M6 G3 Analyze loads these edges by `edge_type` and reads the conflict fields directly from `attributes` to build the contradiction-resolution prompt.
    - Fast pass — no LLM, only string/date comparison
 7. Update story status to `graphed`
 
