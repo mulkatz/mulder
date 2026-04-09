@@ -276,6 +276,15 @@ class GcpLlmService implements LlmService {
 			throw wrapGcpError('EXT_VERTEX_AI_FAILED', 'Failed to generate grounded content', cause);
 		}
 	}
+
+	async countTokens(text: string): Promise<number> {
+		try {
+			this.logger.debug({ chars: text.length }, 'GcpLlmService: countTokens called');
+			return await this.vertexClient.countTokens(text);
+		} catch (cause: unknown) {
+			throw wrapGcpError('EXT_VERTEX_AI_FAILED', 'Failed to count tokens', cause);
+		}
+	}
 }
 
 // ────────────────────────────────────────────────────────────

@@ -375,6 +375,14 @@ class DevLlmService implements LlmService {
 		this.logger.debug('DevLlmService: groundedGenerate called (returning empty result)');
 		return { text: '', groundingMetadata: {} };
 	}
+
+	async countTokens(text: string): Promise<number> {
+		// Conservative dev-mode estimate: chars/2 over-counts so dev pipelines
+		// split aggressively rather than under-splitting and risking truncation
+		// when promoted to a real Vertex tokenizer call in prod.
+		this.logger.debug({ chars: text.length }, 'DevLlmService: countTokens called (chars/2 fallback)');
+		return Math.ceil(text.length / 2);
+	}
 }
 
 // ────────────────────────────────────────────────────────────
