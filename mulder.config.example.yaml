@@ -150,6 +150,7 @@ retrieval:
   strategies:
     vector:
       weight: 0.5
+      ef_search: 40                   # HNSW search-time exploration; higher = better recall, slower queries
     fulltext:
       weight: 0.3
     graph:

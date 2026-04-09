@@ -23,11 +23,11 @@ export type ConfigErrorCode = (typeof CONFIG_ERROR_CODES)[keyof typeof CONFIG_ER
 
 /** Pipeline domain error codes. */
 export const PIPELINE_ERROR_CODES = {
-	/** @reserved D6 pipeline orchestrator */
+	/** Source row not found in DB during pipeline run. */
 	PIPELINE_SOURCE_NOT_FOUND: 'PIPELINE_SOURCE_NOT_FOUND',
-	/** @reserved D6 pipeline orchestrator status checks */
+	/** Source status does not match the expected step entry condition. */
 	PIPELINE_WRONG_STATUS: 'PIPELINE_WRONG_STATUS',
-	/** @reserved D6 pipeline orchestrator step failure wrapping */
+	/** A pipeline step threw — wraps the underlying step error code. */
 	PIPELINE_STEP_FAILED: 'PIPELINE_STEP_FAILED',
 	/** @reserved D6 pipeline orchestrator retry exhaustion */
 	PIPELINE_RATE_LIMITED: 'PIPELINE_RATE_LIMITED',
@@ -118,16 +118,11 @@ export type EnrichErrorCode = (typeof ENRICH_ERROR_CODES)[keyof typeof ENRICH_ER
 
 /** Embed step error codes. */
 export const EMBED_ERROR_CODES = {
-	/** @reserved D4 embed step execute() */
 	EMBED_STORY_NOT_FOUND: 'EMBED_STORY_NOT_FOUND',
-	/** @reserved D4 embed step execute() */
 	EMBED_INVALID_STATUS: 'EMBED_INVALID_STATUS',
-	/** @reserved D4 embed step execute() */
 	EMBED_MARKDOWN_NOT_FOUND: 'EMBED_MARKDOWN_NOT_FOUND',
 	EMBED_EMBEDDING_FAILED: 'EMBED_EMBEDDING_FAILED',
-	/** @reserved D4 embed step execute() */
 	EMBED_QUESTION_GENERATION_FAILED: 'EMBED_QUESTION_GENERATION_FAILED',
-	/** @reserved D4 embed step execute() */
 	EMBED_CHUNK_WRITE_FAILED: 'EMBED_CHUNK_WRITE_FAILED',
 } as const;
 
@@ -135,17 +130,11 @@ export type EmbedErrorCode = (typeof EMBED_ERROR_CODES)[keyof typeof EMBED_ERROR
 
 /** Graph step error codes. */
 export const GRAPH_ERROR_CODES = {
-	/** @reserved D5 graph step execute() */
 	GRAPH_STORY_NOT_FOUND: 'GRAPH_STORY_NOT_FOUND',
-	/** @reserved D5 graph step execute() */
 	GRAPH_INVALID_STATUS: 'GRAPH_INVALID_STATUS',
-	/** @reserved D5 graph step execute() */
 	GRAPH_EDGE_WRITE_FAILED: 'GRAPH_EDGE_WRITE_FAILED',
-	/** @reserved D5 graph step execute() */
 	GRAPH_DEDUP_FAILED: 'GRAPH_DEDUP_FAILED',
-	/** @reserved D5 graph step execute() */
 	GRAPH_CORROBORATION_FAILED: 'GRAPH_CORROBORATION_FAILED',
-	/** @reserved D5 graph step execute() */
 	GRAPH_CONTRADICTION_FAILED: 'GRAPH_CONTRADICTION_FAILED',
 } as const;
 
