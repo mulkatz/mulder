@@ -263,6 +263,13 @@ export interface QueryConfidence {
 	corroboration_reliability: 'insufficient' | 'low' | 'moderate' | 'high';
 	graph_density: number;
 	degraded: boolean;
+	/**
+	 * Optional explanatory message attached when the orchestrator gates the
+	 * result list. Set to `'no_meaningful_matches'` when the top reranker
+	 * score falls below `config.retrieval.rerank.min_score` AND the query is
+	 * already flagged as `degraded`.
+	 */
+	message?: string;
 }
 
 /**

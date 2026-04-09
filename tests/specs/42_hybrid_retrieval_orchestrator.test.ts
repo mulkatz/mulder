@@ -699,6 +699,84 @@ describe('Spec 42 — Hybrid Retrieval Orchestrator', () => {
 		expect(parsed.topK).toBe(3);
 		expect(parsed.results.length).toBeLessThanOrEqual(3);
 	});
+
+	// ─── QA-23: rerank.min_score = 0 (default) preserves the existing return contract ───
+
+	it('QA-23: default min_score=0 returns the full result list (no gating)', async () => {
+		if (!pgAvailable || !pool || !corpusSourceId) return;
+		const config = makeConfig();
+		expect(config.retrieval.rerank.min_score).toBe(0);
+
+		const llm = new StubLlmService();
+		llm.setResponse({ rankings: [] });
+		const embed = new FakeEmbeddingService();
+
+		const result = await hybridRetrieve(pool, embed, llm, config, 'test', {
+			strategy: 'fulltext',
+		});
+
+		expect(result.confidence.message).toBeUndefined();
+	});
+
+	// ─── QA-24: gate triggers on degraded query with low top rerank score ───
+
+	it('QA-24: degraded query with top rerank score below min_score returns empty results + message', async () => {
+		if (!pgAvailable || !pool || !corpusSourceId) return;
+
+		// Inject a deterministic chunk we can control. Using a unique
+		// queryWord ensures the fulltext hit is exactly what we expect,
+		// independent of whatever else lives in the test corpus.
+		const queryWord = `qa24token${Date.now()}`;
+		const sourceId = '24242424-2424-2424-2424-242424242424';
+		const storyId = '24242424-2424-2424-2424-242424240001';
+		const chunkId = '24242424-2424-2424-2424-242424240002';
+
+		runSql(
+			`INSERT INTO sources (id, filename, file_hash, storage_path, page_count, status) VALUES ` +
+				`('${sourceId}', 'qa24-gating.pdf', 'qa24-${Date.now()}', 'raw/qa24.pdf', 1, 'graphed');`,
+		);
+		runSql(
+			`INSERT INTO stories (id, source_id, title, gcs_markdown_uri, gcs_metadata_uri, status) VALUES ` +
+				`('${storyId}', '${sourceId}', 'qa24-story', 's/qa24.md', 's/qa24.meta.json', 'graphed');`,
+		);
+		// Generate a deterministic 768-dim embedding (all zeros + first dim 0.5).
+		const vec = `[0.5${',0'.repeat(767)}]`;
+		runSql(
+			`INSERT INTO chunks (id, story_id, content, chunk_index, embedding) VALUES ` +
+				`('${chunkId}', '${storyId}', 'A passage containing the unique token ${queryWord}.', 0, '${vec}');`,
+		);
+
+		try {
+			// Force the query to be degraded by setting taxonomy_bootstrap above
+			// any plausible corpus_size. Set min_score to 0.5 so the stub's 0.1
+			// relevance scores fall below the floor.
+			const config = makeConfig((c) => {
+				c.thresholds.taxonomy_bootstrap = 999_999;
+				c.retrieval.rerank.min_score = 0.5;
+			});
+
+			const llm = new StubLlmService();
+			const embed = new FakeEmbeddingService();
+
+			llm.setResponse({
+				rankings: [{ passage_id: chunkId, relevance_score: 0.1 }],
+			});
+
+			const result = await hybridRetrieve(pool, embed, llm, config, queryWord, {
+				strategy: 'fulltext',
+			});
+
+			expect(result.confidence.degraded).toBe(true);
+			expect(result.results).toEqual([]);
+			expect(result.confidence.message).toBe('no_meaningful_matches');
+		} finally {
+			runSql(
+				`DELETE FROM chunks WHERE id = '${chunkId}';` +
+					` DELETE FROM stories WHERE id = '${storyId}';` +
+					` DELETE FROM sources WHERE id = '${sourceId}';`,
+			);
+		}
+	});
 });
 
 // ---------------------------------------------------------------------------

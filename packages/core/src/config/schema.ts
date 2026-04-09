@@ -193,6 +193,17 @@ const rerankSchema = z.object({
 	enabled: z.boolean().default(true),
 	model: z.string().default('gemini-2.5-flash'),
 	candidates: z.number().positive().int().default(20),
+	/**
+	 * Minimum reranker score (after Gemini Flash re-ranks the fused list)
+	 * required for the orchestrator to surface a result. When the top
+	 * reranker score is below this AND the confidence object reports the
+	 * query as degraded, the orchestrator returns an empty result list with
+	 * `confidence.message = 'no_meaningful_matches'` instead of the top-k
+	 * fallback. Defaults to 0.0 — set to 0.3 or higher to filter
+	 * off-corpus queries (e.g. "Rezept für Apfelstrudel" against a UFO
+	 * archive).
+	 */
+	min_score: z.number().min(0).max(1).default(0.0),
 });
 
 const vectorStrategySchema = z.object({
