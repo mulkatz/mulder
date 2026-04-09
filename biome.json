@@ -42,7 +42,8 @@
 			"!fixtures",
 			"!**/demo",
 			"!**/.claude",
-			"!**/.local"
+			"!**/.local",
+			"!docs/reviews/**/*.json"
 		]
 	}
 }
