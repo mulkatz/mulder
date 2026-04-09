@@ -12,6 +12,8 @@
 	},
 	"dependencies": {
 		"@mulder/core": "workspace:*",
-		"pg": "^8.20.0"
+		"pg": "^8.20.0",
+		"zod": "^4.3.6",
+		"zod-to-json-schema": "^3.24.5"
 	}
 }

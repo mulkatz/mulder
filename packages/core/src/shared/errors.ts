@@ -58,6 +58,8 @@ export type ExternalServiceErrorCode = (typeof EXTERNAL_SERVICE_ERROR_CODES)[key
 export const TAXONOMY_ERROR_CODES = {
 	/** @reserved F1 taxonomy bootstrap command */
 	TAXONOMY_BOOTSTRAP_TOO_FEW: 'TAXONOMY_BOOTSTRAP_TOO_FEW',
+	/** F1 taxonomy bootstrap — corpus below threshold */
+	TAXONOMY_BELOW_THRESHOLD: 'TAXONOMY_BELOW_THRESHOLD',
 } as const;
 
 export type TaxonomyErrorCode = (typeof TAXONOMY_ERROR_CODES)[keyof typeof TAXONOMY_ERROR_CODES];
@@ -380,6 +382,21 @@ export class RetrievalError extends MulderError {
 	) {
 		super(message, code, options);
 		this.name = 'RetrievalError';
+	}
+}
+
+/** Taxonomy domain errors (bootstrap threshold, normalization). */
+export class TaxonomyError extends MulderError {
+	constructor(
+		message: string,
+		code: TaxonomyErrorCode,
+		options?: {
+			context?: Record<string, unknown>;
+			cause?: unknown;
+		},
+	) {
+		super(message, code, options);
+		this.name = 'TaxonomyError';
 	}
 }
 

@@ -22,6 +22,7 @@ import { registerIngestCommands } from './commands/ingest.js';
 import { registerPipelineCommands } from './commands/pipeline.js';
 import { registerQueryCommands } from './commands/query.js';
 import { registerSegmentCommands } from './commands/segment.js';
+import { registerTaxonomyCommands } from './commands/taxonomy.js';
 
 const program = new Command()
 	.name('mulder')
@@ -40,5 +41,6 @@ registerIngestCommands(program);
 registerPipelineCommands(program);
 registerQueryCommands(program);
 registerSegmentCommands(program);
+registerTaxonomyCommands(program);
 
 program.parse();

@@ -165,8 +165,10 @@ export {
 	unlinkStoryEntity,
 } from './story-entity.repository.js';
 export {
+	countProcessedSources,
 	countTaxonomyEntries,
 	createTaxonomyEntry,
+	deleteAutoTaxonomyEntries,
 	deleteTaxonomyEntry,
 	findAllTaxonomyEntries,
 	findTaxonomyEntryById,

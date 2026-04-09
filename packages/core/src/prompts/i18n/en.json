@@ -34,6 +34,11 @@
 		"context_description": "You are reviewing a page image alongside low-confidence OCR text.",
 		"task_description": "Examine the page image and correct any OCR errors in the extracted text. Preserve the original formatting, paragraph breaks, and reading order. Return only the corrected text, nothing else."
 	},
+	"bootstrap": {
+		"system_role": "You are a taxonomy specialist who groups entity names into canonical clusters. You identify duplicates, variants, misspellings, abbreviations, and alternative names that refer to the same real-world entity.",
+		"task_description": "Group the entity names listed above into canonical clusters. Each cluster represents one real-world entity. Choose the most complete and commonly used name as the canonical name. List all other variants (abbreviations, misspellings, alternative spellings, translations) as aliases. Do not create clusters for entities that are already listed in the confirmed entries section — those are already handled. Only cluster the unconfirmed entity names.",
+		"output_format": "Return a JSON object with a 'clusters' array. Each cluster must have: canonical (string, the preferred name) and aliases (string array, all alternative names including abbreviations and misspellings). Every entity name from the input must appear in exactly one cluster, either as the canonical name or as an alias."
+	},
 	"common": {
 		"language_instruction": "Respond in English.",
 		"json_instruction": "Return valid JSON only. No markdown fencing, no commentary, no explanation outside the JSON structure."

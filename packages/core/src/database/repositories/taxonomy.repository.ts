@@ -328,6 +328,52 @@ export async function deleteTaxonomyEntry(pool: pg.Pool, id: string): Promise<bo
 	}
 }
 
+/**
+ * Deletes all taxonomy entries with `status = 'auto'`.
+ * Used by re-bootstrap to clear machine-generated entries before regeneration.
+ * Confirmed and rejected entries are preserved.
+ *
+ * @returns The number of deleted rows.
+ */
+export async function deleteAutoTaxonomyEntries(pool: pg.Pool): Promise<number> {
+	const sql = "DELETE FROM taxonomy WHERE status = 'auto'";
+
+	try {
+		const result = await pool.query(sql);
+		const count = result.rowCount ?? 0;
+		if (count > 0) {
+			repoLogger.debug({ count }, 'Auto taxonomy entries deleted for re-bootstrap');
+		}
+		return count;
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to delete auto taxonomy entries', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+		});
+	}
+}
+
+/**
+ * Counts processed sources (status beyond 'ingested') for threshold checking.
+ * Processed statuses: extracted, segmented, enriched, embedded, graphed, analyzed.
+ *
+ * @returns The total count of processed sources.
+ */
+export async function countProcessedSources(pool: pg.Pool): Promise<number> {
+	const sql = `
+    SELECT COUNT(*) FROM sources
+    WHERE status IN ('extracted', 'segmented', 'enriched', 'embedded', 'graphed', 'analyzed')
+  `;
+
+	try {
+		const result = await pool.query<{ count: string }>(sql);
+		return Number.parseInt(result.rows[0].count, 10);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to count processed sources', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+		});
+	}
+}
+
 // ────────────────────────────────────────────────────────────
 // Trigram similarity search
 // ────────────────────────────────────────────────────────────
