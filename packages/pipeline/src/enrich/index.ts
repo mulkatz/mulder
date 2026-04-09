@@ -68,20 +68,23 @@ const DEFAULT_MAX_STORY_TOKENS = 15_000;
 /** Target tokens per pre-chunk. */
 const TARGET_CHUNK_TOKENS = 10_000;
 
-/** Rough character-to-token ratio. */
-const CHARS_PER_TOKEN = 4;
-
-// ────────────────────────────────────────────────────────────
-// Token estimation
-// ────────────────────────────────────────────────────────────
-
 /**
- * Estimates the token count for a text string using a character-based
- * approximation (chars / 4). The LlmService interface does not expose
- * a `countTokens` method, so this is the fallback per spec §4.4.
+ * Conservative chars-per-token ratio used for *paragraph-level* sizing
+ * inside `preChunkMarkdown`. The top-level token-budget check uses the
+ * real tokenizer via `LlmService.countTokens`; this ratio only governs
+ * how aggressively we split paragraphs into pre-chunks. Set to 2 (instead
+ * of the more common 4) so non-Latin scripts produce smaller chunks
+ * rather than larger ones — over-splitting is harmless, under-splitting
+ * risks Gemini truncating mid-JSON.
  */
-function estimateTokens(text: string): number {
-	return Math.ceil(text.length / CHARS_PER_TOKEN);
+const PARAGRAPH_CHARS_PER_TOKEN = 2;
+
+// ────────────────────────────────────────────────────────────
+// Paragraph-level token estimation (for chunk sizing only)
+// ────────────────────────────────────────────────────────────
+
+function estimateParagraphTokens(text: string): number {
+	return Math.ceil(text.length / PARAGRAPH_CHARS_PER_TOKEN);
 }
 
 // ────────────────────────────────────────────────────────────
@@ -102,7 +105,7 @@ function preChunkMarkdown(markdown: string, targetTokens: number): string[] {
 	let currentTokens = 0;
 
 	for (const paragraph of paragraphs) {
-		const paragraphTokens = estimateTokens(paragraph);
+		const paragraphTokens = estimateParagraphTokens(paragraph);
 
 		if (currentTokens + paragraphTokens > targetTokens && currentChunk.length > 0) {
 			chunks.push(currentChunk.join('\n\n'));
@@ -280,21 +283,21 @@ export async function execute(
 		);
 	}
 
-	// 5. Token count check and pre-chunking
+	// 5. Token count check (real tokenizer) and pre-chunking
 	const maxTokens = config.enrichment?.max_story_tokens ?? DEFAULT_MAX_STORY_TOKENS;
-	const estimatedTokens = estimateTokens(markdown);
-	const needsChunking = estimatedTokens > maxTokens;
+	const tokenCount = await services.llm.countTokens(markdown);
+	const needsChunking = tokenCount > maxTokens;
 
 	const textChunks = needsChunking ? preChunkMarkdown(markdown, TARGET_CHUNK_TOKENS) : [markdown];
 
 	log.debug(
 		{
-			estimatedTokens,
+			tokenCount,
 			maxTokens,
 			needsChunking,
 			chunkCount: textChunks.length,
 		},
-		'Token estimation complete',
+		'Token count complete',
 	);
 
 	// 6. Generate JSON Schema from ontology
