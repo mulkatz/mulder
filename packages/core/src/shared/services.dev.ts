@@ -325,6 +325,23 @@ class DevLlmService implements LlmService {
 				}),
 			);
 		}
+		// Detect taxonomy bootstrap schema by checking for a 'clusters' property.
+		// Returns a single generic cluster so bootstrap can create at least one
+		// taxonomy entry per entity type in dev/test mode.
+		// See docs/specs/46_taxonomy_bootstrap.spec.md §4.3.
+		else if (hasProperty('clusters')) {
+			this.logger.debug('DevLlmService: generateStructured — returning taxonomy bootstrap fixture');
+			result = JSON.parse(
+				JSON.stringify({
+					clusters: [
+						{
+							canonical: 'Dev Test Entity',
+							aliases: ['Dev Test Alias'],
+						},
+					],
+				}),
+			);
+		}
 		// Detect re-ranking schema by checking for a 'rankings' property.
 		// Dev mode cannot inspect prompt text to extract passage IDs, so it
 		// returns an empty rankings array. The reranker contract assigns a

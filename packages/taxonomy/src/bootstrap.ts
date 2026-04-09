@@ -228,15 +228,19 @@ export async function bootstrapTaxonomy(options: BootstrapOptions): Promise<Boot
 			confirmed_entries_section: confirmedEntriesSection,
 		});
 
-		// Call Gemini
+		// Call Gemini with response validation (matches segment/enrich pattern)
 		const response = await llm.generateStructured<BootstrapResponse>({
 			prompt,
 			schema: jsonSchema,
 			systemInstruction: `You are a taxonomy specialist. Group entity names of type "${entityType}" into canonical clusters.`,
+			responseValidator: (data) => bootstrapResponseSchemaV3.parse(data),
 		});
 
+		// Safety: validate clusters is iterable before processing
+		const clusters = Array.isArray(response.clusters) ? response.clusters : [];
+
 		// Process clusters
-		for (const cluster of response.clusters) {
+		for (const cluster of clusters) {
 			const entry = await createTaxonomyEntry(pool, {
 				canonicalName: cluster.canonical,
 				entityType,
@@ -255,7 +259,7 @@ export async function bootstrapTaxonomy(options: BootstrapOptions): Promise<Boot
 		}
 
 		typesProcessed.push(entityType);
-		bootstrapLogger.info({ entityType, clusters: response.clusters.length }, 'Type bootstrap complete');
+		bootstrapLogger.info({ entityType, clusters: clusters.length }, 'Type bootstrap complete');
 	}
 
 	bootstrapLogger.info(
