@@ -92,6 +92,7 @@ export {
 	countEdges,
 	countEntities,
 	countPipelineRunSourcesByStatus,
+	countProcessedSources,
 	countSources,
 	countStories,
 	countTaxonomyEntries,
@@ -104,6 +105,7 @@ export {
 	createSource,
 	createStory,
 	createTaxonomyEntry,
+	deleteAutoTaxonomyEntries,
 	deleteChunksBySourceId,
 	deleteChunksByStoryId,
 	deleteEdgesBySourceId,
@@ -230,6 +232,7 @@ export {
 	SEGMENT_ERROR_CODES,
 	SegmentError,
 	TAXONOMY_ERROR_CODES,
+	TaxonomyError,
 } from './shared/errors.js';
 export { closeGcpClients } from './shared/gcp.js';
 export type {
