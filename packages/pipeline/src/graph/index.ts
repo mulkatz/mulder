@@ -294,7 +294,13 @@ export async function execute(
 		const contradictions = await detectContradictions(pool, input.storyId);
 
 		for (const contradiction of contradictions) {
-			// Create POTENTIAL_CONTRADICTION edge between the entity instances
+			// Self-loop on the canonical entity. A "claim" here is the tuple
+			// (entity_id, story_id) — claims are not first-class rows, so the
+			// edge sits on the entity and the two conflicting claim story IDs
+			// are encoded in attributes.storyIdA / attributes.storyIdB
+			// alongside attribute / valueA / valueB. M6 G3 Analyze loads
+			// these edges and reads the conflict directly from JSONB.
+			// See docs/functional-spec.md §2.7 step 6.
 			await upsertEdge(pool, {
 				sourceEntityId: contradiction.entityId,
 				targetEntityId: contradiction.entityId,

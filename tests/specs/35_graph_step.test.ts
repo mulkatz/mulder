@@ -585,6 +585,19 @@ describe('Spec 35 — Graph Step', () => {
 				`SELECT attributes::text FROM entity_edges WHERE edge_type = 'POTENTIAL_CONTRADICTION' LIMIT 1;`,
 			);
 			expect(contradictionAttrs).toMatch(/date/i);
+
+			// Self-loop encoding: contradiction edges are attached to the
+			// canonical entity. Both conflicting claim story IDs live in
+			// attributes.storyIdA / storyIdB. Lock this in so the encoding
+			// cannot drift without flagging the test.
+			const selfLoopRows = runSql(
+				`SELECT source_entity_id = target_entity_id FROM entity_edges WHERE edge_type = 'POTENTIAL_CONTRADICTION';`,
+			);
+			for (const row of selfLoopRows.split('\n').filter(Boolean)) {
+				expect(row).toBe('t');
+			}
+			expect(contradictionAttrs).toMatch(/storyIdA/);
+			expect(contradictionAttrs).toMatch(/storyIdB/);
 		}
 
 		// Restore state

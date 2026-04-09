@@ -386,7 +386,13 @@ describe('Spec 25: Edge Repository', () => {
 	it('QA-10: findEdgesByType returns 2 POTENTIAL_CONTRADICTION edges', async () => {
 		if (!pgAvailable) return;
 
-		// Create 2 POTENTIAL_CONTRADICTION edges
+		// This test exercises the edge repository's ability to round-trip any
+		// edge with edge_type=POTENTIAL_CONTRADICTION through createEdge +
+		// findEdgesByType. It uses distinct entity endpoints because the
+		// repository accepts any (source, target) pair — it does not enforce
+		// the self-loop encoding that the graph step happens to use for real
+		// contradiction edges. The graph-step encoding contract is locked in
+		// by tests/specs/35_graph_step.test.ts QA-10.
 		await createEdge(pool, {
 			sourceEntityId: entityIds[0],
 			targetEntityId: entityIds[1],
