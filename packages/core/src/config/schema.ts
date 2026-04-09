@@ -69,6 +69,12 @@ const storageSchema = z.object({
 
 const documentAiSchema = z.object({
 	processor_id: z.string().min(1),
+	/**
+	 * Document AI multi-region endpoint. Document AI processors live in
+	 * either `eu` or `us` — sub-regions like `europe-west1` are not valid
+	 * processor locations and will produce a 404 at the API endpoint.
+	 */
+	location: z.enum(['eu', 'us']).default('eu'),
 });
 
 const gcpSchema = z.object({

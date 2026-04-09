@@ -260,4 +260,78 @@ describe('Spec 13: GCP + Dev Service Implementations', () => {
 		expect(config.gcp.document_ai).toBeDefined();
 		expect(config.gcp.document_ai.processor_id).toBe('abc123def456');
 	});
+
+	// ─── QA-09: document_ai.location default ───
+	// Given a config without an explicit document_ai.location, when loaded,
+	// then it defaults to 'eu' (the Document AI multi-region for Europe).
+
+	it('QA-09: document_ai.location defaults to "eu" when omitted', () => {
+		const configPath = writeTempConfig(VALID_CONFIG_WITH_DOCAI, 'qa09-location-default.yaml');
+		const config = loadConfig(configPath) as Record<string, any>;
+
+		expect(config.gcp.document_ai.location).toBe('eu');
+	});
+
+	// ─── QA-10: document_ai.location enum constraint ───
+	// Given a config with document_ai.location set to a sub-region like
+	// 'europe-west1', when loaded, then validation throws.
+	// This catches the original P4-GCP-DOCAI-REGION-01 misconfig at config-load
+	// time instead of producing a runtime 404 from the Document AI endpoint.
+
+	it('QA-10: document_ai.location rejects sub-regions like "europe-west1"', () => {
+		const invalidConfig = `${VALID_CONFIG_WITH_DOCAI.replace(
+			'document_ai:\n    processor_id: "test-processor"',
+			'document_ai:\n    processor_id: "test-processor"\n    location: "europe-west1"',
+		)}`;
+		const configPath = writeTempConfig(invalidConfig, 'qa10-location-invalid.yaml');
+
+		expect(() => loadConfig(configPath)).toThrow();
+
+		try {
+			loadConfig(configPath);
+		} catch (error: any) {
+			const errStr = JSON.stringify(error.issues ?? error.message ?? error);
+			expect(errStr.toLowerCase()).toMatch(/location|enum|invalid/);
+		}
+	});
+
+	// ─── QA-11: createGcpServices builds processorName with location ───
+	// Given a config with document_ai.location='us', when createGcpServices runs,
+	// then the GcpDocumentAiService receives a processorName whose location
+	// segment is 'us', not the gcp.region (e.g. 'europe-west1').
+
+	it('QA-11: GcpDocumentAiService is constructed with the document_ai.location segment, not gcp.region', async () => {
+		const usConfig = VALID_CONFIG_WITH_DOCAI.replace(
+			'document_ai:\n    processor_id: "test-processor"',
+			'document_ai:\n    processor_id: "test-processor"\n    location: "us"',
+		);
+		const configPath = writeTempConfig(usConfig, 'qa11-location-us.yaml');
+		const config = loadConfig(configPath) as Record<string, any>;
+
+		const gcpServicesModule = await import(resolve(ROOT, 'packages/core/dist/shared/services.gcp.js'));
+		const services = gcpServicesModule.createGcpServices(config, silentLogger);
+
+		// GcpDocumentAiService stores processorName as a private field. Reach
+		// into the instance via JSON.stringify of its internal state, or call
+		// getProcessorName() if exposed. The test asserts the processor name
+		// segment matches the configured location, not gcp.region.
+		const docAi = services.documentAi as Record<string, unknown>;
+		const internalKeys = Object.keys(docAi).concat(Object.getOwnPropertyNames(Object.getPrototypeOf(docAi) ?? {}));
+		// Find the field holding the processor name (it's a string starting with `projects/`).
+		let processorName: string | undefined;
+		for (const key of Object.keys(docAi)) {
+			const v = (docAi as Record<string, unknown>)[key];
+			if (typeof v === 'string' && v.startsWith('projects/')) {
+				processorName = v;
+				break;
+			}
+		}
+		expect(
+			processorName,
+			`Could not find processorName on GcpDocumentAiService instance (keys: ${internalKeys.join(', ')})`,
+		).toBeDefined();
+		expect(processorName).toContain('/locations/us/');
+		expect(processorName).not.toContain('europe-west1');
+		expect(processorName).toContain('processors/test-processor');
+	});
 });
