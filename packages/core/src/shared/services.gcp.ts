@@ -380,7 +380,10 @@ export function createGcpServices(config: MulderConfig, logger: Logger): Service
 	const region = gcp.region;
 	const bucket = gcp.storage.bucket;
 	const processorId = gcp.document_ai.processor_id;
-	const processorName = `projects/${projectId}/locations/${region}/processors/${processorId}`;
+	// Document AI uses its own multi-region endpoint (eu | us), separate from
+	// gcp.region which is the Cloud Run / Cloud SQL location.
+	const processorLocation = gcp.document_ai.location;
+	const processorName = `projects/${projectId}/locations/${processorLocation}/processors/${processorId}`;
 
 	logger.debug({ projectId, region, bucket }, 'Creating GCP services');
 

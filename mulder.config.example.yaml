@@ -20,6 +20,7 @@ gcp:
     bucket: "mulder-my-project"
   document_ai:
     processor_id: "abc123def456"     # Document AI Layout Parser processor ID
+    location: "eu"                   # Document AI multi-region: "eu" or "us" (separate from gcp.region)
 
 # --- Dev Mode ---
 # Set to true for local development with fixtures — no GCP calls, no cost.
