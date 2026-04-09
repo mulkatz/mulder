@@ -26,8 +26,10 @@ import {
 } from '@mulder/core';
 import { PDFParse } from 'pdf-parse';
 import type pg from 'pg';
+import { layoutToMarkdown } from './layout-to-markdown.js';
 import type { ExtractInput, ExtractionData, ExtractResult, LayoutBlock, LayoutDocument, LayoutPage } from './types.js';
 
+export { layoutToMarkdown } from './layout-to-markdown.js';
 export type {
 	ExtractInput,
 	ExtractionData,
@@ -359,6 +361,28 @@ function padPageNumber(n: number): string {
 }
 
 /**
+ * Writes the human-readable layout.md alongside layout.json. The Markdown
+ * representation is a derived byproduct of extraction — if the storage write
+ * fails, we log a warning and return normally so the overall Extract step
+ * still succeeds. The authoritative output is layout.json.
+ */
+async function writeLayoutMarkdown(
+	sourceId: string,
+	layoutDoc: LayoutDocument,
+	services: Services,
+	logger: Logger,
+): Promise<void> {
+	const markdownUri = `extracted/${sourceId}/layout.md`;
+	try {
+		const markdown = layoutToMarkdown(layoutDoc);
+		await services.storage.upload(markdownUri, markdown, 'text/markdown');
+		logger.debug({ markdownUri, bytes: markdown.length }, 'Layout Markdown uploaded');
+	} catch (err) {
+		logger.warn({ err, markdownUri }, 'Layout Markdown write failed — extract still succeeded');
+	}
+}
+
+/**
  * Writes layout.json and page images to GCS.
  * Returns the GCS URIs.
  */
@@ -372,6 +396,10 @@ async function writeToStorage(
 	const layoutUri = `extracted/${sourceId}/layout.json`;
 	await services.storage.upload(layoutUri, JSON.stringify(layoutDoc, null, 2), 'application/json');
 	logger.debug({ layoutUri }, 'Layout JSON uploaded');
+
+	// Write the human-readable Markdown view alongside layout.json. This is a
+	// byproduct, not a core output — failures must never fail the Extract step.
+	await writeLayoutMarkdown(sourceId, layoutDoc, services, logger);
 
 	const pageImageUris: string[] = [];
 	for (let i = 0; i < pageImages.length; i++) {
@@ -509,8 +537,9 @@ export async function execute(
 		existingLayout.metadata.visionFallbackCapped = fallbackResult.visionFallbackCapped;
 		errors.push(...fallbackResult.errors);
 
-		// Re-upload updated layout.json
+		// Re-upload updated layout.json and refresh the derived layout.md.
 		await services.storage.upload(layoutUri, JSON.stringify(existingLayout, null, 2), 'application/json');
+		await writeLayoutMarkdown(input.sourceId, existingLayout, services, log);
 
 		extractionData = {
 			sourceId: input.sourceId,

@@ -9,6 +9,9 @@
  * @see docs/functional-spec.md §1 (extract cmd), §2.2
  */
 
+import { existsSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import {
 	closeAllPools,
 	createLogger,
@@ -27,6 +30,7 @@ interface ExtractOptions {
 	all?: boolean;
 	force?: boolean;
 	fallbackOnly?: boolean;
+	markdownTo?: string;
 }
 
 /**
@@ -48,6 +52,7 @@ export function registerExtractCommands(program: Command): void {
 		.option('--all', 'extract all sources with status=ingested')
 		.option('--force', 're-extract even if already extracted')
 		.option('--fallback-only', 'only run Gemini Vision fallback on low-confidence pages')
+		.option('--markdown-to <path>', 'after extraction, download layout.md to this local path')
 		.action(
 			withErrorHandler(async (sourceId: string | undefined, options: ExtractOptions) => {
 				if (!sourceId && !options.all) {
@@ -60,6 +65,21 @@ export function registerExtractCommands(program: Command): void {
 					printError('<source-id> and --all are mutually exclusive');
 					process.exit(1);
 					return;
+				}
+
+				if (options.markdownTo && options.all) {
+					printError('--markdown-to cannot be used with --all (ambiguous destination)');
+					process.exit(1);
+					return;
+				}
+
+				if (options.markdownTo) {
+					const parentDir = dirname(resolve(options.markdownTo));
+					if (!existsSync(parentDir)) {
+						printError(`--markdown-to parent directory does not exist: ${parentDir}`);
+						process.exit(1);
+						return;
+					}
 				}
 
 				const config = loadConfig();
@@ -124,6 +144,23 @@ export function registerExtractCommands(program: Command): void {
 							logger,
 						);
 						results.push(result);
+
+						// Optional: download the derived layout.md to a local path for preview.
+						// Runs on any non-failed single-source result (success or partial) so the
+						// user still gets whatever Markdown was produced from a partial extraction.
+						if (options.markdownTo && result.status !== 'failed') {
+							const markdownUri = `extracted/${sourceId}/layout.md`;
+							try {
+								const buffer = await services.storage.download(markdownUri);
+								await writeFile(options.markdownTo, buffer);
+								printSuccess(`Markdown written to ${options.markdownTo}`);
+							} catch (err: unknown) {
+								const message = err instanceof Error ? err.message : String(err);
+								printError(`Failed to write --markdown-to ${options.markdownTo}: ${message}`);
+								process.exit(1);
+								return;
+							}
+						}
 					}
 
 					// Print results table

@@ -44,7 +44,7 @@ export type {
 	LayoutDocument,
 	PageExtraction,
 } from './extract/index.js';
-export { execute as executeExtract } from './extract/index.js';
+export { execute as executeExtract, layoutToMarkdown } from './extract/index.js';
 export type {
 	FixtureArtifact,
 	FixtureError,
