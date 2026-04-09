@@ -179,7 +179,7 @@ Web grounding, contradiction resolution, evidence chains, spatial clustering. Th
 
 ## M7: "API + workers" — Async Execution Layer
 
-Move from CLI to HTTP. Job queue, async workers, and a full REST API over the pipeline.
+Move from CLI to HTTP. Job queue, async workers, a full REST API over the pipeline, and the first web UI consuming it.
 
 | Status | Step | What | Spec |
 |--------|------|------|------|
@@ -192,10 +192,14 @@ Move from CLI to HTTP. Job queue, async workers, and a full REST API over the pi
 | ⚪ | H7 | Entity API routes (sync) | §10.6 |
 | ⚪ | H8 | Evidence API routes (sync) | §10.6 |
 | ⚪ | H9 | Middleware — auth, rate limiting, validation | §10.6 (rate limiting tiers) |
+| ⚪ | H10 | Document retrieval routes — list/pdf/markdown sync routes | §10.6 |
+| ⚪ | H11 | Document Viewer UI — Vite+React split-view (PDF + layout.md) | §13 (demo/), consumes H10 |
 
 **Also read for all M7 steps:** §10 (full job queue section — especially §10.3 transaction discipline), §14 (design decisions — PostgreSQL queue, auto-commit dequeue, per-step job slicing)
 
-**Testable:** HTTP API for everything. Workers process jobs asynchronously. Deployable to Cloud Run.
+**Testable:** HTTP API for everything. Workers process jobs asynchronously. Deployable to Cloud Run. First demoable web UI (split-view PDF + derived Markdown) consuming the real API.
+
+**Note on H11 (Document Viewer):** An earlier attempt to ship the viewer as an off-roadmap demoability feature (reverted in commit 90bee3a, issue #127 closed) was deferred here because the clean path requires a real HTTP API to sit on — not a dev-only Vite filesystem plugin that would have bypassed the service abstraction. The viewer is a pure React client in `demo/` that fetches from H10's routes, works identically in dev and prod, and is NOT a separate off-roadmap spec.
 
 ---
 
