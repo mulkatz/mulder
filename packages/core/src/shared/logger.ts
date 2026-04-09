@@ -129,7 +129,10 @@ function shouldPrettyPrint(forceOverride?: boolean): boolean {
  * - Level labels as strings (not numbers)
  * - Custom error serializer for `MulderError`
  * - Sensitive field redaction
- * - Pretty-print to stderr when appropriate
+ * - **All logs written to stderr** (fd 2), per Unix CLI convention —
+ *   stdout is reserved for command output (e.g. `mulder show` pipes
+ *   into less/grep/files). Both the pretty-print path (dev mode) and
+ *   the JSON path (production/CI) route to stderr.
  */
 export function createLogger(options?: LoggerOptions): Logger {
 	const level = options?.level ?? process.env.MULDER_LOG_LEVEL ?? 'info';
@@ -165,7 +168,10 @@ export function createLogger(options?: LoggerOptions): Logger {
 		);
 	}
 
-	return pino(pinoOptions);
+	// Non-pretty path (production, CI, piped stderr) — JSON lines to stderr.
+	// Pino's default destination is stdout (fd 1); we explicitly override to
+	// fd 2 so JSON logs don't pollute command output on stdout.
+	return pino(pinoOptions, pino.destination(2));
 }
 
 // ────────────────────────────────────────────────────────────
