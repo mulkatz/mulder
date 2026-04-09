@@ -49,11 +49,7 @@ export function registerShowCommands(program: Command): void {
 		.action(
 			withErrorHandler(async (sourceId: string, options: ShowOptions) => {
 				const config = loadConfig();
-				// Silence the logger: `show` is a pure-display command whose
-				// entire contract is a byte-clean Markdown stdout. Info/debug
-				// logs from service initialization and pool cleanup would leak
-				// into the piped output and break --raw + idempotency.
-				const logger = createLogger({ level: 'silent' });
+				const logger = createLogger();
 				const services = createServiceRegistry(config, logger);
 
 				if (!config.gcp && !config.dev_mode) {

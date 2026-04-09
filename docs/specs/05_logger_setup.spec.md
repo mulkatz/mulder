@@ -12,7 +12,9 @@ issue: "https://github.com/mulkatz/mulder/issues/10"
 
 ## 1. Objective
 
-Provide a centralized, structured logging module for the Mulder platform using Pino. Every log entry is JSON with mandatory contextual fields (level, timestamp, step, source_id). CLI output uses a separate human-readable formatter to stderr while structured JSON goes to stdout. The logger integrates with the existing error hierarchy so caught `MulderError` instances automatically include `code` and `context` in log output.
+Provide a centralized, structured logging module for the Mulder platform using Pino. Every log entry is JSON with mandatory contextual fields (level, timestamp, step, source_id). **All log output — both the pretty-printed dev format and the structured JSON production format — targets stderr (fd 2), never stdout.** Stdout is reserved for command output (e.g. the Markdown text written by `mulder show`, which users pipe into `less`/`grep`/files). The logger integrates with the existing error hierarchy so caught `MulderError` instances automatically include `code` and `context` in log output.
+
+**Rationale for stderr:** Mulder's CLI commands produce data on stdout that users pipe into other tools (`mulder show <id> | less`, `mulder query <q> --json | jq`, etc.). Pino's default destination is stdout, which would pollute command output with JSON log lines. Writing logs to stderr follows the Unix convention (`curl -v`, `npm install`, `git`, `make` all log to stderr) and works correctly in Cloud Run — Google Cloud Logging captures both fd 1 and fd 2 and classifies entries by the embedded `severity`/`level` field, not by which fd emitted them.
 
 ## 2. Boundaries
 
@@ -21,7 +23,7 @@ Provide a centralized, structured logging module for the Mulder platform using P
 - Child logger creation with bound context (step, source_id, story_id)
 - Log levels: debug, info, warn, error (as per §8)
 - Human-readable CLI transport (pretty-print to stderr)
-- Structured JSON to stdout (production default)
+- Structured JSON to stderr (production default)
 - Error serializer that extracts `code` and `context` from `MulderError`
 - `redact` configuration for sensitive fields (api keys, tokens)
 - Duration helper for timing pipeline steps
@@ -60,7 +62,7 @@ Provide a centralized, structured logging module for the Mulder platform using P
 - `formatters.level`: output level as string label, not number
 - `serializers.err`: custom serializer that extracts `code` and `context` from `MulderError`
 - `redact`: paths array for sensitive fields (`["config.gcp.credentials", "*.api_key", "*.token", "*.secret"]`)
-- Transport: when `MULDER_LOG_PRETTY=true` or stderr is a TTY in development, use `pino-pretty` targeting stderr. Otherwise, structured JSON to stdout.
+- Transport: when `MULDER_LOG_PRETTY=true` or stderr is a TTY in development, use `pino-pretty` targeting stderr. Otherwise, structured JSON to stderr via `pino.destination(2)`. Both paths write to fd 2 — stdout is reserved for CLI command output.
 
 **`createChildLogger(parent, context)`** — creates a child with bound fields:
 - `step`: pipeline step name (e.g., `"ingest"`, `"extract"`, `"enrich"`)
@@ -107,12 +109,13 @@ All conditions testable without reading implementation internals.
 
 | ID | Condition | Given / When / Then |
 |----|-----------|---------------------|
-| QA-01 | Logger produces structured JSON | Given a logger created with `createLogger()`, when logging at info level, then stdout receives valid JSON with `level`, `time`, and `msg` fields |
-| QA-02 | Log level filtering works | Given `MULDER_LOG_LEVEL=warn`, when logging at info and warn levels, then only warn-level messages appear in output |
-| QA-03 | Child logger binds context | Given a child logger created with `{ step: "enrich", source_id: "abc-123" }`, when logging a message, then the output JSON includes `step` and `source_id` fields |
-| QA-04 | MulderError serialization includes code and context | Given a caught `ConfigError` with code `CONFIG_NOT_FOUND` and context `{ path: "/missing" }`, when logged via `logger.error({ err }, "msg")`, then the output JSON `err` object contains `code`, `context`, and `type` fields |
-| QA-05 | Sensitive fields are redacted | Given a logger, when logging an object containing a field matching a redact path (e.g., `api_key`), then the output shows `[Redacted]` for that field |
-| QA-06 | Duration helper logs elapsed time | Given `withDuration()` wrapping an async function, when the function completes, then an info-level log entry includes `duration_ms` as a number |
-| QA-07 | Duration helper logs on error | Given `withDuration()` wrapping an async function that throws, then an error-level log entry includes `duration_ms`, and the error is re-thrown |
+| QA-01 | Logger produces structured JSON on stderr | Given a logger created with `createLogger()`, when logging at info level, then **stderr** receives valid JSON with `level`, `time`, and `msg` fields and stdout remains empty |
+| QA-02 | Log level filtering works | Given `MULDER_LOG_LEVEL=warn`, when logging at info and warn levels, then only warn-level messages appear in stderr |
+| QA-03 | Child logger binds context | Given a child logger created with `{ step: "enrich", source_id: "abc-123" }`, when logging a message, then the stderr JSON includes `step` and `source_id` fields |
+| QA-04 | MulderError serialization includes code and context | Given a caught `ConfigError` with code `CONFIG_NOT_FOUND` and context `{ path: "/missing" }`, when logged via `logger.error({ err }, "msg")`, then the stderr JSON `err` object contains `code`, `context`, and `type` fields |
+| QA-05 | Sensitive fields are redacted | Given a logger, when logging an object containing a field matching a redact path (e.g., `api_key`), then the stderr output shows `[Redacted]` for that field |
+| QA-06 | Duration helper logs elapsed time | Given `withDuration()` wrapping an async function, when the function completes, then an info-level stderr entry includes `duration_ms` as a number |
+| QA-07 | Duration helper logs on error | Given `withDuration()` wrapping an async function that throws, then an error-level stderr entry includes `duration_ms`, and the error is re-thrown |
 | QA-08 | Pretty transport targets stderr | Given `MULDER_LOG_PRETTY=true`, when logging, then human-readable output goes to stderr (not stdout) |
 | QA-09 | Package exports are accessible | Given `@mulder/core`, when importing `createLogger`, `createChildLogger`, `withDuration`, and type `Logger`, then all resolve without errors |
+| QA-10 | Stdout stays empty for all log levels | Given any combination of `createLogger()`, `createChildLogger()`, `withDuration()`, and `MULDER_LOG_PRETTY` settings, when a program only logs (never writes to stdout directly), then stdout is empty across the entire run. This is the contract that lets `mulder show` and similar CLI commands pipe their output cleanly. |
