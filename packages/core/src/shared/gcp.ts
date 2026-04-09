@@ -20,8 +20,10 @@ import { Storage } from '@google-cloud/storage';
 // Lazy singletons
 // ────────────────────────────────────────────────────────────
 
+export type DocumentAiLocation = 'eu' | 'us';
+
 let storageClient: Storage | undefined;
-let documentAiClient: DocumentProcessorServiceClient | undefined;
+const documentAiClients = new Map<DocumentAiLocation, DocumentProcessorServiceClient>();
 let genAiClient: GoogleGenAI | undefined;
 let firestoreClient: Firestore | undefined;
 
@@ -37,14 +39,23 @@ export function getStorageClient(): Storage {
 }
 
 /**
- * Returns a lazily-initialized Document AI client.
+ * Returns a lazily-initialized Document AI client for the given multi-region
+ * location. The SDK's default (global) endpoint routes to `us`, so calls
+ * against EU-located processors 404 with `PROCESSOR_NOT_FOUND`. Each location
+ * gets its own cached client constructed with the matching regional endpoint
+ * (`eu-documentai.googleapis.com` or `us-documentai.googleapis.com`).
+ *
  * Uses Application Default Credentials.
  */
-export function getDocumentAIClient(): DocumentProcessorServiceClient {
-	if (!documentAiClient) {
-		documentAiClient = new DocumentProcessorServiceClient();
+export function getDocumentAIClient(location: DocumentAiLocation): DocumentProcessorServiceClient {
+	let client = documentAiClients.get(location);
+	if (!client) {
+		client = new DocumentProcessorServiceClient({
+			apiEndpoint: `${location}-documentai.googleapis.com`,
+		});
+		documentAiClients.set(location, client);
 	}
-	return documentAiClient;
+	return client;
 }
 
 /**
@@ -85,10 +96,10 @@ export async function closeGcpClients(): Promise<void> {
 		firestoreClient = undefined;
 	}
 
-	if (documentAiClient) {
-		tasks.push(documentAiClient.close());
-		documentAiClient = undefined;
+	for (const client of documentAiClients.values()) {
+		tasks.push(client.close());
 	}
+	documentAiClients.clear();
 
 	// Storage client does not have a close method — just reset
 	storageClient = undefined;

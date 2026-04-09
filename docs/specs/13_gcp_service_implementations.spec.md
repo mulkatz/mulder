@@ -107,7 +107,7 @@ Lazy-initialized singleton pattern. Each getter creates the client on first call
 ```typescript
 // Lazy singletons — raw SDK clients
 export function getStorageClient(): Storage
-export function getDocumentAIClient(): DocumentProcessorServiceClient
+export function getDocumentAIClient(location: 'eu' | 'us'): DocumentProcessorServiceClient
 export function getVertexAI(project: string, location: string): VertexAI
 export function getFirestoreClient(project: string): Firestore
 
@@ -118,6 +118,7 @@ export async function closeGcpClients(): Promise<void>
 Key design points:
 - Uses Application Default Credentials (ADC) — no service account JSON in code
 - VertexAI and Firestore need project/location at init time — passed from config
+- **Document AI needs its multi-region location at init time.** The SDK's default (global) endpoint routes to `us`; calls against an EU-located processor through the default endpoint return `NOT_FOUND: Processor not found`. `getDocumentAIClient(location)` constructs the client with `apiEndpoint: '${location}-documentai.googleapis.com'` and caches one client per location in a small `Map`. `services.gcp.ts` passes `gcp.document_ai.location` through to the getter.
 - `closeGcpClients()` for graceful shutdown (close Firestore, terminate storage client)
 - No PostgreSQL pools here — those live in `database/client.ts` (already implemented in M1)
 
@@ -286,3 +287,6 @@ Given all changes applied, when `pnpm turbo run build` is executed, then it comp
 
 **QA-08: Example config valid**
 Given the updated `mulder.config.example.yaml`, when loaded with `loadConfig()`, then it passes validation.
+
+**QA-12: Document AI client uses regional apiEndpoint**
+Given a config with `gcp.document_ai.location='eu'`, when `createGcpServices()` runs, then the `DocumentProcessorServiceClient` wrapped by `GcpDocumentAiService` is constructed with `apiEndpoint='eu-documentai.googleapis.com'`; given the same with `location='us'`, the client's `apiEndpoint` is `'us-documentai.googleapis.com'`. QA-11 only validates the processor-name string; QA-12 catches the endpoint half, without which EU processors 404 with `PROCESSOR_NOT_FOUND` at runtime.
