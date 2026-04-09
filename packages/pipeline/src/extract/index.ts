@@ -26,8 +26,10 @@ import {
 } from '@mulder/core';
 import { PDFParse } from 'pdf-parse';
 import type pg from 'pg';
+import { layoutToMarkdown } from './layout-to-markdown.js';
 import type { ExtractInput, ExtractionData, ExtractResult, LayoutBlock, LayoutDocument, LayoutPage } from './types.js';
 
+export { layoutToMarkdown } from './layout-to-markdown.js';
 export type {
 	ExtractInput,
 	ExtractionData,
