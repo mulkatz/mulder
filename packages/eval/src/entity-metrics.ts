@@ -1,16 +1,18 @@
 /**
- * Entity extraction metrics: Precision, Recall, F1 per entity type,
- * and relationship matching.
+ * Entity extraction metrics: Precision, Recall, F1 per entity type.
  *
  * Entity matching is case-insensitive, whitespace-normalized.
  * Metrics are computed per entity type (micro-average for overall).
+ *
+ * Relationship metrics live in `relationship-metrics.ts` (a separate
+ * module so the entity-only file isn't muddled with relationship types).
  *
  * @see docs/specs/31_golden_test_set_segmentation_entities.spec.md §4.4
  * @see docs/functional-spec.md §15.2
  */
 
-import type { ExtractedEntity, ExtractedRelationship } from '@mulder/pipeline';
-import type { ExpectedEntity, ExpectedRelationship, PRF1 } from './types.js';
+import type { ExtractedEntity } from '@mulder/pipeline';
+import type { ExpectedEntity, PRF1 } from './types.js';
 
 // ────────────────────────────────────────────────────────────
 // Name normalization
@@ -109,44 +111,4 @@ export function computeEntityPrecisionRecallF1(expected: ExpectedEntity[], actua
 	const overall = computePRF1(totalMatched, totalActual, totalExpected);
 
 	return { byType, overall };
-}
-
-// ────────────────────────────────────────────────────────────
-// Relationship precision / recall / F1
-// ────────────────────────────────────────────────────────────
-
-/**
- * Compute relationship precision, recall, and F1.
- *
- * Matches by (sourceEntity, targetEntity, relationshipType) tuple.
- * Entity names are normalized (case-insensitive, whitespace-collapsed).
- */
-export function computeRelationshipPrecisionRecallF1(
-	expected: ExpectedRelationship[],
-	actual: ExtractedRelationship[],
-): PRF1 {
-	// Normalize relationship tuples
-	const normalizeKey = (source: string, target: string, relType: string): string =>
-		`${normalizeEntityName(source)}|${normalizeEntityName(target)}|${relType.toLowerCase()}`;
-
-	const expectedKeys = expected.map((r) => normalizeKey(r.sourceEntity, r.targetEntity, r.relationshipType));
-
-	const actualKeys = actual.map((r) => normalizeKey(r.source_entity, r.target_entity, r.relationship_type));
-
-	// Count matches
-	const matchedActualIndices = new Set<number>();
-	let matched = 0;
-
-	for (const expKey of expectedKeys) {
-		for (let i = 0; i < actualKeys.length; i++) {
-			if (matchedActualIndices.has(i)) continue;
-			if (expKey === actualKeys[i]) {
-				matched++;
-				matchedActualIndices.add(i);
-				break;
-			}
-		}
-	}
-
-	return computePRF1(matched, actual.length, expected.length);
 }

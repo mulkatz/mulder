@@ -156,22 +156,15 @@ describe('Spec 33 — QA-5: Error Code Coverage', () => {
 
 		it('reserved annotations are present for known reserved codes', () => {
 			const expectedReserved = [
-				// Spec 33 §4.5 known reserved codes
+				// Spec 33 §4.5 known reserved codes — codes that exist for
+				// future milestones or seldom-triggered paths and have no
+				// active thrower in the current codebase.
 				'INGEST_DUPLICATE',
 				'EXTRACT_PAGE_RENDER_FAILED',
 				'ENRICH_VALIDATION_FAILED',
-				'EMBED_STORY_NOT_FOUND',
-				'EMBED_QUESTION_GENERATION_FAILED',
-				'EMBED_CHUNK_WRITE_FAILED',
-				// Additional codes defined but not yet thrown (future steps)
 				'CONFIG_NOT_FOUND',
-				'PIPELINE_SOURCE_NOT_FOUND',
-				'PIPELINE_WRONG_STATUS',
-				'PIPELINE_STEP_FAILED',
 				'PIPELINE_RATE_LIMITED',
 				'TAXONOMY_BOOTSTRAP_TOO_FEW',
-				'EMBED_INVALID_STATUS',
-				'EMBED_MARKDOWN_NOT_FOUND',
 			];
 
 			for (const code of expectedReserved) {
