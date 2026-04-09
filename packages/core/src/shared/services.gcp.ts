@@ -390,7 +390,9 @@ export function createGcpServices(config: MulderConfig, logger: Logger): Service
 	const bucket = gcp.storage.bucket;
 	const processorId = gcp.document_ai.processor_id;
 	// Document AI uses its own multi-region endpoint (eu | us), separate from
-	// gcp.region which is the Cloud Run / Cloud SQL location.
+	// gcp.region which is the Cloud Run / Cloud SQL location. The SDK client
+	// must be constructed with the matching regional apiEndpoint — the default
+	// global endpoint routes to `us` and 404s for EU-located processors.
 	const processorLocation = gcp.document_ai.location;
 	const processorName = `projects/${projectId}/locations/${processorLocation}/processors/${processorId}`;
 
@@ -398,7 +400,7 @@ export function createGcpServices(config: MulderConfig, logger: Logger): Service
 
 	// Initialize SDK clients via connection manager
 	const storageClient = getStorageClient();
-	const documentAiClient = getDocumentAIClient();
+	const documentAiClient = getDocumentAIClient(processorLocation);
 	const ai = getGenAI(projectId, region);
 	const firestoreClient = getFirestoreClient(projectId);
 
