@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -97,29 +97,6 @@ function cleanStorageFixtures(): void {
 }
 
 /**
- * Ensure page images exist for an extracted source.
- */
-function ensurePageImages(sourceId: string): void {
-	const pagesDir = join(EXTRACTED_DIR, sourceId, 'pages');
-	if (!existsSync(pagesDir)) {
-		const layoutPath = join(EXTRACTED_DIR, sourceId, 'layout.json');
-		if (existsSync(layoutPath)) {
-			const layout = JSON.parse(readFileSync(layoutPath, 'utf-8'));
-			mkdirSync(pagesDir, { recursive: true });
-			const minimalPng = Buffer.from(
-				'89504e470d0a1a0a0000000d49484452000000010000000108020000009001be' +
-					'0000000c4944415478da6360f80f00000101000518d84e0000000049454e44ae426082',
-				'hex',
-			);
-			for (let i = 1; i <= layout.pageCount; i++) {
-				const padded = String(i).padStart(3, '0');
-				writeFileSync(join(pagesDir, `page-${padded}.png`), minimalPng);
-			}
-		}
-	}
-}
-
-/**
  * Ingest a PDF and return its source ID.
  */
 function ingestPdf(pdfPath: string): string {
@@ -147,7 +124,6 @@ function ingestExtractSegmentEnrichEmbed(pdfPath: string): string {
 	if (extractResult.exitCode !== 0) {
 		throw new Error(`Extract failed (exit ${extractResult.exitCode}): ${extractResult.stdout} ${extractResult.stderr}`);
 	}
-	ensurePageImages(sourceId);
 
 	// Segment
 	const segResult = runCli(['segment', sourceId]);
@@ -305,7 +281,6 @@ describe('Spec 35 — Graph Step', () => {
 		if (extractResult.exitCode !== 0) {
 			throw new Error(`Extract failed: ${extractResult.stdout} ${extractResult.stderr}`);
 		}
-		ensurePageImages(sourceId2);
 		runCli(['segment', sourceId2]);
 
 		// Graph only source 1

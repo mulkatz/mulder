@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -137,31 +137,6 @@ function cleanStorageFixtures(): void {
 	}
 }
 
-/**
- * Minimal valid 1x1 PNG. Used when the test environment lacks the `canvas`
- * native module that normally renders page previews during extract. The
- * image content does not matter for pipeline lifecycle assertions — we only
- * care that the files exist in the expected location.
- */
-const MINIMAL_PNG = Buffer.from(
-	'89504e470d0a1a0a0000000d49484452000000010000000108020000009001be' +
-		'0000000c4944415478da6360f80f00000101000518d84e0000000049454e44ae426082',
-	'hex',
-);
-
-function ensurePageImages(sourceId: string): void {
-	const pagesDir = join(EXTRACTED_DIR, sourceId, 'pages');
-	if (existsSync(pagesDir)) return;
-	const layoutPath = join(EXTRACTED_DIR, sourceId, 'layout.json');
-	if (!existsSync(layoutPath)) return;
-	const layout = JSON.parse(readFileSync(layoutPath, 'utf-8'));
-	mkdirSync(pagesDir, { recursive: true });
-	for (let i = 1; i <= layout.pageCount; i++) {
-		const padded = String(i).padStart(3, '0');
-		writeFileSync(join(pagesDir, `page-${padded}.png`), MINIMAL_PNG);
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Stage runners — each returns the piece of state we assert on after
 // ---------------------------------------------------------------------------
@@ -180,7 +155,6 @@ function stageIngest(pdfPath: string): string {
 function stageExtract(sourceId: string): void {
 	const { exitCode, stdout, stderr } = runCli(['extract', sourceId]);
 	if (exitCode !== 0) throw new Error(`Extract failed: ${stdout} ${stderr}`);
-	ensurePageImages(sourceId);
 }
 
 function stageSegment(sourceId: string): void {
