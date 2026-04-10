@@ -149,7 +149,7 @@ Human-in-the-loop taxonomy curation. Entity management for production use.
 | 🟢 | F2 | Taxonomy export/curate/merge | §6.3, §1 (taxonomy cmd) |
 | 🟢 | F3 | Entity management CLI — list/show/merge/aliases | §1 (entity cmd) |
 | 🟢 | F4 | Status overview — `mulder status` | §1 (status cmd) |
-| ⚪ | F5 | Export commands — graph/stories/evidence | §1 (export cmd) |
+| 🟡 | F5 | Export commands — graph/stories/evidence | §1 (export cmd) |
 
 **Also read for all M5 steps:** §6 (full taxonomy system), §5.3 (sparse graph degradation — bootstrap threshold)
 
