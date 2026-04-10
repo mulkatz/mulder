@@ -13,7 +13,14 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
-import type { CreateEntityInput, Entity, EntityFilter, TaxonomyStatus, UpdateEntityInput } from './entity.types.js';
+import type {
+	CreateEntityInput,
+	Entity,
+	EntityFilter,
+	MergeEntitiesResult,
+	TaxonomyStatus,
+	UpdateEntityInput,
+} from './entity.types.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'entity-repository' });
@@ -234,6 +241,12 @@ export async function findAllEntities(pool: pg.Pool, filter?: EntityFilter): Pro
 		paramIndex++;
 	}
 
+	if (filter?.search) {
+		conditions.push(`name ILIKE '%' || $${paramIndex} || '%'`);
+		params.push(filter.search);
+		paramIndex++;
+	}
+
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
 	const limit = filter?.limit ?? 100;
@@ -276,6 +289,12 @@ export async function countEntities(pool: pg.Pool, filter?: EntityFilter): Promi
 	if (filter?.taxonomyStatus) {
 		conditions.push(`taxonomy_status = $${paramIndex}`);
 		params.push(filter.taxonomyStatus);
+		paramIndex++;
+	}
+
+	if (filter?.search) {
+		conditions.push(`name ILIKE '%' || $${paramIndex} || '%'`);
+		params.push(filter.search);
 		paramIndex++;
 	}
 
@@ -636,5 +655,188 @@ export async function updateEntityEmbedding(pool: pg.Pool, entityId: string, emb
 			cause: error,
 			context: { entityId },
 		});
+	}
+}
+
+// ────────────────────────────────────────────────────────────
+// Entity merge (transactional)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Merges entity `sourceId` into `targetId` in a single transaction.
+ *
+ * Steps:
+ * 1. Verify both entities exist
+ * 2. Verify sourceId !== targetId
+ * 3. Verify neither entity is already merged (has canonical_id set)
+ * 4. Reassign story_entities from source to target
+ * 5. Reassign edges (both source and target sides)
+ * 6. Delete self-loops created by reassignment
+ * 7. Copy aliases from source to target
+ * 8. Add source entity name as alias on target
+ * 9. Mark source as merged (canonical_id = target, taxonomy_status = 'merged')
+ *
+ * @param pool - PostgreSQL connection pool
+ * @param targetId - The entity that survives (merge target)
+ * @param sourceId - The entity that gets merged (merge source)
+ * @returns Merge result with counts of reassigned artifacts
+ *
+ * @throws {DatabaseError} DB_NOT_FOUND if either entity does not exist
+ * @throws {DatabaseError} DB_QUERY_FAILED if sourceId === targetId or entity already merged
+ */
+export async function mergeEntities(pool: pg.Pool, targetId: string, sourceId: string): Promise<MergeEntitiesResult> {
+	// Pre-validate: same ID check (before acquiring a connection)
+	if (sourceId === targetId) {
+		throw new DatabaseError('Cannot merge an entity into itself', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			context: { targetId, sourceId },
+		});
+	}
+
+	const client = await pool.connect();
+
+	try {
+		await client.query('BEGIN');
+
+		// Step 1: Verify both entities exist
+		const targetResult = await client.query<EntityRow>('SELECT * FROM entities WHERE id = $1', [targetId]);
+		if (targetResult.rows.length === 0) {
+			throw new DatabaseError(`Target entity not found: ${targetId}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+				context: { targetId },
+			});
+		}
+
+		const sourceResult = await client.query<EntityRow>('SELECT * FROM entities WHERE id = $1', [sourceId]);
+		if (sourceResult.rows.length === 0) {
+			throw new DatabaseError(`Source entity not found: ${sourceId}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+				context: { sourceId },
+			});
+		}
+
+		// Step 3: Verify neither entity is already merged
+		if (targetResult.rows[0].canonical_id !== null) {
+			throw new DatabaseError(`Target entity is already merged: ${targetId}`, DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+				context: { targetId, canonicalId: targetResult.rows[0].canonical_id },
+			});
+		}
+		if (sourceResult.rows[0].canonical_id !== null) {
+			throw new DatabaseError(`Source entity is already merged: ${sourceId}`, DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+				context: { sourceId, canonicalId: sourceResult.rows[0].canonical_id },
+			});
+		}
+
+		// Step 4: Reassign story_entities
+		// First try to update, handling conflicts where both entities are linked to the same story
+		const storyUpdateResult = await client.query(
+			`UPDATE story_entities SET entity_id = $1
+			 WHERE entity_id = $2
+			   AND story_id NOT IN (SELECT story_id FROM story_entities WHERE entity_id = $1)`,
+			[targetId, sourceId],
+		);
+		const storiesReassigned = storyUpdateResult.rowCount ?? 0;
+
+		// Delete any remaining source story_entities (duplicates that couldn't be reassigned)
+		await client.query('DELETE FROM story_entities WHERE entity_id = $1', [sourceId]);
+
+		// Step 5+6: Reassign edges (source side), skip self-loops
+		const edgeSourceResult = await client.query(
+			`UPDATE entity_edges SET source_entity_id = $1
+			 WHERE source_entity_id = $2
+			   AND target_entity_id != $1`,
+			[targetId, sourceId],
+		);
+		const edgesFromSource = edgeSourceResult.rowCount ?? 0;
+
+		// Reassign edges (target side), skip self-loops
+		const edgeTargetResult = await client.query(
+			`UPDATE entity_edges SET target_entity_id = $1
+			 WHERE target_entity_id = $2
+			   AND source_entity_id != $1`,
+			[targetId, sourceId],
+		);
+		const edgesFromTarget = edgeTargetResult.rowCount ?? 0;
+
+		// Delete any remaining edges that reference the source entity
+		// (self-loops that were created or edges that couldn't be reassigned)
+		await client.query('DELETE FROM entity_edges WHERE source_entity_id = $1 OR target_entity_id = $1', [sourceId]);
+
+		// Delete any self-loops on the target that may have been created
+		await client.query('DELETE FROM entity_edges WHERE source_entity_id = target_entity_id');
+
+		// Step 7: Copy aliases from source to target (idempotent)
+		const aliasResult = await client.query<{ alias: string }>(
+			'SELECT alias, source FROM entity_aliases WHERE entity_id = $1',
+			[sourceId],
+		);
+
+		let aliasesCopied = 0;
+		for (const row of aliasResult.rows) {
+			const insertResult = await client.query(
+				`INSERT INTO entity_aliases (entity_id, alias, source)
+				 VALUES ($1, $2, $3)
+				 ON CONFLICT (entity_id, alias) DO NOTHING`,
+				[targetId, row.alias, 'merge'],
+			);
+			if ((insertResult.rowCount ?? 0) > 0) {
+				aliasesCopied++;
+			}
+		}
+
+		// Step 8: Add source entity name as alias on target
+		const sourceName = sourceResult.rows[0].name;
+		const nameAliasResult = await client.query(
+			`INSERT INTO entity_aliases (entity_id, alias, source)
+			 VALUES ($1, $2, 'merge')
+			 ON CONFLICT (entity_id, alias) DO NOTHING`,
+			[targetId, sourceName],
+		);
+		if ((nameAliasResult.rowCount ?? 0) > 0) {
+			aliasesCopied++;
+		}
+
+		// Step 9: Mark source as merged
+		const mergedResult = await client.query<EntityRow>(
+			`UPDATE entities
+			 SET canonical_id = $1, taxonomy_status = 'merged', updated_at = now()
+			 WHERE id = $2
+			 RETURNING *`,
+			[targetId, sourceId],
+		);
+
+		// Re-fetch target to get updated state
+		const updatedTargetResult = await client.query<EntityRow>('SELECT * FROM entities WHERE id = $1', [targetId]);
+
+		await client.query('COMMIT');
+
+		repoLogger.info(
+			{
+				targetId,
+				sourceId,
+				edgesReassigned: edgesFromSource + edgesFromTarget,
+				storiesReassigned,
+				aliasesCopied,
+			},
+			'Entities merged successfully',
+		);
+
+		return {
+			target: mapEntityRow(updatedTargetResult.rows[0]),
+			merged: mapEntityRow(mergedResult.rows[0]),
+			edgesReassigned: edgesFromSource + edgesFromTarget,
+			storiesReassigned,
+			aliasesCopied,
+		};
+	} catch (error: unknown) {
+		await client.query('ROLLBACK').catch(() => {});
+
+		if (error instanceof DatabaseError) {
+			throw error;
+		}
+
+		throw new DatabaseError('Failed to merge entities', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { targetId, sourceId },
+		});
+	} finally {
+		client.release();
 	}
 }
