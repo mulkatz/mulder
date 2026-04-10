@@ -49,6 +49,7 @@ export type {
 	CreateSourceInput,
 	CreateStoryInput,
 	CreateTaxonomyEntryInput,
+	EdgeType,
 	EmbeddingCandidate,
 	Entity,
 	EntityAlias,
