@@ -24,6 +24,13 @@ import type {
 	UpdateTaxonomyEntryInput,
 } from './taxonomy.types.js';
 
+/** Input for a batch of taxonomy changes applied in a single transaction. */
+export interface ApplyTaxonomyChangesInput {
+	creates: CreateTaxonomyEntryInput[];
+	updates: Array<{ id: string; input: UpdateTaxonomyEntryInput }>;
+	deletes: string[];
+}
+
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'taxonomy-repository' });
 
@@ -423,5 +430,117 @@ export async function searchTaxonomyBySimilarity(
 			cause: error,
 			context: { name, entityType, threshold },
 		});
+	}
+}
+
+// ────────────────────────────────────────────────────────────
+// Unpaginated full export + batch apply
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Returns all taxonomy entries ordered by entity_type ASC, canonical_name ASC.
+ * No pagination — intended for export operations that need the full set.
+ */
+export async function findAllTaxonomyEntriesUnpaginated(pool: pg.Pool): Promise<TaxonomyEntry[]> {
+	const sql = 'SELECT * FROM taxonomy ORDER BY entity_type ASC, canonical_name ASC';
+
+	try {
+		const result = await pool.query<TaxonomyRow>(sql);
+		return result.rows.map(mapTaxonomyRow);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to load all taxonomy entries', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+		});
+	}
+}
+
+/**
+ * Applies a batch of taxonomy creates, updates, and deletes in a single transaction.
+ * Throws `DatabaseError` on failure (auto-rollback via transaction).
+ */
+export async function applyTaxonomyChanges(pool: pg.Pool, changes: ApplyTaxonomyChangesInput): Promise<void> {
+	const client = await pool.connect();
+
+	try {
+		await client.query('BEGIN');
+
+		// Creates — use INSERT ON CONFLICT to handle duplicates gracefully
+		for (const input of changes.creates) {
+			const sql = `
+				INSERT INTO taxonomy (canonical_name, entity_type, category, status, aliases)
+				VALUES ($1, $2, $3, $4, $5)
+				ON CONFLICT (canonical_name, entity_type) DO UPDATE SET
+					category = EXCLUDED.category,
+					status = EXCLUDED.status,
+					aliases = EXCLUDED.aliases,
+					updated_at = now()
+			`;
+			await client.query(sql, [
+				input.canonicalName,
+				input.entityType,
+				input.category ?? null,
+				input.status ?? 'confirmed',
+				input.aliases ?? [],
+			]);
+		}
+
+		// Updates — dynamic SET clauses
+		for (const { id, input } of changes.updates) {
+			const setClauses: string[] = [];
+			const params: unknown[] = [];
+			let paramIndex = 1;
+
+			if (input.canonicalName !== undefined) {
+				setClauses.push(`canonical_name = $${paramIndex}`);
+				params.push(input.canonicalName);
+				paramIndex++;
+			}
+			if (input.category !== undefined) {
+				setClauses.push(`category = $${paramIndex}`);
+				params.push(input.category);
+				paramIndex++;
+			}
+			if (input.status !== undefined) {
+				setClauses.push(`status = $${paramIndex}`);
+				params.push(input.status);
+				paramIndex++;
+			}
+			if (input.aliases !== undefined) {
+				setClauses.push(`aliases = $${paramIndex}`);
+				params.push(input.aliases);
+				paramIndex++;
+			}
+
+			setClauses.push('updated_at = now()');
+			params.push(id);
+
+			const sql = `UPDATE taxonomy SET ${setClauses.join(', ')} WHERE id = $${paramIndex}`;
+			await client.query(sql, params);
+		}
+
+		// Deletes
+		for (const id of changes.deletes) {
+			await client.query('DELETE FROM taxonomy WHERE id = $1', [id]);
+		}
+
+		await client.query('COMMIT');
+
+		const totalOps = changes.creates.length + changes.updates.length + changes.deletes.length;
+		repoLogger.debug(
+			{ creates: changes.creates.length, updates: changes.updates.length, deletes: changes.deletes.length },
+			`Applied ${totalOps} taxonomy changes in transaction`,
+		);
+	} catch (error: unknown) {
+		await client.query('ROLLBACK');
+		throw new DatabaseError('Failed to apply taxonomy changes', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: {
+				creates: changes.creates.length,
+				updates: changes.updates.length,
+				deletes: changes.deletes.length,
+			},
+		});
+	} finally {
+		client.release();
 	}
 }

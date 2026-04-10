@@ -60,6 +60,14 @@ export const TAXONOMY_ERROR_CODES = {
 	TAXONOMY_BOOTSTRAP_TOO_FEW: 'TAXONOMY_BOOTSTRAP_TOO_FEW',
 	/** F1 taxonomy bootstrap — corpus below threshold */
 	TAXONOMY_BELOW_THRESHOLD: 'TAXONOMY_BELOW_THRESHOLD',
+	/** F2 taxonomy merge — curated YAML validation failed */
+	TAXONOMY_VALIDATION_FAILED: 'TAXONOMY_VALIDATION_FAILED',
+	/** F2 taxonomy merge — duplicate entries in curated YAML */
+	TAXONOMY_DUPLICATE_ENTRY: 'TAXONOMY_DUPLICATE_ENTRY',
+	/** @reserved F2 taxonomy merge — referenced ID not found in database (graceful skip, not thrown) */
+	TAXONOMY_ID_NOT_FOUND: 'TAXONOMY_ID_NOT_FOUND',
+	/** F2 taxonomy merge — transaction failed */
+	TAXONOMY_MERGE_FAILED: 'TAXONOMY_MERGE_FAILED',
 } as const;
 
 export type TaxonomyErrorCode = (typeof TAXONOMY_ERROR_CODES)[keyof typeof TAXONOMY_ERROR_CODES];

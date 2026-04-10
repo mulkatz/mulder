@@ -164,13 +164,16 @@ export {
 	linkStoryEntity,
 	unlinkStoryEntity,
 } from './story-entity.repository.js';
+export type { ApplyTaxonomyChangesInput } from './taxonomy.repository.js';
 export {
+	applyTaxonomyChanges,
 	countProcessedSources,
 	countTaxonomyEntries,
 	createTaxonomyEntry,
 	deleteAutoTaxonomyEntries,
 	deleteTaxonomyEntry,
 	findAllTaxonomyEntries,
+	findAllTaxonomyEntriesUnpaginated,
 	findTaxonomyEntryById,
 	findTaxonomyEntryByName,
 	searchTaxonomyBySimilarity,
