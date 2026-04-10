@@ -147,7 +147,7 @@ Human-in-the-loop taxonomy curation. Entity management for production use.
 |--------|------|------|------|
 | 🟢 | F1 | Taxonomy bootstrap — `mulder taxonomy bootstrap` | §6.1, §1 (taxonomy cmd) |
 | 🟢 | F2 | Taxonomy export/curate/merge | §6.3, §1 (taxonomy cmd) |
-| ⚪ | F3 | Entity management CLI — list/show/merge/aliases | §1 (entity cmd) |
+| 🟡 | F3 | Entity management CLI — list/show/merge/aliases | §1 (entity cmd) |
 | ⚪ | F4 | Status overview — `mulder status` | §1 (status cmd) |
 | ⚪ | F5 | Export commands — graph/stories/evidence | §1 (export cmd) |
 
