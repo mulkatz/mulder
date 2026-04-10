@@ -840,3 +840,30 @@ export async function mergeEntities(pool: pg.Pool, targetId: string, sourceId: s
 		client.release();
 	}
 }
+
+// ────────────────────────────────────────────────────────────
+// Aggregate queries (status overview)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Count active entities (canonical_id IS NULL) grouped by type.
+ * Merged entities (those with canonical_id set) are excluded.
+ * Results ordered by count descending.
+ */
+export async function countEntitiesByType(pool: pg.Pool): Promise<Record<string, number>> {
+	const sql =
+		'SELECT type, COUNT(*)::int AS count FROM entities WHERE canonical_id IS NULL GROUP BY type ORDER BY count DESC';
+
+	try {
+		const result = await pool.query<{ type: string; count: number }>(sql);
+		const grouped: Record<string, number> = {};
+		for (const row of result.rows) {
+			grouped[row.type] = row.count;
+		}
+		return grouped;
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to count entities by type', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+		});
+	}
+}

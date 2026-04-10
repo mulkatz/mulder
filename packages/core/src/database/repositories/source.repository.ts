@@ -15,6 +15,7 @@ import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
 import type {
 	CreateSourceInput,
+	FailedSourceInfo,
 	Source,
 	SourceFilter,
 	SourceStatus,
@@ -462,6 +463,66 @@ export async function findSourceStep(pool: pg.Pool, sourceId: string, stepName: 
 		throw new DatabaseError('Failed to find source step', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause: error,
 			context: { sourceId, stepName },
+		});
+	}
+}
+
+// ────────────────────────────────────────────────────────────
+// Aggregate queries (status overview)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Count sources grouped by status.
+ * Returns a record like `{ ingested: 3, extracted: 5, ... }`.
+ */
+export async function countSourcesByStatus(pool: pg.Pool): Promise<Record<string, number>> {
+	const sql = 'SELECT status, COUNT(*)::int AS count FROM sources GROUP BY status';
+
+	try {
+		const result = await pool.query<{ status: string; count: number }>(sql);
+		const grouped: Record<string, number> = {};
+		for (const row of result.rows) {
+			grouped[row.status] = row.count;
+		}
+		return grouped;
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to count sources by status', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+		});
+	}
+}
+
+/**
+ * Find sources that have at least one failed source_step.
+ * Returns source ID, filename, the failed step name, and error message.
+ * Limited to 100 results, ordered by most recently updated first.
+ */
+export async function findSourcesWithFailedSteps(pool: pg.Pool): Promise<FailedSourceInfo[]> {
+	const sql = `
+    SELECT s.id AS source_id, s.filename, ss.step_name, ss.error_message
+    FROM sources s
+    JOIN source_steps ss ON ss.source_id = s.id
+    WHERE ss.status = 'failed'
+    ORDER BY s.updated_at DESC
+    LIMIT 100
+  `;
+
+	try {
+		const result = await pool.query<{
+			source_id: string;
+			filename: string;
+			step_name: string;
+			error_message: string | null;
+		}>(sql);
+		return result.rows.map((row) => ({
+			sourceId: row.source_id,
+			filename: row.filename,
+			stepName: row.step_name,
+			errorMessage: row.error_message,
+		}));
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to find sources with failed steps', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
 		});
 	}
 }

@@ -58,6 +58,7 @@ export type {
 export type { AttributeCandidate, EmbeddingCandidate } from './entity.repository.js';
 export {
 	countEntities,
+	countEntitiesByType,
 	createEntity,
 	deleteEntitiesBySourceId,
 	deleteEntity,
@@ -118,6 +119,7 @@ export type {
 } from './pipeline-run.types.js';
 export {
 	countSources,
+	countSourcesByStatus,
 	createSource,
 	deleteSource,
 	deleteSourceStep,
@@ -126,12 +128,14 @@ export {
 	findSourceById,
 	findSourceStep,
 	findSourceSteps,
+	findSourcesWithFailedSteps,
 	updateSource,
 	updateSourceStatus,
 	upsertSourceStep,
 } from './source.repository.js';
 export type {
 	CreateSourceInput,
+	FailedSourceInfo,
 	Source,
 	SourceFilter,
 	SourceStatus,
@@ -142,6 +146,7 @@ export type {
 } from './source.types.js';
 export {
 	countStories,
+	countStoriesByStatus,
 	createStory,
 	deleteStoriesBySourceId,
 	deleteStory,
