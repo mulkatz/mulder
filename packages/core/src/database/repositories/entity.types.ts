@@ -74,8 +74,28 @@ export interface EntityFilter {
 	type?: string;
 	canonicalId?: string;
 	taxonomyStatus?: TaxonomyStatus;
+	/** Case-insensitive substring match on entity name (ILIKE). */
+	search?: string;
 	limit?: number;
 	offset?: number;
+}
+
+// ────────────────────────────────────────────────────────────
+// Merge result type
+// ────────────────────────────────────────────────────────────
+
+/** Result of merging two entities. */
+export interface MergeEntitiesResult {
+	/** The surviving target entity (post-merge state). */
+	target: Entity;
+	/** The merged source entity (now has canonical_id set). */
+	merged: Entity;
+	/** Number of edges reassigned from source to target. */
+	edgesReassigned: number;
+	/** Number of story links reassigned from source to target. */
+	storiesReassigned: number;
+	/** Number of aliases copied from source to target. */
+	aliasesCopied: number;
 }
 
 // ────────────────────────────────────────────────────────────
