@@ -64,7 +64,7 @@ export const TAXONOMY_ERROR_CODES = {
 	TAXONOMY_VALIDATION_FAILED: 'TAXONOMY_VALIDATION_FAILED',
 	/** F2 taxonomy merge — duplicate entries in curated YAML */
 	TAXONOMY_DUPLICATE_ENTRY: 'TAXONOMY_DUPLICATE_ENTRY',
-	/** F2 taxonomy merge — referenced ID not found in database */
+	/** @reserved F2 taxonomy merge — referenced ID not found in database (graceful skip, not thrown) */
 	TAXONOMY_ID_NOT_FOUND: 'TAXONOMY_ID_NOT_FOUND',
 	/** F2 taxonomy merge — transaction failed */
 	TAXONOMY_MERGE_FAILED: 'TAXONOMY_MERGE_FAILED',
