@@ -760,7 +760,7 @@ export async function mergeEntities(pool: pg.Pool, targetId: string, sourceId: s
 		await client.query('DELETE FROM entity_edges WHERE source_entity_id = $1 OR target_entity_id = $1', [sourceId]);
 
 		// Delete any self-loops on the target that may have been created
-		await client.query('DELETE FROM entity_edges WHERE source_entity_id = target_entity_id');
+		await client.query('DELETE FROM entity_edges WHERE source_entity_id = $1 AND target_entity_id = $1', [targetId]);
 
 		// Step 7: Copy aliases from source to target (idempotent)
 		const aliasResult = await client.query<{ alias: string }>(
