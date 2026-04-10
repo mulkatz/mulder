@@ -36,6 +36,7 @@ export {
 	mulderConfigSchema,
 } from './config/index.js';
 export type {
+	ApplyTaxonomyChangesInput,
 	AttributeCandidate,
 	Chunk,
 	ChunkFilter,
@@ -87,6 +88,7 @@ export type {
 } from './database/index.js';
 // ── Database ─────────────────────────────────────────────────
 export {
+	applyTaxonomyChanges,
 	closeAllPools,
 	countChunks,
 	countEdges,
@@ -125,6 +127,7 @@ export {
 	findAllSources,
 	findAllStories,
 	findAllTaxonomyEntries,
+	findAllTaxonomyEntriesUnpaginated,
 	findCandidatesByAttributes,
 	findCandidatesByEmbedding,
 	findChunkById,
