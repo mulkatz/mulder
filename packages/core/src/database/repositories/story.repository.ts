@@ -403,3 +403,28 @@ export async function deleteStoriesBySourceId(pool: pg.Pool, sourceId: string): 
 		});
 	}
 }
+
+// ────────────────────────────────────────────────────────────
+// Aggregate queries (status overview)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Count stories grouped by status.
+ * Returns a record like `{ segmented: 20, enriched: 50, ... }`.
+ */
+export async function countStoriesByStatus(pool: pg.Pool): Promise<Record<string, number>> {
+	const sql = 'SELECT status, COUNT(*)::int AS count FROM stories GROUP BY status';
+
+	try {
+		const result = await pool.query<{ status: string; count: number }>(sql);
+		const grouped: Record<string, number> = {};
+		for (const row of result.rows) {
+			grouped[row.status] = row.count;
+		}
+		return grouped;
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to count stories by status', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+		});
+	}
+}

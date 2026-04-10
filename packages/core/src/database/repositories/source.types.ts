@@ -94,3 +94,15 @@ export interface UpsertSourceStepInput {
 	configHash?: string;
 	errorMessage?: string;
 }
+
+// ────────────────────────────────────────────────────────────
+// Aggregate types (status overview)
+// ────────────────────────────────────────────────────────────
+
+/** A source with at least one failed pipeline step. */
+export interface FailedSourceInfo {
+	sourceId: string;
+	filename: string;
+	stepName: string;
+	errorMessage: string | null;
+}

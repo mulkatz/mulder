@@ -24,6 +24,7 @@ import { registerPipelineCommands } from './commands/pipeline.js';
 import { registerQueryCommands } from './commands/query.js';
 import { registerSegmentCommands } from './commands/segment.js';
 import { registerShowCommands } from './commands/show.js';
+import { registerStatusCommand } from './commands/status.js';
 import { registerTaxonomyCommands } from './commands/taxonomy.js';
 
 const program = new Command()
@@ -45,6 +46,7 @@ registerPipelineCommands(program);
 registerQueryCommands(program);
 registerSegmentCommands(program);
 registerShowCommands(program);
+registerStatusCommand(program);
 registerTaxonomyCommands(program);
 
 program.parse();
