@@ -3,7 +3,7 @@
  *
  * Loads all taxonomy entries from the database, groups by entity type,
  * sorts within each group (confirmed first, then auto, then rejected;
- * alphabetical within each status), and renders as YAML.
+ * alphabetical within each status), and renders to YAML.
  *
  * @see docs/specs/50_taxonomy_export_curate_merge.spec.md §4.1
  * @see docs/functional-spec.md §6.3
@@ -128,7 +128,7 @@ function generateHeader(): string {
  * 2. Optionally filters by entity type
  * 3. Groups entries by entityType
  * 4. Sorts within each group (confirmed > auto > rejected, then alphabetical)
- * 5. Renders as YAML with comment header
+ * 5. Renders YAML with comment header
  * 6. Returns the YAML string and stats
  */
 export async function exportTaxonomy(options: ExportOptions): Promise<ExportResult> {
