@@ -138,14 +138,11 @@ function seedEntity(opts: {
 	corroboration_score?: number | null;
 }): string {
 	const id = opts.id ?? randomUUID();
-	const canonicalId =
-		opts.canonical_id !== undefined && opts.canonical_id !== null ? `'${opts.canonical_id}'` : 'NULL';
+	const canonicalId = opts.canonical_id !== undefined && opts.canonical_id !== null ? `'${opts.canonical_id}'` : 'NULL';
 	const taxonomyStatus = opts.taxonomy_status ?? 'auto';
 	const sourceCount = opts.source_count ?? 0;
 	const corroborationScore =
-		opts.corroboration_score !== undefined && opts.corroboration_score !== null
-			? opts.corroboration_score
-			: 'NULL';
+		opts.corroboration_score !== undefined && opts.corroboration_score !== null ? opts.corroboration_score : 'NULL';
 	runSql(
 		`INSERT INTO entities (id, name, type, canonical_id, taxonomy_status, source_count, corroboration_score) ` +
 			`VALUES ('${id}', '${opts.name.replace(/'/g, "''")}', '${opts.type}', ${canonicalId}, '${taxonomyStatus}', ${sourceCount}, ${corroborationScore}) ` +
@@ -166,8 +163,7 @@ function seedEdge(opts: {
 	const id = opts.id ?? randomUUID();
 	const storyId = opts.story_id ? `'${opts.story_id}'` : 'NULL';
 	const edgeType = opts.edge_type ?? 'RELATIONSHIP';
-	const confidence =
-		opts.confidence !== undefined && opts.confidence !== null ? opts.confidence : 'NULL';
+	const confidence = opts.confidence !== undefined && opts.confidence !== null ? opts.confidence : 'NULL';
 	runSql(
 		`INSERT INTO entity_edges (id, source_entity_id, target_entity_id, relationship, story_id, edge_type, confidence) ` +
 			`VALUES ('${id}', '${opts.source_entity_id}', '${opts.target_entity_id}', '${opts.relationship}', ${storyId}, '${edgeType}', ${confidence}) ` +
@@ -197,11 +193,7 @@ function seedAlias(opts: { id?: string; entity_id: string; alias: string; source
 	return id;
 }
 
-function seedStoryEntity(opts: {
-	story_id: string;
-	entity_id: string;
-	mention_count?: number;
-}): void {
+function seedStoryEntity(opts: { story_id: string; entity_id: string; mention_count?: number }): void {
 	const mentionCount = opts.mention_count ?? 1;
 	runSql(
 		`INSERT INTO story_entities (story_id, entity_id, mention_count) ` +
@@ -406,9 +398,7 @@ describe('QA Contract: Export Commands', () => {
 
 	it('QA-05: Graph filter by type — only matching entity type appears', () => {
 		if (!pgAvailable) return;
-		const { stdout, exitCode } = runCli([
-			'export', 'graph', '--filter', 'type=person', '--format', 'json',
-		]);
+		const { stdout, exitCode } = runCli(['export', 'graph', '--filter', 'type=person', '--format', 'json']);
 		expect(exitCode).toBe(0);
 		const parsed = JSON.parse(stdout);
 		// All nodes should be type person
@@ -423,9 +413,7 @@ describe('QA Contract: Export Commands', () => {
 
 	it('QA-06: Graph filter by edge type — only matching edge type appears', () => {
 		if (!pgAvailable) return;
-		const { stdout, exitCode } = runCli([
-			'export', 'graph', '--filter', 'edge=RELATIONSHIP', '--format', 'json',
-		]);
+		const { stdout, exitCode } = runCli(['export', 'graph', '--filter', 'edge=RELATIONSHIP', '--format', 'json']);
 		expect(exitCode).toBe(0);
 		const parsed = JSON.parse(stdout);
 		// All edges should be RELATIONSHIP type
@@ -433,9 +421,7 @@ describe('QA Contract: Export Commands', () => {
 			expect(edge.edgeType).toBe('RELATIONSHIP');
 		}
 		// Should not contain DUPLICATE_OF or POTENTIAL_CONTRADICTION
-		const nonRelEdges = parsed.edges.filter(
-			(e: { edgeType: string }) => e.edgeType !== 'RELATIONSHIP',
-		);
+		const nonRelEdges = parsed.edges.filter((e: { edgeType: string }) => e.edgeType !== 'RELATIONSHIP');
 		expect(nonRelEdges.length).toBe(0);
 	});
 
@@ -483,9 +469,7 @@ describe('QA Contract: Export Commands', () => {
 
 	it('QA-10: Stories filter by source — only stories from that source', () => {
 		if (!pgAvailable) return;
-		const { stdout, exitCode } = runCli([
-			'export', 'stories', '--source', sourceId1, '--format', 'json',
-		]);
+		const { stdout, exitCode } = runCli(['export', 'stories', '--source', sourceId1, '--format', 'json']);
 		expect(exitCode).toBe(0);
 		const parsed = JSON.parse(stdout);
 		expect(parsed.stories.length).toBeGreaterThan(0);
@@ -614,27 +598,21 @@ describe('CLI Test Matrix: Export Commands', () => {
 		const { exitCode, stderr, stdout } = runCli(['export', 'graph', '--format', 'invalid']);
 		expect(exitCode).not.toBe(0);
 		const combined = (stderr + stdout).toLowerCase();
-		expect(
-			combined.includes('json') || combined.includes('format') || combined.includes('invalid'),
-		).toBe(true);
+		expect(combined.includes('json') || combined.includes('format') || combined.includes('invalid')).toBe(true);
 	});
 
 	it('CLI-05: export stories --format invalid — exit code 1, error about valid formats', () => {
 		const { exitCode, stderr, stdout } = runCli(['export', 'stories', '--format', 'invalid']);
 		expect(exitCode).not.toBe(0);
 		const combined = (stderr + stdout).toLowerCase();
-		expect(
-			combined.includes('json') || combined.includes('format') || combined.includes('invalid'),
-		).toBe(true);
+		expect(combined.includes('json') || combined.includes('format') || combined.includes('invalid')).toBe(true);
 	});
 
 	it('CLI-06: export evidence --format invalid — exit code 1, error about valid formats', () => {
 		const { exitCode, stderr, stdout } = runCli(['export', 'evidence', '--format', 'invalid']);
 		expect(exitCode).not.toBe(0);
 		const combined = (stderr + stdout).toLowerCase();
-		expect(
-			combined.includes('json') || combined.includes('format') || combined.includes('invalid'),
-		).toBe(true);
+		expect(combined.includes('json') || combined.includes('format') || combined.includes('invalid')).toBe(true);
 	});
 
 	it('CLI-07: export graph --format json — exit code 0, valid JSON', () => {
@@ -663,9 +641,7 @@ describe('CLI Test Matrix: Export Commands', () => {
 
 	it('CLI-10: export graph --filter type=person --format json — only person entities', () => {
 		if (!pgAvailable) return;
-		const { stdout, exitCode } = runCli([
-			'export', 'graph', '--filter', 'type=person', '--format', 'json',
-		]);
+		const { stdout, exitCode } = runCli(['export', 'graph', '--filter', 'type=person', '--format', 'json']);
 		expect(exitCode).toBe(0);
 		const parsed = JSON.parse(stdout);
 		expect(parsed.nodes.length).toBeGreaterThan(0);
@@ -676,9 +652,7 @@ describe('CLI Test Matrix: Export Commands', () => {
 
 	it('CLI-11: export graph --filter edge=DUPLICATE_OF --format json — only DUPLICATE_OF edges', () => {
 		if (!pgAvailable) return;
-		const { stdout, exitCode } = runCli([
-			'export', 'graph', '--filter', 'edge=DUPLICATE_OF', '--format', 'json',
-		]);
+		const { stdout, exitCode } = runCli(['export', 'graph', '--filter', 'edge=DUPLICATE_OF', '--format', 'json']);
 		expect(exitCode).toBe(0);
 		const parsed = JSON.parse(stdout);
 		for (const edge of parsed.edges) {
@@ -701,7 +675,7 @@ describe('CLI Smoke Tests: export', () => {
 	});
 
 	it('SMOKE-02: export with no subcommand shows help/usage', () => {
-		const { stdout, stderr, exitCode } = runCli(['export']);
+		const { stdout, stderr } = runCli(['export']);
 		// Commander outputs help to stderr when no subcommand is given
 		const combined = (stdout + stderr).toLowerCase();
 		expect(combined).toContain('graph');
@@ -752,7 +726,14 @@ describe('CLI Smoke Tests: export', () => {
 	it('SMOKE-10: export graph --filter with multiple filters', () => {
 		if (!pgAvailable) return;
 		const { exitCode } = runCli([
-			'export', 'graph', '--filter', 'type=person', '--filter', 'edge=RELATIONSHIP', '--format', 'json',
+			'export',
+			'graph',
+			'--filter',
+			'type=person',
+			'--filter',
+			'edge=RELATIONSHIP',
+			'--format',
+			'json',
 		]);
 		expect(exitCode).toBe(0);
 	});
@@ -769,9 +750,7 @@ describe('CLI Smoke Tests: export', () => {
 		expect(exitCode).toBe(0);
 		const parsed = JSON.parse(stdout);
 		// At least one entity should have aliases
-		const withAliases = parsed.nodes.filter(
-			(n: { aliases: string[] }) => n.aliases && n.aliases.length > 0,
-		);
+		const withAliases = parsed.nodes.filter((n: { aliases: string[] }) => n.aliases && n.aliases.length > 0);
 		expect(withAliases.length).toBeGreaterThan(0);
 	});
 

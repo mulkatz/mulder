@@ -94,14 +94,13 @@ function seedEntity(opts: {
 	corroboration_score?: number | null;
 }): string {
 	const id = opts.id ?? randomUUID();
-	const canonicalId = opts.canonical_id !== undefined && opts.canonical_id !== null
-		? `'${opts.canonical_id}'`
-		: 'NULL';
+	const canonicalId = opts.canonical_id !== undefined && opts.canonical_id !== null ? `'${opts.canonical_id}'` : 'NULL';
 	const taxonomyStatus = opts.taxonomy_status ?? 'auto';
 	const sourceCount = opts.source_count ?? 0;
-	const corroborationScore = opts.corroboration_score !== undefined && opts.corroboration_score !== null
-		? `${opts.corroboration_score}`
-		: 'NULL';
+	const corroborationScore =
+		opts.corroboration_score !== undefined && opts.corroboration_score !== null
+			? `${opts.corroboration_score}`
+			: 'NULL';
 	runSql(
 		`INSERT INTO entities (id, name, type, canonical_id, taxonomy_status, source_count, corroboration_score) ` +
 			`VALUES ('${id}', '${opts.name.replace(/'/g, "''")}', '${opts.type}', ${canonicalId}, '${taxonomyStatus}', ${sourceCount}, ${corroborationScore}) ` +
@@ -113,12 +112,7 @@ function seedEntity(opts: {
 /**
  * Insert an entity alias directly into the database.
  */
-function seedAlias(opts: {
-	id?: string;
-	entity_id: string;
-	alias: string;
-	source?: string;
-}): string {
+function seedAlias(opts: { id?: string; entity_id: string; alias: string; source?: string }): string {
 	const id = opts.id ?? randomUUID();
 	const source = opts.source ?? 'extraction';
 	runSql(
@@ -198,17 +192,17 @@ let pgAvailable = false;
 // Shared entity IDs
 let personEntityId: string;
 let locationEntityId: string;
-let personEntityId2: string;
+let _personEntityId2: string;
 let mergeTargetId: string;
 let mergeSourceId: string;
 let alreadyMergedEntityId: string;
 let aliasEntityId: string;
-let aliasId1: string;
+let _aliasId1: string;
 let aliasId2: string;
 let sourceId: string;
 let storyId: string;
 let storyId2: string;
-let edgeId: string;
+let _edgeId: string;
 
 // For merge JSON test — separate pair
 let mergeJsonTargetId: string;
@@ -230,16 +224,21 @@ beforeAll(() => {
 	storyId2 = seedStory({ source_id: sourceId, title: 'Sighting Report Beta' });
 
 	// Entities of different types
-	personEntityId = seedEntity({ name: 'Josef Allen Hynek', type: 'person', source_count: 3, corroboration_score: 0.85 });
+	personEntityId = seedEntity({
+		name: 'Josef Allen Hynek',
+		type: 'person',
+		source_count: 3,
+		corroboration_score: 0.85,
+	});
 	locationEntityId = seedEntity({ name: 'Area 51', type: 'location', source_count: 5 });
-	personEntityId2 = seedEntity({ name: 'Kenneth Arnold', type: 'person', source_count: 1 });
+	_personEntityId2 = seedEntity({ name: 'Kenneth Arnold', type: 'person', source_count: 1 });
 
 	// Entity for show command — with aliases, edges, stories
 	seedAlias({ entity_id: personEntityId, alias: 'J. Allen Hynek', source: 'extraction' });
 	seedAlias({ entity_id: personEntityId, alias: 'Dr. Hynek', source: 'manual' });
 	seedStoryEntity(storyId, personEntityId);
 	seedStoryEntity(storyId2, personEntityId);
-	edgeId = seedEdge({
+	_edgeId = seedEdge({
 		source_entity_id: personEntityId,
 		target_entity_id: locationEntityId,
 		relationship: 'INVESTIGATED_AT',
@@ -268,7 +267,7 @@ beforeAll(() => {
 
 	// Entity for alias management tests
 	aliasEntityId = seedEntity({ name: 'Alias Test Entity', type: 'organization' });
-	aliasId1 = seedAlias({ entity_id: aliasEntityId, alias: 'Alias One', source: 'extraction' });
+	_aliasId1 = seedAlias({ entity_id: aliasEntityId, alias: 'Alias One', source: 'extraction' });
 	aliasId2 = seedAlias({ entity_id: aliasEntityId, alias: 'Alias Two', source: 'manual' });
 
 	// Separate pair for merge --json test (since merge is destructive)
@@ -389,25 +388,19 @@ describe('QA Contract: Entity Management CLI', () => {
 
 	it('QA-08: entity merge — success', () => {
 		if (!pgAvailable) return;
-		const { stdout, exitCode } = runCli(['entity', 'merge', mergeTargetId, mergeSourceId]);
+		const { exitCode } = runCli(['entity', 'merge', mergeTargetId, mergeSourceId]);
 		expect(exitCode).toBe(0);
 
 		// Verify source entity now has canonical_id = target
-		const canonicalId = runSql(
-			`SELECT canonical_id FROM entities WHERE id = '${mergeSourceId}';`,
-		);
+		const canonicalId = runSql(`SELECT canonical_id FROM entities WHERE id = '${mergeSourceId}';`);
 		expect(canonicalId).toBe(mergeTargetId);
 
 		// Verify source entity has taxonomy_status = 'merged'
-		const taxonomyStatus = runSql(
-			`SELECT taxonomy_status FROM entities WHERE id = '${mergeSourceId}';`,
-		);
+		const taxonomyStatus = runSql(`SELECT taxonomy_status FROM entities WHERE id = '${mergeSourceId}';`);
 		expect(taxonomyStatus).toBe('merged');
 
 		// Verify story_entities were reassigned to target
-		const storyEntityCount = runSql(
-			`SELECT COUNT(*) FROM story_entities WHERE entity_id = '${mergeTargetId}';`,
-		);
+		const storyEntityCount = runSql(`SELECT COUNT(*) FROM story_entities WHERE entity_id = '${mergeTargetId}';`);
 		expect(Number(storyEntityCount)).toBeGreaterThanOrEqual(1);
 
 		// Verify source name is now an alias on target
@@ -466,7 +459,7 @@ describe('QA Contract: Entity Management CLI', () => {
 
 	it('QA-13: entity aliases — add', () => {
 		if (!pgAvailable) return;
-		const { stdout, exitCode } = runCli(['entity', 'aliases', aliasEntityId, '--add', 'New Test Alias']);
+		const { exitCode } = runCli(['entity', 'aliases', aliasEntityId, '--add', 'New Test Alias']);
 		expect(exitCode).toBe(0);
 
 		// Verify alias was created with source 'manual'
@@ -479,13 +472,11 @@ describe('QA Contract: Entity Management CLI', () => {
 	it('QA-14: entity aliases — remove', () => {
 		if (!pgAvailable) return;
 		// Remove aliasId2
-		const { stdout, exitCode } = runCli(['entity', 'aliases', aliasEntityId, '--remove', aliasId2]);
+		const { exitCode } = runCli(['entity', 'aliases', aliasEntityId, '--remove', aliasId2]);
 		expect(exitCode).toBe(0);
 
 		// Verify alias was deleted
-		const count = runSql(
-			`SELECT COUNT(*) FROM entity_aliases WHERE id = '${aliasId2}';`,
-		);
+		const count = runSql(`SELECT COUNT(*) FROM entity_aliases WHERE id = '${aliasId2}';`);
 		expect(Number(count)).toBe(0);
 	});
 
@@ -605,7 +596,7 @@ describe('CLI Smoke Tests: Entity Management CLI', () => {
 	});
 
 	it('SMOKE-06: entity merge with missing second argument gives error', () => {
-		const { stdout, stderr, exitCode } = runCli(['entity', 'merge', randomUUID()]);
+		const { exitCode } = runCli(['entity', 'merge', randomUUID()]);
 		// Commander.js should reject this — missing required argument
 		expect(exitCode).not.toBe(0);
 	});
@@ -623,7 +614,7 @@ describe('CLI Smoke Tests: Entity Management CLI', () => {
 	it('SMOKE-08: entity aliases with nonexistent entity ID gives error', () => {
 		if (!pgAvailable) return;
 		const fakeId = randomUUID();
-		const { stdout, stderr, exitCode } = runCli(['entity', 'aliases', fakeId]);
+		const { exitCode } = runCli(['entity', 'aliases', fakeId]);
 		// This may return empty list or error — depends on implementation
 		// At minimum it should not crash (exit 0 or 1 with meaningful output)
 		expect(exitCode === 0 || exitCode === 1).toBe(true);
@@ -632,7 +623,7 @@ describe('CLI Smoke Tests: Entity Management CLI', () => {
 	it('SMOKE-09: entity aliases --remove with nonexistent alias ID gives error', () => {
 		if (!pgAvailable) return;
 		const fakeAliasId = randomUUID();
-		const { stdout, stderr, exitCode } = runCli(['entity', 'aliases', aliasEntityId, '--remove', fakeAliasId]);
+		const { exitCode } = runCli(['entity', 'aliases', aliasEntityId, '--remove', fakeAliasId]);
 		// Should handle gracefully — either error or no-op
 		expect(exitCode === 0 || exitCode === 1).toBe(true);
 	});
