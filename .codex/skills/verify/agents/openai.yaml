@@ -1,0 +1,7 @@
+interface:
+  display_name: "Verify"
+  short_description: "Run Mulder black-box spec QA."
+  default_prompt: "Use $verify to write or rerun Mulder black-box spec tests and report failures with evidence."
+
+policy:
+  allow_implicit_invocation: false

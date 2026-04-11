@@ -1,0 +1,7 @@
+interface:
+  display_name: "Implement"
+  short_description: "Build a Mulder spec in code."
+  default_prompt: "Use $implement to build a Mulder spec, verify build integrity, and prepare the branch and PR."
+
+policy:
+  allow_implicit_invocation: false

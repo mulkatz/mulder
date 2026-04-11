@@ -1,0 +1,7 @@
+interface:
+  display_name: "Architect"
+  short_description: "Create Mulder specs from roadmap steps."
+  default_prompt: "Use $architect to turn the next Mulder roadmap step into an implementation-ready spec and issue."
+
+policy:
+  allow_implicit_invocation: false

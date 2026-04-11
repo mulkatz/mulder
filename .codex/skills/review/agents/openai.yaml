@@ -1,0 +1,7 @@
+interface:
+  display_name: "Review"
+  short_description: "Run Mulder's architect review gate."
+  default_prompt: "Use $review to review a Mulder PR or branch against its spec and architecture rules."
+
+policy:
+  allow_implicit_invocation: false
