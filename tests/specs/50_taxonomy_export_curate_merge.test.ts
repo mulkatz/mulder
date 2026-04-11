@@ -142,10 +142,10 @@ function countTaxonomy(entityType?: string): number {
 /**
  * Get a taxonomy entry by ID.
  */
-function getTaxonomyById(id: string): { canonical_name: string; status: string; aliases: string; category: string | null } | null {
-	const row = runSql(
-		`SELECT canonical_name, status, aliases, category FROM taxonomy WHERE id = '${id}';`,
-	);
+function getTaxonomyById(
+	id: string,
+): { canonical_name: string; status: string; aliases: string; category: string | null } | null {
+	const row = runSql(`SELECT canonical_name, status, aliases, category FROM taxonomy WHERE id = '${id}';`);
 	if (!row) return null;
 	const parts = row.split('|');
 	return {
@@ -268,9 +268,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 	it('QA-04: Export with --output writes to file', () => {
 		if (!pgAvailable) return;
 
-		seedTaxonomy([
-			{ canonical_name: 'File Test Person', entity_type: 'person', status: 'auto', aliases: ['FTP'] },
-		]);
+		seedTaxonomy([{ canonical_name: 'File Test Person', entity_type: 'person', status: 'auto', aliases: ['FTP'] }]);
 
 		const outputPath = resolve(TMP_DIR, 'export-test.yaml');
 
@@ -287,7 +285,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 		expect(fileContent).toContain('FTP');
 
 		// Compare with stdout export
-		const { stdout: stdoutExport } = runCli(['taxonomy', 'export']);
+		runCli(['taxonomy', 'export']);
 		// The content in the file should be the same YAML (ignoring potential stderr messages)
 		expect(fileContent).toContain('person:');
 		expect(fileContent).toContain('File Test Person');
@@ -312,7 +310,11 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 		expect(exportExit, `Export failed: ${exportErr}`).toBe(0);
 
 		// Merge without edits
-		const { exitCode: mergeExit, stdout: mergeOut, stderr: mergeErr } = runCli(['taxonomy', 'merge', '--input', exportPath]);
+		const {
+			exitCode: mergeExit,
+			stdout: mergeOut,
+			stderr: mergeErr,
+		} = runCli(['taxonomy', 'merge', '--input', exportPath]);
 		expect(mergeExit, `Merge failed: ${mergeErr}`).toBe(0);
 
 		const combined = mergeOut + mergeErr;
@@ -333,9 +335,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 		if (!pgAvailable) return;
 
 		// Start with one existing entry
-		seedTaxonomy([
-			{ canonical_name: 'Existing Person', entity_type: 'person', status: 'auto' },
-		]);
+		seedTaxonomy([{ canonical_name: 'Existing Person', entity_type: 'person', status: 'auto' }]);
 
 		// Create a YAML with the existing entry plus a new one (no id)
 		const yamlContent = `person:
@@ -391,7 +391,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 		// Status should be updated
 		const entry = getTaxonomyById(id);
 		expect(entry).not.toBeNull();
-		expect(entry!.status).toBe('confirmed');
+		expect(entry?.status).toBe('confirmed');
 
 		unlinkSync(inputPath);
 	});
@@ -399,9 +399,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 	it('QA-08: Merge renames canonical name', () => {
 		if (!pgAvailable) return;
 
-		const [id] = seedTaxonomy([
-			{ canonical_name: 'Old Name', entity_type: 'person', status: 'auto', aliases: ['ON'] },
-		]);
+		const [id] = seedTaxonomy([{ canonical_name: 'Old Name', entity_type: 'person', status: 'auto', aliases: ['ON'] }]);
 
 		// Create YAML with same ID but different canonical name
 		const yamlContent = `person:
@@ -421,7 +419,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 		// canonical_name should be updated
 		const entry = getTaxonomyById(id);
 		expect(entry).not.toBeNull();
-		expect(entry!.canonical_name).toBe('New Renamed Name');
+		expect(entry?.canonical_name).toBe('New Renamed Name');
 
 		unlinkSync(inputPath);
 	});
@@ -454,11 +452,11 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 		const entry = getTaxonomyById(id);
 		expect(entry).not.toBeNull();
 		// The aliases should contain the new ones
-		expect(entry!.aliases).toContain('NewAlias');
-		expect(entry!.aliases).toContain('AnotherNew');
-		expect(entry!.aliases).toContain('AP');
+		expect(entry?.aliases).toContain('NewAlias');
+		expect(entry?.aliases).toContain('AnotherNew');
+		expect(entry?.aliases).toContain('AP');
 		// OldAlias should be gone (replaced, not merged)
-		expect(entry!.aliases).not.toContain('OldAlias');
+		expect(entry?.aliases).not.toContain('OldAlias');
 
 		unlinkSync(inputPath);
 	});
@@ -575,7 +573,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 		// Database should NOT be modified
 		const entry = getTaxonomyById(id);
 		expect(entry).not.toBeNull();
-		expect(entry!.status).toBe('auto'); // Still auto, not confirmed
+		expect(entry?.status).toBe('auto'); // Still auto, not confirmed
 
 		unlinkSync(inputPath);
 	});
@@ -609,7 +607,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 	it('QA-14: Merge is transactional', () => {
 		if (!pgAvailable) return;
 
-		const [id1] = seedTaxonomy([
+		const [_id1] = seedTaxonomy([
 			{ canonical_name: 'Txn Person 1', entity_type: 'person', status: 'auto' },
 			{ canonical_name: 'Txn Person 2', entity_type: 'person', status: 'auto' },
 		]);
@@ -634,7 +632,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 		writeFileSync(inputPath, yamlContent, 'utf-8');
 
 		const { exitCode, stdout, stderr } = runCli(['taxonomy', 'merge', '--input', inputPath]);
-		const combined = stdout + stderr;
+		const _combined = stdout + stderr;
 
 		// Should fail (duplicate canonical name within same type)
 		expect(exitCode).not.toBe(0);
@@ -697,9 +695,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (CLI Test Matrix)', () => {
 	it('CLI-02: `taxonomy export` (no flags) outputs YAML to stdout', () => {
 		if (!pgAvailable) return;
 
-		seedTaxonomy([
-			{ canonical_name: 'Stdout Person', entity_type: 'person', status: 'auto', aliases: ['SP'] },
-		]);
+		seedTaxonomy([{ canonical_name: 'Stdout Person', entity_type: 'person', status: 'auto', aliases: ['SP'] }]);
 
 		const { exitCode, stdout, stderr } = runCli(['taxonomy', 'export']);
 		expect(exitCode, `Export failed: ${stderr}`).toBe(0);
@@ -729,9 +725,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (CLI Test Matrix)', () => {
 	it('CLI-04: `taxonomy export --output` writes to file', () => {
 		if (!pgAvailable) return;
 
-		seedTaxonomy([
-			{ canonical_name: 'CLI File Person', entity_type: 'person', status: 'auto' },
-		]);
+		seedTaxonomy([{ canonical_name: 'CLI File Person', entity_type: 'person', status: 'auto' }]);
 
 		const outputPath = resolve(TMP_DIR, 'cli-export-test.yaml');
 
@@ -757,9 +751,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (CLI Test Matrix)', () => {
 	it('CLI-06: `taxonomy merge --dry-run` shows preview without changes', () => {
 		if (!pgAvailable) return;
 
-		const [id] = seedTaxonomy([
-			{ canonical_name: 'CLI DryRun', entity_type: 'person', status: 'auto' },
-		]);
+		const [id] = seedTaxonomy([{ canonical_name: 'CLI DryRun', entity_type: 'person', status: 'auto' }]);
 
 		const yamlContent = `person:
   - id: "${id}"
@@ -776,7 +768,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (CLI Test Matrix)', () => {
 
 		// Database should not be modified
 		const entry = getTaxonomyById(id);
-		expect(entry!.status).toBe('auto');
+		expect(entry?.status).toBe('auto');
 
 		unlinkSync(inputPath);
 	});
@@ -784,9 +776,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (CLI Test Matrix)', () => {
 	it('CLI-07: `taxonomy merge --input custom.yaml` reads from custom path', () => {
 		if (!pgAvailable) return;
 
-		const [id] = seedTaxonomy([
-			{ canonical_name: 'Custom Path Person', entity_type: 'person', status: 'auto' },
-		]);
+		const [id] = seedTaxonomy([{ canonical_name: 'Custom Path Person', entity_type: 'person', status: 'auto' }]);
 
 		const customPath = resolve(TMP_DIR, 'custom-merge-path.yaml');
 		const yamlContent = `person:
@@ -803,7 +793,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (CLI Test Matrix)', () => {
 		// Verify the entry was updated
 		const entry = getTaxonomyById(id);
 		expect(entry).not.toBeNull();
-		expect(entry!.status).toBe('confirmed');
+		expect(entry?.status).toBe('confirmed');
 
 		unlinkSync(customPath);
 	});
@@ -840,7 +830,7 @@ describe('CLI Smoke Tests: taxonomy export/curate/merge', () => {
 	it('SMOKE-02: `taxonomy export` with empty taxonomy produces valid output', () => {
 		if (!pgAvailable) return;
 
-		const { exitCode, stdout } = runCli(['taxonomy', 'export']);
+		const { exitCode } = runCli(['taxonomy', 'export']);
 
 		// Should succeed even with no entries
 		expect(exitCode).toBe(0);
@@ -913,9 +903,7 @@ describe('CLI Smoke Tests: taxonomy export/curate/merge', () => {
 	it('SMOKE-08: `taxonomy export --type nonexistent_type` returns empty output gracefully', () => {
 		if (!pgAvailable) return;
 
-		seedTaxonomy([
-			{ canonical_name: 'Person Z', entity_type: 'person', status: 'auto' },
-		]);
+		seedTaxonomy([{ canonical_name: 'Person Z', entity_type: 'person', status: 'auto' }]);
 
 		const { exitCode, stdout } = runCli(['taxonomy', 'export', '--type', 'nonexistent_type']);
 
@@ -948,9 +936,7 @@ describe('CLI Smoke Tests: taxonomy export/curate/merge', () => {
 	it('SMOKE-10: `taxonomy merge --dry-run --input` combined flags work', () => {
 		if (!pgAvailable) return;
 
-		const [id] = seedTaxonomy([
-			{ canonical_name: 'Combo Merge Person', entity_type: 'person', status: 'auto' },
-		]);
+		const [id] = seedTaxonomy([{ canonical_name: 'Combo Merge Person', entity_type: 'person', status: 'auto' }]);
 
 		const yamlContent = `person:
   - id: "${id}"
@@ -966,7 +952,7 @@ describe('CLI Smoke Tests: taxonomy export/curate/merge', () => {
 
 		// Database should remain unchanged
 		const entry = getTaxonomyById(id);
-		expect(entry!.status).toBe('auto');
+		expect(entry?.status).toBe('auto');
 
 		unlinkSync(inputPath);
 	});
@@ -1005,7 +991,7 @@ describe('CLI Smoke Tests: taxonomy export/curate/merge', () => {
 		// 1. Try to export first (creating the file), then fail on editor
 		// 2. Fail gracefully
 		// We just verify it doesn't hang forever (timeout handles that)
-		const combined = stdout + stderr;
+		const _combined = stdout + stderr;
 		// It ran to completion without hanging
 		expect(typeof exitCode).toBe('number');
 	});
@@ -1013,9 +999,7 @@ describe('CLI Smoke Tests: taxonomy export/curate/merge', () => {
 	it('SMOKE-13: Export YAML includes comment header', () => {
 		if (!pgAvailable) return;
 
-		seedTaxonomy([
-			{ canonical_name: 'Header Test', entity_type: 'person', status: 'auto' },
-		]);
+		seedTaxonomy([{ canonical_name: 'Header Test', entity_type: 'person', status: 'auto' }]);
 
 		const { exitCode, stdout } = runCli(['taxonomy', 'export']);
 		expect(exitCode).toBe(0);
