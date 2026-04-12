@@ -1,10 +1,30 @@
-{# Contradiction resolution prompt — real content added when Analyze step is implemented (M6-G3) #}
 {{ i18n.contradiction.system_role }}
 
-## Conflicting Claims
-{{ claims }}
+## Entity
+- Name: {{ entity.name }}
+- Type: {{ entity.type }}
+- Attribute in dispute: {{ contradiction.attribute }}
+- Edge ID: {{ contradiction.edge_id }}
+
+## Claim A
+- Value: {{ claim_a.value }}
+- Story: {{ claim_a.story_title }}
+- Source: {{ claim_a.source_filename }}
+- Pages: {{ claim_a.page_range }}
+
+## Claim B
+- Value: {{ claim_b.value }}
+- Story: {{ claim_b.story_title }}
+- Source: {{ claim_b.source_filename }}
+- Pages: {{ claim_b.page_range }}
 
 ## Task
 {{ i18n.contradiction.task_description }}
+
+Return a JSON object with:
+- `verdict`: `"confirmed"` or `"dismissed"`
+- `winning_claim`: `"A"`, `"B"`, or `"neither"`
+- `confidence`: number between 0 and 1
+- `explanation`: concise evidence-based reasoning
 
 {{ i18n.common.json_instruction }}

@@ -159,6 +159,17 @@ export const GRAPH_ERROR_CODES = {
 
 export type GraphErrorCode = (typeof GRAPH_ERROR_CODES)[keyof typeof GRAPH_ERROR_CODES];
 
+/** Analyze step error codes. */
+export const ANALYZE_ERROR_CODES = {
+	ANALYZE_DISABLED: 'ANALYZE_DISABLED',
+	ANALYZE_CONTEXT_MISSING: 'ANALYZE_CONTEXT_MISSING',
+	ANALYZE_LLM_FAILED: 'ANALYZE_LLM_FAILED',
+	ANALYZE_VALIDATION_FAILED: 'ANALYZE_VALIDATION_FAILED',
+	ANALYZE_WRITE_FAILED: 'ANALYZE_WRITE_FAILED',
+} as const;
+
+export type AnalyzeErrorCode = (typeof ANALYZE_ERROR_CODES)[keyof typeof ANALYZE_ERROR_CODES];
+
 /** Retrieval domain error codes (vector/fulltext/graph search wrappers + fusion + re-ranking + orchestrator). */
 export const RETRIEVAL_ERROR_CODES = {
 	RETRIEVAL_INVALID_INPUT: 'RETRIEVAL_INVALID_INPUT',
@@ -198,6 +209,7 @@ export type MulderErrorCode =
 	| EmbedErrorCode
 	| GroundErrorCode
 	| GraphErrorCode
+	| AnalyzeErrorCode
 	| RetrievalErrorCode
 	| PromptErrorCode;
 
@@ -391,6 +403,21 @@ export class GraphError extends MulderError {
 	) {
 		super(message, code, options);
 		this.name = 'GraphError';
+	}
+}
+
+/** Analyze step errors (contradiction resolution and later analysis passes). */
+export class AnalyzeError extends MulderError {
+	constructor(
+		message: string,
+		code: AnalyzeErrorCode,
+		options?: {
+			context?: Record<string, unknown>;
+			cause?: unknown;
+		},
+	) {
+		super(message, code, options);
+		this.name = 'AnalyzeError';
 	}
 }
 
