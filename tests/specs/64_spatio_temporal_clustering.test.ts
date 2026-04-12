@@ -111,12 +111,7 @@ function cleanTestData(): void {
 	truncateMulderTables();
 }
 
-function seedEntity(args: {
-	id: string;
-	name: string;
-	isoDate?: string;
-	coords?: { lat: number; lng: number };
-}): void {
+function seedEntity(args: { id: string; name: string; isoDate?: string; coords?: { lat: number; lng: number } }): void {
 	const attributes = args.isoDate ? { iso_date: args.isoDate } : {};
 	db.runSql(
 		[
@@ -165,7 +160,7 @@ function seedExistingClusterSnapshot(): void {
 function fetchClusters(): ClusterRow[] {
 	const raw = db.runSql(
 		[
-			"SELECT COALESCE(json_agg(row_to_json(clusters) ORDER BY \"clusterType\")::text, '[]')",
+			'SELECT COALESCE(json_agg(row_to_json(clusters) ORDER BY "clusterType")::text, \'[]\')',
 			'FROM (',
 			'  SELECT',
 			'    id::text AS id,',
