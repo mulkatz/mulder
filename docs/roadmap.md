@@ -185,17 +185,17 @@ Move from CLI to HTTP. Job queue, async workers, a full REST API over the pipeli
 |--------|------|------|------|
 | ⚪ | H1 | Job queue repository — enqueue/dequeue/reap | §4.3 (jobs table), §10.2, §10.3 |
 | ⚪ | H2 | Worker loop — `mulder worker start/status/reap` | §10.3, §10.4, §10.5, §1 (worker cmd) |
-| ⚪ | H3 | Hono server scaffold | §13 (apps/api/) |
-| ⚪ | H4 | Pipeline API routes (async) | §10.2, §10.6 |
-| ⚪ | H5 | Job status API | §10.6 |
-| ⚪ | H6 | Search API routes (sync) | §10.6, §5 |
-| ⚪ | H7 | Entity API routes (sync) | §10.6 |
-| ⚪ | H8 | Evidence API routes (sync) | §10.6 |
-| ⚪ | H9 | Middleware — auth, rate limiting, validation | §10.6 (rate limiting tiers) |
+| ⚪ | H3 | Hono server scaffold — app, node-server, health endpoint | §13 (apps/api/) |
+| ⚪ | H4 | Middleware — auth, rate limiting, error handling, request context | §10.6 (rate limiting tiers) |
+| ⚪ | H5 | Pipeline API routes (async) | §10.2, §10.6 |
+| ⚪ | H6 | Job status API | §10.6 |
+| ⚪ | H7 | Search API routes (sync) | §10.6, §5 |
+| ⚪ | H8 | Entity API routes (sync) | §10.6 |
+| ⚪ | H9 | Evidence API routes (sync) | §10.6 |
 | ⚪ | H10 | Document retrieval routes — list/pdf/markdown sync routes | §10.6 |
 | ⚪ | H11 | Document Viewer UI — Vite+React split-view (PDF + layout.md) | §13 (demo/), consumes H10 |
 
-**Also read for all M7 steps:** §10 (full job queue section — especially §10.3 transaction discipline), §14 (design decisions — PostgreSQL queue, auto-commit dequeue, per-step job slicing)
+**Also read for all M7 steps:** [`docs/api-architecture.md`](./api-architecture.md) (framework choice, route structure, middleware stack, OpenAPI strategy, key trade-offs), §10 (full job queue section — especially §10.3 transaction discipline), §14 (design decisions — PostgreSQL queue, auto-commit dequeue, per-step job slicing)
 
 **Testable:** HTTP API for everything. Workers process jobs asynchronously. Deployable to Cloud Run. First demoable web UI (split-view PDF + derived Markdown) consuming the real API.
 
