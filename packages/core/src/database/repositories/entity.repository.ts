@@ -40,6 +40,7 @@ export interface EntityRow {
 	canonical_id: string | null;
 	name: string;
 	type: string;
+	geom: string | null;
 	attributes: Record<string, unknown>;
 	corroboration_score: number | null;
 	source_count: number;
@@ -56,6 +57,7 @@ export function mapEntityRow(row: EntityRow): Entity {
 		canonicalId: row.canonical_id,
 		name: row.name,
 		type: row.type,
+		geom: row.geom,
 		attributes: row.attributes ?? {},
 		corroborationScore: row.corroboration_score,
 		sourceCount: row.source_count,

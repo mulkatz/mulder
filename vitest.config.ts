@@ -4,6 +4,7 @@ export default defineConfig({
 	test: {
 		globals: true,
 		include: ['packages/*/src/**/*.test.ts', 'apps/*/src/**/*.test.ts', 'tests/**/*.test.ts'],
+		globalSetup: ['./scripts/ensure-cli-test-artifacts.mjs'],
 		fileParallelism: false,
 		testTimeout: 180_000,
 		hookTimeout: 120_000,

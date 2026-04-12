@@ -250,6 +250,7 @@ describe('Spec 33 — QA-1: Schema Conformance', () => {
 			_text: ['string[]'], // TEXT[]
 			vector: ['string', 'number[]', 'string | null', 'number[] | null'], // pgvector
 			tsvector: ['string', 'string | null'], // tsvector
+			geometry: ['string', 'string | null'], // PostGIS geometry(Point, 4326)
 			job_status: ['string'], // enum stored as TEXT in TS
 		};
 
