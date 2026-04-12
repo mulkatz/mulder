@@ -29,7 +29,23 @@ Do not modify `.claude/commands/review.md`.
 - Do not turn the review into a style pass.
 - Preserve the Claude workflow's selective-depth rule: start with spec and diff, then read functional spec only when needed.
 - Preserve the original approval vocabulary: `APPROVED` or `CHANGES_REQUESTED`.
+- Assume this skill may run in a fresh sub-agent with only a spec reference plus branch or PR identifiers. Reconstruct the review context from repo files and the diff instead of relying on the parent thread.
 
 ## Output
 
-Return `APPROVED` or `CHANGES_REQUESTED`, with blocking findings first.
+Return a compact parseable summary first:
+
+```text
+REVIEW_VERDICT: APPROVED | CHANGES_REQUESTED
+```
+
+If changes are requested, include one block per issue:
+
+```text
+ISSUE: <short title>
+SEVERITY: blocking | warning
+FILE: <path:line>
+PROBLEM: <what's wrong>
+FIX: <specific fix needed>
+SPEC_REF: <violated spec section or CLAUDE.md rule>
+```

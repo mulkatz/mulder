@@ -24,16 +24,12 @@ interface AnalyzeOptions {
 }
 
 function hasUnsupportedSelector(options: AnalyzeOptions): boolean {
-	return Boolean(options.full || options.reliability || options.evidenceChains || options.spatioTemporal);
+	return Boolean(options.full || options.evidenceChains || options.spatioTemporal);
 }
 
 function printUnsupportedSelectorMessage(options: AnalyzeOptions): void {
 	if (options.full) {
 		printError('--full is not implemented yet — it belongs to M6-G7');
-		return;
-	}
-	if (options.reliability) {
-		printError('--reliability is not implemented yet — it belongs to M6-G4');
 		return;
 	}
 	if (options.evidenceChains) {
@@ -45,7 +41,15 @@ function printUnsupportedSelectorMessage(options: AnalyzeOptions): void {
 	}
 }
 
+function countImplementedSelectors(options: AnalyzeOptions): number {
+	return Number(Boolean(options.contradictions)) + Number(Boolean(options.reliability));
+}
+
 function printOutcomeTable(result: AnalyzeResult): void {
+	if (result.data.mode !== 'contradictions') {
+		return;
+	}
+
 	if (result.data.outcomes.length === 0) {
 		return;
 	}
@@ -62,19 +66,49 @@ function printOutcomeTable(result: AnalyzeResult): void {
 	}
 }
 
+function printReliabilityTable(result: AnalyzeResult): void {
+	if (result.data.mode !== 'reliability') {
+		return;
+	}
+
+	if (result.data.outcomes.length === 0) {
+		return;
+	}
+
+	const header = `${'Source ID'.padEnd(36)}  ${'Filename'.padEnd(28)}  ${'Score'.padEnd(7)}  ${'Neighbors'.padEnd(9)}  Shared`;
+	const separator = '-'.repeat(header.length);
+	process.stdout.write(`${header}\n`);
+	process.stdout.write(`${separator}\n`);
+
+	for (const outcome of result.data.outcomes) {
+		const filename = outcome.filename.length > 26 ? `${outcome.filename.substring(0, 23)}...` : outcome.filename;
+		process.stdout.write(
+			`${outcome.sourceId.padEnd(36)}  ${filename.padEnd(28)}  ${outcome.reliabilityScore.toFixed(2).padEnd(7)}  ${String(outcome.neighborCount).padEnd(9)}  ${outcome.sharedEntityCount}\n`,
+		);
+	}
+}
+
 export function registerAnalyzeCommands(program: Command): void {
 	program
 		.command('analyze')
 		.description('Run graph-wide analysis passes')
 		.option('--contradictions', 'resolve pending contradiction edges')
-		.option('--reliability', 'score source reliability (not yet implemented)')
+		.option('--reliability', 'score source reliability')
 		.option('--evidence-chains', 'compute evidence chains (not yet implemented)')
 		.option('--spatio-temporal', 'compute spatio-temporal clusters (not yet implemented)')
 		.option('--full', 'run the full analyze orchestrator (not yet implemented)')
 		.action(
 			withErrorHandler(async (options: AnalyzeOptions) => {
-				if (!options.contradictions && !hasUnsupportedSelector(options)) {
+				const implementedSelectorCount = countImplementedSelectors(options);
+
+				if (implementedSelectorCount === 0 && !hasUnsupportedSelector(options)) {
 					printError('Provide an analysis selector such as --contradictions');
+					process.exit(1);
+					return;
+				}
+
+				if (implementedSelectorCount > 1) {
+					printError('Running multiple analyze selectors together is not implemented yet — use one selector at a time');
 					process.exit(1);
 					return;
 				}
@@ -104,28 +138,65 @@ export function registerAnalyzeCommands(program: Command): void {
 				const pool = getWorkerPool(config.gcp.cloud_sql);
 
 				try {
-					const result = await executeAnalyze({ contradictions: true }, config, services, pool, logger);
+					const result = await executeAnalyze(
+						{
+							contradictions: options.contradictions ?? false,
+							reliability: options.reliability ?? false,
+						},
+						config,
+						services,
+						pool,
+						logger,
+					);
 
-					printOutcomeTable(result);
+					if (result.data.mode === 'contradictions') {
+						printOutcomeTable(result);
+					} else {
+						printReliabilityTable(result);
+					}
 
 					for (const error of result.errors) {
 						printError(`[${error.code}] ${error.message}`);
 					}
 
-					if (result.data.pendingCount === 0) {
-						printSuccess(`Analyze complete: no pending contradiction edges found (${result.metadata.duration_ms}ms)`);
-						return;
-					}
+					if (result.data.mode === 'contradictions') {
+						if (result.data.pendingCount === 0) {
+							printSuccess(`Analyze complete: no pending contradiction edges found (${result.metadata.duration_ms}ms)`);
+							return;
+						}
 
-					const summary = `${result.data.processedCount} processed, ${result.data.confirmedCount} confirmed, ${result.data.dismissedCount} dismissed, ${result.data.failedCount} failed (${result.metadata.duration_ms}ms)`;
+						const summary = `${result.data.processedCount} processed, ${result.data.confirmedCount} confirmed, ${result.data.dismissedCount} dismissed, ${result.data.failedCount} failed (${result.metadata.duration_ms}ms)`;
 
-					if (result.status === 'failed') {
-						printError(`Analyze failed: ${summary}`);
-						process.exit(1);
-					} else if (result.status === 'partial') {
-						process.stderr.write(`Analyze partial: ${summary}\n`);
+						if (result.status === 'failed') {
+							printError(`Analyze failed: ${summary}`);
+							process.exit(1);
+						} else if (result.status === 'partial') {
+							process.stderr.write(`Analyze partial: ${summary}\n`);
+						} else {
+							printSuccess(`Analyze complete: ${summary}`);
+						}
 					} else {
-						printSuccess(`Analyze complete: ${summary}`);
+						if (result.data.outcomes.length === 0) {
+							printSuccess(`Analyze complete: no graph-connected sources found (${result.metadata.duration_ms}ms)`);
+							return;
+						}
+
+						if (result.data.belowThreshold) {
+							process.stderr.write(
+								`Analyze warning: corpus below meaningful reliability threshold (${result.data.sourceCount}/${result.data.threshold} graph-connected sources)\n`,
+							);
+						}
+
+						const summary = `${result.data.scoredCount} scored, ${result.data.sourceCount} graph-connected sources (${result.metadata.duration_ms}ms)`;
+
+						if (result.status === 'failed') {
+							printError(`Analyze failed: ${summary}`);
+							process.exit(1);
+						} else if (result.status === 'partial') {
+							process.stderr.write(`Analyze partial: ${summary}\n`);
+						} else {
+							printSuccess(`Analyze complete: ${summary}`);
+						}
 					}
 				} finally {
 					await closeAllPools();

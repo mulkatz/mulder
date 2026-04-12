@@ -59,7 +59,7 @@ export interface UpdateSourceInput {
 	hasNativeText?: boolean;
 	nativeTextRatio?: number;
 	status?: SourceStatus;
-	reliabilityScore?: number;
+	reliabilityScore?: number | null;
 	tags?: string[];
 	metadata?: Record<string, unknown>;
 }

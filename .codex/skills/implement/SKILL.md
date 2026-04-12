@@ -29,6 +29,8 @@ Do not modify `.claude/commands/implement.md`.
 - Do not write tests unless the user explicitly asks or the workflow being executed is `auto-pilot` and verification is being handled separately.
 - Keep the original stop conditions for ambiguous specs, missing dependencies, or oversized scopes.
 - Do not invent Claude-specific attribution trailers during commits.
+- Assume this skill may be run inside a fresh sub-agent with little or no parent-thread context. Reconstruct context from the spec, roadmap, functional spec, and codebase rather than relying on chat history.
+- If invoked from `auto-pilot`, treat the handoff payload as the only workflow memory you need: spec reference, issue or branch identifiers, iteration number, and any failure evidence for retries.
 - Preserve the original planning requirements:
   - file creation order
   - exports and imports per file
@@ -42,4 +44,18 @@ Do not modify `.claude/commands/implement.md`.
 
 ## Output
 
-Report the resolved spec, changed scope, branch name, PR reference if created, and any deviations from the spec.
+Return a compact handoff summary that a coordinator can parse without needing your full reasoning:
+
+```text
+BRANCH_NAME: <branch>
+PR_URL: <full URL or empty>
+PR_NUMBER: <number or empty>
+FILES_CHANGED: <comma-separated list>
+DEVIATIONS: <spec deviations or "none">
+```
+
+If this is a retry and a test assertion appears wrong relative to the spec, also report:
+
+```text
+TEST_MISMATCH: <test file:line> asserts <X>, but spec says <Y>
+```

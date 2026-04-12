@@ -8,7 +8,8 @@
 import type { StepError } from '@mulder/core';
 
 export interface AnalyzeInput {
-	contradictions: boolean;
+	contradictions?: boolean;
+	reliability?: boolean;
 }
 
 export type ContradictionVerdict = 'confirmed' | 'dismissed';
@@ -31,7 +32,8 @@ export interface ContradictionResolutionOutcome {
 	confidence: number;
 }
 
-export interface AnalyzeData {
+export interface ContradictionAnalyzeData {
+	mode: 'contradictions';
 	pendingCount: number;
 	processedCount: number;
 	confirmedCount: number;
@@ -39,6 +41,26 @@ export interface AnalyzeData {
 	failedCount: number;
 	outcomes: ContradictionResolutionOutcome[];
 }
+
+export interface SourceReliabilityOutcome {
+	sourceId: string;
+	filename: string;
+	rawScore: number;
+	reliabilityScore: number;
+	neighborCount: number;
+	sharedEntityCount: number;
+}
+
+export interface ReliabilityAnalyzeData {
+	mode: 'reliability';
+	sourceCount: number;
+	scoredCount: number;
+	threshold: number;
+	belowThreshold: boolean;
+	outcomes: SourceReliabilityOutcome[];
+}
+
+export type AnalyzeData = ContradictionAnalyzeData | ReliabilityAnalyzeData;
 
 export interface AnalyzeResult {
 	status: 'success' | 'partial' | 'failed';

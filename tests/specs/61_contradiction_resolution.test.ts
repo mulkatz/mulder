@@ -119,13 +119,15 @@ function seedContradictionEdge(args: {
 	db.runSql(
 		[
 			'INSERT INTO entity_edges (id, source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis)',
-			`VALUES (${sqlString(args.edgeId)}, ${sqlString(ENTITY_ID)}, ${sqlString(ENTITY_ID)}, 'contradiction_status', ${jsonLiteral({
-				attribute: 'status',
-				valueA: args.valueA,
-				valueB: args.valueB,
-				storyIdA: args.storyIdA,
-				storyIdB: args.storyIdB,
-			})}, NULL, ${sqlString(args.storyId ?? args.storyIdA)}, 'POTENTIAL_CONTRADICTION', NULL)`,
+			`VALUES (${sqlString(args.edgeId)}, ${sqlString(ENTITY_ID)}, ${sqlString(ENTITY_ID)}, 'contradiction_status', ${jsonLiteral(
+				{
+					attribute: 'status',
+					valueA: args.valueA,
+					valueB: args.valueB,
+					storyIdA: args.storyIdA,
+					storyIdB: args.storyIdB,
+				},
+			)}, NULL, ${sqlString(args.storyId ?? args.storyIdA)}, 'POTENTIAL_CONTRADICTION', NULL)`,
 		].join(' '),
 	);
 }
@@ -235,7 +237,9 @@ describe('Spec 61 — Contradiction Resolution', () => {
 		expect(edgeType(VALID_EDGE_ID)).toBe('POTENTIAL_CONTRADICTION');
 		expect(edgeAnalysis(VALID_EDGE_ID)).toBeNull();
 
-		const result2 = runCli(['analyze', '--contradictions'], { env: { MULDER_CONFIG: contradictionsDisabledConfigPath } });
+		const result2 = runCli(['analyze', '--contradictions'], {
+			env: { MULDER_CONFIG: contradictionsDisabledConfigPath },
+		});
 		expect(result2.exitCode).not.toBe(0);
 		expect(result2.stderr).toContain('ANALYZE_DISABLED');
 		expect(edgeType(VALID_EDGE_ID)).toBe('POTENTIAL_CONTRADICTION');
@@ -326,10 +330,13 @@ describe('Spec 61 — Contradiction Resolution', () => {
 		expect(result.stderr).toContain('M6-G7');
 	});
 
-	it('CLI-07: --reliability exits non-zero because source reliability scoring belongs to M6-G4', () => {
+	it('CLI-07: --reliability now succeeds because source reliability scoring is implemented', () => {
+		if (!pgAvailable) return;
+		seedValidFixture();
+
 		const result = runCli(['analyze', '--reliability'], { env: { MULDER_CONFIG: enabledConfigPath } });
-		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('M6-G4');
+		expect(result.exitCode).toBe(0);
+		expect(result.stderr).toContain('Analyze complete');
 	});
 
 	it('CLI-08: --evidence-chains exits non-zero because evidence chains belong to M6-G5', () => {
@@ -354,9 +361,11 @@ describe('CLI Smoke Tests: analyze', () => {
 	});
 
 	it('SMOKE-02: mulder analyze --contradictions --reliability exits non-zero without crashing', () => {
-		const result = runCli(['analyze', '--contradictions', '--reliability'], { env: { MULDER_CONFIG: enabledConfigPath } });
+		const result = runCli(['analyze', '--contradictions', '--reliability'], {
+			env: { MULDER_CONFIG: enabledConfigPath },
+		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('M6-G4');
+		expect(result.stderr).toContain('one selector at a time');
 	});
 
 	it('SMOKE-03: mulder analyze --contradictions --spatio-temporal exits non-zero without crashing', () => {

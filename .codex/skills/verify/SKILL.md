@@ -27,6 +27,8 @@ Do not modify `.claude/commands/verify.md`.
 ## Codex Adaptation Rules
 
 - Keep the QA contract, CLI matrix handling, and smoke-test behavior from the Claude command.
+- Assume this skill may run in a fresh sub-agent. Build context only from the allowed spec sections, the allowed `CLAUDE.md` sections, the branch under test, and any narrow mismatch note from the coordinator.
+- If invoked from `auto-pilot`, treat implementation failure evidence and any `TEST_MISMATCH` note as inputs to evaluate, not as extra permission to read implementation internals.
 - Report evidence in a way that an implementation agent can act on directly.
 - If a test is wrong relative to the spec, fix the test and state the mismatch explicitly instead of forcing the implementation to match a bad assertion.
 - Preserve the verdict structure from the Claude workflow:
@@ -38,4 +40,27 @@ Do not modify `.claude/commands/verify.md`.
 
 ## Output
 
-Report totals, pass or fail counts, verdict, and concrete evidence for each failure.
+Return the verdict in a compact parseable form:
+
+```text
+TOTAL: <number of conditions>
+PASSED: <count>
+FAILED: <count>
+SKIPPED: <count>
+VERDICT: PASS | FAIL | PARTIAL
+```
+
+For each failure, include:
+
+```text
+FAILURE: <condition name>
+EXPECTED: <what should happen>
+ACTUAL: <what happened>
+EVIDENCE: <proof>
+```
+
+If you correct a bad test assertion, also report:
+
+```text
+TEST_FIX: <what assertion changed and why>
+```
