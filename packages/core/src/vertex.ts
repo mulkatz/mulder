@@ -285,13 +285,28 @@ export function createVertexClient(ai: GoogleGenAI, options: VertexClientOptions
 			return limiter(async () => {
 				const response = await withRetry(
 					async () => {
+						const googleSearchConfig: Record<string, unknown> = {};
+						if (opts.excludeDomains && opts.excludeDomains.length > 0) {
+							googleSearchConfig.excludeDomains = opts.excludeDomains;
+						}
+
+						const requestConfig: Record<string, unknown> = {
+							tools: [{ googleSearch: googleSearchConfig }],
+							systemInstruction: opts.systemInstruction,
+						};
+
+						if (opts.geoBias) {
+							requestConfig.toolConfig = {
+								retrievalConfig: {
+									latLng: opts.geoBias,
+								},
+							};
+						}
+
 						return ai.models.generateContent({
 							model: DEFAULT_MODEL,
 							contents: opts.prompt,
-							config: {
-								tools: [{ googleSearch: {} }],
-								systemInstruction: opts.systemInstruction,
-							},
+							config: requestConfig,
 						});
 					},
 					{

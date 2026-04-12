@@ -106,6 +106,13 @@ export interface GroundedGenerateOptions {
 	prompt: string;
 	/** Optional system instruction. */
 	systemInstruction?: string;
+	/** Optional list of domains to exclude from Google Search results. */
+	excludeDomains?: string[];
+	/** Optional geographic bias when grounding a location with known coordinates. */
+	geoBias?: {
+		latitude: number;
+		longitude: number;
+	};
 }
 
 /** Result from grounded generation. */

@@ -65,6 +65,8 @@ export {
 	execute as executeGraph,
 	forceCleanupSource as forceCleanupGraphSource,
 } from './graph/index.js';
+export type { GroundInput, GroundingData, GroundOutcome, GroundResult } from './ground/index.js';
+export { execute as executeGround } from './ground/index.js';
 export type { IngestFileResult, IngestInput, IngestResult } from './ingest/index.js';
 export { execute as executeIngest } from './ingest/index.js';
 export type {

@@ -136,6 +136,17 @@ export const EMBED_ERROR_CODES = {
 
 export type EmbedErrorCode = (typeof EMBED_ERROR_CODES)[keyof typeof EMBED_ERROR_CODES];
 
+/** Ground step error codes. */
+export const GROUND_ERROR_CODES = {
+	GROUND_ENTITY_NOT_FOUND: 'GROUND_ENTITY_NOT_FOUND',
+	GROUND_DISABLED: 'GROUND_DISABLED',
+	GROUND_LLM_FAILED: 'GROUND_LLM_FAILED',
+	GROUND_VALIDATION_FAILED: 'GROUND_VALIDATION_FAILED',
+	GROUND_WRITE_FAILED: 'GROUND_WRITE_FAILED',
+} as const;
+
+export type GroundErrorCode = (typeof GROUND_ERROR_CODES)[keyof typeof GROUND_ERROR_CODES];
+
 /** Graph step error codes. */
 export const GRAPH_ERROR_CODES = {
 	GRAPH_STORY_NOT_FOUND: 'GRAPH_STORY_NOT_FOUND',
@@ -185,6 +196,7 @@ export type MulderErrorCode =
 	| SegmentErrorCode
 	| EnrichErrorCode
 	| EmbedErrorCode
+	| GroundErrorCode
 	| GraphErrorCode
 	| RetrievalErrorCode
 	| PromptErrorCode;
@@ -349,6 +361,21 @@ export class EmbedError extends MulderError {
 	) {
 		super(message, code, options);
 		this.name = 'EmbedError';
+	}
+}
+
+/** Ground step errors (web enrichment, cache handling, persistence). */
+export class GroundError extends MulderError {
+	constructor(
+		message: string,
+		code: GroundErrorCode,
+		options?: {
+			context?: Record<string, unknown>;
+			cause?: unknown;
+		},
+	) {
+		super(message, code, options);
+		this.name = 'GroundError';
 	}
 }
 

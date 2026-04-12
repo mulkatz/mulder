@@ -79,6 +79,8 @@ export type {
 	Entity,
 	EntityAlias,
 	EntityFilter,
+	EntityGrounding,
+	GroundingCoordinates,
 	LinkStoryEntityInput,
 	MergeEntitiesResult,
 	StoryEntity,
@@ -86,6 +88,7 @@ export type {
 	StoryEntityWithStory,
 	TaxonomyStatus,
 	UpdateEntityInput,
+	UpsertEntityGroundingInput,
 } from './entity.types.js';
 export {
 	createEntityAlias,
@@ -94,6 +97,12 @@ export {
 	findAliasesByEntityId,
 	findEntityByAlias,
 } from './entity-alias.repository.js';
+export {
+	applyGroundingToEntity,
+	findEntityGroundingByEntityId,
+	persistEntityGroundingResult,
+	upsertEntityGrounding,
+} from './entity-grounding.repository.js';
 export type { GraphTraversalResult } from './graph-traversal.repository.js';
 export { traverseGraph } from './graph-traversal.repository.js';
 export type { PipelineStep } from './pipeline-reset.js';

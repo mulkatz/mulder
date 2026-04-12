@@ -12,13 +12,13 @@ created: 2026-04-12
 
 ## 1. Objective
 
-Implement Mulder's v2.0 Ground step so entities can be web-enriched on demand or in batches using Gemini with Google Search grounding, with cache-aware persistence in PostgreSQL. Per `§2.5`, the step must filter entities by the configured grounding types, respect TTL-based caching unless `--refresh` is used, persist grounding results in `entity_grounding`, and update entity attributes such as location coordinates when grounded data yields higher-confidence facts.
+Implement Mulder's v2.0 Ground step so entities can be web-enriched on demand or in batches using Gemini with Google Search grounding, with cache-aware persistence in PostgreSQL and config-driven source-quality controls. Per `§2.5`, the step must filter entities by the configured grounding types, respect TTL-based caching unless `--refresh` is used, persist full grounding metadata in `entity_grounding`, reject low-confidence grounding below a configured threshold, support domain exclusions and optional geographic bias, and update entity attributes such as location coordinates when grounded data yields higher-confidence facts.
 
 ## 2. Boundaries
 
 - **Roadmap Step:** `M6-G2` — Ground step — `mulder ground <entity-id>`
-- **Target:** `packages/core/src/database/repositories/entity-grounding.repository.ts`, `packages/core/src/database/repositories/index.ts`, `packages/core/src/database/repositories/entity.types.ts`, `packages/core/src/shared/errors.ts`, `packages/core/src/index.ts`, `packages/core/src/prompts/templates/ground-entity.jinja2`, `packages/pipeline/src/ground/index.ts`, `packages/pipeline/src/ground/types.ts`, `packages/pipeline/src/index.ts`, `apps/cli/src/commands/ground.ts`, `apps/cli/src/index.ts`
-- **In scope:** repository support for grounding cache reads/writes, Ground-step orchestration for single-entity and batch execution, cache TTL + refresh handling, prompt rendering for grounded generation, persistence into `entity_grounding`, selective entity attribute updates, CLI wiring for `mulder ground` with `--all`, `--type`, `--batch`, and `--refresh`
+- **Target:** `packages/core/src/config/schema.ts`, `packages/core/src/config/defaults.ts`, `packages/core/src/database/repositories/entity-grounding.repository.ts`, `packages/core/src/database/repositories/index.ts`, `packages/core/src/database/repositories/entity.types.ts`, `packages/core/src/shared/services.ts`, `packages/core/src/shared/services.dev.ts`, `packages/core/src/shared/errors.ts`, `packages/core/src/index.ts`, `packages/core/src/vertex.ts`, `packages/core/src/prompts/templates/ground-entity.jinja2`, `packages/pipeline/src/ground/index.ts`, `packages/pipeline/src/ground/types.ts`, `packages/pipeline/src/index.ts`, `apps/cli/src/commands/ground.ts`, `apps/cli/src/index.ts`
+- **In scope:** repository support for grounding cache reads/writes, Ground-step orchestration for single-entity and batch execution, cache TTL + refresh handling, prompt rendering for grounded generation, persistence into `entity_grounding`, config additions for minimum confidence and excluded domains, propagation of grounded-generation options into the Vertex wrapper, optional geographic bias when entities already have coordinates, selective entity attribute updates, and CLI wiring for `mulder ground` with `--all`, `--type`, `--batch`, and `--refresh`
 - **Out of scope:** pipeline-orchestrator integration for automatic grounding in `pipeline run`, Analyze sub-steps (`M6-G3` to `M6-G7`), new database migrations, UI/API exposure, taxonomy or entity-resolution redesign, and non-Gemini web-search providers
 - **Constraints:** preserve service abstraction by routing all grounding calls through `services.llm.groundedGenerate`, keep the step idempotent via upsert behavior in `entity_grounding`, avoid inline SDK calls or ad hoc retry logic, and treat web results as time-sensitive data that bypasses the dev LLM cache per `§4.8`
 
@@ -31,17 +31,22 @@ Implement Mulder's v2.0 Ground step so entities can be web-enriched on demand or
 
 ### 4.1 Files
 
-1. **`packages/core/src/database/repositories/entity-grounding.repository.ts`** — CRUD helpers for `entity_grounding`, including lookup by entity, expiry-aware cache checks, and idempotent upsert of grounded payloads and source URLs
-2. **`packages/core/src/database/repositories/index.ts`** — exports the new repository functions and types
-3. **`packages/core/src/database/repositories/entity.types.ts`** — extends repository types with grounding records and any grounded-attribute helpers shared between the repo and step
-4. **`packages/core/src/shared/errors.ts`** — introduces `GROUND_ERROR_CODES` and `GroundError` aligned with the existing step-specific error hierarchy
-5. **`packages/core/src/index.ts`** — re-exports the new grounding repository APIs and error types for CLI/pipeline consumers
-6. **`packages/core/src/prompts/templates/ground-entity.jinja2`** — replaces the placeholder template with the real grounding prompt contract, including entity context and JSON-only output instructions
-7. **`packages/pipeline/src/ground/types.ts`** — defines `GroundInput`, `GroundResult`, grounded payload types, and batch-facing result metadata
-8. **`packages/pipeline/src/ground/index.ts`** — executes the Ground step: validate the entity/status, enforce configured type filters, consult TTL cache, render the prompt, call grounded Gemini, validate/normalize results, persist cache rows, and update entity attributes such as coordinates
-9. **`packages/pipeline/src/index.ts`** — exports the Ground step from the pipeline package barrel
-10. **`apps/cli/src/commands/ground.ts`** — thin Commander wrapper for `mulder ground <entity-id>` with single-entity, `--all`, and `--type` batch modes plus `--batch` and `--refresh`
-11. **`apps/cli/src/index.ts`** — registers the new `ground` command with the CLI entry point
+1. **`packages/core/src/config/schema.ts`** — extends `grounding` with `min_confidence` and `exclude_domains`
+2. **`packages/core/src/config/defaults.ts`** — defines defaults for the new grounding config knobs
+3. **`packages/core/src/database/repositories/entity-grounding.repository.ts`** — CRUD helpers for `entity_grounding`, including lookup by entity, expiry-aware cache checks, and idempotent upsert of grounded payloads and source URLs
+4. **`packages/core/src/database/repositories/index.ts`** — exports the new repository functions and types
+5. **`packages/core/src/database/repositories/entity.types.ts`** — extends repository types with grounding records and any grounded-attribute helpers shared between the repo and step
+6. **`packages/core/src/shared/services.ts`** — expands grounded-generation options to carry excluded domains and optional geographic bias
+7. **`packages/core/src/shared/services.dev.ts`** — returns deterministic grounded fixtures in dev/test mode so Ground-step QA can run without live Vertex spend
+8. **`packages/core/src/shared/errors.ts`** — introduces `GROUND_ERROR_CODES` and `GroundError` aligned with the existing step-specific error hierarchy
+9. **`packages/core/src/index.ts`** — re-exports the new grounding repository APIs, config surfaces, and error types for CLI/pipeline consumers
+10. **`packages/core/src/vertex.ts`** — passes `googleSearch` config options into the real Gemini call path and preserves the full `groundingMetadata` response
+11. **`packages/core/src/prompts/templates/ground-entity.jinja2`** — replaces the placeholder template with the real grounding prompt contract, including entity context and JSON-only output instructions
+12. **`packages/pipeline/src/ground/types.ts`** — defines `GroundInput`, `GroundResult`, grounded payload types, and batch-facing result metadata
+13. **`packages/pipeline/src/ground/index.ts`** — executes the Ground step: validate the entity/status, enforce configured type filters, consult TTL cache, render the prompt, call grounded Gemini, reject results below `min_confidence`, persist cache rows, and update entity attributes such as coordinates
+14. **`packages/pipeline/src/index.ts`** — exports the Ground step from the pipeline package barrel
+15. **`apps/cli/src/commands/ground.ts`** — thin Commander wrapper for `mulder ground <entity-id>` with single-entity, `--all`, and `--type` batch modes plus `--batch` and `--refresh`
+16. **`apps/cli/src/index.ts`** — registers the new `ground` command with the CLI entry point
 
 ### 4.2 Database Changes
 
@@ -52,31 +57,35 @@ None. This step uses the schema introduced by Spec 54:
 
 ### 4.3 Config Changes
 
-None. The existing `grounding` config block already provides:
+Extend the existing `grounding` config block with:
 
 - `enabled`
 - `mode`
 - `enrich_types`
 - `cache_ttl_days`
+- `min_confidence`
+- `exclude_domains`
 
-Implementation should read those values through `loadConfig()` and not introduce new config keys in this step.
+Implementation should read all grounding values through `loadConfig()` and thread the new controls into both the step-level filtering logic and the grounded Gemini call.
 
 ### 4.4 Integration Points
 
 - CLI wiring mirrors the existing `enrich`, `embed`, and `graph` command structure, but targets entities instead of stories
 - The Ground step uses the existing prompt engine (`renderPrompt`) and `services.llm.groundedGenerate()` API rather than direct Vertex SDK calls
+- `services.llm.groundedGenerate()` and `vertex.ts` must carry through `exclude_domains` and optional geographic bias to the `googleSearch` tool configuration
 - Repository writes must upsert into `entity_grounding` and update the corresponding entity row in `entities` when grounded attributes become available
+- The full `groundingMetadata` response must be retained in `entity_grounding.grounding_data` for future citations, evidence tiers, and UI display
 - Core barrel exports must expose the new repository and error symbols so both CLI and future API/worker code can reuse the step
 
 ### 4.5 Implementation Phases
 
-**Phase 1: Grounding persistence + contracts**
-- Files: `packages/core/src/database/repositories/entity-grounding.repository.ts`, `packages/core/src/database/repositories/index.ts`, `packages/core/src/database/repositories/entity.types.ts`, `packages/core/src/shared/errors.ts`, `packages/core/src/index.ts`, `packages/pipeline/src/ground/types.ts`
-- Deliverable: grounding records can be read/written idempotently, and the step has typed contracts plus a dedicated error surface
+**Phase 1: Config + contracts**
+- Files: `packages/core/src/config/schema.ts`, `packages/core/src/config/defaults.ts`, `packages/core/src/shared/services.ts`, `packages/core/src/shared/errors.ts`, `packages/core/src/index.ts`, `packages/pipeline/src/ground/types.ts`
+- Deliverable: the repo understands the new grounding controls (`min_confidence`, `exclude_domains`) and the grounded-generation API surface can carry exclusions and optional location bias
 
-**Phase 2: Step execution + prompt contract**
-- Files: `packages/core/src/prompts/templates/ground-entity.jinja2`, `packages/pipeline/src/ground/index.ts`, `packages/pipeline/src/index.ts`
-- Deliverable: a reusable Ground step that filters eligible entities, honors TTL/refresh semantics, calls grounded Gemini, persists results, and updates entity attributes
+**Phase 2: Grounding persistence + execution**
+- Files: `packages/core/src/database/repositories/entity-grounding.repository.ts`, `packages/core/src/database/repositories/index.ts`, `packages/core/src/database/repositories/entity.types.ts`, `packages/core/src/shared/services.dev.ts`, `packages/core/src/vertex.ts`, `packages/core/src/prompts/templates/ground-entity.jinja2`, `packages/pipeline/src/ground/index.ts`, `packages/pipeline/src/index.ts`
+- Deliverable: the Ground step can call grounded Gemini, retain full metadata, reject low-confidence results, honor excluded domains, and persist grounded attributes/cache rows deterministically in dev/test and GCP modes
 
 **Phase 3: CLI surface**
 - Files: `apps/cli/src/commands/ground.ts`, `apps/cli/src/index.ts`
@@ -119,7 +128,17 @@ Implementation should read those values through `loadConfig()` and not introduce
    - When: `mulder ground --all --batch 2` runs
    - Then: the command processes no more than two entities in that invocation and reports the limited batch size in its observable results
 
-8. **QA-08: Grounding writes are idempotent per entity**
+8. **QA-08: Low-confidence grounding is rejected**
+   - Given: grounding metadata reports support confidence below the configured `grounding.min_confidence`
+   - When: `mulder ground <entity-id>` runs
+   - Then: the command exits non-zero with a Ground-step validation/error code, and no new cache row or entity update is persisted
+
+9. **QA-09: Excluded domains are passed through to grounded search and retained metadata**
+   - Given: `grounding.exclude_domains` includes at least one domain such as `reddit.com`
+   - When: `mulder ground <entity-id>` runs successfully
+   - Then: the grounded-generation call excludes those domains, and the persisted `grounding_data` retains the full returned `groundingMetadata`
+
+10. **QA-10: Grounding writes are idempotent per entity**
    - Given: the same eligible entity is grounded successfully once
    - When: the same command is run again under the same cache/refresh conditions
    - Then: there is still exactly one `entity_grounding` row for that entity, and the entity record remains consistent instead of duplicating state
