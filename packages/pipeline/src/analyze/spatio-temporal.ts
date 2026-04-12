@@ -133,8 +133,8 @@ function collectConnectedComponents(adjacency: Map<string, Set<string>>): string
 	return components;
 }
 
-function buildTemporalAdjacency(events: SpatioTemporalEvent[], windowMs: number): Map<string, Set<string>> {
-	const sortedEvents = [...events].sort((left, right) => {
+function sortEventsByOccurredAt(events: SpatioTemporalEvent[]): SpatioTemporalEvent[] {
+	return [...events].sort((left, right) => {
 		const leftTime = left.occurredAt?.getTime() ?? 0;
 		const rightTime = right.occurredAt?.getTime() ?? 0;
 		if (leftTime !== rightTime) {
@@ -142,33 +142,39 @@ function buildTemporalAdjacency(events: SpatioTemporalEvent[], windowMs: number)
 		}
 		return left.entityId.localeCompare(right.entityId);
 	});
+}
 
-	const adjacency = ensureAdjacency(sortedEvents.map((event) => event.entityId));
+function partitionEventsByTimeWindow(events: SpatioTemporalEvent[], windowMs: number): string[][] {
+	const sortedEvents = sortEventsByOccurredAt(events);
+	const partitions: string[][] = [];
+	let currentPartition: SpatioTemporalEvent[] = [];
+	let partitionStartTime: number | null = null;
 
-	for (let leftIndex = 0; leftIndex < sortedEvents.length; leftIndex++) {
-		const leftEvent = sortedEvents[leftIndex];
-		const leftTime = leftEvent.occurredAt?.getTime();
-		if (leftTime === undefined) {
+	for (const event of sortedEvents) {
+		const eventTime = event.occurredAt?.getTime();
+		if (eventTime === undefined) {
 			continue;
 		}
 
-		for (let rightIndex = leftIndex + 1; rightIndex < sortedEvents.length; rightIndex++) {
-			const rightEvent = sortedEvents[rightIndex];
-			const rightTime = rightEvent.occurredAt?.getTime();
-			if (rightTime === undefined) {
-				continue;
-			}
-
-			const difference = rightTime - leftTime;
-			if (difference > windowMs) {
-				break;
-			}
-
-			addUndirectedEdge(adjacency, leftEvent.entityId, rightEvent.entityId);
+		if (partitionStartTime === null || eventTime - partitionStartTime <= windowMs) {
+			currentPartition.push(event);
+			partitionStartTime ??= eventTime;
+			continue;
 		}
+
+		if (currentPartition.length > 1) {
+			partitions.push(currentPartition.map((partitionEvent) => partitionEvent.entityId));
+		}
+
+		currentPartition = [event];
+		partitionStartTime = eventTime;
 	}
 
-	return adjacency;
+	if (currentPartition.length > 1) {
+		partitions.push(currentPartition.map((partitionEvent) => partitionEvent.entityId));
+	}
+
+	return partitions;
 }
 
 function buildSpatialAdjacency(eventIds: string[], pairs: SpatialEntityEventPair[]): Map<string, Set<string>> {
@@ -181,33 +187,23 @@ function buildSpatialAdjacency(eventIds: string[], pairs: SpatialEntityEventPair
 	return adjacency;
 }
 
-function buildCombinedAdjacency(
-	eventsById: Map<string, SpatioTemporalEvent>,
-	dualQualifiedIds: Set<string>,
-	pairs: SpatialEntityEventPair[],
-	windowMs: number,
+function restrictAdjacency(
+	adjacency: Map<string, Set<string>>,
+	allowedIds: Iterable<string>,
 ): Map<string, Set<string>> {
-	const adjacency = ensureAdjacency([...dualQualifiedIds]);
+	const allowedIdSet = new Set(allowedIds);
+	const restricted = ensureAdjacency([...allowedIdSet]);
 
-	for (const pair of pairs) {
-		if (!dualQualifiedIds.has(pair.eventIdA) || !dualQualifiedIds.has(pair.eventIdB)) {
-			continue;
-		}
-
-		const leftEvent = eventsById.get(pair.eventIdA);
-		const rightEvent = eventsById.get(pair.eventIdB);
-		const leftTime = leftEvent?.occurredAt?.getTime();
-		const rightTime = rightEvent?.occurredAt?.getTime();
-		if (leftTime === undefined || rightTime === undefined) {
-			continue;
-		}
-
-		if (Math.abs(leftTime - rightTime) <= windowMs) {
-			addUndirectedEdge(adjacency, pair.eventIdA, pair.eventIdB);
+	for (const eventId of allowedIdSet) {
+		for (const neighborId of adjacency.get(eventId) ?? []) {
+			if (!allowedIdSet.has(neighborId)) {
+				continue;
+			}
+			restricted.get(eventId)?.add(neighborId);
 		}
 	}
 
-	return adjacency;
+	return restricted;
 }
 
 function buildCluster(
@@ -303,6 +299,42 @@ function buildClustersFromAdjacency(
 	);
 }
 
+function buildTemporalClusters(
+	eventsById: Map<string, SpatioTemporalEvent>,
+	timestampEvents: SpatioTemporalEvent[],
+	windowMs: number,
+): SpatioTemporalCluster[] {
+	return partitionEventsByTimeWindow(timestampEvents, windowMs).map((componentIds) =>
+		buildCluster('temporal', componentIds, eventsById),
+	);
+}
+
+function buildSpatioTemporalClusters(
+	eventsById: Map<string, SpatioTemporalEvent>,
+	spatialAdjacency: Map<string, Set<string>>,
+	windowMs: number,
+): SpatioTemporalCluster[] {
+	const clusters: SpatioTemporalCluster[] = [];
+
+	for (const spatialComponentIds of collectConnectedComponents(spatialAdjacency)) {
+		const componentEvents = spatialComponentIds
+			.map((eventId) => eventsById.get(eventId))
+			.filter((event): event is SpatioTemporalEvent => event !== undefined);
+
+		for (const timeBoundedIds of partitionEventsByTimeWindow(componentEvents, windowMs)) {
+			clusters.push(
+				...buildClustersFromAdjacency(
+					'spatio-temporal',
+					eventsById,
+					restrictAdjacency(spatialAdjacency, timeBoundedIds),
+				),
+			);
+		}
+	}
+
+	return clusters;
+}
+
 function toSnapshotRows(clusters: SpatioTemporalCluster[], computedAt: Date): CreateSpatioTemporalClusterInput[] {
 	return clusters.map((cluster) => ({
 		centerLat: cluster.centerLat,
@@ -374,25 +406,18 @@ export async function computeSpatioTemporalClusters(
 		DEFAULT_SPATIAL_CLUSTER_RADIUS_METERS,
 	);
 	const windowMs = clusterWindowDays * 24 * 60 * 60 * 1000;
+	const spatialAdjacency = buildSpatialAdjacency(
+		geometryEvents.map((event) => event.entityId),
+		spatialPairs,
+	);
+	const spatioTemporalAdjacency = restrictAdjacency(
+		spatialAdjacency,
+		dualEvents.map((event) => event.entityId),
+	);
 
-	const temporalClusters = buildClustersFromAdjacency(
-		'temporal',
-		eventsById,
-		buildTemporalAdjacency(timestampEvents, windowMs),
-	);
-	const spatialClusters = buildClustersFromAdjacency(
-		'spatial',
-		eventsById,
-		buildSpatialAdjacency(
-			geometryEvents.map((event) => event.entityId),
-			spatialPairs,
-		),
-	);
-	const spatioTemporalClusters = buildClustersFromAdjacency(
-		'spatio-temporal',
-		eventsById,
-		buildCombinedAdjacency(eventsById, new Set(dualEvents.map((event) => event.entityId)), spatialPairs, windowMs),
-	);
+	const temporalClusters = buildTemporalClusters(eventsById, timestampEvents, windowMs);
+	const spatialClusters = buildClustersFromAdjacency('spatial', eventsById, spatialAdjacency);
+	const spatioTemporalClusters = buildSpatioTemporalClusters(eventsById, spatioTemporalAdjacency, windowMs);
 
 	const clusters = dedupeClusters([...temporalClusters, ...spatialClusters, ...spatioTemporalClusters]);
 	const computedAt = new Date();
