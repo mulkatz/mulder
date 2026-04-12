@@ -169,7 +169,7 @@ Web grounding, contradiction resolution, evidence chains, spatial clustering. Th
 | 🟢 | G4 | Source reliability scoring — `mulder analyze --reliability` | §2.8, §5.3 |
 | 🟢 | G5 | Evidence chains — `mulder analyze --evidence-chains` | §2.8, §4.3 (evidence_chains table) |
 | 🟢 | G6 | Spatio-temporal clustering | §2.8, §4.3 (clusters table) |
-| 🟡 | G7 | Analyze orchestrator — `mulder analyze --full` | §2.8, §1 (analyze cmd) |
+| 🟢 | G7 | Analyze orchestrator — `mulder analyze --full` | §2.8, §1 (analyze cmd) |
 
 **Also read for all M6 steps:** §2 (global step conventions), §4.8 (Vertex AI wrapper for Gemini calls)
 
