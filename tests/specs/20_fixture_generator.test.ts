@@ -71,6 +71,14 @@ function addTestPdf(tmpAbs: string, filename: string, targetFilename?: string): 
 }
 
 /**
+ * Add a deliberately invalid .pdf payload to force a per-file processing error.
+ */
+function addInvalidPdf(tmpAbs: string, filename: string): string {
+	writeFileSync(join(tmpAbs, 'raw', filename), 'not a real pdf');
+	return filename.replace(/\.pdf$/i, '');
+}
+
+/**
  * Create a pre-existing extracted fixture directory for a slug.
  * This simulates a previously generated fixture.
  */
@@ -158,9 +166,9 @@ describe('Spec 20 — Fixture Generator', () => {
 		// Should attempt to process files (even though GCP calls will fail)
 		expect(combined).toMatch(/process|calling|extract/i);
 
-		// Exit code should be 1 because GCP calls fail (no valid credentials)
-		// This confirms the orchestration logic ran end-to-end
-		expect(exitCode).toBe(1);
+		// The command may succeed (real GCP configured) or fail (credentials absent),
+		// but in both cases the orchestration path must have run end-to-end.
+		expect([0, 1]).toContain(exitCode);
 	});
 
 	// ─── QA-03: Skip existing ───
@@ -366,13 +374,14 @@ describe('Spec 20 — Fixture Generator', () => {
 
 	// ─── QA-09: Partial failure handling ───
 
-	it('QA-09: with 2 PDFs where processing fails, errors are reported and exit code is 1', () => {
+	it('QA-09: with 2 PDFs where one processing path fails, errors are reported and exit code is 1', () => {
 		const { rel, abs } = createTmpFixtureDir('partial');
 		trackTmpDir(abs);
 
-		// Add two real PDFs — both will fail without GCP credentials
-		addTestPdf(abs, 'native-text-sample.pdf');
-		addTestPdf(abs, 'scanned-sample.pdf');
+		// One valid PDF plus one corrupt payload forces at least one per-file error
+		// regardless of whether real GCP credentials are configured.
+		const validSlug = addTestPdf(abs, 'native-text-sample.pdf');
+		const invalidSlug = addInvalidPdf(abs, 'broken-input.pdf');
 
 		const { stdout, stderr, exitCode } = runCli(
 			['fixtures', 'generate', '--input', `${rel}/raw`, '--output', rel, '--verbose'],
@@ -383,15 +392,22 @@ describe('Spec 20 — Fixture Generator', () => {
 
 		// Both PDFs should be discovered
 		expect(combined).toMatch(/pdfCount.*2|2.*pdf|discover/i);
+		expect(combined).toContain(validSlug);
+		expect(combined).toContain(invalidSlug);
 
-		// Errors should be reported for both
+		// The corrupt file must produce an error and the overall run must fail.
 		expect(combined).toMatch(/error|fail/i);
-
-		// Exit code should be 1 (at least one failure)
 		expect(exitCode).toBe(1);
 
 		// The summary should mention the error count
 		expect(combined).toMatch(/\d+\s*error/i);
+
+		// If the valid PDF was processed successfully in this environment, keep
+		// the assertion black-box by checking for the extract fixture directory.
+		const extractedDir = join(abs, 'extracted', validSlug);
+		if (existsSync(extractedDir)) {
+			expect(existsSync(join(extractedDir, 'layout.json'))).toBe(true);
+		}
 	});
 
 	// ─── QA-10: Build succeeds ───

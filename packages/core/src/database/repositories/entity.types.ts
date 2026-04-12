@@ -27,6 +27,8 @@ export interface Entity {
 	canonicalId: string | null;
 	name: string;
 	type: string;
+	/** Raw PostGIS geometry value for the entity location, reserved for M6 spatial features. */
+	geom: string | null;
 	attributes: Record<string, unknown>;
 	corroborationScore: number | null;
 	sourceCount: number;

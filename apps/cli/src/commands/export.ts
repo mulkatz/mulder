@@ -17,6 +17,7 @@
 import type { EdgeType, EntityEdge, StoryFilter, StoryStatus } from '@mulder/core';
 import {
 	closeAllPools,
+	countChunks,
 	countEntities,
 	countSources,
 	findAliasesByEntityId,
@@ -364,7 +365,11 @@ export function registerExportCommands(program: Command): void {
 					// Build export data with linked entities
 					const storyExports: StoryExport[] = [];
 					for (const story of stories) {
-						const linkedEntities = await findEntitiesByStoryId(pool, story.id);
+						const [linkedEntities, chunkCount] = await Promise.all([
+							findEntitiesByStoryId(pool, story.id),
+							countChunks(pool, { storyId: story.id }),
+						]);
+
 						storyExports.push({
 							id: story.id,
 							sourceId: story.sourceId,
@@ -375,7 +380,7 @@ export function registerExportCommands(program: Command): void {
 							pageStart: story.pageStart,
 							pageEnd: story.pageEnd,
 							status: story.status,
-							chunkCount: story.chunkCount,
+							chunkCount,
 							extractionConfidence: story.extractionConfidence,
 							entities: linkedEntities.map((e) => ({
 								id: e.id,
