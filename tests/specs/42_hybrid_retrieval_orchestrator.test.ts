@@ -31,7 +31,7 @@ import * as db from '../lib/db.js';
  *
  * Interaction is through system boundaries only:
  * - `@mulder/retrieval` + `@mulder/core` public entrypoints for library tests
- * - `spawnSync` CLI subprocess + `the shared env-driven SQL helper` for integration tests
+ * - `spawnSync` CLI subprocess + the shared env-driven SQL helper for integration tests
  *
  * Never imports from packages/src, apps/src, or any internal module.
  *

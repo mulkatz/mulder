@@ -19,7 +19,7 @@ let tmpDir: string;
  *
  * Each `it()` maps to one QA condition from Section 5 of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `the shared env-driven SQL helper`, and filesystem (dev-mode storage in fixtures/).
+ * SQL via the shared env-driven SQL helper, and filesystem (dev-mode storage in fixtures/).
  * Never imports from packages/ or src/ or apps/.
  *
  * Requires:

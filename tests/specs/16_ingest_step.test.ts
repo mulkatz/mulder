@@ -21,7 +21,7 @@ const STORAGE_RAW_DIR = resolve(resolve(import.meta.dirname, '../..'), '.local/s
  *
  * Each `it()` maps to one QA condition from Section 5 of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `the shared env-driven SQL helper`, and filesystem.
+ * SQL via the shared env-driven SQL helper, and filesystem.
  * Never imports from packages/ or src/ or apps/.
  *
  * Requires:

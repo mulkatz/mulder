@@ -10,7 +10,7 @@ import { ensureSchema } from '../lib/schema.js';
  *
  * Each `it()` maps to one QA-NN or CLI-NN condition from Section 5/5b of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `the shared env-driven SQL helper`, and filesystem.
+ * SQL via the shared env-driven SQL helper, and filesystem.
  * Never imports from packages/ or src/ or apps/.
  *
  * Requires:

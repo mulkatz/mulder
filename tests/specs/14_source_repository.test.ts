@@ -15,7 +15,7 @@ const DB_MODULE = resolve(ROOT, 'packages/core/dist/database/index.js');
  *
  * Each `it()` maps to one QA condition from Section 5 of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `the shared env-driven SQL helper`, and Node subprocess scripts.
+ * SQL via the shared env-driven SQL helper, and Node subprocess scripts.
  * Never import from packages/ or src/ or apps/.
  *
  * Requires a running PostgreSQL instance (the standard PG env vars)
@@ -78,9 +78,6 @@ function runScript(
 	};
 }
 
-/**
- * Helper: run SQL via the shared env-driven SQL helper. Returns query output.
- */
 function resetDatabase(): void {
 	const dropSql = [
 		'DROP FUNCTION IF EXISTS reset_pipeline_step CASCADE',

@@ -17,7 +17,7 @@ const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
  *
  * Each `it()` maps to one QA condition or CLI condition from Section 5/5b of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `the shared env-driven SQL helper`, and filesystem (dev-mode storage).
+ * SQL via the shared env-driven SQL helper, and filesystem (dev-mode storage).
  * Never imports from packages/ or src/ or apps/.
  *
  * Requires:

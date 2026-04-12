@@ -23,9 +23,8 @@ import * as db from '../lib/db.js';
  * This file's job is the lifecycle assertions — not retrieval quality (that
  * is covered by spec 42 and by the Phase 3 golden retrieval set).
  *
- * System boundary: `node apps/cli/dist/index.js` subprocess + `docker exec
- * the shared env-driven SQL helper for DB state introspection. No internal source
- * imports.
+ * System boundary: `node apps/cli/dist/index.js` subprocess + the shared
+ * env-driven SQL helper for DB state introspection. No internal source imports.
  *
  * Requires:
  *   - PostgreSQL reachable through the standard PG env vars with migrations applied

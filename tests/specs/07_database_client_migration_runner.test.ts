@@ -16,7 +16,7 @@ const MIGRATE_MODULE = resolve(ROOT, 'packages/core/dist/database/migrate.js');
  *
  * Each `it()` maps to one QA condition from Section 5 of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `the shared env-driven SQL helper`, and filesystem.
+ * SQL via the shared env-driven SQL helper, and filesystem.
  * Never import from packages/ or src/ or apps/.
  *
  * Requires a running PostgreSQL instance (the standard PG env vars).
@@ -78,12 +78,6 @@ function runScript(
 	};
 }
 
-/**
- * Helper: run SQL via the shared env-driven SQL helper. Returns query output.
- */
-/**
- * Helper: run SQL, return null on failure instead of throwing.
- */
 function dropMigrationsTable(): void {
 	db.runSql('DROP TABLE IF EXISTS mulder_migrations CASCADE;');
 }
