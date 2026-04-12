@@ -347,10 +347,12 @@ describe('Spec 62 — Source Reliability Scoring', () => {
 		expect(result.stderr).toContain('At least one thesis query');
 	});
 
-	it('CLI-08: --spatio-temporal exits non-zero because clustering belongs to M6-G6', () => {
+	it('CLI-08: --spatio-temporal now succeeds as a no-op when no clusterable events exist', () => {
+		if (!pgAvailable) return;
+
 		const result = runCli(['analyze', '--spatio-temporal'], { env: { MULDER_CONFIG: enabledConfigPath } });
-		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('M6-G6');
+		expect(result.exitCode).toBe(0);
+		expect(result.stderr).toContain('no clusterable events found');
 	});
 });
 
@@ -370,11 +372,11 @@ describe('CLI Smoke Tests: analyze reliability', () => {
 		expect(result.stderr).toContain('one selector at a time');
 	});
 
-	it('SMOKE-03: mulder analyze --reliability --spatio-temporal exits non-zero without crashing', () => {
+	it('SMOKE-03: mulder analyze --reliability --spatio-temporal exits non-zero with selector validation', () => {
 		const result = runCli(['analyze', '--reliability', '--spatio-temporal'], {
 			env: { MULDER_CONFIG: enabledConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('M6-G6');
+		expect(result.stderr).toContain('one selector at a time');
 	});
 });

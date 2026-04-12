@@ -26,16 +26,12 @@ interface AnalyzeOptions {
 }
 
 function hasUnsupportedSelector(options: AnalyzeOptions): boolean {
-	return Boolean(options.full || options.spatioTemporal);
+	return Boolean(options.full);
 }
 
 function printUnsupportedSelectorMessage(options: AnalyzeOptions): void {
 	if (options.full) {
 		printError('--full is not implemented yet — it belongs to M6-G7');
-		return;
-	}
-	if (options.spatioTemporal) {
-		printError('--spatio-temporal is not implemented yet — it belongs to M6-G6');
 	}
 }
 
@@ -43,7 +39,8 @@ function countImplementedSelectors(options: AnalyzeOptions): number {
 	return (
 		Number(Boolean(options.contradictions)) +
 		Number(Boolean(options.reliability)) +
-		Number(Boolean(options.evidenceChains))
+		Number(Boolean(options.evidenceChains)) +
+		Number(Boolean(options.spatioTemporal))
 	);
 }
 
@@ -116,6 +113,31 @@ function printReliabilityTable(result: AnalyzeResult): void {
 	}
 }
 
+function printSpatioTemporalTable(result: AnalyzeResult): void {
+	if (result.data.mode !== 'spatio-temporal' || result.data.clusters.length === 0) {
+		return;
+	}
+
+	const header = `${'Type'.padEnd(16)}  ${'Events'.padEnd(6)}  ${'Time Window'.padEnd(33)}  Center`;
+	const separator = '-'.repeat(header.length);
+	process.stdout.write(`${header}\n`);
+	process.stdout.write(`${separator}\n`);
+
+	for (const cluster of result.data.clusters) {
+		const timeWindow =
+			cluster.timeStart && cluster.timeEnd
+				? `${cluster.timeStart.toISOString().slice(0, 10)} → ${cluster.timeEnd.toISOString().slice(0, 10)}`
+				: 'n/a';
+		const center =
+			typeof cluster.centerLat === 'number' && typeof cluster.centerLng === 'number'
+				? `${cluster.centerLat.toFixed(4)}, ${cluster.centerLng.toFixed(4)}`
+				: 'n/a';
+		process.stdout.write(
+			`${cluster.clusterType.padEnd(16)}  ${String(cluster.eventCount).padEnd(6)}  ${timeWindow.padEnd(33)}  ${center}\n`,
+		);
+	}
+}
+
 export function registerAnalyzeCommands(program: Command): void {
 	program
 		.command('analyze')
@@ -131,7 +153,7 @@ export function registerAnalyzeCommands(program: Command): void {
 			},
 			[],
 		)
-		.option('--spatio-temporal', 'compute spatio-temporal clusters (not yet implemented)')
+		.option('--spatio-temporal', 'compute spatio-temporal clusters')
 		.option('--full', 'run the full analyze orchestrator (not yet implemented)')
 		.action(
 			withErrorHandler(async (options: AnalyzeOptions) => {
@@ -193,6 +215,7 @@ export function registerAnalyzeCommands(program: Command): void {
 							contradictions: options.contradictions ?? false,
 							reliability: options.reliability ?? false,
 							evidenceChains: options.evidenceChains ?? false,
+							spatioTemporal: options.spatioTemporal ?? false,
 							theses: rawTheses,
 						},
 						config,
@@ -205,6 +228,8 @@ export function registerAnalyzeCommands(program: Command): void {
 						printOutcomeTable(result);
 					} else if (result.data.mode === 'reliability') {
 						printReliabilityTable(result);
+					} else if (result.data.mode === 'spatio-temporal') {
+						printSpatioTemporalTable(result);
 					} else {
 						printEvidenceChainsTable(result);
 					}
@@ -242,6 +267,31 @@ export function registerAnalyzeCommands(program: Command): void {
 						}
 
 						const summary = `${result.data.scoredCount} scored, ${result.data.sourceCount} graph-connected sources (${result.metadata.duration_ms}ms)`;
+
+						if (result.status === 'failed') {
+							printError(`Analyze failed: ${summary}`);
+							process.exit(1);
+						} else if (result.status === 'partial') {
+							process.stderr.write(`Analyze partial: ${summary}\n`);
+						} else {
+							printSuccess(`Analyze complete: ${summary}`);
+						}
+					} else if (result.data.mode === 'spatio-temporal') {
+						if (result.data.warning) {
+							process.stderr.write(`Analyze warning: ${result.data.warning}\n`);
+						}
+
+						if (result.data.nothingToAnalyze) {
+							printSuccess(`Analyze complete: no clusterable events found (${result.metadata.duration_ms}ms)`);
+							return;
+						}
+
+						if (result.data.persistedCount === 0 && !result.data.belowThreshold) {
+							printSuccess(`Analyze complete: no clusters found (${result.metadata.duration_ms}ms)`);
+							return;
+						}
+
+						const summary = `${result.data.persistedCount} clusters persisted (${result.data.temporalClusterCount} temporal, ${result.data.spatialClusterCount} spatial, ${result.data.spatioTemporalClusterCount} spatio-temporal) (${result.metadata.duration_ms}ms)`;
 
 						if (result.status === 'failed') {
 							printError(`Analyze failed: ${summary}`);

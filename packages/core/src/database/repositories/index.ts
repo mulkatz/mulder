@@ -159,6 +159,20 @@ export type {
 	UpdateSourceInput,
 	UpsertSourceStepInput,
 } from './source.types.js';
+export type {
+	ClusterableEntityEvent,
+	CreateSpatioTemporalClusterInput,
+	SpatialEntityEventPair,
+	SpatioTemporalCluster,
+	SpatioTemporalClusterType,
+} from './spatio-temporal-cluster.repository.js';
+export {
+	createSpatioTemporalClusters,
+	deleteAllSpatioTemporalClusters,
+	findSpatialEntityEventPairs,
+	loadClusterableEntityEvents,
+	replaceSpatioTemporalClustersSnapshot,
+} from './spatio-temporal-cluster.repository.js';
 export {
 	countStories,
 	countStoriesByStatus,

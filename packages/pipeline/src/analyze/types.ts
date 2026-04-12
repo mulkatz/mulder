@@ -11,6 +11,7 @@ export interface AnalyzeInput {
 	contradictions?: boolean;
 	reliability?: boolean;
 	evidenceChains?: boolean;
+	spatioTemporal?: boolean;
 	theses?: string[];
 }
 
@@ -84,7 +85,48 @@ export interface EvidenceChainsAnalyzeData {
 	outcomes: EvidenceChainThesisOutcome[];
 }
 
-export type AnalyzeData = ContradictionAnalyzeData | ReliabilityAnalyzeData | EvidenceChainsAnalyzeData;
+export type SpatioTemporalClusterType = 'temporal' | 'spatial' | 'spatio-temporal';
+
+export interface SpatioTemporalEvent {
+	entityId: string;
+	isoDate: string | null;
+	occurredAt: Date | null;
+	latitude: number | null;
+	longitude: number | null;
+}
+
+export interface SpatioTemporalCluster {
+	clusterType: SpatioTemporalClusterType;
+	centerLat: number | null;
+	centerLng: number | null;
+	timeStart: Date | null;
+	timeEnd: Date | null;
+	eventCount: number;
+	eventIds: string[];
+}
+
+export interface SpatioTemporalAnalyzeData {
+	mode: 'spatio-temporal';
+	eventCount: number;
+	timestampEventCount: number;
+	geometryEventCount: number;
+	spatioTemporalEventCount: number;
+	threshold: number;
+	belowThreshold: boolean;
+	nothingToAnalyze: boolean;
+	persistedCount: number;
+	temporalClusterCount: number;
+	spatialClusterCount: number;
+	spatioTemporalClusterCount: number;
+	clusters: SpatioTemporalCluster[];
+	warning: string | null;
+}
+
+export type AnalyzeData =
+	| ContradictionAnalyzeData
+	| ReliabilityAnalyzeData
+	| EvidenceChainsAnalyzeData
+	| SpatioTemporalAnalyzeData;
 
 export interface AnalyzeResult {
 	status: 'success' | 'partial' | 'failed';
