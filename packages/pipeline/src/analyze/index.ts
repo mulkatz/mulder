@@ -58,7 +58,6 @@ const contradictionResolutionSchemaV3 = z3.object({
 });
 
 const contradictionResolutionJsonSchema: Record<string, unknown> = zodToJsonSchema(contradictionResolutionSchemaV3, {
-	name: 'ContradictionResolutionResponse',
 	$refStrategy: 'none',
 });
 
