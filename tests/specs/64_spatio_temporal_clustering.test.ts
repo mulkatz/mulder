@@ -30,7 +30,7 @@ type ClusterRow = {
 };
 
 let tmpDir: string;
-let pgAvailable = false;
+const pgAvailable = db.isPgAvailable();
 let enabledConfigPath: string;
 let disabledConfigPath: string;
 let featureDisabledConfigPath: string;
@@ -200,7 +200,6 @@ describe('Spec 64 — Spatio-Temporal Clustering', () => {
 		featureDisabledConfigPath = writeAnalyzeConfig({ enabled: true, spatioTemporal: false, threshold: 3 });
 		sparseThresholdConfigPath = writeAnalyzeConfig({ enabled: true, spatioTemporal: true, threshold: 4 });
 
-		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
 			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
@@ -222,8 +221,7 @@ describe('Spec 64 — Spatio-Temporal Clustering', () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it('QA-01: spatio-temporal analysis persists combined clusters for eligible events', () => {
-		if (!pgAvailable) return;
+	it.skipIf(!pgAvailable)('QA-01: spatio-temporal analysis persists combined clusters for eligible events', () => {
 		seedThreeEventFixture();
 
 		const result = runCli(['analyze', '--spatio-temporal'], { env: { MULDER_CONFIG: enabledConfigPath } });
@@ -244,8 +242,7 @@ describe('Spec 64 — Spatio-Temporal Clustering', () => {
 		expect(combined?.timeEnd).not.toBeNull();
 	});
 
-	it('QA-02: re-running clustering is idempotent for unchanged event data', () => {
-		if (!pgAvailable) return;
+	it.skipIf(!pgAvailable)('QA-02: re-running clustering is idempotent for unchanged event data', () => {
 		seedThreeEventFixture();
 
 		const first = runCli(['analyze', '--spatio-temporal'], { env: { MULDER_CONFIG: enabledConfigPath } });
@@ -258,8 +255,7 @@ describe('Spec 64 — Spatio-Temporal Clustering', () => {
 		expect(fetchClusters()).toHaveLength(3);
 	});
 
-	it('QA-03: sparse corpora degrade gracefully without persisting misleading clusters', () => {
-		if (!pgAvailable) return;
+	it.skipIf(!pgAvailable)('QA-03: sparse corpora degrade gracefully without persisting misleading clusters', () => {
 		seedThreeEventFixture();
 
 		const result = runCli(['analyze', '--spatio-temporal'], { env: { MULDER_CONFIG: sparseThresholdConfigPath } });
@@ -268,8 +264,7 @@ describe('Spec 64 — Spatio-Temporal Clustering', () => {
 		expect(fetchClusters()).toHaveLength(0);
 	});
 
-	it('QA-04: disabled spatio-temporal analysis fails before any writes', () => {
-		if (!pgAvailable) return;
+	it.skipIf(!pgAvailable)('QA-04: disabled spatio-temporal analysis fails before any writes', () => {
 		seedThreeEventFixture();
 		seedExistingClusterSnapshot();
 		const snapshotBefore = fetchClusters();
@@ -289,8 +284,7 @@ describe('Spec 64 — Spatio-Temporal Clustering', () => {
 		expect(fetchClusters()).toEqual(snapshotBefore);
 	});
 
-	it('QA-05: events missing one dimension still contribute only to valid cluster types', () => {
-		if (!pgAvailable) return;
+	it.skipIf(!pgAvailable)('QA-05: events missing one dimension still contribute only to valid cluster types', () => {
 		seedMixedDimensionFixture();
 
 		const result = runCli(['analyze', '--spatio-temporal'], { env: { MULDER_CONFIG: enabledConfigPath } });
@@ -315,17 +309,14 @@ describe('Spec 64 — Spatio-Temporal Clustering', () => {
 		expect(combined?.eventIds).not.toContain(SPACE_ONLY_ID);
 	});
 
-	it('QA-06: no-op runs succeed cleanly when no clusterable events exist', () => {
-		if (!pgAvailable) return;
-
+	it.skipIf(!pgAvailable)('QA-06: no-op runs succeed cleanly when no clusterable events exist', () => {
 		const result = runCli(['analyze', '--spatio-temporal'], { env: { MULDER_CONFIG: enabledConfigPath } });
 		expect(result.exitCode).toBe(0);
 		expect(result.stderr).toContain('no clusterable events found');
 		expect(fetchClusters()).toHaveLength(0);
 	});
 
-	it('CLI-01: --spatio-temporal computes and persists the current cluster snapshot', () => {
-		if (!pgAvailable) return;
+	it.skipIf(!pgAvailable)('CLI-01: --spatio-temporal computes and persists the current cluster snapshot', () => {
 		seedThreeEventFixture();
 
 		const result = runCli(['analyze', '--spatio-temporal'], { env: { MULDER_CONFIG: enabledConfigPath } });
@@ -336,18 +327,20 @@ describe('Spec 64 — Spatio-Temporal Clustering', () => {
 		expect(fetchClusters()).toHaveLength(3);
 	});
 
-	it('CLI-02: running --spatio-temporal twice preserves snapshot semantics without duplicate rows', () => {
-		if (!pgAvailable) return;
-		seedThreeEventFixture();
+	it.skipIf(!pgAvailable)(
+		'CLI-02: running --spatio-temporal twice preserves snapshot semantics without duplicate rows',
+		() => {
+			seedThreeEventFixture();
 
-		expect(runCli(['analyze', '--spatio-temporal'], { env: { MULDER_CONFIG: enabledConfigPath } }).exitCode).toBe(0);
-		const firstSnapshot = normalizedSnapshot();
+			expect(runCli(['analyze', '--spatio-temporal'], { env: { MULDER_CONFIG: enabledConfigPath } }).exitCode).toBe(0);
+			const firstSnapshot = normalizedSnapshot();
 
-		const result = runCli(['analyze', '--spatio-temporal'], { env: { MULDER_CONFIG: enabledConfigPath } });
-		expect(result.exitCode).toBe(0);
-		expect(normalizedSnapshot()).toEqual(firstSnapshot);
-		expect(fetchClusters()).toHaveLength(3);
-	});
+			const result = runCli(['analyze', '--spatio-temporal'], { env: { MULDER_CONFIG: enabledConfigPath } });
+			expect(result.exitCode).toBe(0);
+			expect(normalizedSnapshot()).toEqual(firstSnapshot);
+			expect(fetchClusters()).toHaveLength(3);
+		},
+	);
 
 	it('CLI-03: --spatio-temporal --reliability exits non-zero because multi-selector analyze is not implemented yet', () => {
 		const result = runCli(['analyze', '--spatio-temporal', '--reliability'], {
