@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -14,16 +15,12 @@ const DB_MODULE = resolve(ROOT, 'packages/core/dist/database/index.js');
  *
  * Each `it()` maps to one QA condition from Section 5 of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `docker exec psql`, and Node subprocess scripts.
+ * SQL via `the shared env-driven SQL helper`, and Node subprocess scripts.
  * Never import from packages/ or src/ or apps/.
  *
- * Requires a running PostgreSQL instance (Docker container `mulder-pg-test`)
+ * Requires a running PostgreSQL instance (the standard PG env vars)
  * with migrations applied.
  */
-
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
 
 const DB_CONFIG_JSON = JSON.stringify({
 	instance_name: 'mulder-db',
@@ -48,7 +45,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 30000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -72,7 +69,7 @@ function runScript(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 30000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -82,32 +79,8 @@ function runScript(
 }
 
 /**
- * Helper: run SQL via docker exec psql. Returns query output.
+ * Helper: run SQL via the shared env-driven SQL helper. Returns query output.
  */
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
 function resetDatabase(): void {
 	const dropSql = [
 		'DROP FUNCTION IF EXISTS reset_pipeline_step CASCADE',
@@ -123,38 +96,35 @@ function resetDatabase(): void {
 		'DROP TABLE IF EXISTS taxonomy CASCADE',
 		'DROP TABLE IF EXISTS entities CASCADE',
 		'DROP TABLE IF EXISTS stories CASCADE',
+		'DROP TABLE IF EXISTS spatio_temporal_clusters CASCADE',
+		'DROP TABLE IF EXISTS evidence_chains CASCADE',
+		'DROP TABLE IF EXISTS entity_grounding CASCADE',
 		'DROP TABLE IF EXISTS source_steps CASCADE',
 		'DROP TABLE IF EXISTS sources CASCADE',
 		'DROP TABLE IF EXISTS mulder_migrations CASCADE',
+		'DROP INDEX IF EXISTS idx_entities_geom',
 		'DROP EXTENSION IF EXISTS vector CASCADE',
 		'DROP EXTENSION IF EXISTS postgis CASCADE',
 		'DROP EXTENSION IF EXISTS pg_trgm CASCADE',
 	].join('; ');
 
-	spawnSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-c', dropSql], {
-		encoding: 'utf-8',
-		timeout: 15000,
-	});
+	db.runSql(dropSql);
 }
 
 /**
  * Clean all rows from sources and source_steps without dropping the tables.
  */
 function cleanSourceData(): void {
-	runSql('DELETE FROM source_steps; DELETE FROM sources;');
+	db.runSql('DELETE FROM source_steps; DELETE FROM sources;');
 }
 
 describe('Spec 14: Source Repository', () => {
 	let pgAvailable: boolean;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL container not available. Start with:\n' +
-					'  docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 		tmpDir = mkdtempSync(join(tmpdir(), 'mulder-qa-14-'));
@@ -228,7 +198,7 @@ describe('Spec 14: Source Repository', () => {
 			expect(combined).toContain('HAS_UPDATED_AT:true');
 
 			// Verify in database via psql
-			const rowCount = runSql("SELECT COUNT(*) FROM sources WHERE filename = 'test-doc.pdf';");
+			const rowCount = db.runSql("SELECT COUNT(*) FROM sources WHERE filename = 'test-doc.pdf';");
 			expect(rowCount).toBe('1');
 		});
 	});
@@ -283,7 +253,7 @@ describe('Spec 14: Source Repository', () => {
 			expect(combined).toContain('UPDATED_AT_REFRESHED:true');
 
 			// Verify no duplicate in DB
-			const count = runSql(`SELECT COUNT(*) FROM sources WHERE file_hash = '${fixedHash}';`);
+			const count = db.runSql(`SELECT COUNT(*) FROM sources WHERE file_hash = '${fixedHash}';`);
 			expect(count).toBe('1');
 		});
 	});
@@ -571,11 +541,11 @@ describe('Spec 14: Source Repository', () => {
 			const sourceId = idMatch?.[1];
 
 			// Verify source is gone
-			const sourceCount = runSql(`SELECT COUNT(*) FROM sources WHERE id = '${sourceId}';`);
+			const sourceCount = db.runSql(`SELECT COUNT(*) FROM sources WHERE id = '${sourceId}';`);
 			expect(sourceCount).toBe('0');
 
 			// Verify source_steps are gone (cascade)
-			const stepCount = runSql(`SELECT COUNT(*) FROM source_steps WHERE source_id = '${sourceId}';`);
+			const stepCount = db.runSql(`SELECT COUNT(*) FROM source_steps WHERE source_id = '${sourceId}';`);
 			expect(stepCount).toBe('0');
 		});
 	});
@@ -691,13 +661,13 @@ describe('Spec 14: Source Repository', () => {
 			expect(idMatch).not.toBeNull();
 			const sourceId = idMatch?.[1];
 
-			const stepCount = runSql(
+			const stepCount = db.runSql(
 				`SELECT COUNT(*) FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'extract';`,
 			);
 			expect(stepCount).toBe('1');
 
 			// Verify it has the latest status
-			const stepStatus = runSql(
+			const stepStatus = db.runSql(
 				`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'extract';`,
 			);
 			expect(stepStatus).toBe('completed');

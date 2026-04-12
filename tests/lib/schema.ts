@@ -19,6 +19,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { TEST_PG_ENV } from './db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -34,7 +35,7 @@ export function ensureSchema(): void {
 		encoding: 'utf-8',
 		timeout: 30_000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: 'mulder', MULDER_LOG_LEVEL: 'silent' },
+		env: { ...process.env, ...TEST_PG_ENV, MULDER_LOG_LEVEL: 'silent' },
 	});
 	if (result.status !== 0) {
 		throw new Error(

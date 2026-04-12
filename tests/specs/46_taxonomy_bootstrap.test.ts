@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 import { ensureSchema } from '../lib/schema.js';
 
 /**
@@ -9,20 +10,16 @@ import { ensureSchema } from '../lib/schema.js';
  *
  * Each `it()` maps to one QA-NN or CLI-NN condition from Section 5/5b of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `docker exec psql`, and filesystem.
+ * SQL via `the shared env-driven SQL helper`, and filesystem.
  * Never imports from packages/ or src/ or apps/.
  *
  * Requires:
- * - Running PostgreSQL container `mulder-pg-test` with migrations applied
+ * - PostgreSQL reachable through the standard PG env vars with migrations applied
  * - Built CLI at apps/cli/dist/index.js
  */
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
-
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,37 +34,13 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 30000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, MULDER_LOG_LEVEL: 'silent', ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, MULDER_LOG_LEVEL: 'silent', ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
 		stderr: result.stderr ?? '',
 		exitCode: result.status ?? 1,
 	};
-}
-
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
 }
 
 /**
@@ -118,7 +91,7 @@ function seedSources(count: number): string[] {
 	for (let i = 0; i < count; i++) {
 		const id = randomUUID();
 		const hash = randomUUID(); // unique file_hash
-		runSql(
+		db.runSql(
 			`INSERT INTO sources (id, filename, storage_path, file_hash, page_count, status) ` +
 				`VALUES ('${id}', 'test-${id.slice(0, 8)}.pdf', 'raw/test-${id.slice(0, 8)}.pdf', '${hash}', 5, 'enriched') ` +
 				`ON CONFLICT (id) DO NOTHING;`,
@@ -136,7 +109,7 @@ function seedEntities(entities: Array<{ name: string; type: string }>): string[]
 	const ids: string[] = [];
 	for (const ent of entities) {
 		const id = randomUUID();
-		runSql(
+		db.runSql(
 			`INSERT INTO entities (id, name, type) ` +
 				`VALUES ('${id}', '${ent.name.replace(/'/g, "''")}', '${ent.type}') ` +
 				`ON CONFLICT (name, type) WHERE canonical_id IS NULL DO UPDATE SET updated_at = now() RETURNING id;`,
@@ -156,7 +129,7 @@ function seedTaxonomy(
 		const aliasArray = entry.aliases?.length
 			? `ARRAY[${entry.aliases.map((a) => `'${a.replace(/'/g, "''")}'`).join(',')}]`
 			: `ARRAY['${entry.canonical_name.replace(/'/g, "''")}']`;
-		runSql(
+		db.runSql(
 			`INSERT INTO taxonomy (canonical_name, entity_type, status, aliases) ` +
 				`VALUES ('${entry.canonical_name.replace(/'/g, "''")}', '${entry.entity_type}', '${entry.status}', ${aliasArray}) ` +
 				`ON CONFLICT (canonical_name, entity_type) DO UPDATE SET status = '${entry.status}', aliases = ${aliasArray};`,
@@ -165,7 +138,7 @@ function seedTaxonomy(
 }
 
 function cleanTestData(): void {
-	runSql(
+	db.runSql(
 		'DELETE FROM taxonomy; ' +
 			'DELETE FROM chunks; DELETE FROM story_entities; DELETE FROM entity_edges; DELETE FROM entity_aliases; ' +
 			'DELETE FROM entities; DELETE FROM stories; DELETE FROM source_steps; ' +
@@ -178,7 +151,7 @@ function cleanTestData(): void {
 // ---------------------------------------------------------------------------
 
 beforeAll(() => {
-	pgAvailable = isPgAvailable();
+	pgAvailable = db.isPgAvailable();
 	if (!pgAvailable) return;
 	ensureSchema();
 	cleanTestData();
@@ -260,11 +233,11 @@ describe('Spec 46 — Taxonomy Bootstrap (QA Contract)', () => {
 		}
 
 		// Verify taxonomy entries were created with status 'auto'
-		const autoCount = runSql("SELECT COUNT(*) FROM taxonomy WHERE status = 'auto';");
+		const autoCount = db.runSql("SELECT COUNT(*) FROM taxonomy WHERE status = 'auto';");
 		expect(Number(autoCount)).toBeGreaterThan(0);
 
 		// Verify they have canonical_name and aliases
-		const entries = runSql("SELECT canonical_name, aliases FROM taxonomy WHERE status = 'auto' LIMIT 5;");
+		const entries = db.runSql("SELECT canonical_name, aliases FROM taxonomy WHERE status = 'auto' LIMIT 5;");
 		expect(entries.length).toBeGreaterThan(0);
 	});
 
@@ -296,7 +269,7 @@ describe('Spec 46 — Taxonomy Bootstrap (QA Contract)', () => {
 		// typesProcessed should include the entity types we seeded
 		if (result.typesProcessed && result.typesProcessed.length > 0) {
 			// Check each taxonomy entry has an entity_type matching one of our seeded types
-			const types = runSql("SELECT DISTINCT entity_type FROM taxonomy WHERE status = 'auto';");
+			const types = db.runSql("SELECT DISTINCT entity_type FROM taxonomy WHERE status = 'auto';");
 			const typeList = types.split('\n').filter(Boolean);
 			for (const t of typeList) {
 				expect(['person', 'organization', 'location']).toContain(t);
@@ -317,7 +290,7 @@ describe('Spec 46 — Taxonomy Bootstrap (QA Contract)', () => {
 		// Insert a confirmed taxonomy entry
 		seedTaxonomy([{ canonical_name: 'Confirmed Person', entity_type: 'person', status: 'confirmed', aliases: ['CP'] }]);
 
-		const confirmedBefore = runSql(
+		const confirmedBefore = db.runSql(
 			"SELECT canonical_name, aliases FROM taxonomy WHERE status = 'confirmed' AND canonical_name = 'Confirmed Person';",
 		);
 
@@ -333,7 +306,7 @@ describe('Spec 46 — Taxonomy Bootstrap (QA Contract)', () => {
 		}
 
 		// Confirmed entry must still exist and be unchanged
-		const confirmedAfter = runSql(
+		const confirmedAfter = db.runSql(
 			"SELECT canonical_name, aliases FROM taxonomy WHERE status = 'confirmed' AND canonical_name = 'Confirmed Person';",
 		);
 		expect(confirmedAfter).toBe(confirmedBefore);
@@ -352,7 +325,7 @@ describe('Spec 46 — Taxonomy Bootstrap (QA Contract)', () => {
 			{ canonical_name: 'Confirmed Entry', entity_type: 'person', status: 'confirmed' },
 		]);
 
-		const confirmedBefore = runSql("SELECT id, canonical_name FROM taxonomy WHERE status = 'confirmed';");
+		const confirmedBefore = db.runSql("SELECT id, canonical_name FROM taxonomy WHERE status = 'confirmed';");
 
 		runCli(['taxonomy', 're-bootstrap', '--json'], { timeout: 60000 });
 
@@ -360,11 +333,13 @@ describe('Spec 46 — Taxonomy Bootstrap (QA Contract)', () => {
 		// If bootstrap fails due to threshold (corpus < 25 and no override),
 		// that's expected — but auto entries should already be deleted.
 		// Check that confirmed entries are preserved regardless.
-		const confirmedAfter = runSql("SELECT id, canonical_name FROM taxonomy WHERE status = 'confirmed';");
+		const confirmedAfter = db.runSql("SELECT id, canonical_name FROM taxonomy WHERE status = 'confirmed';");
 		expect(confirmedAfter).toBe(confirmedBefore);
 
 		// Auto entries should be deleted (re-bootstrap deletes them before calling bootstrap)
-		const autoAfter = runSql("SELECT COUNT(*) FROM taxonomy WHERE status = 'auto' AND canonical_name = 'Auto Entry';");
+		const autoAfter = db.runSql(
+			"SELECT COUNT(*) FROM taxonomy WHERE status = 'auto' AND canonical_name = 'Auto Entry';",
+		);
 		expect(Number(autoAfter)).toBe(0);
 	});
 
@@ -454,7 +429,7 @@ describe('Spec 46 — Taxonomy Bootstrap (QA Contract)', () => {
 			expect.fail(`First bootstrap failed: ${combined}`);
 		}
 
-		const countAfterFirst = Number(runSql('SELECT COUNT(*) FROM taxonomy;'));
+		const countAfterFirst = Number(db.runSql('SELECT COUNT(*) FROM taxonomy;'));
 
 		// Second run
 		const second = runCli(['taxonomy', 'bootstrap', '--min-docs', '1']);
@@ -467,7 +442,7 @@ describe('Spec 46 — Taxonomy Bootstrap (QA Contract)', () => {
 			expect.fail(`Second bootstrap failed: ${combined}`);
 		}
 
-		const countAfterSecond = Number(runSql('SELECT COUNT(*) FROM taxonomy;'));
+		const countAfterSecond = Number(db.runSql('SELECT COUNT(*) FROM taxonomy;'));
 
 		// Entry count should not grow unboundedly (upsert semantics)
 		expect(countAfterSecond).toBeLessThanOrEqual(countAfterFirst * 2);

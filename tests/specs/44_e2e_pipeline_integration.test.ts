@@ -1,7 +1,8 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 /**
  * Black-box end-to-end integration test for the full M1–M4 MVP pipeline.
@@ -23,11 +24,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
  * is covered by spec 42 and by the Phase 3 golden retrieval set).
  *
  * System boundary: `node apps/cli/dist/index.js` subprocess + `docker exec
- * mulder-pg-test psql` for DB state introspection. No internal source
+ * the shared env-driven SQL helper for DB state introspection. No internal source
  * imports.
  *
  * Requires:
- *   - Running PostgreSQL container `mulder-pg-test` with migrations applied
+ *   - PostgreSQL reachable through the standard PG env vars with migrations applied
  *   - Built CLI at apps/cli/dist/index.js
  *   - Test fixtures in fixtures/raw/
  */
@@ -44,10 +45,6 @@ const SEGMENTS_DIR = resolve(ROOT, '.local/storage/segments');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -61,39 +58,13 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 60000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, MULDER_LOG_LEVEL: 'silent', ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, MULDER_LOG_LEVEL: 'silent', ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
 		stderr: result.stderr ?? '',
 		exitCode: result.status ?? 1,
 	};
-}
-
-function runSql(sql: string): string {
-	try {
-		const result = execFileSync(
-			'docker',
-			['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-			{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-		);
-		return (result ?? '').trim();
-	} catch (error: unknown) {
-		const err = error as { stderr?: string; status?: number };
-		throw new Error(`psql failed (exit ${err.status}): ${err.stderr}`);
-	}
-}
-
-function isPgAvailable(): boolean {
-	try {
-		execFileSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return true;
-	} catch {
-		return false;
-	}
 }
 
 /**
@@ -110,7 +81,7 @@ function ensureSchema(): void {
 }
 
 function cleanTestData(): void {
-	runSql(
+	db.runSql(
 		[
 			'DELETE FROM chunks',
 			'DELETE FROM story_entities',
@@ -147,7 +118,7 @@ function stageIngest(pdfPath: string): string {
 		throw new Error(`Ingest failed (exit ${exitCode}): ${stdout} ${stderr}`);
 	}
 	const filename = pdfPath.split('/').pop() ?? '';
-	const sourceId = runSql(`SELECT id FROM sources WHERE filename = '${filename}' ORDER BY created_at DESC LIMIT 1;`);
+	const sourceId = db.runSql(`SELECT id FROM sources WHERE filename = '${filename}' ORDER BY created_at DESC LIMIT 1;`);
 	if (!sourceId) throw new Error(`No source row created for ${filename}`);
 	return sourceId;
 }
@@ -182,7 +153,8 @@ function stageGraph(storyIds: string[]): void {
 }
 
 function listStoryIds(sourceId: string): string[] {
-	return runSql(`SELECT id FROM stories WHERE source_id = '${sourceId}';`)
+	return db
+		.runSql(`SELECT id FROM stories WHERE source_id = '${sourceId}';`)
 		.split('\n')
 		.filter((s) => s.length > 0);
 }
@@ -196,9 +168,9 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 	let sourceId: string | null = null;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn('SKIP: PostgreSQL container mulder-pg-test not available');
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT');
 			return;
 		}
 
@@ -226,7 +198,7 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 	// ─── QA-01: Ingest writes a source row with status 'ingested' ───
 	it('QA-01: ingest creates sources row with status=ingested and file hash', () => {
 		if (!pgAvailable || !sourceId) return;
-		const row = runSql(`SELECT status, file_hash, filename FROM sources WHERE id = '${sourceId}';`);
+		const row = db.runSql(`SELECT status, file_hash, filename FROM sources WHERE id = '${sourceId}';`);
 		expect(row).toContain('ingested');
 		expect(row).toContain('native-text-sample.pdf');
 		// File hash should be a 64-char hex SHA-256
@@ -238,7 +210,7 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 		if (!pgAvailable || !sourceId) return;
 		stageExtract(sourceId);
 
-		const status = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+		const status = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 		expect(status).toBe('extracted');
 
 		// Layout artifact should exist in local storage
@@ -246,7 +218,7 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 		expect(existsSync(layoutPath)).toBe(true);
 
 		// source_steps row for extract should exist and be completed
-		const stepRow = runSql(
+		const stepRow = db.runSql(
 			`SELECT step_name, status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'extract';`,
 		);
 		expect(stepRow).toContain('extract');
@@ -258,17 +230,17 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 		if (!pgAvailable || !sourceId) return;
 		stageSegment(sourceId);
 
-		const storyCount = Number(runSql(`SELECT count(*) FROM stories WHERE source_id = '${sourceId}';`));
+		const storyCount = Number(db.runSql(`SELECT count(*) FROM stories WHERE source_id = '${sourceId}';`));
 		expect(storyCount).toBeGreaterThan(0);
 
 		// Every story should be in the 'segmented' state right after segment ran.
-		const anyNotSegmented = runSql(
+		const anyNotSegmented = db.runSql(
 			`SELECT count(*) FROM stories WHERE source_id = '${sourceId}' AND status != 'segmented';`,
 		);
 		expect(Number(anyNotSegmented)).toBe(0);
 
 		// Source status should advance to segmented
-		const sourceStatus = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+		const sourceStatus = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 		expect(sourceStatus).toBe('segmented');
 	});
 
@@ -283,20 +255,20 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 
 		const storyIdClause = `story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}')`;
 		const entityCount = Number(
-			runSql(
+			db.runSql(
 				`SELECT count(*) FROM entities WHERE id IN (SELECT entity_id FROM story_entities WHERE ${storyIdClause});`,
 			),
 		);
 		expect(entityCount).toBeGreaterThan(0);
 
 		// story_entities should be populated
-		const linkCount = Number(runSql(`SELECT count(*) FROM story_entities WHERE ${storyIdClause};`));
+		const linkCount = Number(db.runSql(`SELECT count(*) FROM story_entities WHERE ${storyIdClause};`));
 		expect(linkCount).toBeGreaterThan(0);
 
 		// Per spec §2.4, enrich advances story status but NOT source status —
 		// that is the orchestrator's job. See docs/reviews/qa-gate-triage.md
 		// Issue 3 for the BY-DESIGN rationale.
-		const storiesEnriched = runSql(
+		const storiesEnriched = db.runSql(
 			`SELECT count(*) FROM stories WHERE source_id = '${sourceId}' AND status = 'enriched';`,
 		);
 		expect(Number(storiesEnriched)).toBe(storyIds.length);
@@ -309,24 +281,24 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 		stageEmbed(storyIds);
 
 		const storyIdClause = `story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}')`;
-		const chunkCount = Number(runSql(`SELECT count(*) FROM chunks WHERE ${storyIdClause};`));
+		const chunkCount = Number(db.runSql(`SELECT count(*) FROM chunks WHERE ${storyIdClause};`));
 		expect(chunkCount).toBeGreaterThan(0);
 
 		// Dimensionality check — CLAUDE.md is emphatic that vectors must NEVER
 		// be manually truncated. This query asserts that pgvector stores the
 		// full 768 dimensions as produced by text-embedding-004 via the
 		// Matryoshka outputDimensionality API parameter.
-		const dimRow = runSql(`SELECT vector_dims(embedding) FROM chunks WHERE ${storyIdClause} LIMIT 1;`);
+		const dimRow = db.runSql(`SELECT vector_dims(embedding) FROM chunks WHERE ${storyIdClause} LIMIT 1;`);
 		expect(Number(dimRow)).toBe(768);
 
 		// fts_vector (the generated tsvector column) should be non-null on
 		// every chunk — verifies the D7/E2 "single-table vector + BM25"
 		// invariant from CLAUDE.md.
-		const nullFts = runSql(`SELECT count(*) FROM chunks WHERE ${storyIdClause} AND fts_vector IS NULL;`);
+		const nullFts = db.runSql(`SELECT count(*) FROM chunks WHERE ${storyIdClause} AND fts_vector IS NULL;`);
 		expect(Number(nullFts)).toBe(0);
 
 		// Stories should advance to 'embedded'
-		const storiesEmbedded = runSql(
+		const storiesEmbedded = db.runSql(
 			`SELECT count(*) FROM stories WHERE source_id = '${sourceId}' AND status = 'embedded';`,
 		);
 		expect(Number(storiesEmbedded)).toBe(storyIds.length);
@@ -339,7 +311,7 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 		stageGraph(storyIds);
 
 		// Stories should be in 'graphed' state
-		const storiesGraphed = runSql(
+		const storiesGraphed = db.runSql(
 			`SELECT count(*) FROM stories WHERE source_id = '${sourceId}' AND status = 'graphed';`,
 		);
 		expect(Number(storiesGraphed)).toBe(storyIds.length);
@@ -347,7 +319,7 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 		// At least one entity_edge row should exist touching our entities.
 		// We scope via story_entities to avoid interference from fixtures.
 		const edgeCount = Number(
-			runSql(
+			db.runSql(
 				`SELECT count(*) FROM entity_edges ee WHERE EXISTS (
 					SELECT 1 FROM story_entities se
 					WHERE se.entity_id IN (ee.source_entity_id, ee.target_entity_id)
@@ -370,7 +342,8 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 		// Per migration 002_sources.sql there is no story_id column — step
 		// tracking is source-scoped. Every completed pipeline run should
 		// therefore leave a single row per step for this source.
-		const steps = runSql(`SELECT step_name FROM source_steps WHERE source_id = '${sourceId}' ORDER BY step_name;`)
+		const steps = db
+			.runSql(`SELECT step_name FROM source_steps WHERE source_id = '${sourceId}' ORDER BY step_name;`)
 			.split('\n')
 			.filter(Boolean);
 
@@ -381,7 +354,7 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 		// All tracked steps should be status=completed (no partial/failed
 		// rows lingering after a clean run).
 		const badRows = Number(
-			runSql(`SELECT count(*) FROM source_steps WHERE source_id = '${sourceId}' AND status NOT IN ('completed');`),
+			db.runSql(`SELECT count(*) FROM source_steps WHERE source_id = '${sourceId}' AND status NOT IN ('completed');`),
 		);
 		expect(badRows).toBe(0);
 	});
@@ -392,7 +365,9 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 
 		// Sanity: we currently have chunks + edges + stories for this source
 		const before = Number(
-			runSql(`SELECT count(*) FROM chunks WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');`),
+			db.runSql(
+				`SELECT count(*) FROM chunks WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');`,
+			),
 		);
 		expect(before).toBeGreaterThan(0);
 
@@ -410,14 +385,16 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 		// gone. The source itself remains (we only reset the extract step
 		// and below).
 		const afterChunks = Number(
-			runSql(`SELECT count(*) FROM chunks WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');`),
+			db.runSql(
+				`SELECT count(*) FROM chunks WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');`,
+			),
 		);
 		expect(afterChunks).toBe(0);
 
 		// Source should still exist, status rolled back to at most 'extracted'
 		// (extract just re-ran, so 'extracted' is the expected terminal value
 		// after the force rerun).
-		const sourceStatus = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+		const sourceStatus = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 		expect(['extracted', 'ingested']).toContain(sourceStatus);
 	});
 
@@ -434,7 +411,9 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 		stageEmbed(storyIds);
 		stageGraph(storyIds);
 
-		const finalStatus = runSql(`SELECT count(*) FROM stories WHERE source_id = '${sourceId}' AND status = 'graphed';`);
+		const finalStatus = db.runSql(
+			`SELECT count(*) FROM stories WHERE source_id = '${sourceId}' AND status = 'graphed';`,
+		);
 		expect(Number(finalStatus)).toBe(storyIds.length);
 	});
 

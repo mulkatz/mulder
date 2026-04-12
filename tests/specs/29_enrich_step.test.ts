@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -12,20 +13,16 @@ const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
-
 /**
  * Black-box QA tests for Spec 29: Enrich Step
  *
  * Each `it()` maps to one QA condition or CLI condition from Section 5/5b of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `docker exec psql`, and filesystem (dev-mode storage).
+ * SQL via `the shared env-driven SQL helper`, and filesystem (dev-mode storage).
  * Never imports from packages/ or src/ or apps/.
  *
  * Requires:
- * - Running PostgreSQL container `mulder-pg-test` with migrations applied
+ * - PostgreSQL reachable through the standard PG env vars with migrations applied
  * - Built CLI at apps/cli/dist/index.js
  * - Test fixtures in fixtures/raw/
  */
@@ -43,7 +40,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 60000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -52,32 +49,8 @@ function runCli(
 	};
 }
 
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
 function cleanTestData(): void {
-	runSql(
+	db.runSql(
 		'DELETE FROM story_entities; DELETE FROM entity_edges; DELETE FROM entity_aliases; DELETE FROM entities; DELETE FROM stories; DELETE FROM source_steps; DELETE FROM sources;',
 	);
 }
@@ -129,7 +102,7 @@ function ingestPdf(pdfPath: string): string {
 	}
 	const parts = pdfPath.split('/');
 	const filename = parts[parts.length - 1];
-	const sourceId = runSql(`SELECT id FROM sources WHERE filename = '${filename}' ORDER BY created_at DESC LIMIT 1;`);
+	const sourceId = db.runSql(`SELECT id FROM sources WHERE filename = '${filename}' ORDER BY created_at DESC LIMIT 1;`);
 	if (!sourceId) {
 		throw new Error(`No source record found for ${filename}`);
 	}
@@ -156,7 +129,7 @@ function ingestExtractSegment(pdfPath: string): string {
 	}
 
 	// Verify status
-	const status = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+	const status = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 	if (status !== 'segmented') {
 		throw new Error(`Source ${sourceId} has status '${status}', expected 'segmented'`);
 	}
@@ -168,7 +141,7 @@ function ingestExtractSegment(pdfPath: string): string {
  * Get a story ID from a segmented source.
  */
 function getStoryId(sourceId: string): string {
-	const storyId = runSql(`SELECT id FROM stories WHERE source_id = '${sourceId}' AND status = 'segmented' LIMIT 1;`);
+	const storyId = db.runSql(`SELECT id FROM stories WHERE source_id = '${sourceId}' AND status = 'segmented' LIMIT 1;`);
 	if (!storyId) {
 		throw new Error(`No segmented story found for source ${sourceId}`);
 	}
@@ -185,13 +158,9 @@ describe('Spec 29 — Enrich Step', () => {
 	let segmentedStoryId: string | null = null;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL container not available. Start with:\n' +
-					'  docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 
@@ -233,21 +202,21 @@ describe('Spec 29 — Enrich Step', () => {
 		expect(result.exitCode).toBe(0);
 
 		// Story status should be 'enriched'
-		const storyStatus = runSql(`SELECT status FROM stories WHERE id = '${segmentedStoryId}';`);
+		const storyStatus = db.runSql(`SELECT status FROM stories WHERE id = '${segmentedStoryId}';`);
 		expect(storyStatus).toBe('enriched');
 
 		// Entities should be created
-		const entityCount = runSql(`SELECT COUNT(*) FROM story_entities WHERE story_id = '${segmentedStoryId}';`);
+		const entityCount = db.runSql(`SELECT COUNT(*) FROM story_entities WHERE story_id = '${segmentedStoryId}';`);
 		expect(Number.parseInt(entityCount, 10)).toBeGreaterThanOrEqual(1);
 
 		// Entities table should have rows
-		const totalEntities = runSql(
+		const totalEntities = db.runSql(
 			`SELECT COUNT(*) FROM entities WHERE id IN (SELECT entity_id FROM story_entities WHERE story_id = '${segmentedStoryId}');`,
 		);
 		expect(Number.parseInt(totalEntities, 10)).toBeGreaterThanOrEqual(1);
 
 		// Source step should be upserted as 'completed'
-		const stepStatus = runSql(
+		const stepStatus = db.runSql(
 			`SELECT status FROM source_steps WHERE source_id = '${segmentedSourceId}' AND step_name = 'enrich';`,
 		);
 		expect(stepStatus).toBe('completed');
@@ -266,7 +235,7 @@ describe('Spec 29 — Enrich Step', () => {
 		ingestExtractSegment(SCANNED_PDF);
 
 		// Verify both have segmented stories
-		const segCount = runSql("SELECT COUNT(*) FROM stories WHERE status = 'segmented';");
+		const segCount = db.runSql("SELECT COUNT(*) FROM stories WHERE status = 'segmented';");
 		expect(Number.parseInt(segCount, 10)).toBeGreaterThanOrEqual(2);
 
 		// Enrich all
@@ -274,10 +243,10 @@ describe('Spec 29 — Enrich Step', () => {
 		expect(exitCode).toBe(0);
 
 		// All previously segmented stories should now be enriched
-		const remainingSegmented = runSql("SELECT COUNT(*) FROM stories WHERE status = 'segmented';");
+		const remainingSegmented = db.runSql("SELECT COUNT(*) FROM stories WHERE status = 'segmented';");
 		expect(Number.parseInt(remainingSegmented, 10)).toBe(0);
 
-		const enrichedCount = runSql("SELECT COUNT(*) FROM stories WHERE status = 'enriched';");
+		const enrichedCount = db.runSql("SELECT COUNT(*) FROM stories WHERE status = 'enriched';");
 		expect(Number.parseInt(enrichedCount, 10)).toBeGreaterThanOrEqual(2);
 
 		// Restore state for subsequent tests
@@ -304,13 +273,13 @@ describe('Spec 29 — Enrich Step', () => {
 		expect(exitCode).toBe(0);
 
 		// Source 1 stories should be enriched
-		const source1Enriched = runSql(
+		const source1Enriched = db.runSql(
 			`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId1}' AND status = 'enriched';`,
 		);
 		expect(Number.parseInt(source1Enriched, 10)).toBeGreaterThanOrEqual(1);
 
 		// Source 2 stories should still be segmented
-		const source2Segmented = runSql(
+		const source2Segmented = db.runSql(
 			`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId2}' AND status = 'segmented';`,
 		);
 		expect(Number.parseInt(source2Segmented, 10)).toBeGreaterThanOrEqual(1);
@@ -328,7 +297,7 @@ describe('Spec 29 — Enrich Step', () => {
 		if (!pgAvailable || !segmentedStoryId || !segmentedSourceId) return;
 
 		// First ensure the story is enriched
-		const currentStatus = runSql(`SELECT status FROM stories WHERE id = '${segmentedStoryId}';`);
+		const currentStatus = db.runSql(`SELECT status FROM stories WHERE id = '${segmentedStoryId}';`);
 		if (currentStatus !== 'enriched') {
 			const { exitCode } = runCli(['enrich', segmentedStoryId], { timeout: 120000 });
 			expect(exitCode).toBe(0);
@@ -336,7 +305,7 @@ describe('Spec 29 — Enrich Step', () => {
 
 		// Record entity count before force (used to verify re-extraction)
 		const countBefore = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM story_entities WHERE story_id = '${segmentedStoryId}';`),
+			db.runSql(`SELECT COUNT(*) FROM story_entities WHERE story_id = '${segmentedStoryId}';`),
 			10,
 		);
 		expect(countBefore).toBeGreaterThanOrEqual(0);
@@ -346,11 +315,11 @@ describe('Spec 29 — Enrich Step', () => {
 		expect(exitCode).toBe(0);
 
 		// Story should be enriched again
-		const status = runSql(`SELECT status FROM stories WHERE id = '${segmentedStoryId}';`);
+		const status = db.runSql(`SELECT status FROM stories WHERE id = '${segmentedStoryId}';`);
 		expect(status).toBe('enriched');
 
 		// story_entities should exist (may be same or different count)
-		const entitiesAfter = runSql(`SELECT COUNT(*) FROM story_entities WHERE story_id = '${segmentedStoryId}';`);
+		const entitiesAfter = db.runSql(`SELECT COUNT(*) FROM story_entities WHERE story_id = '${segmentedStoryId}';`);
 		expect(Number.parseInt(entitiesAfter, 10)).toBeGreaterThanOrEqual(1);
 	}, 120000);
 
@@ -360,7 +329,7 @@ describe('Spec 29 — Enrich Step', () => {
 		if (!pgAvailable || !segmentedSourceId) return;
 
 		// Ensure stories are enriched first
-		const enrichedCount = runSql(
+		const enrichedCount = db.runSql(
 			`SELECT COUNT(*) FROM stories WHERE source_id = '${segmentedSourceId}' AND status = 'enriched';`,
 		);
 		if (Number.parseInt(enrichedCount, 10) === 0) {
@@ -373,7 +342,7 @@ describe('Spec 29 — Enrich Step', () => {
 		expect(exitCode).toBe(0);
 
 		// All stories from source should be enriched
-		const allEnriched = runSql(
+		const allEnriched = db.runSql(
 			`SELECT COUNT(*) FROM stories WHERE source_id = '${segmentedSourceId}' AND status = 'enriched';`,
 		);
 		expect(Number.parseInt(allEnriched, 10)).toBeGreaterThanOrEqual(1);
@@ -385,7 +354,7 @@ describe('Spec 29 — Enrich Step', () => {
 		if (!pgAvailable || !segmentedStoryId) return;
 
 		// Ensure story is enriched
-		const currentStatus = runSql(`SELECT status FROM stories WHERE id = '${segmentedStoryId}';`);
+		const currentStatus = db.runSql(`SELECT status FROM stories WHERE id = '${segmentedStoryId}';`);
 		if (currentStatus !== 'enriched') {
 			const { exitCode } = runCli(['enrich', segmentedStoryId], { timeout: 120000 });
 			expect(exitCode).toBe(0);
@@ -408,18 +377,18 @@ describe('Spec 29 — Enrich Step', () => {
 
 		// Create an isolated source + story via SQL to avoid dedup collision
 		// with the main test source (ingestPdf would return the existing source ID)
-		runSql(
+		db.runSql(
 			`INSERT INTO sources (filename, file_hash, storage_path, page_count, status) ` +
 				`VALUES ('qa07-test.pdf', 'qa07-unique-hash', 'raw/qa07-test.pdf', 1, 'ingested');`,
 		);
-		const sourceId = runSql(`SELECT id FROM sources WHERE file_hash = 'qa07-unique-hash';`);
+		const sourceId = db.runSql(`SELECT id FROM sources WHERE file_hash = 'qa07-unique-hash';`);
 
 		// Manually create a story with status 'ingested' (simulating pre-segmentation state)
-		runSql(
+		db.runSql(
 			`INSERT INTO stories (source_id, title, gcs_markdown_uri, gcs_metadata_uri, status) ` +
 				`VALUES ('${sourceId}', 'test-invalid-status', 'segments/test/dummy.md', 'segments/test/dummy.meta.json', 'ingested');`,
 		);
-		const storyId = runSql(
+		const storyId = db.runSql(
 			`SELECT id FROM stories WHERE source_id = '${sourceId}' AND title = 'test-invalid-status' LIMIT 1;`,
 		);
 
@@ -430,7 +399,7 @@ describe('Spec 29 — Enrich Step', () => {
 		expect(combined).toMatch(/ENRICH_INVALID_STATUS|invalid status|not segmented|cannot enrich/i);
 
 		// Cleanup — scoped to the isolated source only
-		runSql(
+		db.runSql(
 			`DELETE FROM story_entities WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');` +
 				` DELETE FROM entity_edges WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');` +
 				` DELETE FROM stories WHERE source_id = '${sourceId}';` +
@@ -445,7 +414,7 @@ describe('Spec 29 — Enrich Step', () => {
 		if (!pgAvailable || !segmentedStoryId) return;
 
 		// Ensure story is enriched
-		const currentStatus = runSql(`SELECT status FROM stories WHERE id = '${segmentedStoryId}';`);
+		const currentStatus = db.runSql(`SELECT status FROM stories WHERE id = '${segmentedStoryId}';`);
 		if (currentStatus !== 'enriched') {
 			const { exitCode } = runCli(['enrich', segmentedStoryId], { timeout: 120000 });
 			expect(exitCode).toBe(0);
@@ -453,12 +422,12 @@ describe('Spec 29 — Enrich Step', () => {
 
 		// Check that entities linked to this story have canonical_id set
 		// (taxonomy normalization should assign canonical_id)
-		const entitiesWithCanonical = runSql(
+		const entitiesWithCanonical = db.runSql(
 			`SELECT COUNT(*) FROM entities e ` +
 				`JOIN story_entities se ON e.id = se.entity_id ` +
 				`WHERE se.story_id = '${segmentedStoryId}' AND e.canonical_id IS NOT NULL;`,
 		);
-		const totalEntities = runSql(
+		const totalEntities = db.runSql(
 			`SELECT COUNT(*) FROM entities e ` +
 				`JOIN story_entities se ON e.id = se.entity_id ` +
 				`WHERE se.story_id = '${segmentedStoryId}';`,
@@ -497,7 +466,7 @@ describe('Spec 29 — Enrich Step', () => {
 		// Check for any entity appearing in stories from both sources
 		// (entity resolution should produce shared entities when names match)
 		const sharedCount = Number.parseInt(
-			runSql(
+			db.runSql(
 				`SELECT COUNT(DISTINCT e.id) FROM entities e ` +
 					`JOIN story_entities se1 ON e.id = se1.entity_id ` +
 					`JOIN stories s1 ON se1.story_id = s1.id AND s1.source_id = '${sourceId1}' ` +
@@ -509,8 +478,8 @@ describe('Spec 29 — Enrich Step', () => {
 
 		// We can't guarantee entity overlap with arbitrary test PDFs,
 		// but we CAN verify the resolution path ran: check entity count
-		const totalEntityIds = Number.parseInt(runSql('SELECT COUNT(DISTINCT entity_id) FROM story_entities;'), 10);
-		const totalRows = Number.parseInt(runSql('SELECT COUNT(*) FROM story_entities;'), 10);
+		const totalEntityIds = Number.parseInt(db.runSql('SELECT COUNT(DISTINCT entity_id) FROM story_entities;'), 10);
+		const totalRows = Number.parseInt(db.runSql('SELECT COUNT(*) FROM story_entities;'), 10);
 
 		// At minimum, entities table should be populated from both sources
 		expect(totalEntityIds).toBeGreaterThanOrEqual(1);
@@ -539,14 +508,14 @@ describe('Spec 29 — Enrich Step', () => {
 		const storyId = segmentedStoryId;
 		if (!storyId) return;
 
-		const status = runSql(`SELECT status FROM stories WHERE id = '${storyId}';`);
+		const status = db.runSql(`SELECT status FROM stories WHERE id = '${storyId}';`);
 		if (status !== 'enriched') {
 			const { exitCode } = runCli(['enrich', storyId], { timeout: 120000 });
 			expect(exitCode).toBe(0);
 		}
 
 		// Verify entities exist and are in a consistent state (no partial writes from deadlocks)
-		const entities = runSql(
+		const entities = db.runSql(
 			`SELECT e.type, e.name FROM entities e ` +
 				`JOIN story_entities se ON e.id = se.entity_id ` +
 				`WHERE se.story_id = '${storyId}' ORDER BY e.type, e.name;`,
@@ -554,7 +523,7 @@ describe('Spec 29 — Enrich Step', () => {
 		expect(entities.length).toBeGreaterThan(0);
 
 		// All entities should have non-null type and name
-		const nullTypeOrName = runSql(
+		const nullTypeOrName = db.runSql(
 			`SELECT COUNT(*) FROM entities e ` +
 				`JOIN story_entities se ON e.id = se.entity_id ` +
 				`WHERE se.story_id = '${storyId}' AND (e.type IS NULL OR e.name IS NULL);`,
@@ -568,21 +537,21 @@ describe('Spec 29 — Enrich Step', () => {
 		if (!pgAvailable || !segmentedStoryId) return;
 
 		// Ensure story is enriched
-		const currentStatus = runSql(`SELECT status FROM stories WHERE id = '${segmentedStoryId}';`);
+		const currentStatus = db.runSql(`SELECT status FROM stories WHERE id = '${segmentedStoryId}';`);
 		if (currentStatus !== 'enriched') {
 			const { exitCode } = runCli(['enrich', segmentedStoryId], { timeout: 120000 });
 			expect(exitCode).toBe(0);
 		}
 
 		// Check entity_edges for this story
-		const edgeCount = runSql(`SELECT COUNT(*) FROM entity_edges WHERE story_id = '${segmentedStoryId}';`);
+		const edgeCount = db.runSql(`SELECT COUNT(*) FROM entity_edges WHERE story_id = '${segmentedStoryId}';`);
 
 		// Edges may or may not exist depending on extracted content,
 		// but if they do, they should have valid references
 		const numEdges = Number.parseInt(edgeCount, 10);
 		if (numEdges > 0) {
 			// All edges should reference existing entities
-			const orphanEdges = runSql(
+			const orphanEdges = db.runSql(
 				`SELECT COUNT(*) FROM entity_edges ee ` +
 					`WHERE ee.story_id = '${segmentedStoryId}' ` +
 					`AND (ee.source_entity_id NOT IN (SELECT id FROM entities) ` +
@@ -591,7 +560,7 @@ describe('Spec 29 — Enrich Step', () => {
 			expect(Number.parseInt(orphanEdges, 10)).toBe(0);
 
 			// All edges should have a non-empty relationship type
-			const emptyRelationship = runSql(
+			const emptyRelationship = db.runSql(
 				`SELECT COUNT(*) FROM entity_edges ` +
 					`WHERE story_id = '${segmentedStoryId}' AND (relationship IS NULL OR relationship = '');`,
 			);
@@ -631,7 +600,7 @@ describe('Spec 29 — Enrich Step', () => {
 		// fix this column did not exist and the normalizeTaxonomy result was
 		// silently discarded.
 		const totalEntities = Number.parseInt(
-			runSql(
+			db.runSql(
 				`SELECT COUNT(*) FROM entities WHERE id IN (` +
 					`SELECT entity_id FROM story_entities WHERE story_id = '${segmentedStoryId}'` +
 					`);`,
@@ -639,7 +608,7 @@ describe('Spec 29 — Enrich Step', () => {
 			10,
 		);
 		const linkedEntities = Number.parseInt(
-			runSql(
+			db.runSql(
 				`SELECT COUNT(*) FROM entities WHERE taxonomy_id IS NOT NULL AND id IN (` +
 					`SELECT entity_id FROM story_entities WHERE story_id = '${segmentedStoryId}'` +
 					`);`,
@@ -672,7 +641,7 @@ describe('Spec 29 — Enrich Step', () => {
 		// Find any name+type that exists in both source's stories. If at
 		// least one shared entity exists (the dev fixtures share several),
 		// it must have exactly one row and a non-null taxonomy_id.
-		const sharedRows = runSql(
+		const sharedRows = db.runSql(
 			`SELECT e.id, e.name, e.type, e.taxonomy_id FROM entities e ` +
 				`WHERE e.id IN (` +
 				`  SELECT se.entity_id FROM story_entities se ` +
@@ -732,7 +701,7 @@ describe('CLI Test Matrix: enrich', () => {
 	// ─── CLI-02: No arguments ───
 
 	it('CLI-02: mulder enrich with no args gives non-zero exit and error', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const { exitCode, stdout, stderr } = runCli(['enrich']);
@@ -755,7 +724,7 @@ describe('CLI Test Matrix: enrich', () => {
 	// ─── CLI-04: --source without --all ───
 
 	it('CLI-04: mulder enrich --source <id> is valid usage (does not require --all)', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		// Use a fake source ID — should fail with "not found" not "invalid args"
@@ -784,7 +753,7 @@ describe('CLI Smoke Tests: enrich', () => {
 	// ─── SMOKE-02: --force without story-id or --source gives error ───
 
 	it('SMOKE-02: mulder enrich --force (no story-id, no --source) gives non-zero exit', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const { exitCode, stdout, stderr } = runCli(['enrich', '--force']);
@@ -797,7 +766,7 @@ describe('CLI Smoke Tests: enrich', () => {
 	// ─── SMOKE-03: invalid UUID format as story-id ───
 
 	it('SMOKE-03: mulder enrich with non-UUID story-id gives non-zero exit', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const { exitCode, stdout, stderr } = runCli(['enrich', 'not-a-valid-uuid']);
@@ -820,7 +789,7 @@ describe('CLI Smoke Tests: enrich', () => {
 	// ─── SMOKE-05: --source with --all is valid (source scopes the --all) ───
 
 	it('SMOKE-05: mulder enrich --source <id> --force does not crash (valid combo)', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const fakeSourceId = '00000000-0000-0000-0000-000000000001';

@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 import { ensureSchema } from '../lib/schema.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -9,10 +10,6 @@ const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const FIXTURE_DIR = resolve(ROOT, 'fixtures/raw');
 const EXTRACTED_DIR = resolve(ROOT, '.local/storage/extracted');
 const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
-
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
 
 /**
  * Black-box end-to-end test for the Document AI extraction path.
@@ -46,7 +43,7 @@ const PG_PASSWORD = 'mulder';
  *   - `gcp.document_ai.processor_id` set to a real Layout Parser processor
  *   - `gcp.document_ai.location` set to the matching multi-region (`eu` or `us`)
  * - Built CLI at `apps/cli/dist/index.js`
- * - Running PostgreSQL container `mulder-pg-test` with migrations applied
+ * - PostgreSQL reachable through the standard PG env vars with migrations applied
  *
  * Also acts as the regression test for #93: if the Document AI processor
  * name is constructed with the wrong location segment, the extract step
@@ -68,7 +65,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 180_000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -77,32 +74,8 @@ function runCli(
 	};
 }
 
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15_000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5_000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
 function cleanSourceData(filename: string): void {
-	runSql(
+	db.runSql(
 		`DELETE FROM chunks WHERE story_id IN (SELECT id FROM stories WHERE source_id IN (SELECT id FROM sources WHERE filename = '${filename}'));` +
 			` DELETE FROM stories WHERE source_id IN (SELECT id FROM sources WHERE filename = '${filename}');` +
 			` DELETE FROM source_steps WHERE source_id IN (SELECT id FROM sources WHERE filename = '${filename}');` +
@@ -115,7 +88,7 @@ function cleanSourceData(filename: string): void {
 // ---------------------------------------------------------------------------
 
 describe('Spec 47 — Document AI Extraction (E2E, real GCP)', () => {
-	const pgAvailable = isPgAvailable();
+	const pgAvailable = db.isPgAvailable();
 	let sourceId: string | null = null;
 
 	beforeAll(() => {
@@ -123,7 +96,7 @@ describe('Spec 47 — Document AI Extraction (E2E, real GCP)', () => {
 			return;
 		}
 		if (!pgAvailable) {
-			throw new Error('mulder-pg-test container is required for the E2E test');
+			throw new Error('PostgreSQL reachable through PGHOST/PGPORT is required for the E2E test');
 		}
 		ensureSchema();
 		cleanSourceData('scanned-sample.pdf');
@@ -143,10 +116,10 @@ describe('Spec 47 — Document AI Extraction (E2E, real GCP)', () => {
 		const { exitCode, stdout, stderr } = runCli(['ingest', SCANNED_PDF]);
 		expect(exitCode, `ingest failed: ${stdout}\n${stderr}`).toBe(0);
 
-		sourceId = runSql("SELECT id FROM sources WHERE filename = 'scanned-sample.pdf';");
+		sourceId = db.runSql("SELECT id FROM sources WHERE filename = 'scanned-sample.pdf';");
 		expect(sourceId).toMatch(/^[a-f0-9-]{36}$/);
 
-		const hasNative = runSql(`SELECT has_native_text FROM sources WHERE id = '${sourceId}';`);
+		const hasNative = db.runSql(`SELECT has_native_text FROM sources WHERE id = '${sourceId}';`);
 		// has_native_text is a boolean column; psql returns 'f' or 't'.
 		expect(hasNative).toBe('f');
 	});
@@ -160,12 +133,12 @@ describe('Spec 47 — Document AI Extraction (E2E, real GCP)', () => {
 
 		// source_steps should record `extract` completed, with method='document_ai'
 		// in the metadata if the step records the routing decision.
-		const stepStatus = runSql(
+		const stepStatus = db.runSql(
 			`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'extract';`,
 		);
 		expect(stepStatus).toBe('completed');
 
-		const sourceStatus = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+		const sourceStatus = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 		expect(sourceStatus).toBe('extracted');
 	});
 

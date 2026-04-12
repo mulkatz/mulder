@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 import { ensureSchema } from '../lib/schema.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -12,16 +13,12 @@ const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
  *
  * Each `it()` maps to one QA condition from Section 5 of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `docker exec psql`, and filesystem.
+ * SQL via `the shared env-driven SQL helper`, and filesystem.
  * Never import from packages/ or src/ or apps/.
  *
- * Requires a running PostgreSQL instance (Docker container `mulder-pg-test`)
+ * Requires a running PostgreSQL instance (the standard PG env vars)
  * with pgvector, PostGIS, and pg_trgm extensions available.
  */
-
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
 
 /**
  * Helper: run the CLI binary via node as a subprocess.
@@ -35,7 +32,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 30000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -45,46 +42,16 @@ function runCli(
 }
 
 /**
- * Helper: run SQL via docker exec psql. Returns query output.
+ * Helper: run SQL via the shared env-driven SQL helper. Returns query output.
  */
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
 /**
  * Helper: run SQL, return null on failure instead of throwing.
  */
-function runSqlSafe(sql: string): string | null {
-	try {
-		return runSql(sql);
-	} catch {
-		return null;
-	}
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
 function hasRequiredExtensions(): boolean {
 	try {
-		const out = runSql("SELECT count(*) FROM pg_available_extensions WHERE name IN ('vector', 'postgis', 'pg_trgm');");
+		const out = db.runSql(
+			"SELECT count(*) FROM pg_available_extensions WHERE name IN ('vector', 'postgis', 'pg_trgm');",
+		);
 		return Number.parseInt(out, 10) >= 3;
 	} catch {
 		return false;
@@ -109,18 +76,19 @@ function resetDatabase(): void {
 		'DROP TABLE IF EXISTS taxonomy CASCADE',
 		'DROP TABLE IF EXISTS entities CASCADE',
 		'DROP TABLE IF EXISTS stories CASCADE',
+		'DROP TABLE IF EXISTS spatio_temporal_clusters CASCADE',
+		'DROP TABLE IF EXISTS evidence_chains CASCADE',
+		'DROP TABLE IF EXISTS entity_grounding CASCADE',
 		'DROP TABLE IF EXISTS source_steps CASCADE',
 		'DROP TABLE IF EXISTS sources CASCADE',
 		'DROP TABLE IF EXISTS mulder_migrations CASCADE',
+		'DROP INDEX IF EXISTS idx_entities_geom',
 		'DROP EXTENSION IF EXISTS vector CASCADE',
 		'DROP EXTENSION IF EXISTS postgis CASCADE',
 		'DROP EXTENSION IF EXISTS pg_trgm CASCADE',
 	].join('; ');
 
-	spawnSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-c', dropSql], {
-		encoding: 'utf-8',
-		timeout: 15000,
-	});
+	db.runSql(dropSql);
 }
 
 describe('Spec 08: Core Schema Migrations (001-008)', () => {
@@ -128,14 +96,9 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 	let extensionsAvailable: boolean;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL container not available. Start with:\n' +
-					'  docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17\n' +
-					'  docker exec mulder-pg-test apt-get update && docker exec mulder-pg-test apt-get install -y postgresql-17-postgis-3',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 
@@ -182,7 +145,7 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 		it('pgvector, PostGIS, and pg_trgm extensions exist after migration', () => {
 			if (skipIfUnavailable()) return;
 
-			const extensions = runSql('SELECT extname FROM pg_extension ORDER BY extname;');
+			const extensions = db.runSql('SELECT extname FROM pg_extension ORDER BY extname;');
 			const extList = extensions.split('\n').filter(Boolean);
 
 			expect(extList).toContain('vector');
@@ -207,7 +170,7 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 			expect(combined).toMatch(/skipped.*\d+|\d+.*skipped|up to date/i);
 
 			// Verify via direct DB query — 001-008 + 012-014 = 11 migration files
-			const count = runSql('SELECT count(*) FROM mulder_migrations;');
+			const count = db.runSql('SELECT count(*) FROM mulder_migrations;');
 			expect(Number.parseInt(count, 10)).toBeGreaterThanOrEqual(8);
 		});
 	});
@@ -218,7 +181,7 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 		it('sources table has all required columns', () => {
 			if (skipIfUnavailable()) return;
 
-			const columns = runSql(
+			const columns = db.runSql(
 				"SELECT column_name FROM information_schema.columns WHERE table_name = 'sources' AND table_schema = 'public' ORDER BY ordinal_position;",
 			);
 			const colList = columns.split('\n').filter(Boolean);
@@ -251,7 +214,7 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 		it('source_steps table has all required columns with composite PK', () => {
 			if (skipIfUnavailable()) return;
 
-			const columns = runSql(
+			const columns = db.runSql(
 				"SELECT column_name FROM information_schema.columns WHERE table_name = 'source_steps' AND table_schema = 'public' ORDER BY ordinal_position;",
 			);
 			const colList = columns.split('\n').filter(Boolean);
@@ -263,7 +226,7 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 			}
 
 			// Verify composite PK (source_id, step_name)
-			const pkColumns = runSql(
+			const pkColumns = db.runSql(
 				"SELECT kcu.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name WHERE tc.table_name = 'source_steps' AND tc.constraint_type = 'PRIMARY KEY' ORDER BY kcu.ordinal_position;",
 			);
 			const pkList = pkColumns.split('\n').filter(Boolean);
@@ -278,7 +241,7 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 		it('stories table has all columns including GCS URIs, with FK to sources', () => {
 			if (skipIfUnavailable()) return;
 
-			const columns = runSql(
+			const columns = db.runSql(
 				"SELECT column_name FROM information_schema.columns WHERE table_name = 'stories' AND table_schema = 'public' ORDER BY ordinal_position;",
 			);
 			const colList = columns.split('\n').filter(Boolean);
@@ -289,7 +252,7 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 			expect(colList, 'Missing source_id').toContain('source_id');
 
 			// Verify FK to sources
-			const fkRef = runSql(
+			const fkRef = db.runSql(
 				"SELECT ccu.table_name FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name WHERE tc.table_name = 'stories' AND tc.constraint_type = 'FOREIGN KEY' AND ccu.table_name = 'sources';",
 			);
 			expect(fkRef).toBe('sources');
@@ -303,7 +266,7 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 			if (skipIfUnavailable()) return;
 
 			// Entities table must have canonical_id with self-referential FK
-			const entityFk = runSql(
+			const entityFk = db.runSql(
 				"SELECT ccu.table_name, ccu.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name WHERE tc.table_name = 'entities' AND tc.constraint_type = 'FOREIGN KEY' AND kcu.column_name = 'canonical_id';",
 			);
 			// Should reference entities.id (self-referential)
@@ -311,7 +274,7 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 			expect(entityFk).toContain('id');
 
 			// entity_aliases must have UNIQUE(entity_id, alias)
-			const uniqueConstraint = runSql(
+			const uniqueConstraint = db.runSql(
 				"SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'entity_aliases'::regclass AND contype = 'u';",
 			);
 			expect(uniqueConstraint).toContain('entity_id');
@@ -326,7 +289,7 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 			if (skipIfUnavailable()) return;
 
 			// story_entities composite PK
-			const sePk = runSql(
+			const sePk = db.runSql(
 				"SELECT kcu.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name WHERE tc.table_name = 'story_entities' AND tc.constraint_type = 'PRIMARY KEY' ORDER BY kcu.ordinal_position;",
 			);
 			const sePkList = sePk.split('\n').filter(Boolean);
@@ -334,7 +297,7 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 			expect(sePkList).toContain('entity_id');
 
 			// entity_edges FKs to entities and stories
-			const edgeFks = runSql(
+			const edgeFks = db.runSql(
 				"SELECT kcu.column_name, ccu.table_name as ref_table FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name WHERE tc.table_name = 'entity_edges' AND tc.constraint_type = 'FOREIGN KEY';",
 			);
 			// Should reference both entities and stories
@@ -350,25 +313,25 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 			if (skipIfUnavailable()) return;
 
 			// Check embedding column type
-			const embeddingType = runSql(
+			const embeddingType = db.runSql(
 				"SELECT udt_name FROM information_schema.columns WHERE table_name = 'chunks' AND column_name = 'embedding';",
 			);
 			expect(embeddingType).toBe('vector');
 
 			// Verify it's vector(768) by checking the full column definition
-			const vectorDef = runSql(
+			const vectorDef = db.runSql(
 				"SELECT format_type(atttypid, atttypmod) FROM pg_attribute WHERE attrelid = 'chunks'::regclass AND attname = 'embedding';",
 			);
 			expect(vectorDef).toBe('vector(768)');
 
 			// Check fts_vector column type
-			const ftsType = runSql(
+			const ftsType = db.runSql(
 				"SELECT udt_name FROM information_schema.columns WHERE table_name = 'chunks' AND column_name = 'fts_vector';",
 			);
 			expect(ftsType).toBe('tsvector');
 
 			// Verify fts_vector is a generated column
-			const isGenerated = runSql(
+			const isGenerated = db.runSql(
 				"SELECT is_generated FROM information_schema.columns WHERE table_name = 'chunks' AND column_name = 'fts_vector';",
 			);
 			expect(isGenerated).toBe('ALWAYS');
@@ -382,13 +345,13 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 			if (skipIfUnavailable()) return;
 
 			// Check table exists
-			const tableExists = runSql(
+			const tableExists = db.runSql(
 				"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'taxonomy' AND table_schema = 'public');",
 			);
 			expect(tableExists).toBe('t');
 
 			// Check UNIQUE constraint on (canonical_name, entity_type)
-			const uniqueConstraint = runSql(
+			const uniqueConstraint = db.runSql(
 				"SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'taxonomy'::regclass AND contype = 'u';",
 			);
 			expect(uniqueConstraint).toContain('canonical_name');
@@ -402,7 +365,7 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 		it('all expected indexes exist in pg_indexes', () => {
 			if (skipIfUnavailable()) return;
 
-			const indexes = runSql("SELECT indexname FROM pg_indexes WHERE schemaname = 'public' ORDER BY indexname;");
+			const indexes = db.runSql("SELECT indexname FROM pg_indexes WHERE schemaname = 'public' ORDER BY indexname;");
 			const indexList = indexes.split('\n').filter(Boolean);
 
 			const expectedIndexes = [
@@ -434,14 +397,14 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 			if (skipIfUnavailable()) return;
 
 			// Check the access method of the index
-			const method = runSql(
+			const method = db.runSql(
 				"SELECT am.amname FROM pg_index idx JOIN pg_class cls ON idx.indexrelid = cls.oid JOIN pg_am am ON cls.relam = am.oid WHERE cls.relname = 'idx_chunks_embedding';",
 			);
 			expect(method).toBe('hnsw');
 			expect(method).not.toBe('ivfflat');
 
 			// Also confirm from the indexdef
-			const indexDef = runSql("SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_chunks_embedding';");
+			const indexDef = db.runSql("SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_chunks_embedding';");
 			expect(indexDef.toLowerCase()).toContain('hnsw');
 			expect(indexDef.toLowerCase()).not.toContain('ivfflat');
 		});
@@ -525,29 +488,29 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 			if (skipIfUnavailable()) return;
 
 			// Insert a test source
-			runSql(
+			db.runSql(
 				"INSERT INTO sources (id, filename, storage_path, file_hash, status) VALUES ('00000000-0000-0000-0000-000000000001', 'test-cascade.pdf', 'gs://bucket/test.pdf', 'hash_cascade_test', 'pending');",
 			);
 
 			// Insert source_steps referencing that source
-			runSql(
+			db.runSql(
 				"INSERT INTO source_steps (source_id, step_name, status) VALUES ('00000000-0000-0000-0000-000000000001', 'extract', 'completed');",
 			);
-			runSql(
+			db.runSql(
 				"INSERT INTO source_steps (source_id, step_name, status) VALUES ('00000000-0000-0000-0000-000000000001', 'segment', 'pending');",
 			);
 
 			// Verify source_steps exist
-			const stepCount = runSql(
+			const stepCount = db.runSql(
 				"SELECT count(*) FROM source_steps WHERE source_id = '00000000-0000-0000-0000-000000000001';",
 			);
 			expect(Number.parseInt(stepCount, 10)).toBe(2);
 
 			// Delete the source
-			runSql("DELETE FROM sources WHERE id = '00000000-0000-0000-0000-000000000001';");
+			db.runSql("DELETE FROM sources WHERE id = '00000000-0000-0000-0000-000000000001';");
 
 			// Verify source_steps were cascaded
-			const remainingSteps = runSql(
+			const remainingSteps = db.runSql(
 				"SELECT count(*) FROM source_steps WHERE source_id = '00000000-0000-0000-0000-000000000001';",
 			);
 			expect(Number.parseInt(remainingSteps, 10)).toBe(0);
@@ -561,12 +524,12 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 			if (skipIfUnavailable()) return;
 
 			// Insert first source
-			runSql(
+			db.runSql(
 				"INSERT INTO sources (id, filename, storage_path, file_hash, status) VALUES ('00000000-0000-0000-0000-000000000002', 'first.pdf', 'gs://bucket/first.pdf', 'hash_unique_test', 'pending');",
 			);
 
 			// Try to insert second source with same file_hash — should fail
-			const result = runSqlSafe(
+			const result = db.runSqlSafe(
 				"INSERT INTO sources (id, filename, storage_path, file_hash, status) VALUES ('00000000-0000-0000-0000-000000000003', 'second.pdf', 'gs://bucket/second.pdf', 'hash_unique_test', 'pending');",
 			);
 
@@ -574,11 +537,11 @@ describe('Spec 08: Core Schema Migrations (001-008)', () => {
 			expect(result).toBeNull();
 
 			// Verify only one row exists with that hash
-			const count = runSql("SELECT count(*) FROM sources WHERE file_hash = 'hash_unique_test';");
+			const count = db.runSql("SELECT count(*) FROM sources WHERE file_hash = 'hash_unique_test';");
 			expect(Number.parseInt(count, 10)).toBe(1);
 
 			// Cleanup
-			runSql("DELETE FROM sources WHERE file_hash = 'hash_unique_test';");
+			db.runSql("DELETE FROM sources WHERE file_hash = 'hash_unique_test';");
 		});
 	});
 });

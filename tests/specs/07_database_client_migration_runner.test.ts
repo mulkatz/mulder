@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -15,15 +16,11 @@ const MIGRATE_MODULE = resolve(ROOT, 'packages/core/dist/database/migrate.js');
  *
  * Each `it()` maps to one QA condition from Section 5 of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `docker exec psql`, and filesystem.
+ * SQL via `the shared env-driven SQL helper`, and filesystem.
  * Never import from packages/ or src/ or apps/.
  *
- * Requires a running PostgreSQL instance (Docker container `mulder-pg-test`).
+ * Requires a running PostgreSQL instance (the standard PG env vars).
  */
-
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
 
 /** Config object matching CloudSqlConfig with defaults for local PostgreSQL. */
 const DB_CONFIG_JSON = JSON.stringify({
@@ -47,7 +44,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 30000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -72,7 +69,7 @@ function runScript(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 30000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -82,37 +79,17 @@ function runScript(
 }
 
 /**
- * Helper: run SQL via docker exec psql. Returns query output.
+ * Helper: run SQL via the shared env-driven SQL helper. Returns query output.
  */
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
 /**
  * Helper: run SQL, return null on failure instead of throwing.
  */
-function runSqlSafe(sql: string): string | null {
-	try {
-		return runSql(sql);
-	} catch {
-		return null;
-	}
-}
-
 function dropMigrationsTable(): void {
-	runSql('DROP TABLE IF EXISTS mulder_migrations CASCADE;');
+	db.runSql('DROP TABLE IF EXISTS mulder_migrations CASCADE;');
 }
 
 function cleanupTestTables(): void {
-	runSql(
+	db.runSql(
 		'DROP TABLE IF EXISTS qa_test_one, qa_test_two, qa_test_good, qa_test_bad, qa_test_status_one, qa_test_status_two CASCADE;',
 	);
 }
@@ -137,30 +114,19 @@ function resetDatabase(): void {
 		'DROP TABLE IF EXISTS taxonomy CASCADE',
 		'DROP TABLE IF EXISTS entities CASCADE',
 		'DROP TABLE IF EXISTS stories CASCADE',
+		'DROP TABLE IF EXISTS spatio_temporal_clusters CASCADE',
+		'DROP TABLE IF EXISTS evidence_chains CASCADE',
+		'DROP TABLE IF EXISTS entity_grounding CASCADE',
 		'DROP TABLE IF EXISTS source_steps CASCADE',
 		'DROP TABLE IF EXISTS sources CASCADE',
 		'DROP TABLE IF EXISTS mulder_migrations CASCADE',
+		'DROP INDEX IF EXISTS idx_entities_geom',
 		'DROP EXTENSION IF EXISTS vector CASCADE',
 		'DROP EXTENSION IF EXISTS postgis CASCADE',
 		'DROP EXTENSION IF EXISTS pg_trgm CASCADE',
 	].join('; ');
 
-	spawnSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-c', dropSql], {
-		encoding: 'utf-8',
-		timeout: 15000,
-	});
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
+	db.runSql(dropSql);
 }
 
 let tmpDir: string;
@@ -169,13 +135,9 @@ describe('Spec 07: Database Client + Migration Runner', () => {
 	let pgAvailable: boolean;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL container not available. Start with:\n' +
-					'  docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 		tmpDir = mkdtempSync(join(tmpdir(), 'mulder-qa-07-'));
@@ -321,7 +283,7 @@ describe('Spec 07: Database Client + Migration Runner', () => {
 			expect(exitCode).toBe(0);
 
 			// Verify table exists via psql
-			const tableExists = runSql(
+			const tableExists = db.runSql(
 				"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'mulder_migrations');",
 			);
 			expect(tableExists).toBe('t');
@@ -377,13 +339,13 @@ describe('Spec 07: Database Client + Migration Runner', () => {
 			expect(combined).toContain('002_create_qa_test_two.sql');
 
 			// Verify both tables exist
-			const t1 = runSql("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'qa_test_one');");
-			const t2 = runSql("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'qa_test_two');");
+			const t1 = db.runSql("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'qa_test_one');");
+			const t2 = db.runSql("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'qa_test_two');");
 			expect(t1).toBe('t');
 			expect(t2).toBe('t');
 
 			// Verify order in mulder_migrations
-			const migrations = runSql('SELECT filename FROM mulder_migrations ORDER BY applied_at ASC, filename ASC;');
+			const migrations = db.runSql('SELECT filename FROM mulder_migrations ORDER BY applied_at ASC, filename ASC;');
 			const filenames = migrations.split('\n').filter(Boolean);
 			expect(filenames[0]).toBe('001_create_qa_test_one.sql');
 			expect(filenames[1]).toBe('002_create_qa_test_two.sql');
@@ -491,12 +453,12 @@ describe('Spec 07: Database Client + Migration Runner', () => {
 			// The failed migration (002_bad.sql) should NOT be recorded.
 			// The mulder_migrations table may or may not exist depending on
 			// whether the runner uses per-migration transactions or batch transactions.
-			const recorded = runSqlSafe("SELECT filename FROM mulder_migrations WHERE filename = '002_bad.sql';");
+			const recorded = db.runSqlSafe("SELECT filename FROM mulder_migrations WHERE filename = '002_bad.sql';");
 			// Either the table doesn't exist (null) or the record doesn't exist ('')
 			expect(recorded === null || recorded === '').toBe(true);
 
 			// The bad table should not exist
-			const badTableExists = runSql(
+			const badTableExists = db.runSql(
 				"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'qa_test_bad');",
 			);
 			expect(badTableExists).toBe('f');

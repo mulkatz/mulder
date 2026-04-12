@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -9,15 +10,13 @@ const COMPOSE_FILE = resolve(ROOT, 'docker-compose.yaml');
 
 const PG_CONTAINER = 'mulder-postgres';
 const FS_CONTAINER = 'mulder-firestore';
-const PG_USER = 'mulder';
-const PG_DB = 'mulder';
 
 /**
  * Black-box QA tests for Spec 12: Docker Compose — pgvector + PostGIS + Firestore Emulator
  *
  * Each `it()` maps to one QA condition from Section 5 of the spec.
  * Tests interact through system boundaries only: docker compose CLI, SQL via
- * docker exec psql, HTTP, and filesystem.
+ * the shared env-driven SQL helper, HTTP, and filesystem.
  * Never import from packages/ or src/ or apps/.
  *
  * These tests manage real Docker containers and require Docker to be running.
@@ -43,18 +42,10 @@ function compose(args: string[], timeout = 120_000): { stdout: string; stderr: s
 }
 
 /**
- * Helper: run SQL via docker exec psql on the mulder-postgres container.
+ * Helper: run SQL via the shared env-driven SQL helper on the mulder-postgres container.
  */
 function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', PG_DB, '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15_000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
+	return db.runSql(sql);
 }
 
 /**

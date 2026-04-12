@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 import { ensureSchema } from '../lib/schema.js';
 
 /**
@@ -10,20 +11,16 @@ import { ensureSchema } from '../lib/schema.js';
  *
  * Each `it()` maps to one QA-NN or CLI-NN condition from Section 5/5b of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `docker exec psql`, and filesystem.
+ * SQL via `the shared env-driven SQL helper`, and filesystem.
  * Never imports from packages/ or src/ or apps/.
  *
  * Requires:
- * - Running PostgreSQL container `mulder-pg-test` with migrations applied
+ * - PostgreSQL reachable through the standard PG env vars with migrations applied
  * - Built CLI at apps/cli/dist/index.js
  */
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
-
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
 
 // Temporary file paths for test artifacts
 const TMP_DIR = resolve(ROOT, 'tmp-test-50');
@@ -42,37 +39,13 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 30000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, MULDER_LOG_LEVEL: 'silent', ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, MULDER_LOG_LEVEL: 'silent', ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
 		stderr: result.stderr ?? '',
 		exitCode: result.status ?? 1,
 	};
-}
-
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
 }
 
 /**
@@ -95,7 +68,7 @@ function seedTaxonomy(
 			? `ARRAY[${entry.aliases.map((a) => `'${a.replace(/'/g, "''")}'`).join(',')}]`
 			: 'ARRAY[]::text[]';
 		const categoryValue = entry.category ? `'${entry.category.replace(/'/g, "''")}'` : 'NULL';
-		runSql(
+		db.runSql(
 			`INSERT INTO taxonomy (id, canonical_name, entity_type, status, category, aliases) ` +
 				`VALUES ('${id}', '${entry.canonical_name.replace(/'/g, "''")}', '${entry.entity_type}', '${entry.status}', ${categoryValue}, ${aliasArray}) ` +
 				`ON CONFLICT (canonical_name, entity_type) DO UPDATE SET status = '${entry.status}', aliases = ${aliasArray}, category = ${categoryValue};`,
@@ -108,7 +81,7 @@ function seedTaxonomy(
 function cleanTestData(): void {
 	// Use TRUNCATE CASCADE for robustness against foreign key ordering issues
 	// when the database has leftover data from other test suites
-	runSql(
+	db.runSql(
 		'TRUNCATE TABLE chunks, story_entities, entity_edges, entity_aliases, ' +
 			'taxonomy, entities, stories, source_steps, ' +
 			'pipeline_run_sources, pipeline_runs, sources CASCADE;',
@@ -136,7 +109,7 @@ function cleanupTmpFiles(): void {
  */
 function countTaxonomy(entityType?: string): number {
 	const where = entityType ? ` WHERE entity_type = '${entityType}'` : '';
-	return Number(runSql(`SELECT COUNT(*) FROM taxonomy${where};`));
+	return Number(db.runSql(`SELECT COUNT(*) FROM taxonomy${where};`));
 }
 
 /**
@@ -145,7 +118,7 @@ function countTaxonomy(entityType?: string): number {
 function getTaxonomyById(
 	id: string,
 ): { canonical_name: string; status: string; aliases: string; category: string | null } | null {
-	const row = runSql(`SELECT canonical_name, status, aliases, category FROM taxonomy WHERE id = '${id}';`);
+	const row = db.runSql(`SELECT canonical_name, status, aliases, category FROM taxonomy WHERE id = '${id}';`);
 	if (!row) return null;
 	const parts = row.split('|');
 	return {
@@ -167,7 +140,7 @@ let pgAvailable = false;
 // ---------------------------------------------------------------------------
 
 beforeAll(() => {
-	pgAvailable = isPgAvailable();
+	pgAvailable = db.isPgAvailable();
 	if (!pgAvailable) return;
 	ensureSchema();
 	cleanTestData();
@@ -339,7 +312,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 
 		// Create a YAML with the existing entry plus a new one (no id)
 		const yamlContent = `person:
-  - id: "${runSql("SELECT id FROM taxonomy WHERE canonical_name = 'Existing Person';")}"
+  - id: "${db.runSql("SELECT id FROM taxonomy WHERE canonical_name = 'Existing Person';")}"
     canonical: "Existing Person"
     status: auto
     aliases: []
@@ -357,7 +330,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 		expect(exitCode, `Merge failed: ${stdout}\n${stderr}`).toBe(0);
 
 		// A new entry should be created
-		const newEntry = runSql(
+		const newEntry = db.runSql(
 			"SELECT canonical_name, status, aliases FROM taxonomy WHERE canonical_name = 'Brand New Person';",
 		);
 		expect(newEntry).toContain('Brand New Person');
@@ -520,7 +493,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 			{ canonical_name: 'Org Not In YAML', entity_type: 'organization', status: 'confirmed' },
 		]);
 
-		const personId = runSql("SELECT id FROM taxonomy WHERE canonical_name = 'Person In YAML';");
+		const personId = db.runSql("SELECT id FROM taxonomy WHERE canonical_name = 'Person In YAML';");
 
 		// Create YAML that only contains person type
 		const yamlContent = `person:
@@ -563,7 +536,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 		const inputPath = resolve(TMP_DIR, 'merge-dryrun.yaml');
 		writeFileSync(inputPath, yamlContent, 'utf-8');
 
-		const { exitCode, stdout, stderr } = runCli(['taxonomy', 'merge', '--input', inputPath, '--dry-run']);
+		const { exitCode, stderr } = runCli(['taxonomy', 'merge', '--input', inputPath, '--dry-run']);
 		expect(exitCode, `Dry-run failed: ${stderr}`).toBe(0);
 
 		const combined = stdout + stderr;
@@ -763,7 +736,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (CLI Test Matrix)', () => {
 		const inputPath = resolve(TMP_DIR, 'cli-dryrun.yaml');
 		writeFileSync(inputPath, yamlContent, 'utf-8');
 
-		const { exitCode, stdout, stderr } = runCli(['taxonomy', 'merge', '--input', inputPath, '--dry-run']);
+		const { exitCode, stderr } = runCli(['taxonomy', 'merge', '--input', inputPath, '--dry-run']);
 		expect(exitCode, `Dry-run failed: ${stderr}`).toBe(0);
 
 		// Database should not be modified

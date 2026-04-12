@@ -16,7 +16,7 @@
  * CLI binary only.
  *
  * Infra dependencies:
- *   - A running `mulder-pg-test` PostgreSQL container (same as spec 19, 48).
+ *   - A running PostgreSQL reachable through the standard PG env vars (same as spec 19, 48).
  *   - Built `apps/cli/dist/index.js`.
  */
 
@@ -25,6 +25,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -41,34 +42,6 @@ const RAW_STORAGE_DIR = resolve(ROOT, '.local/storage/raw');
 // Docker / PG helpers (shared with spec 19, 48 container)
 // ---------------------------------------------------------------------------
 
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15_000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
 function runCli(
 	args: string[],
 	opts?: { env?: Record<string, string>; timeout?: number; forceColor?: boolean },
@@ -76,7 +49,7 @@ function runCli(
 	// Chalk disables ANSI escapes by default when stdout is not a TTY (which
 	// it isn't under spawnSync). Tests that assert on ANSI output set
 	// `forceColor: true` to propagate FORCE_COLOR=1 into the child process.
-	const baseEnv: Record<string, string> = { ...process.env, PGPASSWORD: PG_PASSWORD };
+	const baseEnv: Record<string, string> = { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD };
 	if (opts?.forceColor) {
 		baseEnv.FORCE_COLOR = '1';
 	}
@@ -102,7 +75,7 @@ function runCli(
 const NATIVE_TEXT_BODY_MARKER = 'This is the first page of the native text sample document';
 
 function cleanTestData(): void {
-	runSql('DELETE FROM source_steps; DELETE FROM sources;');
+	db.runSql('DELETE FROM source_steps; DELETE FROM sources;');
 }
 
 function cleanExtractedStorage(): void {
@@ -131,7 +104,7 @@ function ingestNativeTextPdf(): string {
 	if (exitCode !== 0) {
 		throw new Error(`Ingest failed (exit ${exitCode}): ${stdout} ${stderr}`);
 	}
-	const sourceId = runSql(
+	const sourceId = db.runSql(
 		"SELECT id FROM sources WHERE filename = 'native-text-sample.pdf' ORDER BY created_at DESC LIMIT 1;",
 	);
 	if (!sourceId) {
@@ -166,7 +139,7 @@ function seedSyntheticSource(filename: string): string {
 	const id = randomUUID();
 	const storagePath = `raw/${id}/${filename}`;
 	const fileHash = `qa-49-${id}`;
-	runSql(
+	db.runSql(
 		`INSERT INTO sources (id, filename, storage_path, file_hash, status, page_count)
 		 VALUES (${sqlQuote(id)}, ${sqlQuote(filename)}, ${sqlQuote(storagePath)}, ${sqlQuote(fileHash)}, 'extracted', 1);`,
 	);
@@ -216,13 +189,9 @@ describe('Spec 49 — `mulder show` command', () => {
 	beforeAll(async () => {
 		expect(existsSync(CLI), `CLI not built: ${CLI}`).toBe(true);
 
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: mulder-pg-test container not running — all spec 49 tests will be skipped.\n' +
-					'  Start with: docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 
@@ -247,7 +216,7 @@ describe('Spec 49 — `mulder show` command', () => {
 		// seed a synthetic row directly. The row is marked status='ingested'
 		// to match the spec's precondition for QA-05 / CLI-08.
 		unextractedId = randomUUID();
-		runSql(
+		db.runSql(
 			`INSERT INTO sources (id, filename, storage_path, file_hash, status, page_count)
 			 VALUES (${sqlQuote(unextractedId)}, 'qa49-unextracted.pdf',
 			         ${sqlQuote(`raw/${unextractedId}/qa49-unextracted.pdf`)},
@@ -278,7 +247,7 @@ describe('Spec 49 — `mulder show` command', () => {
 	// ═══════════════════════════════════════════════════════════════════════
 
 	// ─── QA-01: Happy path with ANSI formatting ───
-	it.skipIf(!isPgAvailable())('QA-01: show <id> → exit 0, body text present, contains ANSI escape', () => {
+	it.skipIf(!db.isPgAvailable())('QA-01: show <id> → exit 0, body text present, contains ANSI escape', () => {
 		// FORCE_COLOR=1 propagates through to chalk so ANSI is emitted
 		// even though stdout is a pipe, not a TTY.
 		const result = runCli(['show', srcId], { forceColor: true });
@@ -291,7 +260,7 @@ describe('Spec 49 — `mulder show` command', () => {
 	});
 
 	// ─── QA-02: --raw produces byte-identical markdown, zero ANSI ───
-	it.skipIf(!isPgAvailable())('QA-02: show <id> --raw → byte-identical to stored layout.md, no ANSI', () => {
+	it.skipIf(!db.isPgAvailable())('QA-02: show <id> --raw → byte-identical to stored layout.md, no ANSI', () => {
 		const rawFile = readFileSync(join(EXTRACTED_STORAGE_DIR, srcId, 'layout.md'), 'utf-8');
 		const result = runCli(['show', srcId, '--raw']);
 		expect(result.exitCode).toBe(0);
@@ -317,7 +286,7 @@ describe('Spec 49 — `mulder show` command', () => {
 	});
 
 	// ─── QA-04: Nonexistent source ID → exit 1, clear error ───
-	it.skipIf(!isPgAvailable())('QA-04: show <nonexistent-uuid> → exit 1, stderr "Source not found" + UUID', () => {
+	it.skipIf(!db.isPgAvailable())('QA-04: show <nonexistent-uuid> → exit 1, stderr "Source not found" + UUID', () => {
 		const result = runCli(['show', NONEXISTENT_UUID]);
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toContain('Source not found');
@@ -325,7 +294,7 @@ describe('Spec 49 — `mulder show` command', () => {
 	});
 
 	// ─── QA-05: Source exists but layout.md missing → exit 1, clear error ───
-	it.skipIf(!isPgAvailable())(
+	it.skipIf(!db.isPgAvailable())(
 		'QA-05: show <ingested-only-id> → exit 1, stderr "layout.md not found" + "mulder extract"',
 		() => {
 			const result = runCli(['show', unextractedId]);
@@ -336,7 +305,7 @@ describe('Spec 49 — `mulder show` command', () => {
 	);
 
 	// ─── QA-06: Formatter is deterministic (idempotency) ───
-	it.skipIf(!isPgAvailable())('QA-06: show <id> twice → byte-identical stdouts', () => {
+	it.skipIf(!db.isPgAvailable())('QA-06: show <id> twice → byte-identical stdouts', () => {
 		const first = runCli(['show', srcId]);
 		const second = runCli(['show', srcId]);
 		expect(first.exitCode).toBe(0);
@@ -345,7 +314,7 @@ describe('Spec 49 — `mulder show` command', () => {
 	});
 
 	// ─── QA-07: --pager with PAGER=cat does not crash, produces output ───
-	it.skipIf(!isPgAvailable())('QA-07: show <id> --pager (PAGER=cat) → exit 0, body text passed through', () => {
+	it.skipIf(!db.isPgAvailable())('QA-07: show <id> --pager (PAGER=cat) → exit 0, body text passed through', () => {
 		const result = runCli(['show', srcId, '--pager'], { env: { PAGER: 'cat' } });
 		expect(result.exitCode).toBe(0);
 		// The cat pager passes formatted output through, so the body text
@@ -354,7 +323,7 @@ describe('Spec 49 — `mulder show` command', () => {
 	});
 
 	// ─── QA-08: GFM table separator row is dimmed ───
-	it.skipIf(!isPgAvailable())(
+	it.skipIf(!db.isPgAvailable())(
 		'QA-08: show <id> → GFM table separator row gets chalk.dim, data rows pass through',
 		() => {
 			const result = runCli(['show', syntheticTableId], { forceColor: true });
@@ -404,7 +373,7 @@ describe('Spec 49 — `mulder show` command', () => {
 
 	describe('CLI matrix (§5b)', () => {
 		// ─── CLI-01: plain show → exit 0, ANSI present ───
-		it.skipIf(!isPgAvailable())('CLI-01: show $SRC_ID → exit 0, ANSI present', () => {
+		it.skipIf(!db.isPgAvailable())('CLI-01: show $SRC_ID → exit 0, ANSI present', () => {
 			const result = runCli(['show', srcId], { forceColor: true });
 			expect(result.exitCode).toBe(0);
 			expect(result.stdout.length).toBeGreaterThan(0);
@@ -413,7 +382,7 @@ describe('Spec 49 — `mulder show` command', () => {
 		});
 
 		// ─── CLI-02: --raw → byte-identical, no ANSI ───
-		it.skipIf(!isPgAvailable())('CLI-02: show $SRC_ID --raw → byte-identical to stored layout.md, no ANSI', () => {
+		it.skipIf(!db.isPgAvailable())('CLI-02: show $SRC_ID --raw → byte-identical to stored layout.md, no ANSI', () => {
 			const rawFile = readFileSync(join(EXTRACTED_STORAGE_DIR, srcId, 'layout.md'), 'utf-8');
 			const result = runCli(['show', srcId, '--raw']);
 			expect(result.exitCode).toBe(0);
@@ -424,14 +393,14 @@ describe('Spec 49 — `mulder show` command', () => {
 		});
 
 		// ─── CLI-03: --pager (PAGER=cat) → exit 0, body in stdout ───
-		it.skipIf(!isPgAvailable())('CLI-03: show $SRC_ID --pager (PAGER=cat) → exit 0, body text present', () => {
+		it.skipIf(!db.isPgAvailable())('CLI-03: show $SRC_ID --pager (PAGER=cat) → exit 0, body text present', () => {
 			const result = runCli(['show', srcId, '--pager'], { env: { PAGER: 'cat' } });
 			expect(result.exitCode).toBe(0);
 			expect(result.stdout).toContain(NATIVE_TEXT_BODY_MARKER);
 		});
 
 		// ─── CLI-04: --raw --pager (PAGER=cat) → raw markdown, no ANSI ───
-		it.skipIf(!isPgAvailable())('CLI-04: show $SRC_ID --raw --pager (PAGER=cat) → raw markdown, no ANSI', () => {
+		it.skipIf(!db.isPgAvailable())('CLI-04: show $SRC_ID --raw --pager (PAGER=cat) → raw markdown, no ANSI', () => {
 			const rawFile = readFileSync(join(EXTRACTED_STORAGE_DIR, srcId, 'layout.md'), 'utf-8');
 			const result = runCli(['show', srcId, '--raw', '--pager'], {
 				env: { PAGER: 'cat' },
@@ -467,7 +436,7 @@ describe('Spec 49 — `mulder show` command', () => {
 		});
 
 		// ─── CLI-07: nonexistent UUID → exit 1, Source not found + UUID ───
-		it.skipIf(!isPgAvailable())('CLI-07: show <nonexistent-uuid> → exit 1, stderr "Source not found" + UUID', () => {
+		it.skipIf(!db.isPgAvailable())('CLI-07: show <nonexistent-uuid> → exit 1, stderr "Source not found" + UUID', () => {
 			const result = runCli(['show', NONEXISTENT_UUID]);
 			expect(result.exitCode).toBe(1);
 			expect(result.stderr).toContain('Source not found');
@@ -475,7 +444,7 @@ describe('Spec 49 — `mulder show` command', () => {
 		});
 
 		// ─── CLI-08: ingested-but-not-extracted → exit 1, layout.md not found ───
-		it.skipIf(!isPgAvailable())(
+		it.skipIf(!db.isPgAvailable())(
 			'CLI-08: show $UNEXTRACTED_ID → exit 1, stderr "layout.md not found" + "mulder extract"',
 			() => {
 				const result = runCli(['show', unextractedId]);
@@ -486,7 +455,7 @@ describe('Spec 49 — `mulder show` command', () => {
 		);
 
 		// ─── CLI-09: run twice → byte-identical stdouts ───
-		it.skipIf(!isPgAvailable())('CLI-09: show $SRC_ID twice → both exit 0, byte-identical stdouts', () => {
+		it.skipIf(!db.isPgAvailable())('CLI-09: show $SRC_ID twice → both exit 0, byte-identical stdouts', () => {
 			const first = runCli(['show', srcId]);
 			const second = runCli(['show', srcId]);
 			expect(first.exitCode).toBe(0);

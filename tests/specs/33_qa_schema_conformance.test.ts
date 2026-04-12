@@ -1,15 +1,12 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
-
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
 
 /**
  * QA Gate — Schema Conformance (QA-1)
@@ -39,7 +36,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 30000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -49,29 +46,11 @@ function runCli(
 }
 
 function runSql(sql: string): string {
-	try {
-		const result = execFileSync(
-			'docker',
-			['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-			{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-		);
-		return (result ?? '').trim();
-	} catch (error: unknown) {
-		const err = error as { stderr?: string; status?: number };
-		throw new Error(`psql failed (exit ${err.status}): ${err.stderr}`);
-	}
+	return db.runSql(sql);
 }
 
 function isPgAvailable(): boolean {
-	try {
-		execFileSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return true;
-	} catch {
-		return false;
-	}
+	return db.isPgAvailable();
 }
 
 /**
@@ -207,11 +186,7 @@ describe('Spec 33 — QA-1: Schema Conformance', () => {
 	beforeAll(() => {
 		pgAvailable = isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL container not available. Start with:\n' +
-					'  docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 
