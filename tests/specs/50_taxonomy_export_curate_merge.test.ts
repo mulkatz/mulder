@@ -4,7 +4,7 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
-import { ensureSchema } from '../lib/schema.js';
+import { ensureSchema, truncateMulderTables } from '../lib/schema.js';
 
 /**
  * Black-box QA tests for Spec 50: Taxonomy Export/Curate/Merge
@@ -79,13 +79,7 @@ function seedTaxonomy(
 }
 
 function cleanTestData(): void {
-	// Use TRUNCATE CASCADE for robustness against foreign key ordering issues
-	// when the database has leftover data from other test suites
-	db.runSql(
-		'TRUNCATE TABLE chunks, story_entities, entity_edges, entity_aliases, ' +
-			'taxonomy, entities, stories, source_steps, ' +
-			'pipeline_run_sources, pipeline_runs, sources CASCADE;',
-	);
+	truncateMulderTables();
 }
 
 function cleanupTmpFiles(): void {

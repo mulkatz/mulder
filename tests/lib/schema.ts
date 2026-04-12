@@ -19,11 +19,29 @@
 
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { TEST_PG_ENV } from './db.js';
+import { runSql, TEST_PG_ENV } from './db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
+
+export const MULDER_TEST_TABLES = [
+	'chunks',
+	'story_entities',
+	'entity_edges',
+	'entity_aliases',
+	'taxonomy',
+	'entities',
+	'stories',
+	'entity_grounding',
+	'evidence_chains',
+	'spatio_temporal_clusters',
+	'pipeline_run_sources',
+	'pipeline_runs',
+	'jobs',
+	'source_steps',
+	'sources',
+] as const;
 
 /**
  * Run `mulder db migrate` against the example config and throw if migrations
@@ -44,4 +62,43 @@ export function ensureSchema(): void {
 				`stderr: ${result.stderr ?? ''}`,
 		);
 	}
+}
+
+function quoteSqlLiteral(value: string): string {
+	return `'${value.replace(/'/g, "''")}'`;
+}
+
+function quoteSqlIdentifier(identifier: string): string {
+	if (!/^[a-z_][a-z0-9_]*$/i.test(identifier)) {
+		throw new Error(`Unsupported SQL identifier for test cleanup: ${identifier}`);
+	}
+	return `"${identifier}"`;
+}
+
+export function truncateExistingTables(tables: readonly string[]): void {
+	if (tables.length === 0) {
+		return;
+	}
+
+	const requestedTables = [...new Set(tables)];
+	const existingRows = runSql(
+		[
+			'SELECT tablename',
+			'FROM pg_tables',
+			"WHERE schemaname = 'public'",
+			`  AND tablename IN (${requestedTables.map(quoteSqlLiteral).join(', ')})`,
+			'ORDER BY tablename;',
+		].join('\n'),
+	);
+	const existingTables = existingRows.split('\n').filter(Boolean);
+
+	if (existingTables.length === 0) {
+		return;
+	}
+
+	runSql(`TRUNCATE TABLE ${existingTables.map(quoteSqlIdentifier).join(', ')} CASCADE;`);
+}
+
+export function truncateMulderTables(): void {
+	truncateExistingTables(MULDER_TEST_TABLES);
 }

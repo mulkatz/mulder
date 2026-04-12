@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const FIXTURE_RAW_DIR = resolve(ROOT, 'fixtures/raw');
+const GCP_TESTS_ENABLED = process.env.MULDER_TEST_GCP === 'true' || process.env.MULDER_E2E_GCP === 'true';
 
 /**
  * Black-box QA tests for Spec 20: Fixture Generator
@@ -14,9 +15,8 @@ const FIXTURE_RAW_DIR = resolve(ROOT, 'fixtures/raw');
  * Tests interact through system boundaries only: CLI subprocess calls
  * and filesystem inspection. Never imports from packages/ or src/ or apps/.
  *
- * Note: The fixture generator requires real GCP credentials for `generate`.
- * Tests that need GCP are designed to verify orchestration logic
- * (discovery, skip, force, status) without requiring successful Document AI calls.
+ * Default runs stay credential-free. Real-GCP generation checks are gated
+ * behind `MULDER_TEST_GCP=true` so they can run in a separate opt-in lane.
  */
 
 // ---------------------------------------------------------------------------
@@ -141,35 +141,32 @@ describe('Spec 20 — Fixture Generator', () => {
 
 	// ─── QA-02: Generate with defaults ───
 
-	it('QA-02: `mulder fixtures generate` discovers PDFs and attempts processing', () => {
-		// Use a temp directory so pre-existing extracted fixtures (e.g. from eval golden sets)
-		// in the shared fixtures/extracted/ directory don't cause PDFs to be skipped.
-		const { rel, abs } = createTmpFixtureDir('generate');
-		trackTmpDir(abs);
+	it.skipIf(!GCP_TESTS_ENABLED)(
+		'QA-02: `mulder fixtures generate` generates extracted fixtures for discovered PDFs',
+		() => {
+			// Use a temp directory so pre-existing extracted fixtures (e.g. from eval golden sets)
+			// in the shared fixtures/extracted/ directory don't cause PDFs to be skipped.
+			const { rel, abs } = createTmpFixtureDir('generate');
+			trackTmpDir(abs);
 
-		// Add both real test PDFs
-		addTestPdf(abs, 'native-text-sample.pdf');
-		addTestPdf(abs, 'scanned-sample.pdf');
+			// Add both real test PDFs
+			const nativeSlug = addTestPdf(abs, 'native-text-sample.pdf');
+			const scannedSlug = addTestPdf(abs, 'scanned-sample.pdf');
 
-		// Without valid GCP credentials, Document AI calls will fail,
-		// but we can verify the discovery and orchestration logic.
-		const { stdout, stderr, exitCode } = runCli(
-			['fixtures', 'generate', '--input', `${rel}/raw`, '--output', rel, '--verbose'],
-			{ timeout: 60000 },
-		);
+			const { stdout, stderr, exitCode } = runCli(
+				['fixtures', 'generate', '--input', `${rel}/raw`, '--output', rel, '--verbose'],
+				{ timeout: 120000 },
+			);
 
-		const combined = stdout + stderr;
+			const combined = stdout + stderr;
 
-		// Should discover PDFs
-		expect(combined).toMatch(/discover|pdf.*found|found.*pdf|pdfCount/i);
-
-		// Should attempt to process files (even though GCP calls will fail)
-		expect(combined).toMatch(/process|calling|extract/i);
-
-		// The command may succeed (real GCP configured) or fail (credentials absent),
-		// but in both cases the orchestration path must have run end-to-end.
-		expect([0, 1]).toContain(exitCode);
-	});
+			expect(exitCode, combined).toBe(0);
+			expect(combined).toMatch(/discover|pdf.*found|found.*pdf|pdfCount/i);
+			expect(combined).toMatch(/process|calling|extract/i);
+			expect(existsSync(join(abs, 'extracted', nativeSlug, 'layout.json'))).toBe(true);
+			expect(existsSync(join(abs, 'extracted', scannedSlug, 'layout.json'))).toBe(true);
+		},
+	);
 
 	// ─── QA-03: Skip existing ───
 
@@ -212,7 +209,7 @@ describe('Spec 20 — Fixture Generator', () => {
 
 	// ─── QA-04: Force regenerate ───
 
-	it('QA-04: `--force` causes existing fixture to be overwritten (attempts re-generation)', () => {
+	it.skipIf(!GCP_TESTS_ENABLED)('QA-04: `--force` causes existing fixture to be overwritten', () => {
 		const { rel, abs } = createTmpFixtureDir('force');
 		trackTmpDir(abs);
 
@@ -220,27 +217,20 @@ describe('Spec 20 — Fixture Generator', () => {
 		const slug = addTestPdf(abs, 'native-text-sample.pdf');
 		createExistingFixture(abs, slug);
 
-		const { stdout, stderr } = runCli([
-			'fixtures',
-			'generate',
-			'--input',
-			`${rel}/raw`,
-			'--output',
-			rel,
-			'--force',
-			'--verbose',
-		]);
+		const fixturePath = join(abs, 'extracted', slug, 'layout.json');
+		const originalLayout = readFileSync(fixturePath, 'utf-8');
+
+		const { stdout, stderr, exitCode } = runCli(
+			['fixtures', 'generate', '--input', `${rel}/raw`, '--output', rel, '--force', '--verbose'],
+			{ timeout: 120000 },
+		);
 
 		const combined = stdout + stderr;
 
-		// With --force, should NOT report as skipped
+		expect(exitCode, combined).toBe(0);
 		expect(combined).not.toMatch(/already exist.*skip/i);
-
-		// Should attempt to process (call Document AI)
 		expect(combined).toMatch(/Calling Document AI|process/i);
-
-		// Will fail without GCP, but the key behavior is: it attempted re-generation
-		// (as opposed to QA-03 which skips entirely)
+		expect(readFileSync(fixturePath, 'utf-8')).not.toBe(originalLayout);
 	});
 
 	// ─── QA-05: Status display ───
@@ -269,35 +259,24 @@ describe('Spec 20 — Fixture Generator', () => {
 
 	// ─── QA-06: Step filter ───
 
-	it('QA-06: `--step extract` only runs extract step', () => {
+	it.skipIf(!GCP_TESTS_ENABLED)('QA-06: `--step extract` only runs extract step', () => {
 		const { rel, abs } = createTmpFixtureDir('step-filter');
 		trackTmpDir(abs);
 
 		const slug = addTestPdf(abs, 'native-text-sample.pdf');
 
-		const { stdout, stderr } = runCli([
-			'fixtures',
-			'generate',
-			'--input',
-			`${rel}/raw`,
-			'--output',
-			rel,
-			'--step',
-			'extract',
-			'--verbose',
-		]);
+		const { stdout, stderr, exitCode } = runCli(
+			['fixtures', 'generate', '--input', `${rel}/raw`, '--output', rel, '--step', 'extract', '--verbose'],
+			{ timeout: 120000 },
+		);
 
 		const combined = stdout + stderr;
 
-		// Should discover the PDF
+		expect(exitCode, combined).toBe(0);
 		expect(combined).toMatch(/discover|pdf|pdfCount/i);
-
-		// Should attempt extract step specifically
-		// Will fail without GCP but the step filter acceptance is verified
 		expect(combined).toMatch(/extract|Document AI/i);
-
-		// The slug should appear in the output (being processed)
 		expect(combined).toContain(slug);
+		expect(existsSync(join(abs, 'extracted', slug, 'layout.json'))).toBe(true);
 	});
 
 	// ─── QA-07: Slug derivation ───
@@ -308,27 +287,31 @@ describe('Spec 20 — Fixture Generator', () => {
 
 		// Copy a real PDF but rename it to complex-magazine.pdf
 		addTestPdf(abs, 'native-text-sample.pdf', 'complex-magazine.pdf');
+		createExistingFixture(abs, 'complex-magazine');
 
-		const { stdout, stderr } = runCli(['fixtures', 'generate', '--input', `${rel}/raw`, '--output', rel, '--verbose']);
+		const { stdout, stderr, exitCode } = runCli([
+			'fixtures',
+			'generate',
+			'--input',
+			`${rel}/raw`,
+			'--output',
+			rel,
+			'--verbose',
+		]);
 
 		const combined = stdout + stderr;
 
-		// The slug should be "complex-magazine" (derived from filename minus .pdf)
+		expect(exitCode).toBe(0);
 		expect(combined).toContain('complex-magazine');
-
-		// If GCP were available, output would land in extracted/complex-magazine/
-		// Without GCP, we verify the slug derivation from the logs
-		// The implementation should log slug: "complex-magazine"
+		expect(combined).toMatch(/skip/i);
 		expect(combined).toMatch(/complex-magazine/);
 	});
 
 	// ─── QA-08: Writer creates correct structure ───
 
 	it('QA-08: extract writer creates layout.json + pages/page-NNN.png structure', () => {
-		// This test verifies the expected writer output structure.
-		// Without GCP credentials, we cannot actually run Document AI.
-		// We verify by creating a pre-existing fixture and checking it matches
-		// the spec's expected structure, and that the status command recognizes it.
+		// This test verifies the expected writer output structure with a
+		// synthetic pre-existing fixture, so it stays deterministic and local.
 
 		const { rel, abs } = createTmpFixtureDir('writer');
 		trackTmpDir(abs);
@@ -374,41 +357,39 @@ describe('Spec 20 — Fixture Generator', () => {
 
 	// ─── QA-09: Partial failure handling ───
 
-	it('QA-09: with 2 PDFs where one processing path fails, errors are reported and exit code is 1', () => {
-		const { rel, abs } = createTmpFixtureDir('partial');
-		trackTmpDir(abs);
+	it.skipIf(!GCP_TESTS_ENABLED)(
+		'QA-09: with 2 PDFs where one processing path fails, errors are reported and exit code is 1',
+		() => {
+			const { rel, abs } = createTmpFixtureDir('partial');
+			trackTmpDir(abs);
 
-		// One valid PDF plus one corrupt payload forces at least one per-file error
-		// regardless of whether real GCP credentials are configured.
-		const validSlug = addTestPdf(abs, 'native-text-sample.pdf');
-		const invalidSlug = addInvalidPdf(abs, 'broken-input.pdf');
+			const validSlug = addTestPdf(abs, 'native-text-sample.pdf');
+			const invalidSlug = addInvalidPdf(abs, 'broken-input.pdf');
 
-		const { stdout, stderr, exitCode } = runCli(
-			['fixtures', 'generate', '--input', `${rel}/raw`, '--output', rel, '--verbose'],
-			{ timeout: 60000 },
-		);
+			const { stdout, stderr, exitCode } = runCli(
+				['fixtures', 'generate', '--input', `${rel}/raw`, '--output', rel, '--verbose'],
+				{ timeout: 120000 },
+			);
 
-		const combined = stdout + stderr;
+			const combined = stdout + stderr;
 
-		// Both PDFs should be discovered
-		expect(combined).toMatch(/pdfCount.*2|2.*pdf|discover/i);
-		expect(combined).toContain(validSlug);
-		expect(combined).toContain(invalidSlug);
+			// Both PDFs should be discovered
+			expect(combined).toMatch(/pdfCount.*2|2.*pdf|discover/i);
+			expect(combined).toContain(validSlug);
+			expect(combined).toContain(invalidSlug);
 
-		// The corrupt file must produce an error and the overall run must fail.
-		expect(combined).toMatch(/error|fail/i);
-		expect(exitCode).toBe(1);
+			// The corrupt file must produce an error and the overall run must fail.
+			expect(combined).toMatch(/error|fail/i);
+			expect(exitCode).toBe(1);
 
-		// The summary should mention the error count
-		expect(combined).toMatch(/\d+\s*error/i);
+			// The summary should mention the error count
+			expect(combined).toMatch(/\d+\s*error/i);
 
-		// If the valid PDF was processed successfully in this environment, keep
-		// the assertion black-box by checking for the extract fixture directory.
-		const extractedDir = join(abs, 'extracted', validSlug);
-		if (existsSync(extractedDir)) {
+			const extractedDir = join(abs, 'extracted', validSlug);
+			expect(existsSync(extractedDir)).toBe(true);
 			expect(existsSync(join(extractedDir, 'layout.json'))).toBe(true);
-		}
-	});
+		},
+	);
 
 	// ─── QA-10: Build succeeds ───
 

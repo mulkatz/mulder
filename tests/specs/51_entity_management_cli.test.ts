@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
-import { ensureSchema } from '../lib/schema.js';
+import { ensureSchema, truncateMulderTables } from '../lib/schema.js';
 
 /**
  * Black-box QA tests for Spec 51: Entity Management CLI
@@ -47,11 +47,7 @@ function runCli(
  * Truncate all relevant tables for a clean test state.
  */
 function cleanTestData(): void {
-	db.runSql(
-		'TRUNCATE TABLE chunks, story_entities, entity_edges, entity_aliases, ' +
-			'taxonomy, entities, stories, source_steps, ' +
-			'pipeline_run_sources, pipeline_runs, sources CASCADE;',
-	);
+	truncateMulderTables();
 }
 
 /**
