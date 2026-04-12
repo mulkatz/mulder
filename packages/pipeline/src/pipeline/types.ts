@@ -11,6 +11,7 @@
  */
 
 import type { StepError } from '@mulder/core';
+import type { AnalyzeResult } from '../analyze/types.js';
 
 // ────────────────────────────────────────────────────────────
 // Step naming
@@ -63,6 +64,12 @@ export interface PipelineRunSourceOutcome {
 	errorMessage: string | null;
 }
 
+export interface PipelineGlobalAnalysisOutcome {
+	status: 'success' | 'partial' | 'failed' | 'skipped';
+	summary: string;
+	result: AnalyzeResult | null;
+}
+
 /** Orchestrator result. */
 export interface PipelineRunResult {
 	/** `success` = all sources completed; `partial` = some failed; `failed` = all failed. */
@@ -78,6 +85,7 @@ export interface PipelineRunResult {
 		failedSources: number;
 		skippedSources: number;
 		sources: PipelineRunSourceOutcome[];
+		analysis: PipelineGlobalAnalysisOutcome;
 	};
 	errors: StepError[];
 	metadata: {

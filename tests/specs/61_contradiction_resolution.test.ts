@@ -312,22 +312,30 @@ describe('Spec 61 — Contradiction Resolution', () => {
 		expect(`${result.stdout}\n${result.stderr}`).toMatch(/unknown option|unexpected option/i);
 	});
 
-	it('CLI-04: --contradictions --full exits non-zero because --full belongs to M6-G7', () => {
+	it('CLI-04: --contradictions --full exits non-zero because full mode and single-pass selectors are mutually exclusive', () => {
 		const result = runCli(['analyze', '--contradictions', '--full'], { env: { MULDER_CONFIG: enabledConfigPath } });
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('M6-G7');
+		expect(result.stderr).toContain('--full cannot be combined');
 	});
 
-	it('CLI-05: no args exits non-zero and asks for an analysis selector', () => {
+	it('CLI-05: no args now runs full analyze mode by default', () => {
+		if (!pgAvailable) return;
+		seedValidFixture();
+
 		const result = runCli(['analyze'], { env: { MULDER_CONFIG: enabledConfigPath } });
-		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('--contradictions');
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain('contradictions');
+		expect(result.stderr).toContain('Analyze complete');
 	});
 
-	it('CLI-06: --full exits non-zero because the full Analyze orchestrator is not implemented yet', () => {
+	it('CLI-06: --full runs the same full analyze sequence explicitly', () => {
+		if (!pgAvailable) return;
+		seedValidFixture();
+
 		const result = runCli(['analyze', '--full'], { env: { MULDER_CONFIG: enabledConfigPath } });
-		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('M6-G7');
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain('reliability');
+		expect(result.stderr).toContain('Analyze complete');
 	});
 
 	it('CLI-07: --reliability now succeeds because source reliability scoring is implemented', () => {
@@ -368,7 +376,7 @@ describe('CLI Smoke Tests: analyze', () => {
 			env: { MULDER_CONFIG: enabledConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('one selector at a time');
+		expect(result.stderr).toContain('one selector or --full');
 	});
 
 	it('SMOKE-03: mulder analyze --contradictions --spatio-temporal exits non-zero with selector validation', () => {
@@ -376,6 +384,6 @@ describe('CLI Smoke Tests: analyze', () => {
 			env: { MULDER_CONFIG: enabledConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('one selector at a time');
+		expect(result.stderr).toContain('one selector or --full');
 	});
 });

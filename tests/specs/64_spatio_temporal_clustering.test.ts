@@ -347,7 +347,7 @@ describe('Spec 64 — Spatio-Temporal Clustering', () => {
 			env: { MULDER_CONFIG: enabledConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('one selector at a time');
+		expect(result.stderr).toContain('one selector or --full');
 	});
 
 	it('CLI-04: --spatio-temporal --evidence-chains exits non-zero because multi-selector analyze is not implemented yet', () => {
@@ -355,7 +355,7 @@ describe('Spec 64 — Spatio-Temporal Clustering', () => {
 			env: { MULDER_CONFIG: enabledConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('one selector at a time');
+		expect(result.stderr).toContain('one selector or --full');
 	});
 
 	it('CLI-05: --spatio-temporal --contradictions exits non-zero because multi-selector analyze is not implemented yet', () => {
@@ -363,26 +363,34 @@ describe('Spec 64 — Spatio-Temporal Clustering', () => {
 			env: { MULDER_CONFIG: enabledConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('one selector at a time');
+		expect(result.stderr).toContain('one selector or --full');
 	});
 
-	it('CLI-06: --spatio-temporal --full exits non-zero because --full belongs to M6-G7', () => {
+	it('CLI-06: --spatio-temporal --full exits non-zero because full mode and single-pass selectors are mutually exclusive', () => {
 		const result = runCli(['analyze', '--spatio-temporal', '--full'], {
 			env: { MULDER_CONFIG: enabledConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('M6-G7');
+		expect(result.stderr).toContain('--full cannot be combined');
 	});
 
-	it('CLI-07: no args exits non-zero and asks for an analysis selector', () => {
+	it('CLI-07: no args now runs full analyze mode by default', () => {
+		if (!pgAvailable) return;
+		seedThreeEventFixture();
+
 		const result = runCli(['analyze'], { env: { MULDER_CONFIG: enabledConfigPath } });
-		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('analysis selector');
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain('spatio-temporal');
+		expect(result.stderr).toContain('Analyze complete');
 	});
 
-	it('CLI-08: --full exits non-zero because the full Analyze orchestrator is not implemented yet', () => {
+	it('CLI-08: --full runs the full analyze sequence explicitly', () => {
+		if (!pgAvailable) return;
+		seedThreeEventFixture();
+
 		const result = runCli(['analyze', '--full'], { env: { MULDER_CONFIG: enabledConfigPath } });
-		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('M6-G7');
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain('contradictions');
+		expect(result.stderr).toContain('Analyze complete');
 	});
 });

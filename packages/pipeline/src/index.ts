@@ -1,6 +1,8 @@
 export type {
 	AnalyzeData,
 	AnalyzeInput,
+	AnalyzePassName,
+	AnalyzePassResult,
 	AnalyzeResult,
 	ContradictionAnalyzeData,
 	ContradictionResolutionOutcome,
@@ -8,7 +10,9 @@ export type {
 	ContradictionVerdict,
 	EvidenceChainsAnalyzeData,
 	EvidenceChainThesisOutcome,
+	FullAnalyzeData,
 	ReliabilityAnalyzeData,
+	SingleAnalyzeData,
 	SourceReliabilityOutcome,
 	SpatioTemporalAnalyzeData,
 	SpatioTemporalCluster,
@@ -89,6 +93,7 @@ export { execute as executeGround } from './ground/index.js';
 export type { IngestFileResult, IngestInput, IngestResult } from './ingest/index.js';
 export { execute as executeIngest } from './ingest/index.js';
 export type {
+	PipelineGlobalAnalysisOutcome,
 	PipelineRunInput,
 	PipelineRunOptions,
 	PipelineRunResult,
