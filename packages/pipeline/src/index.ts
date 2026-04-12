@@ -2,9 +2,12 @@ export type {
 	AnalyzeData,
 	AnalyzeInput,
 	AnalyzeResult,
+	ContradictionAnalyzeData,
 	ContradictionResolutionOutcome,
 	ContradictionResolutionResponse,
 	ContradictionVerdict,
+	ReliabilityAnalyzeData,
+	SourceReliabilityOutcome,
 	WinningClaim,
 } from './analyze/index.js';
 export { execute as executeAnalyze } from './analyze/index.js';

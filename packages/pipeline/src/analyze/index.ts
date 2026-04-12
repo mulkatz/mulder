@@ -18,26 +18,33 @@ import {
 	findStoryById,
 	renderPrompt,
 	updateEdge,
+	updateSource,
 } from '@mulder/core';
 import type pg from 'pg';
 import { z } from 'zod';
 import { z as z3 } from 'zod/v3';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { computeSourceReliability } from './reliability.js';
 import type {
-	AnalyzeData,
 	AnalyzeInput,
 	AnalyzeResult,
+	ContradictionAnalyzeData,
 	ContradictionResolutionOutcome,
 	ContradictionResolutionResponse,
+	ReliabilityAnalyzeData,
+	SourceReliabilityOutcome,
 } from './types.js';
 
 export type {
 	AnalyzeData,
 	AnalyzeInput,
 	AnalyzeResult,
+	ContradictionAnalyzeData,
 	ContradictionResolutionOutcome,
 	ContradictionResolutionResponse,
 	ContradictionVerdict,
+	ReliabilityAnalyzeData,
+	SourceReliabilityOutcome,
 	WinningClaim,
 } from './types.js';
 
@@ -282,16 +289,37 @@ async function resolveEdge(
 	};
 }
 
-function makeData(outcomes: ContradictionResolutionOutcome[], failedCount: number, pendingCount: number): AnalyzeData {
+function makeContradictionData(
+	outcomes: ContradictionResolutionOutcome[],
+	failedCount: number,
+	pendingCount: number,
+): ContradictionAnalyzeData {
 	const confirmedCount = outcomes.filter((outcome) => outcome.verdict === 'confirmed').length;
 	const dismissedCount = outcomes.filter((outcome) => outcome.verdict === 'dismissed').length;
 
 	return {
+		mode: 'contradictions',
 		pendingCount,
 		processedCount: outcomes.length,
 		confirmedCount,
 		dismissedCount,
 		failedCount,
+		outcomes,
+	};
+}
+
+function makeReliabilityData(
+	sourceCount: number,
+	threshold: number,
+	belowThreshold: boolean,
+	outcomes: SourceReliabilityOutcome[],
+): ReliabilityAnalyzeData {
+	return {
+		mode: 'reliability',
+		sourceCount,
+		scoredCount: outcomes.length,
+		threshold,
+		belowThreshold,
 		outcomes,
 	};
 }
@@ -303,59 +331,192 @@ export async function execute(
 	pool: pg.Pool | undefined,
 	logger: Logger,
 ): Promise<AnalyzeResult> {
-	const log = createChildLogger(logger, { step: STEP_NAME, contradictions: input.contradictions });
+	const log = createChildLogger(logger, {
+		step: STEP_NAME,
+		contradictions: input.contradictions ?? false,
+		reliability: input.reliability ?? false,
+	});
 	const startTime = performance.now();
 
 	if (!pool) {
 		throw new AnalyzeError('Database pool is required for analyze step', ANALYZE_ERROR_CODES.ANALYZE_WRITE_FAILED);
 	}
 
-	if (!input.contradictions || !config.analysis.enabled || !config.analysis.contradictions) {
+	const selectedModes = [
+		input.contradictions ? 'contradictions' : null,
+		input.reliability ? 'reliability' : null,
+	].filter((value): value is 'contradictions' | 'reliability' => value !== null);
+	if (selectedModes.length !== 1) {
+		throw new AnalyzeError('Exactly one analyze selector must be enabled', ANALYZE_ERROR_CODES.ANALYZE_DISABLED, {
+			context: { selectedModes },
+		});
+	}
+
+	if (input.contradictions) {
+		if (!config.analysis.enabled || !config.analysis.contradictions) {
+			throw new AnalyzeError(
+				'Contradiction analysis is disabled in the active configuration',
+				ANALYZE_ERROR_CODES.ANALYZE_DISABLED,
+				{
+					context: {
+						enabled: config.analysis.enabled,
+						contradictions: config.analysis.contradictions,
+					},
+				},
+			);
+		}
+
+		const pendingEdges = await findEdgesByType(pool, 'POTENTIAL_CONTRADICTION');
+		const outcomes: ContradictionResolutionOutcome[] = [];
+		const errors: StepError[] = [];
+
+		for (const edge of pendingEdges) {
+			try {
+				const context = await hydrateContext(pool, edge);
+				const outcome = await resolveEdge(context, config, services, pool);
+				outcomes.push(outcome);
+			} catch (cause: unknown) {
+				const analyzeError =
+					cause instanceof AnalyzeError
+						? cause
+						: new AnalyzeError(
+								`Unexpected analyze failure for edge ${edge.id}`,
+								ANALYZE_ERROR_CODES.ANALYZE_LLM_FAILED,
+								{
+									cause,
+									context: { edgeId: edge.id },
+								},
+							);
+				errors.push(toStepError(analyzeError, edge.id));
+				log.warn({ err: cause, edgeId: edge.id }, 'Analyze failed for contradiction edge — continuing');
+			}
+		}
+
+		const data = makeContradictionData(outcomes, errors.length, pendingEdges.length);
+		const status = errors.length === 0 ? 'success' : outcomes.length > 0 ? 'partial' : 'failed';
+		const durationMs = Math.round(performance.now() - startTime);
+
+		log.info(
+			{
+				mode: data.mode,
+				pendingCount: data.pendingCount,
+				processedCount: data.processedCount,
+				confirmedCount: data.confirmedCount,
+				dismissedCount: data.dismissedCount,
+				failedCount: data.failedCount,
+				duration_ms: durationMs,
+			},
+			'Analyze step completed',
+		);
+
+		return {
+			status,
+			data,
+			errors,
+			metadata: {
+				duration_ms: durationMs,
+				items_processed: data.processedCount,
+				items_skipped: 0,
+				items_cached: 0,
+			},
+		};
+	}
+
+	if (!config.analysis.enabled || !config.analysis.reliability) {
 		throw new AnalyzeError(
-			'Contradiction analysis is disabled in the active configuration',
+			'Source reliability analysis is disabled in the active configuration',
 			ANALYZE_ERROR_CODES.ANALYZE_DISABLED,
 			{
 				context: {
 					enabled: config.analysis.enabled,
-					contradictions: config.analysis.contradictions,
+					reliability: config.analysis.reliability,
 				},
 			},
 		);
 	}
 
-	const pendingEdges = await findEdgesByType(pool, 'POTENTIAL_CONTRADICTION');
-	const outcomes: ContradictionResolutionOutcome[] = [];
+	const computation = await computeSourceReliability(pool, config.thresholds.source_reliability);
+	const persistedOutcomes: SourceReliabilityOutcome[] = [];
 	const errors: StepError[] = [];
+	const computedSourceIds = new Set(computation.outcomes.map((outcome) => outcome.sourceId));
+	const staleSourceIds =
+		computation.outcomes.length === 0
+			? []
+			: (
+					await pool.query<{ id: string }>('SELECT id FROM sources WHERE reliability_score IS NOT NULL ORDER BY id')
+				).rows
+					.map((row) => row.id)
+					.filter((sourceId) => !computedSourceIds.has(sourceId));
 
-	for (const edge of pendingEdges) {
+	for (const outcome of computation.outcomes) {
 		try {
-			const context = await hydrateContext(pool, edge);
-			const outcome = await resolveEdge(context, config, services, pool);
-			outcomes.push(outcome);
+			await updateSource(pool, outcome.sourceId, {
+				reliabilityScore: outcome.reliabilityScore,
+			});
+			persistedOutcomes.push(outcome);
 		} catch (cause: unknown) {
 			const analyzeError =
 				cause instanceof AnalyzeError
 					? cause
-					: new AnalyzeError(`Unexpected analyze failure for edge ${edge.id}`, ANALYZE_ERROR_CODES.ANALYZE_LLM_FAILED, {
-							cause,
-							context: { edgeId: edge.id },
-						});
-			errors.push(toStepError(analyzeError, edge.id));
-			log.warn({ err: cause, edgeId: edge.id }, 'Analyze failed for contradiction edge — continuing');
+					: new AnalyzeError(
+							`Failed to persist source reliability for source ${outcome.sourceId}`,
+							ANALYZE_ERROR_CODES.ANALYZE_WRITE_FAILED,
+							{
+								cause,
+								context: { sourceId: outcome.sourceId },
+							},
+						);
+			errors.push({
+				code: analyzeError.code,
+				message: `${outcome.sourceId}: ${analyzeError.message}`,
+			});
+			log.warn({ err: cause, sourceId: outcome.sourceId }, 'Analyze failed to persist source reliability — continuing');
 		}
 	}
 
-	const data = makeData(outcomes, errors.length, pendingEdges.length);
-	const status = errors.length === 0 ? 'success' : outcomes.length > 0 ? 'partial' : 'failed';
+	for (const sourceId of staleSourceIds) {
+		try {
+			await updateSource(pool, sourceId, {
+				reliabilityScore: null,
+			});
+		} catch (cause: unknown) {
+			const analyzeError =
+				cause instanceof AnalyzeError
+					? cause
+					: new AnalyzeError(
+							`Failed to clear stale source reliability for source ${sourceId}`,
+							ANALYZE_ERROR_CODES.ANALYZE_WRITE_FAILED,
+							{
+								cause,
+								context: { sourceId },
+							},
+						);
+			errors.push({
+				code: analyzeError.code,
+				message: `${sourceId}: ${analyzeError.message}`,
+			});
+			log.warn({ err: cause, sourceId }, 'Analyze failed to clear stale source reliability — continuing');
+		}
+	}
+
+	const data = makeReliabilityData(
+		computation.sourceCount,
+		computation.threshold,
+		computation.belowThreshold,
+		persistedOutcomes,
+	);
+	const status = errors.length === 0 ? 'success' : persistedOutcomes.length > 0 ? 'partial' : 'failed';
 	const durationMs = Math.round(performance.now() - startTime);
 
 	log.info(
 		{
-			pendingCount: data.pendingCount,
-			processedCount: data.processedCount,
-			confirmedCount: data.confirmedCount,
-			dismissedCount: data.dismissedCount,
-			failedCount: data.failedCount,
+			mode: data.mode,
+			sourceCount: data.sourceCount,
+			scoredCount: data.scoredCount,
+			threshold: data.threshold,
+			belowThreshold: data.belowThreshold,
+			clearedCount: staleSourceIds.length,
+			failedCount: errors.length,
 			duration_ms: durationMs,
 		},
 		'Analyze step completed',
@@ -367,7 +528,7 @@ export async function execute(
 		errors,
 		metadata: {
 			duration_ms: durationMs,
-			items_processed: data.processedCount,
+			items_processed: data.scoredCount,
 			items_skipped: 0,
 			items_cached: 0,
 		},
