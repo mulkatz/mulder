@@ -361,8 +361,21 @@ class DevLlmService implements LlmService {
 			this.logger.debug('DevLlmService: generateStructured — returning rerank fixture (empty rankings)');
 			result = JSON.parse(JSON.stringify({ rankings: [] }));
 		} else {
-			this.logger.debug('DevLlmService: generateStructured called (returning empty object)');
-			result = emptyStubResponse<T>();
+			if (hasProperty('verdict')) {
+				this.logger.debug('DevLlmService: generateStructured — returning contradiction resolution fixture');
+				result = JSON.parse(
+					JSON.stringify({
+						verdict: 'confirmed',
+						winning_claim: 'A',
+						confidence: 0.84,
+						explanation:
+							'Dev mode fixture selected claim A based on stronger source context and a more specific attribute statement.',
+					}),
+				);
+			} else {
+				this.logger.debug('DevLlmService: generateStructured called (returning empty object)');
+				result = emptyStubResponse<T>();
+			}
 		}
 
 		// Call responseValidator if provided, matching production behavior

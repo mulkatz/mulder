@@ -10,6 +10,7 @@
  */
 
 import { Command } from 'commander';
+import { registerAnalyzeCommands } from './commands/analyze.js';
 import { registerCacheCommands } from './commands/cache.js';
 import { registerConfigCommands } from './commands/config.js';
 import { registerDbCommands } from './commands/db.js';
@@ -35,6 +36,7 @@ const program = new Command()
 	.version('0.0.0');
 
 registerCacheCommands(program);
+registerAnalyzeCommands(program);
 registerConfigCommands(program);
 registerDbCommands(program);
 registerEmbedCommands(program);

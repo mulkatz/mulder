@@ -147,6 +147,7 @@ export {
 	findChunksByStoryId,
 	findEdgesByEntityId,
 	findEdgesByStoryId,
+	findEdgesByType,
 	findEntitiesByCanonicalId,
 	findEntitiesByStoryId,
 	findEntitiesByType,
@@ -184,6 +185,7 @@ export {
 	traverseGraph,
 	unlinkStoryEntity,
 	updateChunkEmbedding,
+	updateEdge,
 	updateEntity,
 	updateEntityEmbedding,
 	updateSource,
@@ -209,6 +211,7 @@ export { clearPromptCaches, listTemplates, renderPrompt } from './prompts/index.
 export type { CacheKeyParams } from './shared/cache-hash.js';
 export { computeCacheKey } from './shared/cache-hash.js';
 export type {
+	AnalyzeErrorCode,
 	ConfigErrorCode,
 	DatabaseErrorCode,
 	EmbedErrorCode,
@@ -226,6 +229,8 @@ export type {
 	TaxonomyErrorCode,
 } from './shared/errors.js';
 export {
+	ANALYZE_ERROR_CODES,
+	AnalyzeError,
 	CONFIG_ERROR_CODES,
 	ConfigError,
 	DATABASE_ERROR_CODES,

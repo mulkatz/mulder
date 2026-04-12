@@ -1,4 +1,14 @@
 export type {
+	AnalyzeData,
+	AnalyzeInput,
+	AnalyzeResult,
+	ContradictionResolutionOutcome,
+	ContradictionResolutionResponse,
+	ContradictionVerdict,
+	WinningClaim,
+} from './analyze/index.js';
+export { execute as executeAnalyze } from './analyze/index.js';
+export type {
 	ChunkerConfig,
 	EmbedChunkInput,
 	EmbedChunkResult,
