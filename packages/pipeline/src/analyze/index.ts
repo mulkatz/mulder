@@ -31,6 +31,7 @@ import {
 	findSourceById,
 	findStoryById,
 	renderPrompt,
+	replaceSpatioTemporalClustersSnapshot,
 	updateEdge,
 	updateSource,
 } from '@mulder/core';
@@ -40,6 +41,7 @@ import { z as z3 } from 'zod/v3';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { computeEvidenceChainsForThesis, type EvidenceChainThesisComputation } from './evidence-chains.js';
 import { computeSourceReliability } from './reliability.js';
+import { computeSpatioTemporalClusters } from './spatio-temporal.js';
 import type {
 	AnalyzeInput,
 	AnalyzeResult,
@@ -50,6 +52,7 @@ import type {
 	EvidenceChainThesisOutcome,
 	ReliabilityAnalyzeData,
 	SourceReliabilityOutcome,
+	SpatioTemporalAnalyzeData,
 } from './types.js';
 
 export type {
@@ -64,6 +67,10 @@ export type {
 	EvidenceChainThesisOutcome,
 	ReliabilityAnalyzeData,
 	SourceReliabilityOutcome,
+	SpatioTemporalAnalyzeData,
+	SpatioTemporalCluster,
+	SpatioTemporalClusterType,
+	SpatioTemporalEvent,
 	WinningClaim,
 } from './types.js';
 
@@ -437,6 +444,28 @@ function makeReliabilityData(
 	};
 }
 
+function makeSpatioTemporalData(
+	computation: Awaited<ReturnType<typeof computeSpatioTemporalClusters>>,
+	persistedCount: number,
+): SpatioTemporalAnalyzeData {
+	return {
+		mode: 'spatio-temporal',
+		eventCount: computation.eventCount,
+		timestampEventCount: computation.timestampEventCount,
+		geometryEventCount: computation.geometryEventCount,
+		spatioTemporalEventCount: computation.spatioTemporalEventCount,
+		threshold: computation.threshold,
+		belowThreshold: computation.belowThreshold,
+		nothingToAnalyze: computation.nothingToAnalyze,
+		persistedCount,
+		temporalClusterCount: computation.temporalClusterCount,
+		spatialClusterCount: computation.spatialClusterCount,
+		spatioTemporalClusterCount: computation.spatioTemporalClusterCount,
+		clusters: computation.clusters,
+		warning: computation.warning,
+	};
+}
+
 export async function execute(
 	input: AnalyzeInput,
 	config: MulderConfig,
@@ -449,6 +478,7 @@ export async function execute(
 		contradictions: input.contradictions ?? false,
 		reliability: input.reliability ?? false,
 		evidenceChains: input.evidenceChains ?? false,
+		spatioTemporal: input.spatioTemporal ?? false,
 	});
 	const startTime = performance.now();
 
@@ -482,7 +512,10 @@ export async function execute(
 		input.contradictions ? 'contradictions' : null,
 		input.reliability ? 'reliability' : null,
 		input.evidenceChains ? 'evidence-chains' : null,
-	].filter((value): value is 'contradictions' | 'reliability' | 'evidence-chains' => value !== null);
+		input.spatioTemporal ? 'spatio-temporal' : null,
+	].filter(
+		(value): value is 'contradictions' | 'reliability' | 'evidence-chains' | 'spatio-temporal' => value !== null,
+	);
 	if (selectedModes.length !== 1) {
 		throw new AnalyzeError('Exactly one analyze selector must be enabled', ANALYZE_ERROR_CODES.ANALYZE_DISABLED, {
 			context: { selectedModes },
@@ -652,6 +685,67 @@ export async function execute(
 				duration_ms: durationMs,
 				items_processed: data.processedCount,
 				items_skipped: data.failedCount,
+				items_cached: 0,
+			},
+		};
+	}
+
+	if (input.spatioTemporal) {
+		if (!config.analysis.enabled || !config.analysis.spatio_temporal) {
+			throw new AnalyzeError(
+				'Spatio-temporal analysis is disabled in the active configuration',
+				ANALYZE_ERROR_CODES.ANALYZE_DISABLED,
+				{
+					context: {
+						enabled: config.analysis.enabled,
+						spatioTemporal: config.analysis.spatio_temporal,
+					},
+				},
+			);
+		}
+
+		const computation = await computeSpatioTemporalClusters(
+			pool,
+			config.analysis.cluster_window_days,
+			config.thresholds.temporal_clustering,
+		);
+
+		let persistedCount = 0;
+		if (computation.belowThreshold) {
+			persistedCount = (await replaceSpatioTemporalClustersSnapshot(pool, [])).length;
+		} else if (!computation.nothingToAnalyze) {
+			persistedCount = (await replaceSpatioTemporalClustersSnapshot(pool, computation.snapshotRows)).length;
+		}
+
+		const data = makeSpatioTemporalData(computation, persistedCount);
+		const durationMs = Math.round(performance.now() - startTime);
+
+		log.info(
+			{
+				mode: data.mode,
+				eventCount: data.eventCount,
+				timestampEventCount: data.timestampEventCount,
+				geometryEventCount: data.geometryEventCount,
+				spatioTemporalEventCount: data.spatioTemporalEventCount,
+				persistedCount: data.persistedCount,
+				temporalClusterCount: data.temporalClusterCount,
+				spatialClusterCount: data.spatialClusterCount,
+				spatioTemporalClusterCount: data.spatioTemporalClusterCount,
+				belowThreshold: data.belowThreshold,
+				nothingToAnalyze: data.nothingToAnalyze,
+				duration_ms: durationMs,
+			},
+			'Analyze step completed',
+		);
+
+		return {
+			status: 'success',
+			data,
+			errors: [],
+			metadata: {
+				duration_ms: durationMs,
+				items_processed: data.persistedCount,
+				items_skipped: data.belowThreshold ? data.eventCount : 0,
 				items_cached: 0,
 			},
 		};

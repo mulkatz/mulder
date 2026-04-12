@@ -10,6 +10,10 @@ export type {
 	EvidenceChainThesisOutcome,
 	ReliabilityAnalyzeData,
 	SourceReliabilityOutcome,
+	SpatioTemporalAnalyzeData,
+	SpatioTemporalCluster,
+	SpatioTemporalClusterType,
+	SpatioTemporalEvent,
 	WinningClaim,
 } from './analyze/index.js';
 export { execute as executeAnalyze } from './analyze/index.js';
