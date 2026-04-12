@@ -123,14 +123,9 @@ function formatPageRange(story: Story): string {
 	return 'unknown';
 }
 
-function resolveLocale(config: MulderConfig, storyA: Story, storyB: Story): string {
-	const candidateLocales = [storyA.language, storyB.language, config.project.supported_locales[0], 'en'];
-	for (const locale of candidateLocales) {
-		if (typeof locale === 'string' && locale.trim().length > 0) {
-			return locale;
-		}
-	}
-	return 'en';
+function resolveLocale(config: MulderConfig): string {
+	const locale = config.project.supported_locales[0];
+	return typeof locale === 'string' && locale.trim().length > 0 ? locale : 'en';
 }
 
 function toStepError(error: AnalyzeError, edgeId: string): StepError {
@@ -225,7 +220,7 @@ async function resolveEdge(
 	services: Services,
 	pool: pg.Pool,
 ): Promise<ContradictionResolutionOutcome> {
-	const locale = resolveLocale(config, context.storyA, context.storyB);
+	const locale = resolveLocale(config);
 	const prompt = buildPrompt(context, locale);
 
 	let resolution: ContradictionResolutionResponse;
