@@ -41,11 +41,91 @@ Do not use this for small bug fixes or narrow edits that do not need a spec. Rou
 
 - Preserve the workflow and decision gates from the Claude command, but adapt them to Codex tools and policies.
 - Replace Claude-specific plan-mode wording with Codex planning. Use `update_plan` for substantial work and keep it current.
-- If the legacy workflow calls for subagents, you may delegate because the user explicitly asked for the auto-pilot workflow. Use workers for implementation or QA only when delegation materially helps.
+- Treat `auto-pilot` as a thin coordinator. Keep the main thread focused on workflow state, decisions, and summaries rather than detailed implementation or QA context.
+- Architect and finalize stay inline unless a blocking constraint forces a pause.
+- Implement, verify, and review run via fresh sub-agents by default because the user explicitly asked for the auto-pilot workflow and this workflow benefits from bounded phase context.
+- Prefer fresh sub-agents over reusing a long-lived worker across phases. For iteration retries, spawn a new phase agent with the latest structured failure evidence instead of carrying full prior chat history.
+- Do not fork the full parent context into phase agents unless a narrow blocking detail truly cannot be reconstructed from the repo plus the handoff payload.
 - If a referenced model name from the Claude prompt is unavailable, use the default current Codex model instead of inventing compatibility shims.
 - Do not carry over Claude-specific commit trailers or identity strings unless the user explicitly wants them.
 - Keep the state machine from the original command: target step, milestone, scope, spec path, issue, branch, PR, iteration count, verdict, failures.
 - Preserve the Claude command's stop conditions. Only ask the user for approval where the original workflow requires it, such as multi-spec splits or a genuinely blocking fork.
+
+## Coordinator Model
+
+Run `auto-pilot` as an orchestrator with a small explicit ledger:
+
+```text
+TARGET_STEP
+MILESTONE
+SCOPE
+SPEC_PATH
+SPEC_NUMBER
+ISSUE_NUMBER
+ISSUE_URL
+BRANCH_NAME
+PR_URL
+PR_NUMBER
+ITERATION
+MAX_ITERATIONS
+VERDICT
+FAILURES
+```
+
+The main agent should hold only this ledger plus brief phase summaries. Do not keep full implementation, test, or review reasoning in the parent thread once a phase is complete.
+
+## Phase Handoffs
+
+When spawning a phase sub-agent, pass only the minimum state it needs:
+
+- Implement handoff:
+  - `SPEC_PATH`
+  - `SPEC_NUMBER`
+  - `TARGET_STEP`
+  - `ISSUE_NUMBER`
+  - `ISSUE_URL`
+  - `BRANCH_NAME` if resuming
+  - `ITERATION`
+  - `FAILURES` only for iteration 2+
+- Verify handoff:
+  - `SPEC_PATH`
+  - `SPEC_NUMBER`
+  - `TARGET_STEP`
+  - `BRANCH_NAME`
+  - `ITERATION`
+  - any `TEST_MISMATCH` details reported by implementation
+- Review handoff:
+  - `SPEC_PATH`
+  - `SPEC_NUMBER`
+  - `TARGET_STEP`
+  - `BRANCH_NAME`
+  - `PR_NUMBER` or `PR_URL` when available
+
+Each handoff should tell the sub-agent to reconstruct domain context from repository files rather than parent-thread memory.
+
+## Required Sub-Agent Outputs
+
+Sub-agents must return compact, parseable summaries so the coordinator can update its ledger without inheriting the full phase context.
+
+- Implement must return:
+  - `BRANCH_NAME`
+  - `PR_URL`
+  - `PR_NUMBER`
+  - `FILES_CHANGED`
+  - `DEVIATIONS`
+  - `TEST_MISMATCH` when applicable
+- Verify must return:
+  - `TOTAL`
+  - `PASSED`
+  - `FAILED`
+  - `SKIPPED`
+  - `VERDICT`
+  - one failure block per failed condition
+- Review must return:
+  - `REVIEW_VERDICT`
+  - blocking `ISSUE` blocks when present
+
+After each phase, fold the result back into the ledger and continue from the summary only.
 
 ## State Tracking
 
@@ -93,15 +173,18 @@ Create and maintain a task list equivalent to the original workflow:
    - Stop for user approval on `multi-spec`.
    - Create the spec, create or update the GitHub issue, update project metadata if configured, and move roadmap state to in-progress when the workflow calls for it.
 3. Implement:
+   - Spawn a fresh implementation sub-agent.
    - Implement against the spec with roadmap, issue, branch, and PR traceability preserved.
    - Use Codex planning in place of Claude plan mode.
 4. Verify:
+   - Spawn a fresh verification sub-agent.
    - Verification is black-box only.
    - Write or rerun spec tests and run the regression suite as the original workflow specifies.
 5. Iterate:
-   - If verification fails and `ITERATION < MAX_ITERATIONS`, feed the failure evidence back into implementation and rerun verification.
+   - If verification fails and `ITERATION < MAX_ITERATIONS`, feed only the failure evidence back into a new implementation sub-agent and rerun verification with a new verification sub-agent.
    - Preserve the original PASS, FAIL, and PARTIAL handling semantics.
 6. Review:
+   - Spawn a fresh review sub-agent after QA passes.
    - Run the architect review gate before any merge or close-out.
 7. Finalize:
    - Merge, close, and update roadmap or issue state only when the workflow's gates pass.
