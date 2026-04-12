@@ -536,7 +536,7 @@ describe('Spec 50 — Taxonomy Export/Curate/Merge (QA Contract)', () => {
 		const inputPath = resolve(TMP_DIR, 'merge-dryrun.yaml');
 		writeFileSync(inputPath, yamlContent, 'utf-8');
 
-		const { exitCode, stderr } = runCli(['taxonomy', 'merge', '--input', inputPath, '--dry-run']);
+		const { exitCode, stdout, stderr } = runCli(['taxonomy', 'merge', '--input', inputPath, '--dry-run']);
 		expect(exitCode, `Dry-run failed: ${stderr}`).toBe(0);
 
 		const combined = stdout + stderr;
