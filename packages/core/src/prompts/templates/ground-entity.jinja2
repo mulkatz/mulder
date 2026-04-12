@@ -1,10 +1,32 @@
-{# Web grounding prompt — real content added when Ground step is implemented (M6-G2) #}
 {{ i18n.ground.system_role }}
 
-## Entity
+## Entity name
 {{ entity_name }}
+
+## Entity type
+{{ entity_type }}
+
+## Existing attributes
+{{ entity_attributes }}
 
 ## Task
 {{ i18n.ground.task_description }}
 
+Return a JSON object with these fields:
+{
+  "summary": "short verified context or null",
+  "confidence": 0.0,
+  "coordinates": { "lat": 0.0, "lng": 0.0 } | null,
+  "attributes": {
+    "description": "string or null",
+    "place_type": "string or null",
+    "region": "string or null",
+    "active_dates": ["string"],
+    "key_affiliations": ["string"],
+    "founding_date": "YYYY-MM-DD or null",
+    "verified_date": "YYYY-MM-DD or null"
+  }
+}
+
+Use `null` or an empty array when a field cannot be verified. Do not include source URLs in the JSON body.
 {{ i18n.common.json_instruction }}

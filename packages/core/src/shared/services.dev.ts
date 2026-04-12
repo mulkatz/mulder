@@ -83,6 +83,15 @@ function extractEnumValues(schema: Record<string, unknown>, arrayProp: string, f
 	return enumValues.filter((v): v is string => typeof v === 'string');
 }
 
+function slugify(value: string): string {
+	return (
+		value
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '') || 'entity'
+	);
+}
+
 // ────────────────────────────────────────────────────────────
 // Dev Storage Service
 // ────────────────────────────────────────────────────────────
@@ -371,9 +380,77 @@ class DevLlmService implements LlmService {
 		return '';
 	}
 
-	async groundedGenerate(_options: GroundedGenerateOptions): Promise<GroundedGenerateResult> {
-		this.logger.debug('DevLlmService: groundedGenerate called (returning empty result)');
-		return { text: '', groundingMetadata: {} };
+	async groundedGenerate(options: GroundedGenerateOptions): Promise<GroundedGenerateResult> {
+		const typeMatch = options.prompt.match(/## Entity type\s+([^\n]+)/i);
+		const nameMatch = options.prompt.match(/## Entity name\s+([^\n]+)/i);
+		const entityType = typeMatch?.[1]?.trim().toLowerCase() ?? 'entity';
+		const entityName = nameMatch?.[1]?.trim() ?? 'Dev Test Entity';
+
+		let coordinates: Record<string, number> | null = null;
+		let attributes: Record<string, unknown> = {
+			description: `Grounded context for ${entityName}`,
+			place_type: null,
+			region: null,
+			active_dates: [],
+			key_affiliations: [],
+			founding_date: null,
+			verified_date: null,
+		};
+
+		if (entityType === 'location') {
+			coordinates = { lat: 52.52, lng: 13.405 };
+			attributes = {
+				...attributes,
+				place_type: 'city',
+				region: 'Berlin',
+			};
+		} else if (entityType === 'person') {
+			attributes = {
+				...attributes,
+				key_affiliations: ['Dev Research Group'],
+				active_dates: ['1999-01-01/2005-12-31'],
+			};
+		} else if (entityType === 'organization') {
+			attributes = {
+				...attributes,
+				founding_date: '2001-01-01',
+			};
+		} else if (entityType === 'event') {
+			attributes = {
+				...attributes,
+				verified_date: '2024-01-01',
+			};
+		}
+
+		this.logger.debug({ entityName, entityType }, 'DevLlmService: groundedGenerate returning deterministic fixture');
+
+		return {
+			text: JSON.stringify({
+				summary: `Grounded summary for ${entityName}`,
+				confidence: 0.86,
+				coordinates,
+				attributes,
+			}),
+			groundingMetadata: {
+				webSearchQueries: [entityName],
+				excludedDomains: options.excludeDomains ?? [],
+				geoBias: options.geoBias ?? null,
+				groundingChunks: [
+					{
+						web: {
+							uri: `https://example.com/${slugify(entityName)}`,
+							title: `${entityName} reference`,
+							domain: 'example.com',
+						},
+					},
+				],
+				groundingSupports: [
+					{
+						confidenceScores: [0.86],
+					},
+				],
+			},
+		};
 	}
 
 	async countTokens(text: string): Promise<number> {

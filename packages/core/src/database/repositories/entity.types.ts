@@ -83,6 +83,35 @@ export interface EntityFilter {
 }
 
 // ────────────────────────────────────────────────────────────
+// Grounding cache types
+// ────────────────────────────────────────────────────────────
+
+/** Geographic coordinates resolved during grounding. */
+export interface GroundingCoordinates {
+	lat: number;
+	lng: number;
+}
+
+/** A cached grounding record from `entity_grounding`. */
+export interface EntityGrounding {
+	id: string;
+	entityId: string;
+	groundingData: Record<string, unknown>;
+	sourceUrls: string[];
+	groundedAt: Date;
+	expiresAt: Date;
+}
+
+/** Input for creating or replacing a grounding cache record. */
+export interface UpsertEntityGroundingInput {
+	entityId: string;
+	groundingData: Record<string, unknown>;
+	sourceUrls: string[];
+	groundedAt?: Date;
+	expiresAt: Date;
+}
+
+// ────────────────────────────────────────────────────────────
 // Merge result type
 // ────────────────────────────────────────────────────────────
 

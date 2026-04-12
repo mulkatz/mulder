@@ -90,6 +90,8 @@ export const CONFIG_DEFAULTS = {
 		mode: 'on_demand' as const,
 		enrich_types: ['location', 'person', 'organization'],
 		cache_ttl_days: 30,
+		min_confidence: 0.7,
+		exclude_domains: [],
 	},
 
 	analysis: {

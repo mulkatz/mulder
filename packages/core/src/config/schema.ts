@@ -242,6 +242,8 @@ const groundingObj = z.object({
 	mode: z.enum(['pipeline', 'on_demand', 'disabled']).default('on_demand'),
 	enrich_types: z.array(z.string().min(1)).default(['location', 'person', 'organization']),
 	cache_ttl_days: z.number().positive().int().default(30),
+	min_confidence: z.number().min(0).max(1).default(0.7),
+	exclude_domains: z.array(z.string().min(1)).default([]),
 });
 const groundingSchema = groundingObj.default(defaults(groundingObj));
 

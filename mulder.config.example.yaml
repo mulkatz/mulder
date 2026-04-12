@@ -164,6 +164,8 @@ grounding:
   mode: "on_demand"                   # pipeline | on_demand | disabled
   enrich_types: ["location", "person", "organization"]
   cache_ttl_days: 30
+  min_confidence: 0.7                 # Reject weakly supported grounding results
+  exclude_domains: []                 # Optional low-quality domains to exclude from grounding
 
 # --- Analysis (v2.0) ---
 analysis:

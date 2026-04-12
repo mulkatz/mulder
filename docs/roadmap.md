@@ -164,7 +164,7 @@ Web grounding, contradiction resolution, evidence chains, spatial clustering. Th
 | Status | Step | What | Spec |
 |--------|------|------|------|
 | 🟢 | G1 | v2.0 schema migrations (009-011) | §4.3 (grounding, evidence_chains, clusters tables) |
-| ⚪ | G2 | Ground step — `mulder ground <entity-id>` | §2.5, §1 (ground cmd) |
+| 🟢 | G2 | Ground step — `mulder ground <entity-id>` | §2.5, §1 (ground cmd) |
 | ⚪ | G3 | Contradiction resolution — `mulder analyze --contradictions` | §2.8 |
 | ⚪ | G4 | Source reliability scoring — `mulder analyze --reliability` | §2.8, §5.3 |
 | ⚪ | G5 | Evidence chains — `mulder analyze --evidence-chains` | §2.8, §4.3 (evidence_chains table) |
