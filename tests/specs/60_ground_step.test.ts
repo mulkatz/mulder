@@ -425,4 +425,11 @@ describe('Spec 60 — Ground Step', () => {
 		expect(result.exitCode).not.toBe(0);
 		expect(result.stderr).toContain('positive integer');
 	});
+
+	it('SMOKE-01: ground --help exits 0 and prints usage info', () => {
+		const result = runCli(['ground', '--help'], { env: { MULDER_CONFIG: defaultConfigPath } });
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain('Usage: mulder ground');
+		expect(result.stdout).toContain('-h, --help');
+	});
 });
