@@ -173,7 +173,7 @@ Each package follows the same pattern:
 | Package | Name | Internal Dependencies |
 |---------|------|-----------------------|
 | `packages/core` | `@mulder/core` | none |
-| `packages/pipeline` | `@mulder/pipeline` | `@mulder/core` |
+| `packages/pipeline` | `@mulder/pipeline` | `@mulder/core`, `@mulder/retrieval`, `@mulder/taxonomy` |
 | `packages/retrieval` | `@mulder/retrieval` | `@mulder/core` |
 | `packages/taxonomy` | `@mulder/taxonomy` | `@mulder/core` |
 | `packages/worker` | `@mulder/worker` | `@mulder/core`, `@mulder/pipeline` |

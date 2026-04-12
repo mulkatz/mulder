@@ -157,26 +157,8 @@ describe('Spec 32: Embedding Wrapper + Semantic Chunker + Chunk Repository', () 
 	let pgAvailable = false;
 
 	beforeAll(async () => {
-		pgAvailable = await isPgAvailable();
-		if (!pgAvailable) {
-			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
-			return;
-		}
-
-		pool = new pg.Pool(PG_CONFIG);
-
-		// Ensure migrations are applied
-		const migrateResult = spawnSync('node', [CLI, 'db', 'migrate', EXAMPLE_CONFIG], {
-			cwd: ROOT,
-			encoding: 'utf-8',
-			timeout: 30000,
-			env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD },
-		});
-		if (migrateResult.status !== 0) {
-			throw new Error(`Migration failed: ${migrateResult.stdout} ${migrateResult.stderr}`);
-		}
-
-		// Dynamically import from built barrels
+		// Load the built public barrels first so non-DB API checks keep working
+		// even when PostgreSQL is unavailable.
 		const coreMod = await import(CORE_MODULE);
 		const pipelineMod = await import(PIPELINE_MODULE);
 
@@ -195,6 +177,25 @@ describe('Spec 32: Embedding Wrapper + Semantic Chunker + Chunk Repository', () 
 		// Helper repos for FK parents
 		createSource = coreMod.createSource;
 		createStory = coreMod.createStory;
+
+		pgAvailable = await isPgAvailable();
+		if (!pgAvailable) {
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
+			return;
+		}
+
+		pool = new pg.Pool(PG_CONFIG);
+
+		// Ensure migrations are applied
+		const migrateResult = spawnSync('node', [CLI, 'db', 'migrate', EXAMPLE_CONFIG], {
+			cwd: ROOT,
+			encoding: 'utf-8',
+			timeout: 30000,
+			env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD },
+		});
+		if (migrateResult.status !== 0) {
+			throw new Error(`Migration failed: ${migrateResult.stdout} ${migrateResult.stderr}`);
+		}
 
 		// Clean up and create parent source + stories for FK references
 		await pool.query('DELETE FROM chunks');

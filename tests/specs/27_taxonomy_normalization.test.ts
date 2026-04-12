@@ -61,6 +61,23 @@ describe('Spec 27: Taxonomy Normalization — QA Contract', () => {
 	let pgAvailable = false;
 
 	beforeAll(async () => {
+		// Dynamically import repository functions from built packages.
+		// These public API checks should work even when PostgreSQL is unavailable.
+		const dbMod = await import(DB_MODULE);
+		const coreMod = await import(CORE_MODULE);
+		const taxMod = await import(TAXONOMY_MODULE);
+
+		createTaxonomyEntry = dbMod.createTaxonomyEntry;
+		_findTaxonomyEntryById = dbMod.findTaxonomyEntryById;
+		_findTaxonomyEntryByName = dbMod.findTaxonomyEntryByName;
+		findAllTaxonomyEntries = dbMod.findAllTaxonomyEntries;
+		_countTaxonomyEntries = dbMod.countTaxonomyEntries;
+		updateTaxonomyEntry = dbMod.updateTaxonomyEntry;
+		deleteTaxonomyEntry = dbMod.deleteTaxonomyEntry;
+		searchTaxonomyBySimilarity = dbMod.searchTaxonomyBySimilarity;
+		normalizeTaxonomy = taxMod.normalizeTaxonomy;
+		loadConfig = coreMod.loadConfig;
+
 		pgAvailable = await isPgAvailable();
 		if (!pgAvailable) {
 			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
@@ -79,22 +96,6 @@ describe('Spec 27: Taxonomy Normalization — QA Contract', () => {
 		if (migrateResult.status !== 0) {
 			throw new Error(`Migration failed: ${migrateResult.stdout} ${migrateResult.stderr}`);
 		}
-
-		// Dynamically import repository functions from built packages
-		const dbMod = await import(DB_MODULE);
-		const coreMod = await import(CORE_MODULE);
-		const taxMod = await import(TAXONOMY_MODULE);
-
-		createTaxonomyEntry = dbMod.createTaxonomyEntry;
-		_findTaxonomyEntryById = dbMod.findTaxonomyEntryById;
-		_findTaxonomyEntryByName = dbMod.findTaxonomyEntryByName;
-		findAllTaxonomyEntries = dbMod.findAllTaxonomyEntries;
-		_countTaxonomyEntries = dbMod.countTaxonomyEntries;
-		updateTaxonomyEntry = dbMod.updateTaxonomyEntry;
-		deleteTaxonomyEntry = dbMod.deleteTaxonomyEntry;
-		searchTaxonomyBySimilarity = dbMod.searchTaxonomyBySimilarity;
-		normalizeTaxonomy = taxMod.normalizeTaxonomy;
-		loadConfig = coreMod.loadConfig;
 
 		// Clean taxonomy table
 		await pool.query('DELETE FROM taxonomy');
