@@ -254,6 +254,7 @@ const analysisObj = z.object({
 	contradictions: z.boolean().default(true),
 	reliability: z.boolean().default(true),
 	evidence_chains: z.boolean().default(true),
+	evidence_theses: z.array(z.string().min(1)).default([]),
 	spatio_temporal: z.boolean().default(true),
 	cluster_window_days: z.number().positive().int().default(30),
 });

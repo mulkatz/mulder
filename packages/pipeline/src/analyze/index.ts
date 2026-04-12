@@ -1,17 +1,31 @@
 /**
- * Analyze pipeline step — currently resolves contradiction edges across the
- * full graph using Gemini structured output.
+ * Analyze pipeline step — resolves contradictions, scores reliability, and
+ * computes evidence chains across the full graph.
  *
  * @see docs/specs/61_contradiction_resolution.spec.md
+ * @see docs/specs/62_source_reliability_scoring.spec.md
+ * @see docs/specs/63_evidence_chains.spec.md
  * @see docs/functional-spec.md §2.8
  */
 
 import { performance } from 'node:perf_hooks';
-import type { Entity, EntityEdge, Logger, MulderConfig, Services, Source, StepError, Story } from '@mulder/core';
+import type {
+	CreateEvidenceChainInput,
+	Entity,
+	EntityEdge,
+	Logger,
+	MulderConfig,
+	Services,
+	Source,
+	StepError,
+	Story,
+} from '@mulder/core';
 import {
 	ANALYZE_ERROR_CODES,
 	AnalyzeError,
 	createChildLogger,
+	createEvidenceChains,
+	deleteEvidenceChainsByThesis,
 	findEdgesByType,
 	findEntityById,
 	findSourceById,
@@ -24,6 +38,7 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { z as z3 } from 'zod/v3';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { computeEvidenceChainsForThesis, type EvidenceChainThesisComputation } from './evidence-chains.js';
 import { computeSourceReliability } from './reliability.js';
 import type {
 	AnalyzeInput,
@@ -31,6 +46,8 @@ import type {
 	ContradictionAnalyzeData,
 	ContradictionResolutionOutcome,
 	ContradictionResolutionResponse,
+	EvidenceChainsAnalyzeData,
+	EvidenceChainThesisOutcome,
 	ReliabilityAnalyzeData,
 	SourceReliabilityOutcome,
 } from './types.js';
@@ -43,6 +60,8 @@ export type {
 	ContradictionResolutionOutcome,
 	ContradictionResolutionResponse,
 	ContradictionVerdict,
+	EvidenceChainsAnalyzeData,
+	EvidenceChainThesisOutcome,
 	ReliabilityAnalyzeData,
 	SourceReliabilityOutcome,
 	WinningClaim,
@@ -130,15 +149,109 @@ function formatPageRange(story: Story): string {
 	return 'unknown';
 }
 
+function normalizeThesisList(theses?: string[]): string[] {
+	if (!Array.isArray(theses)) {
+		return [];
+	}
+
+	const seen = new Set<string>();
+	const normalized: string[] = [];
+
+	for (const thesis of theses) {
+		const trimmed = thesis.trim();
+		if (trimmed.length === 0 || seen.has(trimmed)) {
+			continue;
+		}
+		seen.add(trimmed);
+		normalized.push(trimmed);
+	}
+
+	return normalized;
+}
+
 function resolveLocale(config: MulderConfig): string {
 	const locale = config.project.supported_locales[0];
 	return typeof locale === 'string' && locale.trim().length > 0 ? locale : 'en';
 }
 
-function toStepError(error: AnalyzeError, edgeId: string): StepError {
+function toStepError(error: AnalyzeError, subjectId: string): StepError {
 	return {
 		code: error.code,
-		message: `${edgeId}: ${error.message}`,
+		message: `${subjectId}: ${error.message}`,
+	};
+}
+
+function buildEvidenceChainInputs(
+	thesis: string,
+	computation: EvidenceChainThesisComputation,
+	computedAt: Date,
+): CreateEvidenceChainInput[] {
+	return [
+		...computation.supportingChains.map((chain) => ({
+			thesis,
+			path: chain.path,
+			strength: chain.strength,
+			supports: true,
+			computedAt,
+		})),
+		...computation.contradictionChains.map((chain) => ({
+			thesis,
+			path: chain.path,
+			strength: chain.strength,
+			supports: false,
+			computedAt,
+		})),
+	];
+}
+
+async function replaceEvidenceChainsSnapshot(
+	pool: pg.Pool,
+	thesis: string,
+	rows: CreateEvidenceChainInput[],
+): Promise<number> {
+	const client = await pool.connect();
+
+	try {
+		await client.query('BEGIN');
+		await deleteEvidenceChainsByThesis(client, thesis);
+		const inserted = rows.length > 0 ? await createEvidenceChains(client, rows) : [];
+		await client.query('COMMIT');
+		return inserted.length;
+	} catch (cause: unknown) {
+		try {
+			await client.query('ROLLBACK');
+		} catch {
+			// Ignore rollback failures and rethrow the original issue.
+		}
+
+		throw new AnalyzeError(
+			`Failed to persist evidence chains for thesis "${thesis}"`,
+			ANALYZE_ERROR_CODES.ANALYZE_WRITE_FAILED,
+			{
+				cause,
+				context: { thesis },
+			},
+		);
+	} finally {
+		client.release();
+	}
+}
+
+function makeEvidenceChainsData(outcomes: EvidenceChainThesisOutcome[]): EvidenceChainsAnalyzeData {
+	const supportingCount = outcomes.reduce((total, outcome) => total + outcome.supportingCount, 0);
+	const contradictionCount = outcomes.reduce((total, outcome) => total + outcome.contradictionCount, 0);
+	const successCount = outcomes.filter((outcome) => outcome.status === 'success').length;
+	const failedCount = outcomes.filter((outcome) => outcome.status === 'failed').length;
+
+	return {
+		mode: 'evidence-chains',
+		thesisCount: outcomes.length,
+		processedCount: outcomes.length,
+		successCount,
+		failedCount,
+		supportingCount,
+		contradictionCount,
+		outcomes,
 	};
 }
 
@@ -335,6 +448,7 @@ export async function execute(
 		step: STEP_NAME,
 		contradictions: input.contradictions ?? false,
 		reliability: input.reliability ?? false,
+		evidenceChains: input.evidenceChains ?? false,
 	});
 	const startTime = performance.now();
 
@@ -342,10 +456,33 @@ export async function execute(
 		throw new AnalyzeError('Database pool is required for analyze step', ANALYZE_ERROR_CODES.ANALYZE_WRITE_FAILED);
 	}
 
+	const hasRawThesisOverrides = Array.isArray(input.theses) && input.theses.length > 0;
+	const thesisOverrides = normalizeThesisList(input.theses);
+	if (hasRawThesisOverrides && thesisOverrides.length === 0) {
+		throw new AnalyzeError(
+			'At least one non-empty thesis override is required',
+			ANALYZE_ERROR_CODES.ANALYZE_THESIS_INPUT_MISSING,
+			{
+				context: { thesisCount: input.theses?.length ?? 0 },
+			},
+		);
+	}
+
+	if (hasRawThesisOverrides && !input.evidenceChains) {
+		throw new AnalyzeError(
+			'The --thesis override can only be used with evidence-chain analysis',
+			ANALYZE_ERROR_CODES.ANALYZE_VALIDATION_FAILED,
+			{
+				context: { thesisCount: thesisOverrides.length },
+			},
+		);
+	}
+
 	const selectedModes = [
 		input.contradictions ? 'contradictions' : null,
 		input.reliability ? 'reliability' : null,
-	].filter((value): value is 'contradictions' | 'reliability' => value !== null);
+		input.evidenceChains ? 'evidence-chains' : null,
+	].filter((value): value is 'contradictions' | 'reliability' | 'evidence-chains' => value !== null);
 	if (selectedModes.length !== 1) {
 		throw new AnalyzeError('Exactly one analyze selector must be enabled', ANALYZE_ERROR_CODES.ANALYZE_DISABLED, {
 			context: { selectedModes },
@@ -417,6 +554,104 @@ export async function execute(
 				duration_ms: durationMs,
 				items_processed: data.processedCount,
 				items_skipped: 0,
+				items_cached: 0,
+			},
+		};
+	}
+
+	if (input.evidenceChains) {
+		if (!config.analysis.enabled || !config.analysis.evidence_chains) {
+			throw new AnalyzeError(
+				'Evidence chain analysis is disabled in the active configuration',
+				ANALYZE_ERROR_CODES.ANALYZE_DISABLED,
+				{
+					context: {
+						enabled: config.analysis.enabled,
+						evidenceChains: config.analysis.evidence_chains,
+					},
+				},
+			);
+		}
+
+		const thesisInputs =
+			thesisOverrides.length > 0 ? thesisOverrides : normalizeThesisList(config.analysis.evidence_theses);
+		if (thesisInputs.length === 0) {
+			throw new AnalyzeError(
+				'At least one thesis query is required for evidence-chain analysis',
+				ANALYZE_ERROR_CODES.ANALYZE_THESIS_INPUT_MISSING,
+			);
+		}
+
+		const outcomes: EvidenceChainThesisOutcome[] = [];
+		const errors: StepError[] = [];
+
+		for (const thesis of thesisInputs) {
+			try {
+				const computation = await computeEvidenceChainsForThesis(pool, config, thesis);
+				const computedAt = new Date();
+				const snapshotRows = buildEvidenceChainInputs(computation.thesis, computation, computedAt);
+				const writtenCount = await replaceEvidenceChainsSnapshot(pool, computation.thesis, snapshotRows);
+
+				outcomes.push({
+					thesis: computation.thesis,
+					status: 'success',
+					seedCount: computation.seedIds.length,
+					supportingCount: computation.supportingChains.length,
+					contradictionCount: computation.contradictionChains.length,
+					writtenCount,
+				});
+			} catch (cause: unknown) {
+				const analyzeError =
+					cause instanceof AnalyzeError
+						? cause
+						: new AnalyzeError(
+								`Unexpected analyze failure for thesis "${thesis}"`,
+								ANALYZE_ERROR_CODES.ANALYZE_TRAVERSAL_FAILED,
+								{
+									cause,
+									context: { thesis },
+								},
+							);
+				errors.push(toStepError(analyzeError, thesis));
+				outcomes.push({
+					thesis,
+					status: 'failed',
+					seedCount: 0,
+					supportingCount: 0,
+					contradictionCount: 0,
+					writtenCount: 0,
+				});
+				log.warn({ err: cause, thesis }, 'Analyze failed for evidence-chain thesis — continuing');
+			}
+		}
+
+		const data = makeEvidenceChainsData(outcomes);
+		const status =
+			errors.length === 0 ? 'success' : outcomes.some((outcome) => outcome.status === 'success') ? 'partial' : 'failed';
+		const durationMs = Math.round(performance.now() - startTime);
+
+		log.info(
+			{
+				mode: data.mode,
+				thesisCount: data.thesisCount,
+				processedCount: data.processedCount,
+				successCount: data.successCount,
+				failedCount: data.failedCount,
+				supportingCount: data.supportingCount,
+				contradictionCount: data.contradictionCount,
+				duration_ms: durationMs,
+			},
+			'Analyze step completed',
+		);
+
+		return {
+			status,
+			data,
+			errors,
+			metadata: {
+				duration_ms: durationMs,
+				items_processed: data.processedCount,
+				items_skipped: data.failedCount,
 				items_cached: 0,
 			},
 		};

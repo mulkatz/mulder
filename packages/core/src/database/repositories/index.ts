@@ -103,6 +103,12 @@ export {
 	persistEntityGroundingResult,
 	upsertEntityGrounding,
 } from './entity-grounding.repository.js';
+export type { CreateEvidenceChainInput, EvidenceChain } from './evidence-chain.repository.js';
+export {
+	createEvidenceChains,
+	deleteEvidenceChainsByThesis,
+	findEvidenceChainsByThesis,
+} from './evidence-chain.repository.js';
 export type { GraphTraversalResult } from './graph-traversal.repository.js';
 export { traverseGraph } from './graph-traversal.repository.js';
 export type { PipelineStep } from './pipeline-reset.js';

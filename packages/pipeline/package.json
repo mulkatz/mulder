@@ -12,6 +12,7 @@
 	},
 	"dependencies": {
 		"@mulder/core": "workspace:*",
+		"@mulder/retrieval": "workspace:*",
 		"@mulder/taxonomy": "workspace:*",
 		"@napi-rs/canvas": "^0.1.79",
 		"pdf-parse": "^2.4.5",
