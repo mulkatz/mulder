@@ -458,10 +458,12 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(result.stderr).toContain('analysis selector');
 	});
 
-	it('CLI-10: `--spatio-temporal` exits non-zero because clustering belongs to M6-G6', () => {
+	it('CLI-10: `--spatio-temporal` now succeeds as a no-op when no clusterable events exist', () => {
+		if (!pgAvailable) return;
+
 		const result = runCli(['analyze', '--spatio-temporal'], { env: { MULDER_CONFIG: enabledEmptyThesisConfigPath } });
-		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('M6-G6');
+		expect(result.exitCode).toBe(0);
+		expect(result.stderr).toContain('no clusterable events found');
 	});
 });
 
