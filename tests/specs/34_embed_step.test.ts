@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -12,20 +13,16 @@ const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
-
 /**
  * Black-box QA tests for Spec 34: Embed Step
  *
  * Each `it()` maps to one QA condition or CLI condition from Section 5/5b of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `docker exec psql`, and filesystem (dev-mode storage).
+ * SQL via `the shared env-driven SQL helper`, and filesystem (dev-mode storage).
  * Never imports from packages/ or src/ or apps/.
  *
  * Requires:
- * - Running PostgreSQL container `mulder-pg-test` with migrations applied
+ * - PostgreSQL reachable through the standard PG env vars with migrations applied
  * - Built CLI at apps/cli/dist/index.js
  * - Test fixtures in fixtures/raw/
  */
@@ -43,7 +40,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 60000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -52,32 +49,8 @@ function runCli(
 	};
 }
 
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
 function cleanTestData(): void {
-	runSql(
+	db.runSql(
 		'DELETE FROM chunks; DELETE FROM story_entities; DELETE FROM entity_edges; DELETE FROM entity_aliases; DELETE FROM entities; DELETE FROM stories; DELETE FROM source_steps; DELETE FROM sources;',
 	);
 }
@@ -129,7 +102,7 @@ function ingestPdf(pdfPath: string): string {
 	}
 	const parts = pdfPath.split('/');
 	const filename = parts[parts.length - 1];
-	const sourceId = runSql(`SELECT id FROM sources WHERE filename = '${filename}' ORDER BY created_at DESC LIMIT 1;`);
+	const sourceId = db.runSql(`SELECT id FROM sources WHERE filename = '${filename}' ORDER BY created_at DESC LIMIT 1;`);
 	if (!sourceId) {
 		throw new Error(`No source record found for ${filename}`);
 	}
@@ -162,7 +135,7 @@ function ingestExtractSegmentEnrich(pdfPath: string): string {
 	}
 
 	// Verify status
-	const status = runSql(`SELECT status FROM stories WHERE source_id = '${sourceId}' LIMIT 1;`);
+	const status = db.runSql(`SELECT status FROM stories WHERE source_id = '${sourceId}' LIMIT 1;`);
 	if (status !== 'enriched') {
 		throw new Error(`Source ${sourceId} stories have status '${status}', expected 'enriched'`);
 	}
@@ -174,7 +147,7 @@ function ingestExtractSegmentEnrich(pdfPath: string): string {
  * Get a story ID from an enriched source.
  */
 function getEnrichedStoryId(sourceId: string): string {
-	const storyId = runSql(`SELECT id FROM stories WHERE source_id = '${sourceId}' AND status = 'enriched' LIMIT 1;`);
+	const storyId = db.runSql(`SELECT id FROM stories WHERE source_id = '${sourceId}' AND status = 'enriched' LIMIT 1;`);
 	if (!storyId) {
 		throw new Error(`No enriched story found for source ${sourceId}`);
 	}
@@ -191,13 +164,9 @@ describe('Spec 34 — Embed Step', () => {
 	let enrichedStoryId: string | null = null;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL container not available. Start with:\n' +
-					'  docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 
@@ -239,11 +208,11 @@ describe('Spec 34 — Embed Step', () => {
 		expect(result.exitCode).toBe(0);
 
 		// Story status should be 'embedded'
-		const storyStatus = runSql(`SELECT status FROM stories WHERE id = '${enrichedStoryId}';`);
+		const storyStatus = db.runSql(`SELECT status FROM stories WHERE id = '${enrichedStoryId}';`);
 		expect(storyStatus).toBe('embedded');
 
 		// Content chunks should exist with is_question=false
-		const contentChunkCount = runSql(
+		const contentChunkCount = db.runSql(
 			`SELECT COUNT(*) FROM chunks WHERE story_id = '${enrichedStoryId}' AND is_question = false;`,
 		);
 		expect(Number.parseInt(contentChunkCount, 10)).toBeGreaterThanOrEqual(1);
@@ -255,7 +224,7 @@ describe('Spec 34 — Embed Step', () => {
 		if (!pgAvailable || !enrichedStoryId) return;
 
 		// Ensure the story is embedded (from QA-01 or force)
-		const currentStatus = runSql(`SELECT status FROM stories WHERE id = '${enrichedStoryId}';`);
+		const currentStatus = db.runSql(`SELECT status FROM stories WHERE id = '${enrichedStoryId}';`);
 		if (currentStatus !== 'embedded') {
 			const { exitCode } = runCli(['embed', enrichedStoryId], { timeout: 120000 });
 			expect(exitCode).toBe(0);
@@ -263,7 +232,7 @@ describe('Spec 34 — Embed Step', () => {
 
 		// In dev mode, the LLM stub may not generate questions (question generation is non-fatal per spec).
 		// If no question chunks exist, skip this test rather than failing.
-		const questionChunkCount = runSql(
+		const questionChunkCount = db.runSql(
 			`SELECT COUNT(*) FROM chunks WHERE story_id = '${enrichedStoryId}' AND is_question = true;`,
 		);
 		const numQuestions = Number.parseInt(questionChunkCount, 10);
@@ -280,7 +249,7 @@ describe('Spec 34 — Embed Step', () => {
 		expect(numQuestions).toBeGreaterThanOrEqual(1);
 
 		// All question chunks should have a parent_chunk_id pointing to a content chunk
-		const orphanQuestions = runSql(
+		const orphanQuestions = db.runSql(
 			`SELECT COUNT(*) FROM chunks q ` +
 				`WHERE q.story_id = '${enrichedStoryId}' AND q.is_question = true ` +
 				`AND (q.parent_chunk_id IS NULL ` +
@@ -295,18 +264,18 @@ describe('Spec 34 — Embed Step', () => {
 		if (!pgAvailable || !enrichedStoryId) return;
 
 		// Ensure the story is embedded
-		const currentStatus = runSql(`SELECT status FROM stories WHERE id = '${enrichedStoryId}';`);
+		const currentStatus = db.runSql(`SELECT status FROM stories WHERE id = '${enrichedStoryId}';`);
 		if (currentStatus !== 'embedded') {
 			const { exitCode } = runCli(['embed', enrichedStoryId], { timeout: 120000 });
 			expect(exitCode).toBe(0);
 		}
 
 		// Total chunks for this story
-		const totalChunks = runSql(`SELECT COUNT(*) FROM chunks WHERE story_id = '${enrichedStoryId}';`);
+		const totalChunks = db.runSql(`SELECT COUNT(*) FROM chunks WHERE story_id = '${enrichedStoryId}';`);
 		expect(Number.parseInt(totalChunks, 10)).toBeGreaterThanOrEqual(1);
 
 		// Chunks with null embeddings
-		const nullEmbeddings = runSql(
+		const nullEmbeddings = db.runSql(
 			`SELECT COUNT(*) FROM chunks WHERE story_id = '${enrichedStoryId}' AND embedding IS NULL;`,
 		);
 		expect(Number.parseInt(nullEmbeddings, 10)).toBe(0);
@@ -318,14 +287,14 @@ describe('Spec 34 — Embed Step', () => {
 		if (!pgAvailable || !enrichedStoryId) return;
 
 		// Ensure story is embedded
-		const currentStatus = runSql(`SELECT status FROM stories WHERE id = '${enrichedStoryId}';`);
+		const currentStatus = db.runSql(`SELECT status FROM stories WHERE id = '${enrichedStoryId}';`);
 		if (currentStatus !== 'embedded') {
 			const { exitCode } = runCli(['embed', enrichedStoryId], { timeout: 120000 });
 			expect(exitCode).toBe(0);
 		}
 
 		// Record chunk count before
-		const chunkCountBefore = runSql(`SELECT COUNT(*) FROM chunks WHERE story_id = '${enrichedStoryId}';`);
+		const chunkCountBefore = db.runSql(`SELECT COUNT(*) FROM chunks WHERE story_id = '${enrichedStoryId}';`);
 
 		// Run embed again without force
 		const { exitCode, stdout, stderr } = runCli(['embed', enrichedStoryId], { timeout: 60000 });
@@ -337,7 +306,7 @@ describe('Spec 34 — Embed Step', () => {
 		expect(combined).toMatch(/already embedded|skipped|skip/i);
 
 		// Chunk count should not change
-		const chunkCountAfter = runSql(`SELECT COUNT(*) FROM chunks WHERE story_id = '${enrichedStoryId}';`);
+		const chunkCountAfter = db.runSql(`SELECT COUNT(*) FROM chunks WHERE story_id = '${enrichedStoryId}';`);
 		expect(chunkCountAfter).toBe(chunkCountBefore);
 	}, 120000);
 
@@ -347,14 +316,14 @@ describe('Spec 34 — Embed Step', () => {
 		if (!pgAvailable || !enrichedStoryId || !enrichedSourceId) return;
 
 		// Ensure story is embedded
-		const currentStatus = runSql(`SELECT status FROM stories WHERE id = '${enrichedStoryId}';`);
+		const currentStatus = db.runSql(`SELECT status FROM stories WHERE id = '${enrichedStoryId}';`);
 		if (currentStatus !== 'embedded') {
 			const { exitCode } = runCli(['embed', enrichedStoryId], { timeout: 120000 });
 			expect(exitCode).toBe(0);
 		}
 
 		// Record old chunk IDs before force
-		const oldChunkIds = runSql(
+		const oldChunkIds = db.runSql(
 			`SELECT id FROM chunks WHERE story_id = '${enrichedStoryId}' ORDER BY chunk_index LIMIT 1;`,
 		);
 		expect(oldChunkIds.length).toBeGreaterThan(0);
@@ -364,11 +333,11 @@ describe('Spec 34 — Embed Step', () => {
 		expect(exitCode).toBe(0);
 
 		// Story should be embedded again
-		const status = runSql(`SELECT status FROM stories WHERE id = '${enrichedStoryId}';`);
+		const status = db.runSql(`SELECT status FROM stories WHERE id = '${enrichedStoryId}';`);
 		expect(status).toBe('embedded');
 
 		// Chunks should exist (may be new UUIDs)
-		const newChunkCount = runSql(`SELECT COUNT(*) FROM chunks WHERE story_id = '${enrichedStoryId}';`);
+		const newChunkCount = db.runSql(`SELECT COUNT(*) FROM chunks WHERE story_id = '${enrichedStoryId}';`);
 		expect(Number.parseInt(newChunkCount, 10)).toBeGreaterThanOrEqual(1);
 	}, 120000);
 
@@ -385,7 +354,7 @@ describe('Spec 34 — Embed Step', () => {
 		ingestExtractSegmentEnrich(SCANNED_PDF);
 
 		// Verify both have enriched stories
-		const enrichedCount = runSql("SELECT COUNT(*) FROM stories WHERE status = 'enriched';");
+		const enrichedCount = db.runSql("SELECT COUNT(*) FROM stories WHERE status = 'enriched';");
 		expect(Number.parseInt(enrichedCount, 10)).toBeGreaterThanOrEqual(2);
 
 		// Embed all
@@ -393,10 +362,10 @@ describe('Spec 34 — Embed Step', () => {
 		expect(exitCode).toBe(0);
 
 		// All previously enriched stories should now be embedded
-		const remainingEnriched = runSql("SELECT COUNT(*) FROM stories WHERE status = 'enriched';");
+		const remainingEnriched = db.runSql("SELECT COUNT(*) FROM stories WHERE status = 'enriched';");
 		expect(Number.parseInt(remainingEnriched, 10)).toBe(0);
 
-		const embeddedCount = runSql("SELECT COUNT(*) FROM stories WHERE status = 'embedded';");
+		const embeddedCount = db.runSql("SELECT COUNT(*) FROM stories WHERE status = 'embedded';");
 		expect(Number.parseInt(embeddedCount, 10)).toBeGreaterThanOrEqual(2);
 
 		// Restore state for subsequent tests
@@ -434,13 +403,13 @@ describe('Spec 34 — Embed Step', () => {
 		expect(exitCode).toBe(0);
 
 		// Source 1 stories should be embedded
-		const source1Embedded = runSql(
+		const source1Embedded = db.runSql(
 			`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId1}' AND status = 'embedded';`,
 		);
 		expect(Number.parseInt(source1Embedded, 10)).toBeGreaterThanOrEqual(1);
 
 		// Source 2 stories should still be segmented (not enriched, so embed wouldn't touch them)
-		const source2Status = runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId2}';`);
+		const source2Status = db.runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId2}';`);
 		expect(source2Status).not.toBe('embedded');
 
 		// Restore state
@@ -456,7 +425,7 @@ describe('Spec 34 — Embed Step', () => {
 		if (!pgAvailable || !enrichedSourceId) return;
 
 		// Ensure stories are embedded first
-		const embeddedCount = runSql(
+		const embeddedCount = db.runSql(
 			`SELECT COUNT(*) FROM stories WHERE source_id = '${enrichedSourceId}' AND status = 'embedded';`,
 		);
 		if (Number.parseInt(embeddedCount, 10) === 0) {
@@ -469,7 +438,7 @@ describe('Spec 34 — Embed Step', () => {
 		expect(exitCode).toBe(0);
 
 		// All stories from source should be embedded
-		const allEmbedded = runSql(
+		const allEmbedded = db.runSql(
 			`SELECT COUNT(*) FROM stories WHERE source_id = '${enrichedSourceId}' AND status = 'embedded';`,
 		);
 		expect(Number.parseInt(allEmbedded, 10)).toBeGreaterThanOrEqual(1);
@@ -481,17 +450,17 @@ describe('Spec 34 — Embed Step', () => {
 		if (!pgAvailable) return;
 
 		// Create an isolated source + story with status 'segmented'
-		runSql(
+		db.runSql(
 			`INSERT INTO sources (filename, file_hash, storage_path, page_count, status) ` +
 				`VALUES ('qa09-embed-test.pdf', 'qa09-embed-unique-hash', 'raw/qa09-embed-test.pdf', 1, 'segmented');`,
 		);
-		const sourceId = runSql(`SELECT id FROM sources WHERE file_hash = 'qa09-embed-unique-hash';`);
+		const sourceId = db.runSql(`SELECT id FROM sources WHERE file_hash = 'qa09-embed-unique-hash';`);
 
-		runSql(
+		db.runSql(
 			`INSERT INTO stories (source_id, title, gcs_markdown_uri, gcs_metadata_uri, status) ` +
 				`VALUES ('${sourceId}', 'test-invalid-embed-status', 'segments/test/dummy.md', 'segments/test/dummy.meta.json', 'segmented');`,
 		);
-		const storyId = runSql(
+		const storyId = db.runSql(
 			`SELECT id FROM stories WHERE source_id = '${sourceId}' AND title = 'test-invalid-embed-status' LIMIT 1;`,
 		);
 
@@ -502,7 +471,7 @@ describe('Spec 34 — Embed Step', () => {
 		expect(combined).toMatch(/EMBED_INVALID_STATUS|invalid status|not enriched|cannot embed|must be.*enriched/i);
 
 		// Cleanup
-		runSql(
+		db.runSql(
 			`DELETE FROM chunks WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');` +
 				` DELETE FROM story_entities WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');` +
 				` DELETE FROM entity_edges WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');` +
@@ -518,14 +487,14 @@ describe('Spec 34 — Embed Step', () => {
 		if (!pgAvailable || !enrichedStoryId || !enrichedSourceId) return;
 
 		// Ensure story is embedded
-		const currentStatus = runSql(`SELECT status FROM stories WHERE id = '${enrichedStoryId}';`);
+		const currentStatus = db.runSql(`SELECT status FROM stories WHERE id = '${enrichedStoryId}';`);
 		if (currentStatus !== 'embedded') {
 			const { exitCode } = runCli(['embed', enrichedStoryId], { timeout: 120000 });
 			expect(exitCode).toBe(0);
 		}
 
 		// Check source_steps
-		const stepStatus = runSql(
+		const stepStatus = db.runSql(
 			`SELECT status FROM source_steps WHERE source_id = '${enrichedSourceId}' AND step_name = 'embed';`,
 		);
 		expect(stepStatus).toBe('completed');
@@ -578,7 +547,7 @@ describe('CLI Test Matrix: embed', () => {
 	// ─── CLI-02: No arguments ───
 
 	it('CLI-02: mulder embed with no args gives non-zero exit and error', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const { exitCode, stdout, stderr } = runCli(['embed']);
@@ -637,7 +606,7 @@ describe('CLI Smoke Tests: embed', () => {
 	// ─── SMOKE-02: --force without story-id or --source gives error ───
 
 	it('SMOKE-02: mulder embed --force (no story-id, no --source) gives non-zero exit', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const { exitCode, stdout, stderr } = runCli(['embed', '--force']);
@@ -650,7 +619,7 @@ describe('CLI Smoke Tests: embed', () => {
 	// ─── SMOKE-03: invalid UUID format as story-id ───
 
 	it('SMOKE-03: mulder embed with non-UUID story-id gives non-zero exit', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const { exitCode, stdout, stderr } = runCli(['embed', 'not-a-valid-uuid']);
@@ -673,7 +642,7 @@ describe('CLI Smoke Tests: embed', () => {
 	// ─── SMOKE-05: --source with --force is a valid combo ───
 
 	it('SMOKE-05: mulder embed --source <id> --force does not crash (valid combo)', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const fakeSourceId = '00000000-0000-0000-0000-000000000001';
@@ -702,7 +671,7 @@ describe('CLI Smoke Tests: embed', () => {
 	// ─── SMOKE-07: non-existent story-id gives meaningful error ───
 
 	it('SMOKE-07: mulder embed with non-existent UUID gives not-found error', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const fakeId = '00000000-0000-0000-0000-000000000000';
@@ -716,7 +685,7 @@ describe('CLI Smoke Tests: embed', () => {
 	// ─── SMOKE-08: --source with non-existent source-id does not crash ───
 
 	it('SMOKE-08: mulder embed --source <non-existent-id> does not crash', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const fakeSourceId = '00000000-0000-0000-0000-ffffffffffff';

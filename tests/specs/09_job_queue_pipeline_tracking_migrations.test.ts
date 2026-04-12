@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -11,16 +12,12 @@ const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
  *
  * Each `it()` maps to one QA condition from Section 5 of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `docker exec psql`, and filesystem.
+ * SQL via `the shared env-driven SQL helper`, and filesystem.
  * Never import from packages/ or src/ or apps/.
  *
- * Requires a running PostgreSQL instance (Docker container `mulder-pg-test`)
+ * Requires a running PostgreSQL instance (the standard PG env vars)
  * with pgvector, PostGIS, and pg_trgm extensions available.
  */
-
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
 
 // ─── Test data UUIDs ───
 
@@ -46,7 +43,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 30000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -56,46 +53,16 @@ function runCli(
 }
 
 /**
- * Helper: run SQL via docker exec psql. Returns query output.
+ * Helper: run SQL via the shared env-driven SQL helper. Returns query output.
  */
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
 /**
  * Helper: run SQL, return null on failure instead of throwing.
  */
-function runSqlSafe(sql: string): string | null {
-	try {
-		return runSql(sql);
-	} catch {
-		return null;
-	}
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
 function hasRequiredExtensions(): boolean {
 	try {
-		const out = runSql("SELECT count(*) FROM pg_available_extensions WHERE name IN ('vector', 'postgis', 'pg_trgm');");
+		const out = db.runSql(
+			"SELECT count(*) FROM pg_available_extensions WHERE name IN ('vector', 'postgis', 'pg_trgm');",
+		);
 		return Number.parseInt(out, 10) >= 3;
 	} catch {
 		return false;
@@ -117,18 +84,19 @@ function resetDatabase(): void {
 		'DROP TABLE IF EXISTS taxonomy CASCADE',
 		'DROP TABLE IF EXISTS entities CASCADE',
 		'DROP TABLE IF EXISTS stories CASCADE',
+		'DROP TABLE IF EXISTS spatio_temporal_clusters CASCADE',
+		'DROP TABLE IF EXISTS evidence_chains CASCADE',
+		'DROP TABLE IF EXISTS entity_grounding CASCADE',
 		'DROP TABLE IF EXISTS source_steps CASCADE',
 		'DROP TABLE IF EXISTS sources CASCADE',
 		'DROP TABLE IF EXISTS mulder_migrations CASCADE',
+		'DROP INDEX IF EXISTS idx_entities_geom',
 		'DROP EXTENSION IF EXISTS vector CASCADE',
 		'DROP EXTENSION IF EXISTS postgis CASCADE',
 		'DROP EXTENSION IF EXISTS pg_trgm CASCADE',
 	].join('; ');
 
-	spawnSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-c', dropSql], {
-		encoding: 'utf-8',
-		timeout: 15000,
-	});
+	db.runSql(dropSql);
 }
 
 /**
@@ -148,7 +116,7 @@ function cleanupTestData(): void {
 		`DELETE FROM jobs WHERE type = 'spec09_test'`,
 	].join('; ');
 
-	runSqlSafe(cleanSql);
+	db.runSqlSafe(cleanSql);
 }
 
 /**
@@ -186,7 +154,7 @@ function seedFullSource(): void {
 		`INSERT INTO chunks (id, story_id, content, chunk_index) VALUES ('${CHUNK_ID_1}', '${STORY_ID_1}', 'This is a test chunk for spec 09 testing', 0)`,
 	].join('; ');
 
-	runSql(seedSql);
+	db.runSql(seedSql);
 }
 
 describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
@@ -194,14 +162,9 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 	let extensionsAvailable: boolean;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL container not available. Start with:\n' +
-					'  docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17\n' +
-					'  docker exec mulder-pg-test apt-get update && docker exec mulder-pg-test apt-get install -y postgresql-17-postgis-3',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 
@@ -242,12 +205,12 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			if (skipIfUnavailable()) return;
 
 			// Migrations were applied in beforeAll. Verify that 012-014 are recorded.
-			const migrationCount = runSql('SELECT count(*) FROM mulder_migrations;');
+			const migrationCount = db.runSql('SELECT count(*) FROM mulder_migrations;');
 			// 001-008 = 8, 012-014 = 3, total = 11
 			expect(Number.parseInt(migrationCount, 10)).toBeGreaterThanOrEqual(11);
 
 			// Verify specific migration files are recorded
-			const migrations = runSql('SELECT filename FROM mulder_migrations ORDER BY filename;');
+			const migrations = db.runSql('SELECT filename FROM mulder_migrations ORDER BY filename;');
 			const migrationList = migrations.split('\n').filter(Boolean);
 
 			expect(migrationList).toContain('012_job_queue.sql');
@@ -263,11 +226,11 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			if (skipIfUnavailable()) return;
 
 			// Check enum exists in pg_type
-			const enumExists = runSql("SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'job_status');");
+			const enumExists = db.runSql("SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'job_status');");
 			expect(enumExists).toBe('t');
 
 			// Check enum values
-			const enumValues = runSql(
+			const enumValues = db.runSql(
 				"SELECT enumlabel FROM pg_enum WHERE enumtypid = (SELECT oid FROM pg_type WHERE typname = 'job_status') ORDER BY enumsortorder;",
 			);
 			const values = enumValues.split('\n').filter(Boolean);
@@ -287,7 +250,7 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 		it('jobs table has all columns with correct types and defaults', () => {
 			if (skipIfUnavailable()) return;
 
-			const columnsRaw = runSql(
+			const columnsRaw = db.runSql(
 				"SELECT column_name, data_type, column_default, is_nullable FROM information_schema.columns WHERE table_name = 'jobs' AND table_schema = 'public' ORDER BY ordinal_position;",
 			);
 			const rows = columnsRaw.split('\n').filter(Boolean);
@@ -344,7 +307,7 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 		it('partial index idx_jobs_queue exists on (status, created_at) WHERE status = pending', () => {
 			if (skipIfUnavailable()) return;
 
-			const indexDef = runSql("SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_jobs_queue';");
+			const indexDef = db.runSql("SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_jobs_queue';");
 
 			expect(indexDef).toBeTruthy();
 			// Should be a partial index on status and created_at
@@ -362,7 +325,7 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 		it('pipeline_runs table has all columns with correct types and defaults', () => {
 			if (skipIfUnavailable()) return;
 
-			const columnsRaw = runSql(
+			const columnsRaw = db.runSql(
 				"SELECT column_name, data_type, column_default, is_nullable FROM information_schema.columns WHERE table_name = 'pipeline_runs' AND table_schema = 'public' ORDER BY ordinal_position;",
 			);
 			const rows = columnsRaw.split('\n').filter(Boolean);
@@ -398,7 +361,7 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 		it('pipeline_run_sources has all columns, composite PK (run_id, source_id), FKs with CASCADE on run_id', () => {
 			if (skipIfUnavailable()) return;
 
-			const columnsRaw = runSql(
+			const columnsRaw = db.runSql(
 				"SELECT column_name FROM information_schema.columns WHERE table_name = 'pipeline_run_sources' AND table_schema = 'public' ORDER BY ordinal_position;",
 			);
 			const colList = columnsRaw.split('\n').filter(Boolean);
@@ -410,7 +373,7 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			}
 
 			// Verify composite PK (run_id, source_id)
-			const pkColumns = runSql(
+			const pkColumns = db.runSql(
 				"SELECT kcu.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name WHERE tc.table_name = 'pipeline_run_sources' AND tc.constraint_type = 'PRIMARY KEY' ORDER BY kcu.ordinal_position;",
 			);
 			const pkList = pkColumns.split('\n').filter(Boolean);
@@ -418,19 +381,19 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			expect(pkList).toContain('source_id');
 
 			// Verify FK to pipeline_runs
-			const fkToPipelineRuns = runSql(
+			const fkToPipelineRuns = db.runSql(
 				"SELECT ccu.table_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name WHERE tc.table_name = 'pipeline_run_sources' AND tc.constraint_type = 'FOREIGN KEY' AND kcu.column_name = 'run_id';",
 			);
 			expect(fkToPipelineRuns).toContain('pipeline_runs');
 
 			// Verify FK to sources
-			const fkToSources = runSql(
+			const fkToSources = db.runSql(
 				"SELECT ccu.table_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name WHERE tc.table_name = 'pipeline_run_sources' AND tc.constraint_type = 'FOREIGN KEY' AND kcu.column_name = 'source_id';",
 			);
 			expect(fkToSources).toContain('sources');
 
 			// Verify CASCADE on run_id FK
-			const cascadeOnRunId = runSql(
+			const cascadeOnRunId = db.runSql(
 				"SELECT confdeltype FROM pg_constraint WHERE conrelid = 'pipeline_run_sources'::regclass AND contype = 'f' AND conname LIKE '%run_id%';",
 			);
 			// 'c' means CASCADE
@@ -449,41 +412,41 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			seedFullSource();
 
 			// Verify pre-conditions
-			const storiesBefore = runSql(`SELECT count(*) FROM stories WHERE source_id = '${SOURCE_ID_1}';`);
+			const storiesBefore = db.runSql(`SELECT count(*) FROM stories WHERE source_id = '${SOURCE_ID_1}';`);
 			expect(Number.parseInt(storiesBefore, 10)).toBe(2);
 
-			const stepsBefore = runSql(`SELECT count(*) FROM source_steps WHERE source_id = '${SOURCE_ID_1}';`);
+			const stepsBefore = db.runSql(`SELECT count(*) FROM source_steps WHERE source_id = '${SOURCE_ID_1}';`);
 			expect(Number.parseInt(stepsBefore, 10)).toBe(5);
 
 			// Call reset
-			runSql(`SELECT reset_pipeline_step('${SOURCE_ID_1}', 'extract');`);
+			db.runSql(`SELECT reset_pipeline_step('${SOURCE_ID_1}', 'extract');`);
 
 			// Stories deleted (cascading to chunks, story_entities, edges)
-			const storiesAfter = runSql(`SELECT count(*) FROM stories WHERE source_id = '${SOURCE_ID_1}';`);
+			const storiesAfter = db.runSql(`SELECT count(*) FROM stories WHERE source_id = '${SOURCE_ID_1}';`);
 			expect(Number.parseInt(storiesAfter, 10)).toBe(0);
 
 			// Chunks deleted (cascaded from stories)
-			const chunksAfter = runSql(`SELECT count(*) FROM chunks WHERE story_id = '${STORY_ID_1}';`);
+			const chunksAfter = db.runSql(`SELECT count(*) FROM chunks WHERE story_id = '${STORY_ID_1}';`);
 			expect(Number.parseInt(chunksAfter, 10)).toBe(0);
 
 			// Story entities deleted (cascaded)
-			const seAfter = runSql(
+			const seAfter = db.runSql(
 				`SELECT count(*) FROM story_entities WHERE story_id IN ('${STORY_ID_1}', '${STORY_ID_2}');`,
 			);
 			expect(Number.parseInt(seAfter, 10)).toBe(0);
 
 			// Entity edges deleted (cascaded)
-			const edgesAfter = runSql(
+			const edgesAfter = db.runSql(
 				`SELECT count(*) FROM entity_edges WHERE story_id IN ('${STORY_ID_1}', '${STORY_ID_2}');`,
 			);
 			expect(Number.parseInt(edgesAfter, 10)).toBe(0);
 
 			// source_steps cleared (ALL steps)
-			const stepsAfter = runSql(`SELECT count(*) FROM source_steps WHERE source_id = '${SOURCE_ID_1}';`);
+			const stepsAfter = db.runSql(`SELECT count(*) FROM source_steps WHERE source_id = '${SOURCE_ID_1}';`);
 			expect(Number.parseInt(stepsAfter, 10)).toBe(0);
 
 			// source status = 'ingested'
-			const sourceStatus = runSql(`SELECT status FROM sources WHERE id = '${SOURCE_ID_1}';`);
+			const sourceStatus = db.runSql(`SELECT status FROM sources WHERE id = '${SOURCE_ID_1}';`);
 			expect(sourceStatus).toBe('ingested');
 
 			// Clean up
@@ -501,14 +464,14 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			seedFullSource();
 
 			// Call reset for segment
-			runSql(`SELECT reset_pipeline_step('${SOURCE_ID_1}', 'segment');`);
+			db.runSql(`SELECT reset_pipeline_step('${SOURCE_ID_1}', 'segment');`);
 
 			// Stories deleted
-			const storiesAfter = runSql(`SELECT count(*) FROM stories WHERE source_id = '${SOURCE_ID_1}';`);
+			const storiesAfter = db.runSql(`SELECT count(*) FROM stories WHERE source_id = '${SOURCE_ID_1}';`);
 			expect(Number.parseInt(storiesAfter, 10)).toBe(0);
 
 			// Relevant source_steps cleared (segment, enrich, embed, graph)
-			const remainingSteps = runSql(
+			const remainingSteps = db.runSql(
 				`SELECT step_name FROM source_steps WHERE source_id = '${SOURCE_ID_1}' ORDER BY step_name;`,
 			);
 			const stepList = remainingSteps.split('\n').filter(Boolean);
@@ -520,7 +483,7 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			expect(stepList).not.toContain('graph');
 
 			// source status = 'extracted'
-			const sourceStatus = runSql(`SELECT status FROM sources WHERE id = '${SOURCE_ID_1}';`);
+			const sourceStatus = db.runSql(`SELECT status FROM sources WHERE id = '${SOURCE_ID_1}';`);
 			expect(sourceStatus).toBe('extracted');
 
 			cleanupTestData();
@@ -537,22 +500,22 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			seedFullSource();
 
 			// Call reset for enrich
-			runSql(`SELECT reset_pipeline_step('${SOURCE_ID_1}', 'enrich');`);
+			db.runSql(`SELECT reset_pipeline_step('${SOURCE_ID_1}', 'enrich');`);
 
 			// story_entities deleted
-			const seAfter = runSql(
+			const seAfter = db.runSql(
 				`SELECT count(*) FROM story_entities WHERE story_id IN ('${STORY_ID_1}', '${STORY_ID_2}');`,
 			);
 			expect(Number.parseInt(seAfter, 10)).toBe(0);
 
 			// entity_edges deleted
-			const edgesAfter = runSql(
+			const edgesAfter = db.runSql(
 				`SELECT count(*) FROM entity_edges WHERE story_id IN ('${STORY_ID_1}', '${STORY_ID_2}');`,
 			);
 			expect(Number.parseInt(edgesAfter, 10)).toBe(0);
 
 			// source_steps for enrich/embed/graph cleared
-			const remainingSteps = runSql(
+			const remainingSteps = db.runSql(
 				`SELECT step_name FROM source_steps WHERE source_id = '${SOURCE_ID_1}' ORDER BY step_name;`,
 			);
 			const stepList = remainingSteps.split('\n').filter(Boolean);
@@ -563,11 +526,11 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			expect(stepList).not.toContain('graph');
 
 			// stories status = 'segmented'
-			const storyStatuses = runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${SOURCE_ID_1}';`);
+			const storyStatuses = db.runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${SOURCE_ID_1}';`);
 			expect(storyStatuses).toBe('segmented');
 
 			// source status = 'segmented'
-			const sourceStatus = runSql(`SELECT status FROM sources WHERE id = '${SOURCE_ID_1}';`);
+			const sourceStatus = db.runSql(`SELECT status FROM sources WHERE id = '${SOURCE_ID_1}';`);
 			expect(sourceStatus).toBe('segmented');
 
 			cleanupTestData();
@@ -584,14 +547,16 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			seedFullSource();
 
 			// Call reset for embed
-			runSql(`SELECT reset_pipeline_step('${SOURCE_ID_1}', 'embed');`);
+			db.runSql(`SELECT reset_pipeline_step('${SOURCE_ID_1}', 'embed');`);
 
 			// Chunks deleted
-			const chunksAfter = runSql(`SELECT count(*) FROM chunks WHERE story_id IN ('${STORY_ID_1}', '${STORY_ID_2}');`);
+			const chunksAfter = db.runSql(
+				`SELECT count(*) FROM chunks WHERE story_id IN ('${STORY_ID_1}', '${STORY_ID_2}');`,
+			);
 			expect(Number.parseInt(chunksAfter, 10)).toBe(0);
 
 			// source_steps for embed/graph cleared
-			const remainingSteps = runSql(
+			const remainingSteps = db.runSql(
 				`SELECT step_name FROM source_steps WHERE source_id = '${SOURCE_ID_1}' ORDER BY step_name;`,
 			);
 			const stepList = remainingSteps.split('\n').filter(Boolean);
@@ -602,7 +567,7 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			expect(stepList).not.toContain('graph');
 
 			// stories status = 'enriched'
-			const storyStatuses = runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${SOURCE_ID_1}';`);
+			const storyStatuses = db.runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${SOURCE_ID_1}';`);
 			expect(storyStatuses).toBe('enriched');
 
 			cleanupTestData();
@@ -619,16 +584,16 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			seedFullSource();
 
 			// Call reset for graph
-			runSql(`SELECT reset_pipeline_step('${SOURCE_ID_1}', 'graph');`);
+			db.runSql(`SELECT reset_pipeline_step('${SOURCE_ID_1}', 'graph');`);
 
 			// Entity edges deleted
-			const edgesAfter = runSql(
+			const edgesAfter = db.runSql(
 				`SELECT count(*) FROM entity_edges WHERE story_id IN ('${STORY_ID_1}', '${STORY_ID_2}');`,
 			);
 			expect(Number.parseInt(edgesAfter, 10)).toBe(0);
 
 			// source_steps for graph cleared
-			const remainingSteps = runSql(
+			const remainingSteps = db.runSql(
 				`SELECT step_name FROM source_steps WHERE source_id = '${SOURCE_ID_1}' ORDER BY step_name;`,
 			);
 			const stepList = remainingSteps.split('\n').filter(Boolean);
@@ -639,7 +604,7 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			expect(stepList).not.toContain('graph');
 
 			// stories status = 'embedded'
-			const storyStatuses = runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${SOURCE_ID_1}';`);
+			const storyStatuses = db.runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${SOURCE_ID_1}';`);
 			expect(storyStatuses).toBe('embedded');
 
 			cleanupTestData();
@@ -655,38 +620,38 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			cleanupTestData();
 
 			// Create a source and story for the linked entity
-			runSql(
+			db.runSql(
 				`INSERT INTO sources (id, filename, storage_path, file_hash, status) VALUES ('${SOURCE_ID_1}', 'test-gc.pdf', 'gs://bucket/test-gc.pdf', 'hash_gc_spec09', 'completed');`,
 			);
-			runSql(
+			db.runSql(
 				`INSERT INTO stories (id, source_id, title, gcs_markdown_uri, gcs_metadata_uri, status) VALUES ('${STORY_ID_1}', '${SOURCE_ID_1}', 'GC Test Story', 'gs://bucket/gc.md', 'gs://bucket/gc.meta.json', 'completed');`,
 			);
 
 			// Create a non-orphaned entity (linked to a story)
-			runSql(`INSERT INTO entities (id, name, type) VALUES ('${ENTITY_ID_1}', 'Linked Entity', 'person');`);
-			runSql(
+			db.runSql(`INSERT INTO entities (id, name, type) VALUES ('${ENTITY_ID_1}', 'Linked Entity', 'person');`);
+			db.runSql(
 				`INSERT INTO story_entities (story_id, entity_id, mention_count) VALUES ('${STORY_ID_1}', '${ENTITY_ID_1}', 1);`,
 			);
 
 			// Create an orphaned entity (no story_entities references)
-			runSql(`INSERT INTO entities (id, name, type) VALUES ('${ENTITY_ID_ORPHAN}', 'Orphaned Entity', 'location');`);
+			db.runSql(`INSERT INTO entities (id, name, type) VALUES ('${ENTITY_ID_ORPHAN}', 'Orphaned Entity', 'location');`);
 
 			// Verify pre-conditions
-			const entitiesBefore = runSql(
+			const entitiesBefore = db.runSql(
 				`SELECT count(*) FROM entities WHERE id IN ('${ENTITY_ID_1}', '${ENTITY_ID_ORPHAN}');`,
 			);
 			expect(Number.parseInt(entitiesBefore, 10)).toBe(2);
 
 			// Call gc_orphaned_entities
-			const deletedCount = runSql('SELECT gc_orphaned_entities();');
+			const deletedCount = db.runSql('SELECT gc_orphaned_entities();');
 			expect(Number.parseInt(deletedCount, 10)).toBe(1);
 
 			// Orphaned entity should be gone
-			const orphanExists = runSql(`SELECT count(*) FROM entities WHERE id = '${ENTITY_ID_ORPHAN}';`);
+			const orphanExists = db.runSql(`SELECT count(*) FROM entities WHERE id = '${ENTITY_ID_ORPHAN}';`);
 			expect(Number.parseInt(orphanExists, 10)).toBe(0);
 
 			// Non-orphaned entity should still exist
-			const linkedExists = runSql(`SELECT count(*) FROM entities WHERE id = '${ENTITY_ID_1}';`);
+			const linkedExists = db.runSql(`SELECT count(*) FROM entities WHERE id = '${ENTITY_ID_1}';`);
 			expect(Number.parseInt(linkedExists, 10)).toBe(1);
 
 			cleanupTestData();
@@ -717,29 +682,29 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			cleanupTestData();
 
 			// Create a source for FK reference
-			runSql(
+			db.runSql(
 				`INSERT INTO sources (id, filename, storage_path, file_hash, status) VALUES ('${SOURCE_ID_1}', 'test-fk-cascade.pdf', 'gs://bucket/test-fk.pdf', 'hash_fk_spec09', 'pending');`,
 			);
 
 			// Create a pipeline_run
-			runSql(
+			db.runSql(
 				`INSERT INTO pipeline_runs (id, tag, status) VALUES ('${PIPELINE_RUN_ID}', 'test-cascade-run', 'running');`,
 			);
 
 			// Create pipeline_run_sources referencing the run and source
-			runSql(
+			db.runSql(
 				`INSERT INTO pipeline_run_sources (run_id, source_id, current_step, status) VALUES ('${PIPELINE_RUN_ID}', '${SOURCE_ID_1}', 'extract', 'pending');`,
 			);
 
 			// Verify pre-condition
-			const prsBefore = runSql(`SELECT count(*) FROM pipeline_run_sources WHERE run_id = '${PIPELINE_RUN_ID}';`);
+			const prsBefore = db.runSql(`SELECT count(*) FROM pipeline_run_sources WHERE run_id = '${PIPELINE_RUN_ID}';`);
 			expect(Number.parseInt(prsBefore, 10)).toBe(1);
 
 			// Delete the pipeline_run
-			runSql(`DELETE FROM pipeline_runs WHERE id = '${PIPELINE_RUN_ID}';`);
+			db.runSql(`DELETE FROM pipeline_runs WHERE id = '${PIPELINE_RUN_ID}';`);
 
 			// Verify cascade -- pipeline_run_sources should be gone
-			const prsAfter = runSql(`SELECT count(*) FROM pipeline_run_sources WHERE run_id = '${PIPELINE_RUN_ID}';`);
+			const prsAfter = db.runSql(`SELECT count(*) FROM pipeline_run_sources WHERE run_id = '${PIPELINE_RUN_ID}';`);
 			expect(Number.parseInt(prsAfter, 10)).toBe(0);
 
 			cleanupTestData();

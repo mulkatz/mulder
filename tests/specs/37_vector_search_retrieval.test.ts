@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import {
 	type EmbeddingResult,
@@ -12,17 +11,17 @@ import {
 import { vectorSearch } from '@mulder/retrieval';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 import { ensureSchema } from '../lib/schema.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
-const PG_DATABASE = 'mulder';
-const PG_HOST = 'localhost';
-const PG_PORT = 5432;
+const PG_USER = db.TEST_PG_USER;
+const PG_PASSWORD = db.TEST_PG_PASSWORD;
+const PG_DATABASE = db.TEST_PG_DATABASE;
+const PG_HOST = db.TEST_PG_HOST;
+const PG_PORT = db.TEST_PG_PORT;
 
 /**
  * Black-box QA tests for Spec 37: Vector Search Retrieval (M4-E1).
@@ -34,7 +33,7 @@ const PG_PORT = 5432;
  * Each `it()` maps to one QA condition (QA-01..QA-12) from the spec's QA Contract.
  *
  * Requires:
- * - Running PostgreSQL container `mulder-pg-test` with migrations applied
+ * - PostgreSQL reachable through the standard PG env vars with migrations applied
  * - Built dist artifacts for `@mulder/core` and `@mulder/retrieval`
  */
 
@@ -43,27 +42,11 @@ const PG_PORT = 5432;
 // ---------------------------------------------------------------------------
 
 function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
+	return db.isPgAvailable();
 }
 
 function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', PG_DATABASE, '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
+	return db.runSql(sql);
 }
 
 /**
@@ -226,11 +209,7 @@ describe('Spec 37 — Vector Search Retrieval', () => {
 
 	beforeAll(async () => {
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL container not available. Start with:\n' +
-					'  docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 

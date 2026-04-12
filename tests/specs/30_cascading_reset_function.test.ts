@@ -1,7 +1,8 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -12,20 +13,16 @@ const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
-
 /**
  * Black-box QA tests for Spec 30: Cascading Reset Function
  *
  * Each `it()` maps to one QA condition or CLI condition from Section 5/5b of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `docker exec psql`, and filesystem (dev-mode storage).
+ * SQL via `the shared env-driven SQL helper`, and filesystem (dev-mode storage).
  * Never imports from packages/ or src/ or apps/.
  *
  * Requires:
- * - Running PostgreSQL container `mulder-pg-test` with migrations applied
+ * - PostgreSQL reachable through the standard PG env vars with migrations applied
  * - Built CLI at apps/cli/dist/index.js
  * - Test fixtures in fixtures/raw/
  */
@@ -43,7 +40,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 60000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -52,34 +49,8 @@ function runCli(
 	};
 }
 
-function runSql(sql: string): string {
-	try {
-		const result = execFileSync(
-			'docker',
-			['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-			{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-		);
-		return (result ?? '').trim();
-	} catch (error: unknown) {
-		const err = error as { stderr?: string; status?: number };
-		throw new Error(`psql failed (exit ${err.status}): ${err.stderr}`);
-	}
-}
-
-function isPgAvailable(): boolean {
-	try {
-		execFileSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return true;
-	} catch {
-		return false;
-	}
-}
-
 function cleanTestData(): void {
-	runSql(
+	db.runSql(
 		'DELETE FROM story_entities; DELETE FROM entity_edges; DELETE FROM entity_aliases; DELETE FROM entities; DELETE FROM chunks; DELETE FROM stories; DELETE FROM source_steps; DELETE FROM sources;',
 	);
 }
@@ -130,7 +101,7 @@ function ingestPdf(pdfPath: string): string {
 	}
 	const parts = pdfPath.split('/');
 	const filename = parts[parts.length - 1];
-	const sourceId = runSql(`SELECT id FROM sources WHERE filename = '${filename}' ORDER BY created_at DESC LIMIT 1;`);
+	const sourceId = db.runSql(`SELECT id FROM sources WHERE filename = '${filename}' ORDER BY created_at DESC LIMIT 1;`);
 	if (!sourceId) {
 		throw new Error(`No source record found for ${filename}`);
 	}
@@ -156,7 +127,7 @@ function ingestExtractSegment(pdfPath: string): string {
 		throw new Error(`Segment failed: ${segResult.stdout} ${segResult.stderr}`);
 	}
 
-	const status = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+	const status = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 	if (status !== 'segmented') {
 		throw new Error(`Source ${sourceId} has status '${status}', expected 'segmented'`);
 	}
@@ -180,7 +151,7 @@ function ingestExtractSegmentEnrich(pdfPath: string): string {
 
 	// Verify stories are enriched (source status stays 'segmented' — enrich is story-level)
 	const enrichedCount = Number.parseInt(
-		runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}' AND status = 'enriched';`),
+		db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}' AND status = 'enriched';`),
 		10,
 	);
 	if (enrichedCount === 0) {
@@ -209,7 +180,7 @@ function extractJsonLine(output: string, expectedKey: string): Record<string, un
 }
 
 function getStoryId(sourceId: string): string {
-	const storyId = runSql(`SELECT id FROM stories WHERE source_id = '${sourceId}' LIMIT 1;`);
+	const storyId = db.runSql(`SELECT id FROM stories WHERE source_id = '${sourceId}' LIMIT 1;`);
 	if (!storyId) {
 		throw new Error(`No story found for source ${sourceId}`);
 	}
@@ -224,13 +195,9 @@ describe('Spec 30 — Cascading Reset Function', () => {
 	let pgAvailable: boolean;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL container not available. Start with:\n' +
-					'  docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 
@@ -266,14 +233,14 @@ describe('Spec 30 — Cascading Reset Function', () => {
 
 		// Verify pre-condition: stories exist
 		const storyCountBefore = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`),
+			db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`),
 			10,
 		);
 		expect(storyCountBefore).toBeGreaterThanOrEqual(1);
 
 		// Verify pre-condition: source_steps exist
 		const stepCountBefore = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM source_steps WHERE source_id = '${sourceId}';`),
+			db.runSql(`SELECT COUNT(*) FROM source_steps WHERE source_id = '${sourceId}';`),
 			10,
 		);
 		expect(stepCountBefore).toBeGreaterThanOrEqual(1);
@@ -284,7 +251,7 @@ describe('Spec 30 — Cascading Reset Function', () => {
 
 		// Assert: source status is back to 'ingested' (extract resets to ingested then re-extracts)
 		// Actually after --force, the extract step re-runs, so status should be 'extracted'
-		const statusAfter = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+		const statusAfter = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 		expect(statusAfter).toBe('extracted');
 
 		// Assert: old stories were deleted (new ones may have been created by re-extraction if extract creates stories, but extract doesn't create stories - that's segment)
@@ -292,7 +259,7 @@ describe('Spec 30 — Cascading Reset Function', () => {
 		// Then extract re-runs which only produces GCS artifacts, not stories
 		// So there should be NO stories (segment hasn't re-run)
 		const storyCountAfter = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`),
+			db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`),
 			10,
 		);
 		expect(storyCountAfter).toBe(0);
@@ -317,13 +284,13 @@ describe('Spec 30 — Cascading Reset Function', () => {
 
 		// Verify pre-condition: stories exist
 		const storyCountBefore = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`),
+			db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`),
 			10,
 		);
 		expect(storyCountBefore).toBeGreaterThanOrEqual(1);
 
 		// Verify source_steps for segment exist
-		const segStepBefore = runSql(
+		const segStepBefore = db.runSql(
 			`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'segment';`,
 		);
 		expect(segStepBefore).toBe('completed');
@@ -334,12 +301,12 @@ describe('Spec 30 — Cascading Reset Function', () => {
 		expect(exitCode).toBe(0);
 
 		// After --force, segment re-runs so status should be 'segmented' again and new stories exist
-		const statusAfter = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+		const statusAfter = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 		expect(statusAfter).toBe('segmented');
 
 		// New stories should exist (from re-segmentation)
 		const storyCountAfter = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`),
+			db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`),
 			10,
 		);
 		expect(storyCountAfter).toBeGreaterThanOrEqual(1);
@@ -364,7 +331,7 @@ describe('Spec 30 — Cascading Reset Function', () => {
 
 		// Verify pre-condition: story_entities exist
 		const seCountBefore = Number.parseInt(
-			runSql(
+			db.runSql(
 				`SELECT COUNT(*) FROM story_entities WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');`,
 			),
 			10,
@@ -372,7 +339,7 @@ describe('Spec 30 — Cascading Reset Function', () => {
 		expect(seCountBefore).toBeGreaterThanOrEqual(1);
 
 		// Verify enrich source_step exists
-		const enrichStepBefore = runSql(
+		const enrichStepBefore = db.runSql(
 			`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'enrich';`,
 		);
 		expect(enrichStepBefore).toBe('completed');
@@ -382,19 +349,19 @@ describe('Spec 30 — Cascading Reset Function', () => {
 		expect(exitCode).toBe(0);
 
 		// After --force re-enrichment, source status stays 'segmented' (enrich is story-level)
-		const statusAfter = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+		const statusAfter = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 		expect(statusAfter).toBe('segmented');
 
 		// Stories should be enriched again after re-enrichment
 		const enrichedStoriesAfter = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}' AND status = 'enriched';`),
+			db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}' AND status = 'enriched';`),
 			10,
 		);
 		expect(enrichedStoriesAfter).toBeGreaterThanOrEqual(1);
 
 		// story_entities should exist again (re-enriched)
 		const seCountAfter = Number.parseInt(
-			runSql(
+			db.runSql(
 				`SELECT COUNT(*) FROM story_entities WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');`,
 			),
 			10,
@@ -402,7 +369,7 @@ describe('Spec 30 — Cascading Reset Function', () => {
 		expect(seCountAfter).toBeGreaterThanOrEqual(1);
 
 		// Enrich source_step should be completed again
-		const enrichStepAfter = runSql(
+		const enrichStepAfter = db.runSql(
 			`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'enrich';`,
 		);
 		expect(enrichStepAfter).toBe('completed');
@@ -426,25 +393,28 @@ describe('Spec 30 — Cascading Reset Function', () => {
 
 		// Verify pre-condition: story has entities
 		const seCountBefore = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM story_entities WHERE story_id = '${storyId}';`),
+			db.runSql(`SELECT COUNT(*) FROM story_entities WHERE story_id = '${storyId}';`),
 			10,
 		);
 		expect(seCountBefore).toBeGreaterThanOrEqual(1);
 
 		// Check if there are other stories
-		const allStoryIds = runSql(`SELECT id FROM stories WHERE source_id = '${sourceId}';`).split('\n').filter(Boolean);
+		const allStoryIds = db
+			.runSql(`SELECT id FROM stories WHERE source_id = '${sourceId}';`)
+			.split('\n')
+			.filter(Boolean);
 
 		// Act: enrich single story with --force
 		const { exitCode } = runCli(['enrich', storyId, '--force'], { timeout: 120000 });
 		expect(exitCode).toBe(0);
 
 		// The targeted story should be enriched
-		const storyStatus = runSql(`SELECT status FROM stories WHERE id = '${storyId}';`);
+		const storyStatus = db.runSql(`SELECT status FROM stories WHERE id = '${storyId}';`);
 		expect(storyStatus).toBe('enriched');
 
 		// Story entities should exist again
 		const seCountAfter = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM story_entities WHERE story_id = '${storyId}';`),
+			db.runSql(`SELECT COUNT(*) FROM story_entities WHERE story_id = '${storyId}';`),
 			10,
 		);
 		expect(seCountAfter).toBeGreaterThanOrEqual(1);
@@ -452,7 +422,7 @@ describe('Spec 30 — Cascading Reset Function', () => {
 		// Other stories (if any) should still be enriched (untouched)
 		for (const otherId of allStoryIds) {
 			if (otherId === storyId) continue;
-			const otherStatus = runSql(`SELECT status FROM stories WHERE id = '${otherId}';`);
+			const otherStatus = db.runSql(`SELECT status FROM stories WHERE id = '${otherId}';`);
 			expect(otherStatus).toBe('enriched');
 		}
 	}, 180000);
@@ -468,11 +438,11 @@ describe('Spec 30 — Cascading Reset Function', () => {
 		cleanTestData();
 
 		// Insert orphaned entities (no story_entities references)
-		runSql(`INSERT INTO entities (name, type) VALUES ('OrphanEntity1', 'person'), ('OrphanEntity2', 'location');`);
+		db.runSql(`INSERT INTO entities (name, type) VALUES ('OrphanEntity1', 'person'), ('OrphanEntity2', 'location');`);
 
 		// Verify they exist
 		const countBefore = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM entities WHERE name IN ('OrphanEntity1', 'OrphanEntity2');`),
+			db.runSql(`SELECT COUNT(*) FROM entities WHERE name IN ('OrphanEntity1', 'OrphanEntity2');`),
 			10,
 		);
 		expect(countBefore).toBe(2);
@@ -488,7 +458,7 @@ describe('Spec 30 — Cascading Reset Function', () => {
 
 		// Orphaned entities should be deleted
 		const countAfter = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM entities WHERE name IN ('OrphanEntity1', 'OrphanEntity2');`),
+			db.runSql(`SELECT COUNT(*) FROM entities WHERE name IN ('OrphanEntity1', 'OrphanEntity2');`),
 			10,
 		);
 		expect(countAfter).toBe(0);
@@ -503,7 +473,7 @@ describe('Spec 30 — Cascading Reset Function', () => {
 
 		// Clean state and insert orphans
 		cleanTestData();
-		runSql(`INSERT INTO entities (name, type) VALUES ('JsonOrphan1', 'person');`);
+		db.runSql(`INSERT INTO entities (name, type) VALUES ('JsonOrphan1', 'person');`);
 
 		// Act
 		const { exitCode, stdout } = runCli(['db', 'gc', '--json', EXAMPLE_CONFIG]);
@@ -554,18 +524,18 @@ describe('Spec 30 — Cascading Reset Function', () => {
 		const storyIdB = getStoryId(sourceIdB);
 
 		// Create a shared entity and link it to both stories
-		runSql(`INSERT INTO entities (name, type) VALUES ('SharedEntity_USA', 'location');`);
-		const sharedEntityId = runSql(`SELECT id FROM entities WHERE name = 'SharedEntity_USA';`);
-		runSql(
+		db.runSql(`INSERT INTO entities (name, type) VALUES ('SharedEntity_USA', 'location');`);
+		const sharedEntityId = db.runSql(`SELECT id FROM entities WHERE name = 'SharedEntity_USA';`);
+		db.runSql(
 			`INSERT INTO story_entities (story_id, entity_id, confidence) VALUES ('${storyIdA}', '${sharedEntityId}', 0.9) ON CONFLICT DO NOTHING;`,
 		);
-		runSql(
+		db.runSql(
 			`INSERT INTO story_entities (story_id, entity_id, confidence) VALUES ('${storyIdB}', '${sharedEntityId}', 0.85) ON CONFLICT DO NOTHING;`,
 		);
 
 		// Verify both links exist
 		const linkCountBefore = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM story_entities WHERE entity_id = '${sharedEntityId}';`),
+			db.runSql(`SELECT COUNT(*) FROM story_entities WHERE entity_id = '${sharedEntityId}';`),
 			10,
 		);
 		expect(linkCountBefore).toBeGreaterThanOrEqual(2);
@@ -575,11 +545,11 @@ describe('Spec 30 — Cascading Reset Function', () => {
 		expect(exitCode).toBe(0);
 
 		// Assert: shared entity still exists in entities table
-		const entityExists = runSql(`SELECT COUNT(*) FROM entities WHERE id = '${sharedEntityId}';`);
+		const entityExists = db.runSql(`SELECT COUNT(*) FROM entities WHERE id = '${sharedEntityId}';`);
 		expect(Number.parseInt(entityExists, 10)).toBe(1);
 
 		// Assert: Source B's link to the shared entity still exists
-		const linkB = runSql(
+		const linkB = db.runSql(
 			`SELECT COUNT(*) FROM story_entities WHERE entity_id = '${sharedEntityId}' AND story_id = '${storyIdB}';`,
 		);
 		expect(Number.parseInt(linkB, 10)).toBe(1);
@@ -673,34 +643,12 @@ describe('CLI Smoke Tests: mulder db gc', () => {
 	}, 10000);
 
 	it('SMOKE-04: mulder db gc --json with no orphans produces valid JSON with deleted: 0', () => {
-		let pgAvail: boolean;
-		try {
-			execFileSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-				encoding: 'utf-8',
-				timeout: 5000,
-			});
-			pgAvail = true;
-		} catch {
-			pgAvail = false;
-		}
-		if (!pgAvail) return;
+		if (!db.isPgAvailable()) return;
 
 		// Clean all entities
 		try {
-			execFileSync(
-				'docker',
-				[
-					'exec',
-					PG_CONTAINER,
-					'psql',
-					'-U',
-					PG_USER,
-					'-d',
-					'mulder',
-					'-c',
-					'DELETE FROM story_entities; DELETE FROM entity_edges; DELETE FROM entity_aliases; DELETE FROM entities;',
-				],
-				{ encoding: 'utf-8', timeout: 10000 },
+			db.runSql(
+				'DELETE FROM story_entities; DELETE FROM entity_edges; DELETE FROM entity_aliases; DELETE FROM entities;',
 			);
 		} catch {
 			// ignore
@@ -715,17 +663,7 @@ describe('CLI Smoke Tests: mulder db gc', () => {
 	}, 30000);
 
 	it('SMOKE-05: mulder db gc --json flag order does not matter (flag after config path)', () => {
-		let pgAvail: boolean;
-		try {
-			execFileSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-				encoding: 'utf-8',
-				timeout: 5000,
-			});
-			pgAvail = true;
-		} catch {
-			pgAvail = false;
-		}
-		if (!pgAvail) return;
+		if (!db.isPgAvailable()) return;
 
 		// Try: mulder db gc <config> --json (flag after argument)
 		const { exitCode, stdout } = runCli(['db', 'gc', EXAMPLE_CONFIG, '--json']);

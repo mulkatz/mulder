@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 import { ensureSchema } from '../lib/schema.js';
 
 /**
@@ -9,20 +10,16 @@ import { ensureSchema } from '../lib/schema.js';
  *
  * Each `it()` maps to one QA-NN or CLI-NN condition from Section 5/5b of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls and SQL
- * via `docker exec psql`.
+ * via `the shared env-driven SQL helper`.
  * Never imports from packages/ or src/ or apps/.
  *
  * Requires:
- * - Running PostgreSQL container `mulder-pg-test` with migrations applied
+ * - PostgreSQL reachable through the standard PG env vars with migrations applied
  * - Built CLI at apps/cli/dist/index.js
  */
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
-
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,7 +34,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 30000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, MULDER_LOG_LEVEL: 'silent', ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, MULDER_LOG_LEVEL: 'silent', ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -46,35 +43,11 @@ function runCli(
 	};
 }
 
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
 /**
  * Truncate all relevant tables for a clean test state.
  */
 function cleanTestData(): void {
-	runSql(
+	db.runSql(
 		'TRUNCATE TABLE chunks, story_entities, entity_edges, entity_aliases, ' +
 			'taxonomy, entities, stories, source_steps, ' +
 			'pipeline_run_sources, pipeline_runs, sources CASCADE;',
@@ -90,7 +63,7 @@ function seedSource(opts?: { id?: string; filename?: string; status?: string }):
 	const filename = opts?.filename ?? 'test.pdf';
 	const fileHash = randomUUID();
 	const status = opts?.status ?? 'ingested';
-	runSql(
+	db.runSql(
 		`INSERT INTO sources (id, filename, storage_path, file_hash, status) ` +
 			`VALUES ('${id}', '${filename}', 'raw/${filename}', '${fileHash}', '${status}') ` +
 			`ON CONFLICT (id) DO NOTHING;`,
@@ -102,7 +75,7 @@ function seedStory(opts: { id?: string; source_id: string; title?: string; statu
 	const id = opts.id ?? randomUUID();
 	const title = opts.title ?? 'Test Story';
 	const status = opts.status ?? 'segmented';
-	runSql(
+	db.runSql(
 		`INSERT INTO stories (id, source_id, title, gcs_markdown_uri, gcs_metadata_uri, status) ` +
 			`VALUES ('${id}', '${opts.source_id}', '${title.replace(/'/g, "''")}', 'gs://test/${id}.md', 'gs://test/${id}.meta.json', '${status}') ` +
 			`ON CONFLICT (id) DO NOTHING;`,
@@ -122,7 +95,7 @@ function seedEntity(opts: {
 	const canonicalId = opts.canonical_id !== undefined && opts.canonical_id !== null ? `'${opts.canonical_id}'` : 'NULL';
 	const taxonomyStatus = opts.taxonomy_status ?? 'auto';
 	const sourceCount = opts.source_count ?? 0;
-	runSql(
+	db.runSql(
 		`INSERT INTO entities (id, name, type, canonical_id, taxonomy_status, source_count) ` +
 			`VALUES ('${id}', '${opts.name.replace(/'/g, "''")}', '${opts.type}', ${canonicalId}, '${taxonomyStatus}', ${sourceCount}) ` +
 			`ON CONFLICT (id) DO NOTHING;`,
@@ -139,7 +112,7 @@ function seedEdge(opts: {
 }): string {
 	const id = opts.id ?? randomUUID();
 	const storyId = opts.story_id ? `'${opts.story_id}'` : 'NULL';
-	runSql(
+	db.runSql(
 		`INSERT INTO entity_edges (id, source_entity_id, target_entity_id, relationship, story_id) ` +
 			`VALUES ('${id}', '${opts.source_entity_id}', '${opts.target_entity_id}', '${opts.relationship}', ${storyId}) ` +
 			`ON CONFLICT DO NOTHING;`,
@@ -149,7 +122,7 @@ function seedEdge(opts: {
 
 function seedChunk(opts: { id?: string; story_id: string; content: string; chunk_index: number }): string {
 	const id = opts.id ?? randomUUID();
-	runSql(
+	db.runSql(
 		`INSERT INTO chunks (id, story_id, content, chunk_index) ` +
 			`VALUES ('${id}', '${opts.story_id}', '${opts.content.replace(/'/g, "''")}', ${opts.chunk_index}) ` +
 			`ON CONFLICT DO NOTHING;`,
@@ -160,7 +133,7 @@ function seedChunk(opts: { id?: string; story_id: string; content: string; chunk
 function seedTaxonomy(opts: { id?: string; canonical_name: string; entity_type: string; status?: string }): string {
 	const id = opts.id ?? randomUUID();
 	const status = opts.status ?? 'auto';
-	runSql(
+	db.runSql(
 		`INSERT INTO taxonomy (id, canonical_name, entity_type, status) ` +
 			`VALUES ('${id}', '${opts.canonical_name.replace(/'/g, "''")}', '${opts.entity_type}', '${status}') ` +
 			`ON CONFLICT DO NOTHING;`,
@@ -178,7 +151,7 @@ function seedSourceStep(opts: {
 		opts.error_message !== undefined && opts.error_message !== null
 			? `'${opts.error_message.replace(/'/g, "''")}'`
 			: 'NULL';
-	runSql(
+	db.runSql(
 		`INSERT INTO source_steps (source_id, step_name, status, error_message) ` +
 			`VALUES ('${opts.source_id}', '${opts.step_name}', '${opts.status}', ${errorMsg}) ` +
 			`ON CONFLICT (source_id, step_name) DO UPDATE SET status = '${opts.status}', error_message = ${errorMsg};`,
@@ -194,7 +167,7 @@ function seedPipelineRun(opts?: { id?: string; status?: string; finished_at?: st
 			: status === 'completed'
 				? 'now()'
 				: 'NULL';
-	runSql(
+	db.runSql(
 		`INSERT INTO pipeline_runs (id, status, finished_at) ` +
 			`VALUES ('${id}', '${status}', ${finishedAt}) ` +
 			`ON CONFLICT DO NOTHING;`,
@@ -229,7 +202,7 @@ let pipelineRunId: string;
 // ---------------------------------------------------------------------------
 
 beforeAll(() => {
-	pgAvailable = isPgAvailable();
+	pgAvailable = db.isPgAvailable();
 	if (!pgAvailable) return;
 	ensureSchema();
 	cleanTestData();
@@ -366,7 +339,7 @@ describe('QA Contract: Status Overview CLI', () => {
 	it('QA-06: --failed with no failures', () => {
 		if (!pgAvailable) return;
 		// Remove failed source_steps
-		runSql(`DELETE FROM source_steps WHERE status = 'failed';`);
+		db.runSql(`DELETE FROM source_steps WHERE status = 'failed';`);
 		try {
 			const { stdout, exitCode } = runCli(['status', '--failed']);
 			expect(exitCode).toBe(0);

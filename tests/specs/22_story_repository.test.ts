@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CORE_MODULE = resolve(ROOT, 'packages/core/dist/index.js');
@@ -15,16 +16,16 @@ const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
  * Tests interact through system boundaries only: SQL via pg, and
  * TypeScript imports from @mulder/core barrel (dist).
  *
- * Requires a running PostgreSQL instance (Docker container `mulder-pg-test`)
+ * Requires a running PostgreSQL instance (the standard PG env vars)
  * with migrations applied.
  */
 
 const PG_CONFIG = {
-	host: 'localhost',
-	port: 5432,
-	database: 'mulder',
-	user: 'mulder',
-	password: 'mulder',
+	host: db.TEST_PG_HOST,
+	port: db.TEST_PG_PORT,
+	database: db.TEST_PG_DATABASE,
+	user: db.TEST_PG_USER,
+	password: db.TEST_PG_PASSWORD,
 };
 
 let pool: pg.Pool;
@@ -43,20 +44,8 @@ let deleteStoriesBySourceId: (...args: unknown[]) => Promise<unknown>;
 let createSource: (...args: unknown[]) => Promise<unknown>;
 let DatabaseError: new (...args: unknown[]) => Error;
 
-function isPgAvailable(): Promise<boolean> {
-	return new Promise((resolve) => {
-		const testPool = new pg.Pool(PG_CONFIG);
-		testPool
-			.query('SELECT 1')
-			.then(() => {
-				testPool.end();
-				resolve(true);
-			})
-			.catch(() => {
-				testPool.end().catch(() => {});
-				resolve(false);
-			});
-	});
+async function isPgAvailable(): Promise<boolean> {
+	return db.isPgAvailable();
 }
 
 describe('Spec 22: Story Repository', () => {
@@ -65,11 +54,7 @@ describe('Spec 22: Story Repository', () => {
 	beforeAll(async () => {
 		pgAvailable = await isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL not available. Start with:\n' +
-					'  docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 
@@ -80,7 +65,7 @@ describe('Spec 22: Story Repository', () => {
 			cwd: ROOT,
 			encoding: 'utf-8',
 			timeout: 30000,
-			env: { ...process.env, PGPASSWORD: 'mulder' },
+			env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD },
 		});
 		if (migrateResult.status !== 0) {
 			throw new Error(`Migration failed: ${migrateResult.stdout} ${migrateResult.stderr}`);

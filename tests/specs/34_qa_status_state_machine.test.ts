@@ -1,7 +1,8 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -10,10 +11,6 @@ const EXTRACTED_DIR = resolve(ROOT, '.local/storage/extracted');
 const SEGMENTS_DIR = resolve(ROOT, '.local/storage/segments');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
-
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
 
 /**
  * QA Gate — Status State Machine (QA-2)
@@ -41,7 +38,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 60000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -50,34 +47,8 @@ function runCli(
 	};
 }
 
-function runSql(sql: string): string {
-	try {
-		const result = execFileSync(
-			'docker',
-			['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-			{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-		);
-		return (result ?? '').trim();
-	} catch (error: unknown) {
-		const err = error as { stderr?: string; status?: number };
-		throw new Error(`psql failed (exit ${err.status}): ${err.stderr}`);
-	}
-}
-
-function isPgAvailable(): boolean {
-	try {
-		execFileSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return true;
-	} catch {
-		return false;
-	}
-}
-
 function cleanTestData(): void {
-	runSql(
+	db.runSql(
 		'DELETE FROM story_entities; DELETE FROM entity_edges; DELETE FROM entity_aliases; DELETE FROM entities; DELETE FROM chunks; DELETE FROM stories; DELETE FROM source_steps; DELETE FROM sources;',
 	);
 }
@@ -126,13 +97,9 @@ describe('Spec 33 — QA-2: Status State Machine', () => {
 	let sourceId: string;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL container not available. Start with:\n' +
-					'  docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 
@@ -168,17 +135,17 @@ describe('Spec 33 — QA-2: Status State Machine', () => {
 		expect(exitCode, `Ingest failed: ${stdout} ${stderr}`).toBe(0);
 
 		// Get source ID
-		sourceId = runSql(
+		sourceId = db.runSql(
 			`SELECT id FROM sources WHERE filename = 'native-text-sample.pdf' ORDER BY created_at DESC LIMIT 1;`,
 		);
 		expect(sourceId).not.toBe('');
 
 		// Verify status
-		const status = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+		const status = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 		expect(status).toBe('ingested');
 
 		// Verify source_step
-		const stepStatus = runSql(
+		const stepStatus = db.runSql(
 			`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'ingest';`,
 		);
 		expect(stepStatus).toBe('completed');
@@ -195,15 +162,15 @@ describe('Spec 33 — QA-2: Status State Machine', () => {
 		expect(exitCode, `Extract failed: ${stdout} ${stderr}`).toBe(0);
 
 		// Verify status advanced to 'extracted'
-		const status = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+		const status = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 		expect(status).toBe('extracted');
 
 		// Verify no stories exist yet (stories are created by segment, not extract)
-		const storyCount = Number.parseInt(runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`), 10);
+		const storyCount = Number.parseInt(db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`), 10);
 		expect(storyCount).toBe(0);
 
 		// Verify source_step for extract
-		const stepStatus = runSql(
+		const stepStatus = db.runSql(
 			`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'extract';`,
 		);
 		expect(stepStatus).toBe('completed');
@@ -222,22 +189,22 @@ describe('Spec 33 — QA-2: Status State Machine', () => {
 		expect(exitCode, `Segment failed: ${stdout} ${stderr}`).toBe(0);
 
 		// Verify source status
-		const sourceStatus = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+		const sourceStatus = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 		expect(sourceStatus).toBe('segmented');
 
 		// Verify stories were created
-		const storyCount = Number.parseInt(runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`), 10);
+		const storyCount = Number.parseInt(db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`), 10);
 		expect(storyCount).toBeGreaterThanOrEqual(1);
 
 		// Verify all stories have status 'segmented'
 		const nonSegmentedCount = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}' AND status != 'segmented';`),
+			db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}' AND status != 'segmented';`),
 			10,
 		);
 		expect(nonSegmentedCount).toBe(0);
 
 		// Verify source_step for segment
-		const stepStatus = runSql(
+		const stepStatus = db.runSql(
 			`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'segment';`,
 		);
 		expect(stepStatus).toBe('completed');
@@ -256,26 +223,26 @@ describe('Spec 33 — QA-2: Status State Machine', () => {
 		// Key assertion: source status REMAINS 'segmented' after enrich
 		// This is BY DESIGN — enrich operates on stories, not sources.
 		// The pipeline orchestrator (D6, not yet built) advances source status.
-		const sourceStatus = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+		const sourceStatus = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 		expect(sourceStatus).toBe('segmented');
 
 		// Verify stories are now 'enriched'
 		const enrichedCount = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}' AND status = 'enriched';`),
+			db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}' AND status = 'enriched';`),
 			10,
 		);
 		expect(enrichedCount).toBeGreaterThanOrEqual(1);
 
 		// Verify no stories are still at 'segmented'
 		const segmentedCount = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}' AND status = 'segmented';`),
+			db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}' AND status = 'segmented';`),
 			10,
 		);
 		expect(segmentedCount).toBe(0);
 
 		// Verify entities were created
 		const entityCount = Number.parseInt(
-			runSql(
+			db.runSql(
 				`SELECT COUNT(DISTINCT e.id) FROM entities e
 				 JOIN story_entities se ON e.id = se.entity_id
 				 JOIN stories s ON se.story_id = s.id
@@ -296,7 +263,7 @@ describe('Spec 33 — QA-2: Status State Machine', () => {
 		const expectedSteps = ['ingest', 'extract', 'segment', 'enrich'];
 
 		for (const stepName of expectedSteps) {
-			const stepStatus = runSql(
+			const stepStatus = db.runSql(
 				`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = '${stepName}';`,
 			);
 			expect(stepStatus, `source_step '${stepName}' should be 'completed'`).toBe('completed');
@@ -304,7 +271,7 @@ describe('Spec 33 — QA-2: Status State Machine', () => {
 
 		// Verify total step count matches (no extra steps)
 		const totalSteps = Number.parseInt(
-			runSql(`SELECT COUNT(*) FROM source_steps WHERE source_id = '${sourceId}';`),
+			db.runSql(`SELECT COUNT(*) FROM source_steps WHERE source_id = '${sourceId}';`),
 			10,
 		);
 		expect(totalSteps).toBe(expectedSteps.length);

@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -11,16 +12,12 @@ const SEGMENTS_DIR = resolve(ROOT, '.local/storage/segments');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
-const PG_CONTAINER = 'mulder-postgres';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
-
 /**
  * Black-box QA tests for Spec 36: Pipeline Orchestrator
  *
  * Each `it()` maps to one QA condition or CLI condition from Section 5/5b of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `docker exec psql`, and filesystem (dev-mode storage).
+ * SQL via `the shared env-driven SQL helper`, and filesystem (dev-mode storage).
  * Never imports from packages/ or src/ or apps/.
  *
  * Requires:
@@ -42,7 +39,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 60000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -51,32 +48,8 @@ function runCli(
 	};
 }
 
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
 function cleanTestData(): void {
-	runSql(
+	db.runSql(
 		'DELETE FROM pipeline_run_sources; DELETE FROM pipeline_runs; ' +
 			'DELETE FROM chunks; DELETE FROM story_entities; DELETE FROM entity_edges; ' +
 			'DELETE FROM entity_aliases; DELETE FROM entities; DELETE FROM stories; ' +
@@ -166,7 +139,7 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 	let pgAvailable: boolean;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
 			console.warn('SKIP: PostgreSQL container not available. Start with:\n  docker compose up -d');
 			return;
@@ -212,7 +185,7 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		const stage1 = runCli(['pipeline', 'run', workDir, '--up-to', 'extract'], { timeout: 240000 });
 		expect(stage1.exitCode).toBe(0);
 
-		const sourceId = runSql(
+		const sourceId = db.runSql(
 			"SELECT id FROM sources WHERE filename = 'native-text-sample.pdf' ORDER BY created_at DESC LIMIT 1;",
 		);
 		expect(sourceId).toMatch(/^[0-9a-f-]+$/);
@@ -228,15 +201,15 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		// extracted → segmented. Story-fanout steps (enrich/embed/graph) update
 		// `stories.status`, not `sources.status`. Spec 35's tests follow the
 		// same pattern. Asserting on `stories.status` is the source of truth.
-		const storyStatus = runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId}';`);
+		const storyStatus = db.runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId}';`);
 		expect(storyStatus).toBe('graphed');
 
 		// Latest pipeline_runs row for stage2 should be 'completed'
-		const runStatus = runSql('SELECT status FROM pipeline_runs ORDER BY created_at DESC LIMIT 1;');
+		const runStatus = db.runSql('SELECT status FROM pipeline_runs ORDER BY created_at DESC LIMIT 1;');
 		expect(runStatus).toBe('completed');
 
 		// pipeline_run_sources for the latest run shows current_step = graph, status completed
-		const rowState = runSql(
+		const rowState = db.runSql(
 			"SELECT current_step || '|' || status FROM pipeline_run_sources " +
 				'WHERE run_id = (SELECT id FROM pipeline_runs ORDER BY created_at DESC LIMIT 1) ' +
 				`AND source_id = '${sourceId}';`,
@@ -258,7 +231,7 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		const stage1 = runCli(['pipeline', 'run', workDir, '--up-to', 'extract'], { timeout: 240000 });
 		expect(stage1.exitCode).toBe(0);
 
-		const sourceId = runSql(
+		const sourceId = db.runSql(
 			"SELECT id FROM sources WHERE filename = 'native-text-sample.pdf' ORDER BY created_at DESC LIMIT 1;",
 		);
 		materialisePageImages(sourceId);
@@ -269,15 +242,15 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 
 		// Story should be 'enriched' — not embedded or graphed
 		// (spec says sources.status, but story-fanout steps update stories.status)
-		const storyStatus = runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId}';`);
+		const storyStatus = db.runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId}';`);
 		expect(storyStatus).toBe('enriched');
 
 		// Run should be 'completed'
-		const runStatus = runSql('SELECT status FROM pipeline_runs ORDER BY created_at DESC LIMIT 1;');
+		const runStatus = db.runSql('SELECT status FROM pipeline_runs ORDER BY created_at DESC LIMIT 1;');
 		expect(runStatus).toBe('completed');
 
 		// pipeline_run_sources current_step should be 'enrich'
-		const currentStep = runSql(
+		const currentStep = db.runSql(
 			'SELECT current_step FROM pipeline_run_sources ' +
 				'WHERE run_id = (SELECT id FROM pipeline_runs ORDER BY created_at DESC LIMIT 1) ' +
 				`AND source_id = '${sourceId}';`,
@@ -299,7 +272,7 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		const stage1 = runCli(['pipeline', 'run', workDir, '--up-to', 'extract'], { timeout: 240000 });
 		expect(stage1.exitCode).toBe(0);
 
-		const sourceId = runSql(
+		const sourceId = db.runSql(
 			"SELECT id FROM sources WHERE filename = 'native-text-sample.pdf' ORDER BY created_at DESC LIMIT 1;",
 		);
 		materialisePageImages(sourceId);
@@ -309,7 +282,7 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		expect(stage2.exitCode).toBe(0);
 
 		// Verify story is 'enriched' (story-level state — see QA-01 note)
-		const preStatus = runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId}';`);
+		const preStatus = db.runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId}';`);
 		expect(preStatus).toBe('enriched');
 
 		// Stage 3: --from embed should run embed + graph
@@ -317,11 +290,11 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		expect(stage3.exitCode).toBe(0);
 
 		// Story should now be 'graphed'
-		const postStatus = runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId}';`);
+		const postStatus = db.runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId}';`);
 		expect(postStatus).toBe('graphed');
 
 		// pipeline_run_sources current_step should be 'graph' for the latest run
-		const currentStep = runSql(
+		const currentStep = db.runSql(
 			'SELECT current_step FROM pipeline_run_sources ' +
 				'WHERE run_id = (SELECT id FROM pipeline_runs ORDER BY created_at DESC LIMIT 1) ' +
 				`AND source_id = '${sourceId}';`,
@@ -355,18 +328,18 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		// Latest run should be 'partial' or 'completed' (if broken file failed pre-flight,
 		// it never produces a pipeline_run_sources row, leaving the run as completed for
 		// the good source). Either way, the orchestrator must NOT have crashed.
-		const runStatus = runSql('SELECT status FROM pipeline_runs ORDER BY created_at DESC LIMIT 1;');
+		const runStatus = db.runSql('SELECT status FROM pipeline_runs ORDER BY created_at DESC LIMIT 1;');
 		expect(['completed', 'partial', 'failed']).toContain(runStatus);
 
 		// At least one source row exists in the run (the good one, or both)
-		const numRows = runSql(
+		const numRows = db.runSql(
 			'SELECT COUNT(*) FROM pipeline_run_sources ' +
 				'WHERE run_id = (SELECT id FROM pipeline_runs ORDER BY created_at DESC LIMIT 1);',
 		);
 		expect(Number.parseInt(numRows, 10)).toBeGreaterThanOrEqual(1);
 
 		// The good PDF should have been ingested
-		const goodSource = runSql("SELECT COUNT(*) FROM sources WHERE filename = 'native-text-sample.pdf';");
+		const goodSource = db.runSql("SELECT COUNT(*) FROM sources WHERE filename = 'native-text-sample.pdf';");
 		expect(Number.parseInt(goodSource, 10)).toBeGreaterThanOrEqual(1);
 	}, 600000);
 
@@ -380,8 +353,8 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 
 		const workDir = makeWorkDir('qa05', [NATIVE_TEXT_PDF]);
 
-		const beforeRuns = runSql('SELECT COUNT(*) FROM pipeline_runs;');
-		const beforeSources = runSql('SELECT COUNT(*) FROM sources;');
+		const beforeRuns = db.runSql('SELECT COUNT(*) FROM pipeline_runs;');
+		const beforeSources = db.runSql('SELECT COUNT(*) FROM sources;');
 
 		const result = runCli(['pipeline', 'run', workDir, '--dry-run'], { timeout: 60000 });
 		expect(result.exitCode).toBe(0);
@@ -390,11 +363,11 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		expect(combined).toMatch(/dry run|planned|plan/i);
 
 		// No new pipeline_runs row created
-		const afterRuns = runSql('SELECT COUNT(*) FROM pipeline_runs;');
+		const afterRuns = db.runSql('SELECT COUNT(*) FROM pipeline_runs;');
 		expect(afterRuns).toBe(beforeRuns);
 
 		// No new sources row created (dry-run should not ingest)
-		const afterSources = runSql('SELECT COUNT(*) FROM sources;');
+		const afterSources = db.runSql('SELECT COUNT(*) FROM sources;');
 		expect(afterSources).toBe(beforeSources);
 	}, 120000);
 
@@ -415,7 +388,7 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		});
 		expect(result.exitCode).toBe(0);
 
-		const persistedTag = runSql('SELECT tag FROM pipeline_runs ORDER BY created_at DESC LIMIT 1;');
+		const persistedTag = db.runSql('SELECT tag FROM pipeline_runs ORDER BY created_at DESC LIMIT 1;');
 		expect(persistedTag).toBe(tag);
 	}, 600000);
 
@@ -455,7 +428,7 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		const runResult = runCli(['pipeline', 'run', workDir, '--up-to', 'extract'], { timeout: 240000 });
 		expect(runResult.exitCode).toBe(0);
 
-		const sourceId = runSql(
+		const sourceId = db.runSql(
 			"SELECT id FROM sources WHERE filename = 'native-text-sample.pdf' ORDER BY created_at DESC LIMIT 1;",
 		);
 
@@ -534,34 +507,34 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		const stage1 = runCli(['pipeline', 'run', workDir, '--up-to', 'extract'], { timeout: 240000 });
 		expect(stage1.exitCode).toBe(0);
 
-		const sourceId = runSql(
+		const sourceId = db.runSql(
 			"SELECT id FROM sources WHERE filename = 'native-text-sample.pdf' ORDER BY created_at DESC LIMIT 1;",
 		);
 
 		// Synthesise a "failed at extract" pipeline_run_sources row by inserting one
 		// directly (alongside the existing successful one). The retry path looks at
 		// the latest row for that source.
-		runSql(
+		db.runSql(
 			`INSERT INTO pipeline_runs (id, tag, options, status, created_at, finished_at) ` +
 				`VALUES ('99999999-9999-9999-9999-999999999999', 'qa10-failed', '{}', 'failed', ` +
 				`now() + interval '1 second', now() + interval '1 second');`,
 		);
-		runSql(
+		db.runSql(
 			`INSERT INTO pipeline_run_sources (run_id, source_id, current_step, status, error_message, updated_at) ` +
 				`VALUES ('99999999-9999-9999-9999-999999999999', '${sourceId}', 'extract', 'failed', ` +
 				`'simulated extract failure', now() + interval '1 second');`,
 		);
 
 		// Reset source status so retry can re-extract from a clean state.
-		runSql(`UPDATE sources SET status = 'ingested' WHERE id = '${sourceId}';`);
+		db.runSql(`UPDATE sources SET status = 'ingested' WHERE id = '${sourceId}';`);
 
 		const retryResult = runCli(['pipeline', 'retry', sourceId], { timeout: 600000 });
 		// Retry must produce a new run row
-		const numRuns = runSql('SELECT COUNT(*) FROM pipeline_runs;');
+		const numRuns = db.runSql('SELECT COUNT(*) FROM pipeline_runs;');
 		expect(Number.parseInt(numRuns, 10)).toBeGreaterThanOrEqual(2);
 
 		// Most recent run should reference this source
-		const latestRunSourceId = runSql(
+		const latestRunSourceId = db.runSql(
 			'SELECT source_id FROM pipeline_run_sources ' +
 				'WHERE run_id = (SELECT id FROM pipeline_runs ORDER BY created_at DESC LIMIT 1) ' +
 				'LIMIT 1;',
@@ -578,7 +551,7 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 	it('QA-11: --up-to with unknown step exits 1 and creates no pipeline_runs row', () => {
 		if (!pgAvailable) return;
 
-		const beforeRuns = runSql('SELECT COUNT(*) FROM pipeline_runs;');
+		const beforeRuns = db.runSql('SELECT COUNT(*) FROM pipeline_runs;');
 
 		const result = runCli(['pipeline', 'run', FIXTURE_DIR, '--up-to', 'analyze'], { timeout: 30000 });
 
@@ -587,7 +560,7 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		// Error should mention unknown / valid steps
 		expect(combined).toMatch(/unknown|invalid|valid/i);
 
-		const afterRuns = runSql('SELECT COUNT(*) FROM pipeline_runs;');
+		const afterRuns = db.runSql('SELECT COUNT(*) FROM pipeline_runs;');
 		expect(afterRuns).toBe(beforeRuns);
 	});
 
@@ -629,7 +602,7 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		const stage1 = runCli(['pipeline', 'run', workDir, '--up-to', 'extract'], { timeout: 240000 });
 		expect(stage1.exitCode).toBe(0);
 
-		const sourceId = runSql(
+		const sourceId = db.runSql(
 			"SELECT id FROM sources WHERE filename = 'native-text-sample.pdf' ORDER BY created_at DESC LIMIT 1;",
 		);
 		materialisePageImages(sourceId);
@@ -638,26 +611,26 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		expect(stage2.exitCode).toBe(0);
 
 		// Story should be graphed (per-story state — see QA-01 note)
-		const status = runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId}';`);
+		const status = db.runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId}';`);
 		expect(status).toBe('graphed');
 
 		// Snapshot edge count
-		const edgeCountBefore = runSql('SELECT COUNT(*) FROM entity_edges;');
+		const edgeCountBefore = db.runSql('SELECT COUNT(*) FROM entity_edges;');
 
 		// Re-run on the same dir — ingest should dedupe via file_hash, no changes
 		const rerun = runCli(['pipeline', 'run', workDir], { timeout: 600000 });
 		expect(rerun.exitCode).toBe(0);
 
 		// Still graphed
-		const statusAfter = runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId}';`);
+		const statusAfter = db.runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId}';`);
 		expect(statusAfter).toBe('graphed');
 
 		// No additional edges created
-		const edgeCountAfter = runSql('SELECT COUNT(*) FROM entity_edges;');
+		const edgeCountAfter = db.runSql('SELECT COUNT(*) FROM entity_edges;');
 		expect(edgeCountAfter).toBe(edgeCountBefore);
 
 		// Latest pipeline_runs row status should be 'completed' (no failures)
-		const latestRunStatus = runSql('SELECT status FROM pipeline_runs ORDER BY created_at DESC LIMIT 1;');
+		const latestRunStatus = db.runSql('SELECT status FROM pipeline_runs ORDER BY created_at DESC LIMIT 1;');
 		expect(latestRunStatus).toBe('completed');
 	}, 1200000);
 });
@@ -746,7 +719,7 @@ describe('CLI Test Matrix: pipeline', () => {
 	// ─── CLI-09: pipeline retry bogus uuid ───
 
 	it('CLI-09: mulder pipeline retry <bogus-uuid> errors with source not found', () => {
-		if (!isPgAvailable()) {
+		if (!db.isPgAvailable()) {
 			console.warn('SKIP CLI-09: PostgreSQL not available');
 			return;
 		}
@@ -760,7 +733,7 @@ describe('CLI Test Matrix: pipeline', () => {
 	// ─── CLI-10: pipeline status --run bogus uuid ───
 
 	it('CLI-10: mulder pipeline status --run <bogus-uuid> errors with run not found', () => {
-		if (!isPgAvailable()) {
+		if (!db.isPgAvailable()) {
 			console.warn('SKIP CLI-10: PostgreSQL not available');
 			return;
 		}
@@ -779,7 +752,7 @@ describe('Smoke: pipeline flag combinations', () => {
 	let pgAvailable: boolean;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 	});
 
 	// ─── SMOKE-01: --tag + --dry-run together ───
@@ -799,7 +772,7 @@ describe('Smoke: pipeline flag combinations', () => {
 		if (!pgAvailable) return;
 
 		// Wipe runs
-		runSql('DELETE FROM pipeline_run_sources; DELETE FROM pipeline_runs;');
+		db.runSql('DELETE FROM pipeline_run_sources; DELETE FROM pipeline_runs;');
 
 		const result = runCli(['pipeline', 'status', '--json'], { timeout: 30000 });
 		// Either non-zero (no run found) or zero with empty payload — both are acceptable

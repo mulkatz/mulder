@@ -21,6 +21,7 @@ import {
 } from '@mulder/retrieval';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 /**
  * Black-box QA tests for Spec 42: Hybrid Retrieval Orchestrator (M4-E6).
@@ -30,12 +31,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
  *
  * Interaction is through system boundaries only:
  * - `@mulder/retrieval` + `@mulder/core` public entrypoints for library tests
- * - `spawnSync` CLI subprocess + `docker exec psql` for integration tests
+ * - `spawnSync` CLI subprocess + `the shared env-driven SQL helper` for integration tests
  *
  * Never imports from packages/src, apps/src, or any internal module.
  *
  * Requires:
- *   - Running PostgreSQL container `mulder-pg-test` with migrations applied
+ *   - PostgreSQL reachable through the standard PG env vars with migrations applied
  *   - Built CLI at apps/cli/dist/index.js
  *   - Test fixtures in fixtures/raw/
  */
@@ -52,10 +53,6 @@ const SEGMENTS_DIR = resolve(ROOT, '.local/storage/segments');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
-
 // ---------------------------------------------------------------------------
 // CLI + SQL helpers
 // ---------------------------------------------------------------------------
@@ -69,7 +66,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 60000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, MULDER_LOG_LEVEL: 'silent', ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, MULDER_LOG_LEVEL: 'silent', ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -117,32 +114,8 @@ function parseCliJson<T>(stdout: string): T {
 	throw new Error(`Unterminated JSON object in CLI output: ${stdout.slice(start, start + 200)}`);
 }
 
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
 function cleanTestData(): void {
-	runSql(
+	db.runSql(
 		'DELETE FROM chunks; DELETE FROM story_entities; DELETE FROM entity_edges; DELETE FROM entity_aliases; DELETE FROM entities; DELETE FROM stories; DELETE FROM source_steps; DELETE FROM sources;',
 	);
 }
@@ -186,7 +159,7 @@ function ingestPdf(pdfPath: string): string {
 		throw new Error(`Ingest failed (exit ${exitCode}): ${stdout} ${stderr}`);
 	}
 	const filename = pdfPath.split('/').pop() ?? '';
-	const sourceId = runSql(`SELECT id FROM sources WHERE filename = '${filename}' ORDER BY created_at DESC LIMIT 1;`);
+	const sourceId = db.runSql(`SELECT id FROM sources WHERE filename = '${filename}' ORDER BY created_at DESC LIMIT 1;`);
 	if (!sourceId) throw new Error(`No source record for ${filename}`);
 	return sourceId;
 }
@@ -204,7 +177,8 @@ function runFullPipeline(pdfPath: string): string {
 	const enr = runCli(['enrich', '--source', sourceId], { timeout: 120000 });
 	if (enr.exitCode !== 0) throw new Error(`Enrich failed: ${enr.stdout} ${enr.stderr}`);
 
-	const storyIds = runSql(`SELECT id FROM stories WHERE source_id = '${sourceId}';`)
+	const storyIds = db
+		.runSql(`SELECT id FROM stories WHERE source_id = '${sourceId}';`)
 		.split('\n')
 		.filter((s) => s.length > 0);
 
@@ -315,9 +289,9 @@ describe('Spec 42 — Hybrid Retrieval Orchestrator', () => {
 	let corpusSourceId: string | null = null;
 
 	beforeAll(async () => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn('SKIP: PostgreSQL container mulder-pg-test not available');
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT');
 			return;
 		}
 
@@ -471,14 +445,14 @@ describe('Spec 42 — Hybrid Retrieval Orchestrator', () => {
 		// Ensure there is at least one queryable alias. Dev-mode enrich may produce
 		// entities without aliases, so we insert a synthetic alias pointing at an
 		// existing entity if one isn't already present.
-		let alias = runSql('SELECT alias FROM entity_aliases LIMIT 1;');
+		let alias = db.runSql('SELECT alias FROM entity_aliases LIMIT 1;');
 		if (!alias) {
-			const entityId = runSql('SELECT id FROM entities LIMIT 1;');
+			const entityId = db.runSql('SELECT id FROM entities LIMIT 1;');
 			if (!entityId) {
 				console.warn('SKIP QA-09: no entities in corpus');
 				return;
 			}
-			runSql(`INSERT INTO entity_aliases (entity_id, alias, source) VALUES ('${entityId}', 'ZorkTest', 'manual');`);
+			db.runSql(`INSERT INTO entity_aliases (entity_id, alias, source) VALUES ('${entityId}', 'ZorkTest', 'manual');`);
 			alias = 'ZorkTest';
 		}
 		const { exitCode, stdout, stderr } = runCli(['query', alias, '--strategy', 'graph', '--explain', '--json'], {
@@ -550,7 +524,7 @@ describe('Spec 42 — Hybrid Retrieval Orchestrator', () => {
 	// ─── QA-13: confidence.corpus_size matches SQL truth ───
 	it('QA-13: confidence.corpus_size matches SELECT COUNT(*) FROM sources WHERE status != ingested', () => {
 		if (!pgAvailable || !corpusSourceId) return;
-		const sqlCount = Number.parseInt(runSql("SELECT COUNT(*) FROM sources WHERE status != 'ingested';"), 10);
+		const sqlCount = Number.parseInt(db.runSql("SELECT COUNT(*) FROM sources WHERE status != 'ingested';"), 10);
 		const { exitCode, stdout } = runCli(['query', 'ufo', '--strategy', 'fulltext', '--json'], { timeout: 60000 });
 		expect(exitCode).toBe(0);
 		const parsed = parseCliJson<HybridRetrievalResult>(stdout);
@@ -566,7 +540,7 @@ describe('Spec 42 — Hybrid Retrieval Orchestrator', () => {
 
 		// We cannot easily guarantee an exact corpus of 3 without disturbing the shared fixture,
 		// but the existing populated corpus has a small number of sources (< 25). Verify classification.
-		const sqlCount = Number.parseInt(runSql("SELECT COUNT(*) FROM sources WHERE status != 'ingested';"), 10);
+		const sqlCount = Number.parseInt(db.runSql("SELECT COUNT(*) FROM sources WHERE status != 'ingested';"), 10);
 		if (sqlCount === 0 || sqlCount >= 25) {
 			console.warn(`SKIP QA-14: corpus size ${sqlCount} is not in bootstrapping range (1..24)`);
 			return;
@@ -580,7 +554,7 @@ describe('Spec 42 — Hybrid Retrieval Orchestrator', () => {
 	it('QA-15: graph_density === 0 when entities table is empty', async () => {
 		if (!pgAvailable || !pool) return;
 		// This test needs isolation — snapshot then restore to avoid trashing the shared corpus
-		const savedEntitiesCount = Number.parseInt(runSql('SELECT COUNT(*) FROM entities;'), 10);
+		const savedEntitiesCount = Number.parseInt(db.runSql('SELECT COUNT(*) FROM entities;'), 10);
 		if (savedEntitiesCount === 0) {
 			// Already empty — just run the test
 			const confidence = await computeQueryConfidence(pool, makeConfig(), { graphHitCount: 0 });
@@ -588,7 +562,7 @@ describe('Spec 42 — Hybrid Retrieval Orchestrator', () => {
 			return;
 		}
 		// Non-destructive: verify the formula on its own using raw SQL
-		const edgeCount = Number.parseInt(runSql('SELECT COUNT(*) FROM entity_edges;'), 10);
+		const edgeCount = Number.parseInt(db.runSql('SELECT COUNT(*) FROM entity_edges;'), 10);
 		const expectedDensity = edgeCount / savedEntitiesCount;
 		const confidence = await computeQueryConfidence(pool, makeConfig(), { graphHitCount: 1 });
 		expect(confidence.graph_density).toBeCloseTo(expectedDensity, 6);
@@ -640,14 +614,14 @@ describe('Spec 42 — Hybrid Retrieval Orchestrator', () => {
 		if (!pgAvailable || !pool || !corpusSourceId) return;
 		// Ensure a queryable alias exists. Dev-mode enrich may not create aliases,
 		// so we insert one pointing at an existing entity if needed.
-		let alias = runSql('SELECT alias FROM entity_aliases LIMIT 1;');
+		let alias = db.runSql('SELECT alias FROM entity_aliases LIMIT 1;');
 		if (!alias) {
-			const entityId = runSql('SELECT id FROM entities LIMIT 1;');
+			const entityId = db.runSql('SELECT id FROM entities LIMIT 1;');
 			if (!entityId) {
 				console.warn('SKIP QA-18: no entities in corpus');
 				return;
 			}
-			runSql(
+			db.runSql(
 				`INSERT INTO entity_aliases (entity_id, alias, source) VALUES ('${entityId}', 'QuibbleWord', 'manual') ON CONFLICT DO NOTHING;`,
 			);
 			alias = 'QuibbleWord';
@@ -731,17 +705,17 @@ describe('Spec 42 — Hybrid Retrieval Orchestrator', () => {
 		const storyId = '24242424-2424-2424-2424-242424240001';
 		const chunkId = '24242424-2424-2424-2424-242424240002';
 
-		runSql(
+		db.runSql(
 			`INSERT INTO sources (id, filename, file_hash, storage_path, page_count, status) VALUES ` +
 				`('${sourceId}', 'qa24-gating.pdf', 'qa24-${Date.now()}', 'raw/qa24.pdf', 1, 'graphed');`,
 		);
-		runSql(
+		db.runSql(
 			`INSERT INTO stories (id, source_id, title, gcs_markdown_uri, gcs_metadata_uri, status) VALUES ` +
 				`('${storyId}', '${sourceId}', 'qa24-story', 's/qa24.md', 's/qa24.meta.json', 'graphed');`,
 		);
 		// Generate a deterministic 768-dim embedding (all zeros + first dim 0.5).
 		const vec = `[0.5${',0'.repeat(767)}]`;
-		runSql(
+		db.runSql(
 			`INSERT INTO chunks (id, story_id, content, chunk_index, embedding) VALUES ` +
 				`('${chunkId}', '${storyId}', 'A passage containing the unique token ${queryWord}.', 0, '${vec}');`,
 		);
@@ -770,7 +744,7 @@ describe('Spec 42 — Hybrid Retrieval Orchestrator', () => {
 			expect(result.results).toEqual([]);
 			expect(result.confidence.message).toBe('no_meaningful_matches');
 		} finally {
-			runSql(
+			db.runSql(
 				`DELETE FROM chunks WHERE id = '${chunkId}';` +
 					` DELETE FROM stories WHERE id = '${storyId}';` +
 					` DELETE FROM sources WHERE id = '${sourceId}';`,
@@ -805,7 +779,7 @@ describe('CLI Test Matrix: query', () => {
 
 	// ─── CLI-03: Empty-string question ───
 	it('CLI-03: empty-string <question> errors cleanly with no stack trace', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 		const { exitCode, stdout, stderr } = runCli(['query', '']);
 		expect(exitCode).not.toBe(0);
@@ -815,7 +789,7 @@ describe('CLI Test Matrix: query', () => {
 
 	// ─── CLI-04: Invalid --strategy ───
 	it('CLI-04: invalid --strategy value errors cleanly', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 		const { exitCode, stdout, stderr } = runCli(['query', 'test', '--strategy', 'bogus']);
 		expect(exitCode).not.toBe(0);
@@ -826,7 +800,7 @@ describe('CLI Test Matrix: query', () => {
 
 	// ─── CLI-05: --json is parseable ───
 	it('CLI-05: --json output is parseable JSON with expected shape', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 		const { exitCode, stdout } = runCli(['query', 'test', '--json'], { timeout: 60000 });
 		expect(exitCode).toBe(0);
@@ -841,7 +815,7 @@ describe('CLI Test Matrix: query', () => {
 
 	// ─── CLI-06: Text mode renders ───
 	it('CLI-06: text mode prints query + results header', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 		const { exitCode, stdout } = runCli(['query', 'test'], { timeout: 60000 });
 		expect(exitCode).toBe(0);
@@ -851,7 +825,7 @@ describe('CLI Test Matrix: query', () => {
 
 	// ─── CLI-07: --explain text mode ───
 	it('CLI-07: --explain text mode prints per-result strategy breakdowns when hits exist', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 		const { exitCode, stdout } = runCli(['query', 'ufo', '--explain'], { timeout: 60000 });
 		expect(exitCode).toBe(0);
@@ -862,7 +836,7 @@ describe('CLI Test Matrix: query', () => {
 
 	// ─── CLI-08: Empty-result query does not crash ───
 	it('CLI-08: query with guaranteed-no-match does not crash', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 		const { exitCode, stdout } = runCli(['query', 'xyznonsense12345', '--json'], { timeout: 60000 });
 		expect(exitCode).toBe(0);
@@ -873,7 +847,7 @@ describe('CLI Test Matrix: query', () => {
 
 	// ─── CLI-09: --top-k 1 --strategy vector ───
 	it('CLI-09: --top-k 1 --strategy vector returns at most 1 vector-only result', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 		const { exitCode, stdout } = runCli(['query', 'test', '--top-k', '1', '--strategy', 'vector', '--json'], {
 			timeout: 60000,

@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -10,10 +11,6 @@ const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const FIXTURE_DIR = resolve(ROOT, 'fixtures/raw');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
-
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
 
 let tmpDir: string;
 let storageRawSnapshot: StorageSnapshot;
@@ -24,11 +21,11 @@ const STORAGE_RAW_DIR = resolve(resolve(import.meta.dirname, '../..'), '.local/s
  *
  * Each `it()` maps to one QA condition from Section 5 of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `docker exec psql`, and filesystem.
+ * SQL via `the shared env-driven SQL helper`, and filesystem.
  * Never imports from packages/ or src/ or apps/.
  *
  * Requires:
- * - Running PostgreSQL container `mulder-pg-test` with migrations applied
+ * - PostgreSQL reachable through the standard PG env vars with migrations applied
  * - Built CLI at apps/cli/dist/index.js
  * - Test fixtures in fixtures/raw/
  */
@@ -46,7 +43,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 30000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -55,32 +52,8 @@ function runCli(
 	};
 }
 
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
 function cleanSourceData(): void {
-	runSql('DELETE FROM source_steps; DELETE FROM sources;');
+	db.runSql('DELETE FROM source_steps; DELETE FROM sources;');
 }
 
 /**
@@ -237,13 +210,9 @@ describe('Spec 16 — Ingest Step', () => {
 	let pgAvailable: boolean;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL container not available. Start with:\n' +
-					'  docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 		tmpDir = mkdtempSync(join(tmpdir(), 'mulder-qa-16-'));
@@ -293,7 +262,7 @@ describe('Spec 16 — Ingest Step', () => {
 		expect(combined).toContain('Ingest complete');
 
 		// Verify source record in database
-		const rows = runSql(
+		const rows = db.runSql(
 			"SELECT status, has_native_text, native_text_ratio FROM sources WHERE filename = 'native-text-sample.pdf';",
 		);
 		expect(rows).not.toBe('');
@@ -327,7 +296,7 @@ describe('Spec 16 — Ingest Step', () => {
 		expect(combined).toContain('Ingest complete');
 
 		// Verify two source records exist
-		const count = runSql('SELECT COUNT(*) FROM sources;');
+		const count = db.runSql('SELECT COUNT(*) FROM sources;');
 		expect(Number.parseInt(count, 10)).toBe(2);
 	});
 
@@ -343,7 +312,7 @@ describe('Spec 16 — Ingest Step', () => {
 		expect(first.exitCode).toBe(0);
 
 		// Capture the first updated_at
-		const firstUpdatedAt = runSql("SELECT updated_at FROM sources WHERE filename = 'native-text-sample.pdf';");
+		const firstUpdatedAt = db.runSql("SELECT updated_at FROM sources WHERE filename = 'native-text-sample.pdf';");
 		expect(firstUpdatedAt).not.toBe('');
 
 		// Small delay to ensure timestamp differs
@@ -358,11 +327,11 @@ describe('Spec 16 — Ingest Step', () => {
 		expect(combined).toMatch(/duplicate/i);
 
 		// Verify still only one source record
-		const count = runSql('SELECT COUNT(*) FROM sources;');
+		const count = db.runSql('SELECT COUNT(*) FROM sources;');
 		expect(count).toBe('1');
 
 		// Verify updated_at was refreshed
-		const secondUpdatedAt = runSql("SELECT updated_at FROM sources WHERE filename = 'native-text-sample.pdf';");
+		const secondUpdatedAt = db.runSql("SELECT updated_at FROM sources WHERE filename = 'native-text-sample.pdf';");
 		expect(secondUpdatedAt).not.toBe('');
 		expect(new Date(secondUpdatedAt).getTime()).toBeGreaterThanOrEqual(new Date(firstUpdatedAt).getTime());
 	});
@@ -388,7 +357,7 @@ describe('Spec 16 — Ingest Step', () => {
 		expect(combined).toMatch(/INGEST_NOT_PDF|invalid PDF|not.*PDF|missing.*%PDF/i);
 
 		// Verify no source record created
-		const count = runSql('SELECT COUNT(*) FROM sources;');
+		const count = db.runSql('SELECT COUNT(*) FROM sources;');
 		expect(count).toBe('0');
 	});
 
@@ -414,7 +383,7 @@ describe('Spec 16 — Ingest Step', () => {
 		expect(combined).toMatch(/INGEST_FILE_TOO_LARGE|too large|file size|exceeds/i);
 
 		// Verify no source record created
-		const count = runSql('SELECT COUNT(*) FROM sources;');
+		const count = db.runSql('SELECT COUNT(*) FROM sources;');
 		expect(count).toBe('0');
 	});
 
@@ -437,12 +406,12 @@ describe('Spec 16 — Ingest Step', () => {
 			expect(combined).toMatch(/validated|dry.?run|complete/i);
 
 			// Verify NO source record in database
-			const count = runSql('SELECT COUNT(*) FROM sources;');
+			const count = db.runSql('SELECT COUNT(*) FROM sources;');
 			expect(count).toBe('0');
 		} else {
 			// If dry-run fails due to pool being undefined, that's an implementation issue
 			// but we still verify no records were created
-			const count = runSql('SELECT COUNT(*) FROM sources;');
+			const count = db.runSql('SELECT COUNT(*) FROM sources;');
 			expect(count).toBe('0');
 			// Mark as a known issue
 			console.warn(
@@ -463,7 +432,7 @@ describe('Spec 16 — Ingest Step', () => {
 		expect(exitCode).toBe(0);
 
 		// Verify tag in database
-		const tags = runSql("SELECT tags FROM sources WHERE filename = 'native-text-sample.pdf';");
+		const tags = db.runSql("SELECT tags FROM sources WHERE filename = 'native-text-sample.pdf';");
 		expect(tags).toContain('batch1');
 	});
 
@@ -478,11 +447,11 @@ describe('Spec 16 — Ingest Step', () => {
 		expect(exitCode).toBe(0);
 
 		// Get the source ID
-		const sourceId = runSql("SELECT id FROM sources WHERE filename = 'native-text-sample.pdf';");
+		const sourceId = db.runSql("SELECT id FROM sources WHERE filename = 'native-text-sample.pdf';");
 		expect(sourceId).not.toBe('');
 
 		// Verify source_steps entry
-		const stepRow = runSql(
+		const stepRow = db.runSql(
 			`SELECT step_name, status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'ingest';`,
 		);
 		expect(stepRow).not.toBe('');
@@ -514,7 +483,7 @@ describe('Spec 16 — Ingest Step', () => {
 		expect(combined).toMatch(/INGEST_TOO_MANY_PAGES|too many pages|page count|exceeds/i);
 
 		// Verify no source record created
-		const count = runSql('SELECT COUNT(*) FROM sources;');
+		const count = db.runSql('SELECT COUNT(*) FROM sources;');
 		expect(count).toBe('0');
 	});
 
@@ -528,7 +497,7 @@ describe('Spec 16 — Ingest Step', () => {
 		const { exitCode } = runCli(['ingest', NATIVE_TEXT_PDF]);
 		expect(exitCode).toBe(0);
 
-		const storagePath = runSql("SELECT storage_path FROM sources WHERE filename = 'native-text-sample.pdf';");
+		const storagePath = db.runSql("SELECT storage_path FROM sources WHERE filename = 'native-text-sample.pdf';");
 		expect(storagePath).not.toBe('');
 
 		// Verify pattern: raw/{uuid}/original.pdf

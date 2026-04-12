@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 import { ensureSchema } from '../lib/schema.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -12,16 +13,13 @@ const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
  *
  * Each `it()` maps to one QA condition from Section 5 of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `docker exec psql`, and filesystem.
+ * SQL via `the shared env-driven SQL helper`, and filesystem.
  * Never import from packages/ or src/ or apps/.
  *
- * Requires a running PostgreSQL instance (Docker container `mulder-pg-test`)
+ * Requires a running PostgreSQL instance (the standard PG env vars)
  * with pgvector, PostGIS, and pg_trgm extensions available.
  */
 
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
 const MIGRATIONS_009_011 = ['009_entity_grounding.sql', '010_evidence_chains.sql', '011_spatio_temporal_clusters.sql'];
 
 /**
@@ -36,7 +34,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 30_000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -46,35 +44,13 @@ function runCli(
 }
 
 /**
- * Helper: run SQL via docker exec psql. Returns query output.
+ * Helper: run SQL via the shared env-driven SQL helper. Returns query output.
  */
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15_000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5_000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
 function hasRequiredExtensions(): boolean {
 	try {
-		const out = runSql("SELECT count(*) FROM pg_available_extensions WHERE name IN ('vector', 'postgis', 'pg_trgm');");
+		const out = db.runSql(
+			"SELECT count(*) FROM pg_available_extensions WHERE name IN ('vector', 'postgis', 'pg_trgm');",
+		);
 		return Number.parseInt(out, 10) >= 3;
 	} catch {
 		return false;
@@ -108,19 +84,16 @@ function resetDatabase(): void {
 		'DROP EXTENSION IF EXISTS pg_trgm CASCADE',
 	].join('; ');
 
-	spawnSync('docker', ['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-c', dropSql], {
-		encoding: 'utf-8',
-		timeout: 15_000,
-	});
+	db.runSql(dropSql);
 }
 
 function migrationFilenames(): string[] {
-	const rows = runSql('SELECT filename FROM mulder_migrations ORDER BY filename;');
+	const rows = db.runSql('SELECT filename FROM mulder_migrations ORDER BY filename;');
 	return rows.split('\n').filter(Boolean);
 }
 
 function migrationCount(): number {
-	return Number.parseInt(runSql('SELECT count(*) FROM mulder_migrations;'), 10);
+	return Number.parseInt(db.runSql('SELECT count(*) FROM mulder_migrations;'), 10);
 }
 
 function parseMigrationSummary(output: string): { applied?: number; skipped?: number; total?: number } | null {
@@ -145,7 +118,7 @@ function prepareBackfilledDatabase(): void {
 		'DROP INDEX IF EXISTS idx_entities_geom',
 	].join('; ');
 
-	runSql(cleanupSql);
+	db.runSql(cleanupSql);
 }
 
 describe('Spec 54: v2.0 Schema Migrations (009-011)', () => {
@@ -153,14 +126,9 @@ describe('Spec 54: v2.0 Schema Migrations (009-011)', () => {
 	let extensionsAvailable: boolean;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL container not available. Start with:\n' +
-					'  docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17\n' +
-					'  docker exec mulder-pg-test apt-get update && docker exec mulder-pg-test apt-get install -y postgresql-17-postgis-3',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 
@@ -251,7 +219,7 @@ describe('Spec 54: v2.0 Schema Migrations (009-011)', () => {
 		it('entity_grounding has the expected columns and cascades on entity deletion', () => {
 			if (skipIfUnavailable()) return;
 
-			const columns = runSql(
+			const columns = db.runSql(
 				"SELECT column_name FROM information_schema.columns WHERE table_name = 'entity_grounding' AND table_schema = 'public' ORDER BY ordinal_position;",
 			);
 			const colList = columns.split('\n').filter(Boolean);
@@ -261,7 +229,7 @@ describe('Spec 54: v2.0 Schema Migrations (009-011)', () => {
 				expect(colList, `Missing column: ${col}`).toContain(col);
 			}
 
-			const fkDeleteRule = runSql(
+			const fkDeleteRule = db.runSql(
 				"SELECT rc.delete_rule FROM information_schema.table_constraints tc JOIN information_schema.referential_constraints rc ON tc.constraint_name = rc.constraint_name AND tc.constraint_schema = rc.constraint_schema WHERE tc.table_name = 'entity_grounding' AND tc.constraint_type = 'FOREIGN KEY';",
 			);
 			expect(fkDeleteRule).toContain('CASCADE');
@@ -269,16 +237,16 @@ describe('Spec 54: v2.0 Schema Migrations (009-011)', () => {
 			const entityId = '00000000-0000-0000-0000-000000540301';
 			const groundingId = '00000000-0000-0000-0000-000000540302';
 
-			runSql(
+			db.runSql(
 				[
 					`INSERT INTO entities (id, name, type) VALUES ('${entityId}', 'QA Grounding Entity', 'person')`,
 					`INSERT INTO entity_grounding (id, entity_id, grounding_data, source_urls, expires_at) VALUES ('${groundingId}', '${entityId}', '{"title":"Grounded"}'::jsonb, ARRAY['https://example.com/a'], now() + interval '1 day')`,
 				].join('; '),
 			);
 
-			expect(runSql(`SELECT count(*) FROM entity_grounding WHERE id = '${groundingId}';`)).toBe('1');
-			runSql(`DELETE FROM entities WHERE id = '${entityId}';`);
-			expect(runSql(`SELECT count(*) FROM entity_grounding WHERE id = '${groundingId}';`)).toBe('0');
+			expect(db.runSql(`SELECT count(*) FROM entity_grounding WHERE id = '${groundingId}';`)).toBe('1');
+			db.runSql(`DELETE FROM entities WHERE id = '${entityId}';`);
+			expect(db.runSql(`SELECT count(*) FROM entity_grounding WHERE id = '${groundingId}';`)).toBe('0');
 		});
 	});
 
@@ -286,7 +254,7 @@ describe('Spec 54: v2.0 Schema Migrations (009-011)', () => {
 		it('evidence_chains matches the expected types and defaults', () => {
 			if (skipIfUnavailable()) return;
 
-			const columns = runSql(
+			const columns = db.runSql(
 				"SELECT column_name FROM information_schema.columns WHERE table_name = 'evidence_chains' AND table_schema = 'public' ORDER BY ordinal_position;",
 			);
 			const colList = columns.split('\n').filter(Boolean);
@@ -295,27 +263,27 @@ describe('Spec 54: v2.0 Schema Migrations (009-011)', () => {
 				expect(colList, `Missing column: ${col}`).toContain(col);
 			}
 
-			const thesisType = runSql(
+			const thesisType = db.runSql(
 				"SELECT data_type FROM information_schema.columns WHERE table_name = 'evidence_chains' AND column_name = 'thesis';",
 			);
 			expect(thesisType).toBe('text');
 
-			const pathType = runSql(
+			const pathType = db.runSql(
 				"SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a WHERE a.attrelid = 'evidence_chains'::regclass AND a.attname = 'path';",
 			);
 			expect(pathType).toBe('uuid[]');
 
-			const strengthType = runSql(
+			const strengthType = db.runSql(
 				"SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a WHERE a.attrelid = 'evidence_chains'::regclass AND a.attname = 'strength';",
 			);
 			expect(strengthType).toBe('double precision');
 
-			const supportsType = runSql(
+			const supportsType = db.runSql(
 				"SELECT data_type FROM information_schema.columns WHERE table_name = 'evidence_chains' AND column_name = 'supports';",
 			);
 			expect(supportsType).toBe('boolean');
 
-			const computedDefault = runSql(
+			const computedDefault = db.runSql(
 				"SELECT column_default FROM information_schema.columns WHERE table_name = 'evidence_chains' AND column_name = 'computed_at';",
 			);
 			expect(computedDefault.toLowerCase()).toMatch(/now\(\)|current_timestamp/);
@@ -326,7 +294,7 @@ describe('Spec 54: v2.0 Schema Migrations (009-011)', () => {
 		it('spatio_temporal_clusters, entities.geom, and idx_entities_geom match the contract', () => {
 			if (skipIfUnavailable()) return;
 
-			const columns = runSql(
+			const columns = db.runSql(
 				"SELECT column_name FROM information_schema.columns WHERE table_name = 'spatio_temporal_clusters' AND table_schema = 'public' ORDER BY ordinal_position;",
 			);
 			const colList = columns.split('\n').filter(Boolean);
@@ -345,27 +313,29 @@ describe('Spec 54: v2.0 Schema Migrations (009-011)', () => {
 				expect(colList, `Missing column: ${col}`).toContain(col);
 			}
 
-			const eventCountType = runSql(
+			const eventCountType = db.runSql(
 				"SELECT data_type FROM information_schema.columns WHERE table_name = 'spatio_temporal_clusters' AND column_name = 'event_count';",
 			);
 			expect(eventCountType).toBe('integer');
 
-			const eventIdsType = runSql(
+			const eventIdsType = db.runSql(
 				"SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a WHERE a.attrelid = 'spatio_temporal_clusters'::regclass AND a.attname = 'event_ids';",
 			);
 			expect(eventIdsType).toBe('uuid[]');
 
-			const computedDefault = runSql(
+			const computedDefault = db.runSql(
 				"SELECT column_default FROM information_schema.columns WHERE table_name = 'spatio_temporal_clusters' AND column_name = 'computed_at';",
 			);
 			expect(computedDefault.toLowerCase()).toMatch(/now\(\)|current_timestamp/);
 
-			const geomType = runSql(
-				"SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a WHERE a.attrelid = 'entities'::regclass AND a.attname = 'geom';",
-			).replace(/\s+/g, '');
+			const geomType = db
+				.runSql(
+					"SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a WHERE a.attrelid = 'entities'::regclass AND a.attname = 'geom';",
+				)
+				.replace(/\s+/g, '');
 			expect(geomType).toBe('geometry(Point,4326)');
 
-			const geomIndex = runSql(
+			const geomIndex = db.runSql(
 				"SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'idx_entities_geom';",
 			);
 			expect(geomIndex.toLowerCase()).toContain('using gist');

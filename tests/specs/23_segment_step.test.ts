@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -12,20 +13,16 @@ const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
-
 /**
  * Black-box QA tests for Spec 23: Segment Step
  *
  * Each `it()` maps to one QA condition or CLI condition from Section 5/5b of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `docker exec psql`, and filesystem (dev-mode storage).
+ * SQL via `the shared env-driven SQL helper`, and filesystem (dev-mode storage).
  * Never imports from packages/ or src/ or apps/.
  *
  * Requires:
- * - Running PostgreSQL container `mulder-pg-test` with migrations applied
+ * - PostgreSQL reachable through the standard PG env vars with migrations applied
  * - Built CLI at apps/cli/dist/index.js
  * - Test fixtures in fixtures/raw/
  */
@@ -43,7 +40,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 60000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -52,32 +49,8 @@ function runCli(
 	};
 }
 
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
 function cleanTestData(): void {
-	runSql('DELETE FROM stories; DELETE FROM source_steps; DELETE FROM sources;');
+	db.runSql('DELETE FROM stories; DELETE FROM source_steps; DELETE FROM sources;');
 }
 
 function cleanSegmentFixtures(): void {
@@ -109,7 +82,7 @@ function ingestPdf(pdfPath: string): string {
 	}
 	const parts = pdfPath.split('/');
 	const filename = parts[parts.length - 1];
-	const sourceId = runSql(`SELECT id FROM sources WHERE filename = '${filename}' ORDER BY created_at DESC LIMIT 1;`);
+	const sourceId = db.runSql(`SELECT id FROM sources WHERE filename = '${filename}' ORDER BY created_at DESC LIMIT 1;`);
 	if (!sourceId) {
 		throw new Error(`No source record found for ${filename}`);
 	}
@@ -133,7 +106,7 @@ function ingestAndExtractPdf(pdfPath: string): string {
 	ensurePageImages(sourceId);
 
 	// Verify source is extracted
-	const status = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+	const status = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 	if (status !== 'extracted') {
 		throw new Error(`Source ${sourceId} has status '${status}', expected 'extracted'`);
 	}
@@ -186,13 +159,9 @@ describe('Spec 23 — Segment Step', () => {
 	let segmentationSucceeded = false;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: PostgreSQL container not available. Start with:\n' +
-					'  docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 			return;
 		}
 
@@ -237,7 +206,7 @@ describe('Spec 23 — Segment Step', () => {
 		expect(exitCode).toBe(0);
 
 		// Source status should be 'segmented' in database
-		const status = runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
+		const status = db.runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
 		expect(status).toBe('segmented');
 
 		// Track success for downstream tests
@@ -257,17 +226,17 @@ describe('Spec 23 — Segment Step', () => {
 			expect(result.exitCode).toBe(0);
 		}
 
-		const storyCount = runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${extractedSourceId}';`);
+		const storyCount = db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${extractedSourceId}';`);
 		expect(Number.parseInt(storyCount, 10)).toBeGreaterThanOrEqual(1);
 
 		// Check that stories have required fields
-		const nullUris = runSql(
+		const nullUris = db.runSql(
 			`SELECT COUNT(*) FROM stories WHERE source_id = '${extractedSourceId}' AND (gcs_markdown_uri IS NULL OR gcs_metadata_uri IS NULL);`,
 		);
 		expect(Number.parseInt(nullUris, 10)).toBe(0);
 
 		// Check story status
-		const storyStatuses = runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${extractedSourceId}';`);
+		const storyStatuses = db.runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${extractedSourceId}';`);
 		expect(storyStatuses).toBe('segmented');
 	});
 
@@ -278,14 +247,14 @@ describe('Spec 23 — Segment Step', () => {
 		if (!extractedSourceId) return;
 
 		// If source not segmented, attempt segmentation — fail if it doesn't work
-		const sourceStatus = runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
+		const sourceStatus = db.runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
 		if (sourceStatus !== 'segmented') {
 			const result = segmentSource(extractedSourceId);
 			expect(result.exitCode).toBe(0);
 		}
 
 		// Get GCS Markdown URI from a story record
-		const markdownUri = runSql(
+		const markdownUri = db.runSql(
 			`SELECT gcs_markdown_uri FROM stories WHERE source_id = '${extractedSourceId}' LIMIT 1;`,
 		);
 		expect(markdownUri).not.toBe('');
@@ -305,14 +274,14 @@ describe('Spec 23 — Segment Step', () => {
 		if (!extractedSourceId) return;
 
 		// If source not segmented, attempt segmentation — fail if it doesn't work
-		const sourceStatus = runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
+		const sourceStatus = db.runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
 		if (sourceStatus !== 'segmented') {
 			const result = segmentSource(extractedSourceId);
 			expect(result.exitCode).toBe(0);
 		}
 
 		// Get GCS metadata URI from a story record
-		const metadataUri = runSql(
+		const metadataUri = db.runSql(
 			`SELECT gcs_metadata_uri FROM stories WHERE source_id = '${extractedSourceId}' LIMIT 1;`,
 		);
 		expect(metadataUri).not.toBe('');
@@ -341,13 +310,13 @@ describe('Spec 23 — Segment Step', () => {
 		if (!extractedSourceId) return;
 
 		// If source not segmented, attempt segmentation — fail if it doesn't work
-		const sourceStatus = runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
+		const sourceStatus = db.runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
 		if (sourceStatus !== 'segmented') {
 			const result = segmentSource(extractedSourceId);
 			expect(result.exitCode).toBe(0);
 		}
 
-		const stepRow = runSql(
+		const stepRow = db.runSql(
 			`SELECT step_name, status FROM source_steps WHERE source_id = '${extractedSourceId}' AND step_name = 'segment';`,
 		);
 		expect(stepRow).not.toBe('');
@@ -378,9 +347,9 @@ describe('Spec 23 — Segment Step', () => {
 		if (!extractedSourceId) return;
 
 		// Manually set the source to segmented status if not already
-		const currentStatus = runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
+		const currentStatus = db.runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
 		if (currentStatus !== 'segmented') {
-			runSql(`UPDATE sources SET status = 'segmented' WHERE id = '${extractedSourceId}';`);
+			db.runSql(`UPDATE sources SET status = 'segmented' WHERE id = '${extractedSourceId}';`);
 		}
 
 		// Run segment without force
@@ -398,9 +367,9 @@ describe('Spec 23 — Segment Step', () => {
 		if (!extractedSourceId) return;
 
 		// First ensure the source is marked as segmented
-		const currentStatus = runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
+		const currentStatus = db.runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
 		if (currentStatus !== 'segmented') {
-			runSql(`UPDATE sources SET status = 'segmented' WHERE id = '${extractedSourceId}';`);
+			db.runSql(`UPDATE sources SET status = 'segmented' WHERE id = '${extractedSourceId}';`);
 		}
 
 		// Ensure page images exist for re-segmentation
@@ -412,11 +381,11 @@ describe('Spec 23 — Segment Step', () => {
 		expect(exitCode).toBe(0);
 
 		// Source status should be segmented
-		const status = runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
+		const status = db.runSql(`SELECT status FROM sources WHERE id = '${extractedSourceId}';`);
 		expect(status).toBe('segmented');
 
 		// Stories should exist
-		const afterCount = runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${extractedSourceId}';`);
+		const afterCount = db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${extractedSourceId}';`);
 		expect(Number.parseInt(afterCount, 10)).toBeGreaterThanOrEqual(1);
 	});
 
@@ -434,7 +403,7 @@ describe('Spec 23 — Segment Step', () => {
 		ingestAndExtractPdf(SCANNED_PDF);
 
 		// Verify both are extracted
-		const extractedCount = runSql("SELECT COUNT(*) FROM sources WHERE status = 'extracted';");
+		const extractedCount = db.runSql("SELECT COUNT(*) FROM sources WHERE status = 'extracted';");
 		expect(Number.parseInt(extractedCount, 10)).toBe(2);
 
 		// Segment all
@@ -442,7 +411,7 @@ describe('Spec 23 — Segment Step', () => {
 		expect(exitCode).toBe(0);
 
 		// All sources should now be segmented
-		const segmentedCount = runSql("SELECT COUNT(*) FROM sources WHERE status = 'segmented';");
+		const segmentedCount = db.runSql("SELECT COUNT(*) FROM sources WHERE status = 'segmented';");
 		expect(Number.parseInt(segmentedCount, 10)).toBe(2);
 	});
 
@@ -453,7 +422,7 @@ describe('Spec 23 — Segment Step', () => {
 
 		// Use any segmented source — the shared extractedSourceId may have been
 		// cleaned up by QA-09. If none exists, create a fresh one.
-		let sourceId = runSql("SELECT id FROM sources WHERE status = 'segmented' LIMIT 1;");
+		let sourceId = db.runSql("SELECT id FROM sources WHERE status = 'segmented' LIMIT 1;");
 		if (!sourceId) {
 			cleanTestData();
 			cleanExtractedFixtures();
@@ -463,11 +432,11 @@ describe('Spec 23 — Segment Step', () => {
 			expect(result.exitCode).toBe(0);
 		}
 
-		const storyCount = runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`);
+		const storyCount = db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`);
 		expect(Number.parseInt(storyCount, 10)).toBeGreaterThanOrEqual(1);
 
 		// Check that all stories have valid page ranges
-		const invalidPageRanges = runSql(
+		const invalidPageRanges = db.runSql(
 			`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}' AND (page_start IS NULL OR page_end IS NULL OR page_start > page_end);`,
 		);
 		expect(Number.parseInt(invalidPageRanges, 10)).toBe(0);
@@ -488,22 +457,22 @@ describe('Spec 23 — Segment Step', () => {
 		const first = runCli(['segment', sourceId, '--force']);
 		expect(first.exitCode).toBe(0);
 
-		const storyCountAfterFirst = runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`);
+		const storyCountAfterFirst = db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`);
 
 		// Second force segmentation
 		const second = runCli(['segment', sourceId, '--force']);
 		expect(second.exitCode).toBe(0);
 
 		// Source should still be segmented
-		const status = runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+		const status = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
 		expect(status).toBe('segmented');
 
 		// Story count should be the same (no duplicates)
-		const storyCountAfterSecond = runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`);
+		const storyCountAfterSecond = db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`);
 		expect(storyCountAfterSecond).toBe(storyCountAfterFirst);
 
 		// No duplicate source_steps records
-		const stepCount = runSql(
+		const stepCount = db.runSql(
 			`SELECT COUNT(*) FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'segment';`,
 		);
 		expect(stepCount).toBe('1');
@@ -516,7 +485,7 @@ describe('Spec 23 — Segment Step', () => {
 
 		// Use any segmented source — the shared extractedSourceId may have been
 		// cleaned up by QA-09. If none exists, create a fresh one.
-		let sourceId = runSql("SELECT id FROM sources WHERE status = 'segmented' LIMIT 1;");
+		let sourceId = db.runSql("SELECT id FROM sources WHERE status = 'segmented' LIMIT 1;");
 		if (!sourceId) {
 			cleanTestData();
 			cleanExtractedFixtures();
@@ -526,11 +495,13 @@ describe('Spec 23 — Segment Step', () => {
 			expect(result.exitCode).toBe(0);
 		}
 
-		const storyCount = runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`);
+		const storyCount = db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId}';`);
 		expect(Number.parseInt(storyCount, 10)).toBeGreaterThanOrEqual(1);
 
 		// Get all story GCS URIs
-		const rows = runSql(`SELECT id, gcs_markdown_uri, gcs_metadata_uri FROM stories WHERE source_id = '${sourceId}';`);
+		const rows = db.runSql(
+			`SELECT id, gcs_markdown_uri, gcs_metadata_uri FROM stories WHERE source_id = '${sourceId}';`,
+		);
 
 		for (const row of rows.split('\n').filter(Boolean)) {
 			const [_storyId, markdownUri, metadataUri] = row.split('|');
@@ -610,7 +581,7 @@ describe('CLI Smoke Tests: segment', () => {
 
 	it('SMOKE-03: mulder segment --all --force does not crash (exits cleanly even if no sources)', () => {
 		// This tests that --all and --force can be combined without crash
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const { stdout, stderr } = runCli(['segment', '--all', '--force'], { timeout: 60000 });
@@ -624,7 +595,7 @@ describe('CLI Smoke Tests: segment', () => {
 	// ─── SMOKE-04: invalid UUID format as source-id ───
 
 	it('SMOKE-04: mulder segment with non-UUID source-id gives non-zero exit', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const { exitCode, stdout, stderr } = runCli(['segment', 'not-a-valid-uuid']);

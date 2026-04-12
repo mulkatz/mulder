@@ -14,7 +14,7 @@
  * No imports from packages/*|/src, apps/*|/src, or src/. Dist-barrel only.
  *
  * Infra dependencies:
- *   - A running `mulder-pg-test` PostgreSQL container (same as spec 19).
+ *   - A running PostgreSQL reachable through the standard PG env vars (same as spec 19).
  *     QA conditions that need the DB are gated on `pgAvailable`; when the
  *     container is down they are skipped with a clear message instead of
  *     failing the whole suite.
@@ -23,10 +23,10 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -57,34 +57,6 @@ const FIXTURE_NAMES = [
 // Docker / PG helpers (shared with spec 19 container)
 // ---------------------------------------------------------------------------
 
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
 function runCli(
 	args: string[],
 	opts?: { env?: Record<string, string>; timeout?: number },
@@ -94,7 +66,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 90_000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -104,7 +76,7 @@ function runCli(
 }
 
 function cleanTestData(): void {
-	runSql('DELETE FROM source_steps; DELETE FROM sources;');
+	db.runSql('DELETE FROM source_steps; DELETE FROM sources;');
 }
 
 function cleanExtractedStorage(): void {
@@ -121,7 +93,7 @@ function ingestNativeTextPdf(): string {
 	if (exitCode !== 0) {
 		throw new Error(`Ingest failed (exit ${exitCode}): ${stdout} ${stderr}`);
 	}
-	const sourceId = runSql(
+	const sourceId = db.runSql(
 		"SELECT id FROM sources WHERE filename = 'native-text-sample.pdf' ORDER BY created_at DESC LIMIT 1;",
 	);
 	if (!sourceId) {
@@ -201,13 +173,9 @@ describe('Spec 48 — Layout-to-Markdown Converter', () => {
 		expect(typeof layoutToMarkdown).toBe('function');
 		expect(typeof executeExtract).toBe('function');
 
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
-			console.warn(
-				'SKIP: mulder-pg-test container not running — QA-10, QA-11, QA-12 and CLI-01..06 will be skipped.\n' +
-					'  Start with: docker run -d --name mulder-pg-test -e POSTGRES_USER=mulder ' +
-					'-e POSTGRES_PASSWORD=mulder -e POSTGRES_DB=mulder -p 5432:5432 pgvector/pgvector:pg17',
-			);
+			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 		} else {
 			// Ensure schema is migrated (idempotent — matches spec 19 pattern).
 			const migrate = runCli(['db', 'migrate', resolve(ROOT, 'mulder.config.example.yaml')]);
@@ -270,7 +238,7 @@ describe('Spec 48 — Layout-to-Markdown Converter', () => {
 		// Find the heading line index and confirm the very next line is
 		// blank (i.e., a blank line separates the heading from the next
 		// content line).
-		const headingIdx = lines.findIndex((l) => l === '# Test Heading');
+		const headingIdx = lines.indexOf('# Test Heading');
 		expect(headingIdx).toBeGreaterThanOrEqual(0);
 		expect(lines[headingIdx + 1] ?? '').toBe('');
 
@@ -437,7 +405,7 @@ describe('Spec 48 — Layout-to-Markdown Converter', () => {
 	});
 
 	// ─── QA-10: Extract step writes layout.md alongside layout.json ───
-	it.skipIf(!isPgAvailable())('QA-10: executeExtract writes both layout.json and layout.md to storage', async () => {
+	it.skipIf(!db.isPgAvailable())('QA-10: executeExtract writes both layout.json and layout.md to storage', async () => {
 		if (!pgAvailable) return;
 
 		cleanTestData();
@@ -479,7 +447,7 @@ describe('Spec 48 — Layout-to-Markdown Converter', () => {
 	// We wrap the dev services such that storage.upload() throws on any
 	// path ending in `.md`. The spec guarantees this must not fail the
 	// overall extract result.
-	it.skipIf(!isPgAvailable())('QA-11: a failing layout.md upload does not fail the extract step', async () => {
+	it.skipIf(!db.isPgAvailable())('QA-11: a failing layout.md upload does not fail the extract step', async () => {
 		if (!pgAvailable) return;
 
 		cleanTestData();
@@ -527,7 +495,7 @@ describe('Spec 48 — Layout-to-Markdown Converter', () => {
 	});
 
 	// ─── QA-12: Extract idempotency preserves layout.md deterministically ───
-	it.skipIf(!isPgAvailable())('QA-12: re-running extract with --force produces byte-identical layout.md', () => {
+	it.skipIf(!db.isPgAvailable())('QA-12: re-running extract with --force produces byte-identical layout.md', () => {
 		if (!pgAvailable) return;
 
 		cleanTestData();
@@ -594,7 +562,7 @@ describe('Spec 48 — Layout-to-Markdown Converter', () => {
 		}
 
 		// ─── CLI-01: plain extract writes layout.md in storage, no local file ───
-		it.skipIf(!isPgAvailable())('CLI-01: mulder extract <id> → exit 0, layout.md in storage, no local file', () => {
+		it.skipIf(!db.isPgAvailable())('CLI-01: mulder extract <id> → exit 0, layout.md in storage, no local file', () => {
 			if (!pgAvailable) return;
 			const id = ensureSource();
 
@@ -610,22 +578,25 @@ describe('Spec 48 — Layout-to-Markdown Converter', () => {
 		});
 
 		// ─── CLI-02: --markdown-to writes a local file matching storage ───
-		it.skipIf(!isPgAvailable())('CLI-02: --markdown-to writes a local file byte-identical to storage layout.md', () => {
-			if (!pgAvailable) return;
-			const id = ensureSource();
+		it.skipIf(!db.isPgAvailable())(
+			'CLI-02: --markdown-to writes a local file byte-identical to storage layout.md',
+			() => {
+				if (!pgAvailable) return;
+				const id = ensureSource();
 
-			const localPath = join(TMP_DIR, 'out.md');
-			const result = runCli(['extract', id, '--markdown-to', localPath]);
-			expect(result.exitCode).toBe(0);
-			expect(existsSync(localPath)).toBe(true);
+				const localPath = join(TMP_DIR, 'out.md');
+				const result = runCli(['extract', id, '--markdown-to', localPath]);
+				expect(result.exitCode).toBe(0);
+				expect(existsSync(localPath)).toBe(true);
 
-			const local = readFileSync(localPath);
-			const storage = readFileSync(join(EXTRACTED_STORAGE_DIR, id, 'layout.md'));
-			expect(local.equals(storage)).toBe(true);
-		});
+				const local = readFileSync(localPath);
+				const storage = readFileSync(join(EXTRACTED_STORAGE_DIR, id, 'layout.md'));
+				expect(local.equals(storage)).toBe(true);
+			},
+		);
 
 		// ─── CLI-03: --force + --markdown-to produces same content as CLI-02 ───
-		it.skipIf(!isPgAvailable())('CLI-03: --force --markdown-to matches CLI-02 output (deterministic)', () => {
+		it.skipIf(!db.isPgAvailable())('CLI-03: --force --markdown-to matches CLI-02 output (deterministic)', () => {
 			if (!pgAvailable) return;
 			const id = ensureSource();
 
@@ -647,7 +618,7 @@ describe('Spec 48 — Layout-to-Markdown Converter', () => {
 		});
 
 		// ─── CLI-04: --all and --markdown-to are mutually exclusive ───
-		it.skipIf(!isPgAvailable())('CLI-04: --all --markdown-to exits non-zero with a mutual-exclusion error', () => {
+		it.skipIf(!db.isPgAvailable())('CLI-04: --all --markdown-to exits non-zero with a mutual-exclusion error', () => {
 			if (!pgAvailable) return;
 
 			const manyPath = join(TMP_DIR, 'many.md');
@@ -665,7 +636,7 @@ describe('Spec 48 — Layout-to-Markdown Converter', () => {
 		});
 
 		// ─── CLI-05: non-existent parent directory fails cleanly ───
-		it.skipIf(!isPgAvailable())('CLI-05: --markdown-to with a nonexistent parent dir exits non-zero', () => {
+		it.skipIf(!db.isPgAvailable())('CLI-05: --markdown-to with a nonexistent parent dir exits non-zero', () => {
 			if (!pgAvailable) return;
 			const id = ensureSource();
 
@@ -680,25 +651,28 @@ describe('Spec 48 — Layout-to-Markdown Converter', () => {
 		});
 
 		// ─── CLI-06: running CLI-02 twice yields byte-identical output ───
-		it.skipIf(!isPgAvailable())('CLI-06: running the same --markdown-to command twice yields identical bytes', () => {
-			if (!pgAvailable) return;
-			const id = ensureSource();
+		it.skipIf(!db.isPgAvailable())(
+			'CLI-06: running the same --markdown-to command twice yields identical bytes',
+			() => {
+				if (!pgAvailable) return;
+				const id = ensureSource();
 
-			const p = join(TMP_DIR, 'idem.md');
-			if (existsSync(p)) rmSync(p);
+				const p = join(TMP_DIR, 'idem.md');
+				if (existsSync(p)) rmSync(p);
 
-			const first = runCli(['extract', id, '--markdown-to', p]);
-			expect(first.exitCode).toBe(0);
-			expect(existsSync(p)).toBe(true);
-			const bytes1 = readFileSync(p);
+				const first = runCli(['extract', id, '--markdown-to', p]);
+				expect(first.exitCode).toBe(0);
+				expect(existsSync(p)).toBe(true);
+				const bytes1 = readFileSync(p);
 
-			// Second run needs --force because the source is already extracted.
-			const second = runCli(['extract', id, '--force', '--markdown-to', p]);
-			expect(second.exitCode).toBe(0);
-			expect(existsSync(p)).toBe(true);
-			const bytes2 = readFileSync(p);
+				// Second run needs --force because the source is already extracted.
+				const second = runCli(['extract', id, '--force', '--markdown-to', p]);
+				expect(second.exitCode).toBe(0);
+				expect(existsSync(p)).toBe(true);
+				const bytes2 = readFileSync(p);
 
-			expect(bytes2.equals(bytes1)).toBe(true);
-		});
+				expect(bytes2.equals(bytes1)).toBe(true);
+			},
+		);
 	});
 });

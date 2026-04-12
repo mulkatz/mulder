@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 import { ensureSchema } from '../lib/schema.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -14,16 +15,12 @@ const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
-
 /**
  * Black-box QA tests for Spec 35: Graph Step
  *
  * Each `it()` maps to one QA condition or CLI condition from Section 5/5b of the spec.
  * Tests interact through system boundaries only: CLI subprocess calls,
- * SQL via `docker exec psql`, and filesystem (dev-mode storage).
+ * SQL via `the shared env-driven SQL helper`, and filesystem (dev-mode storage).
  * Never imports from packages/ or src/ or apps/.
  *
  * Requires:
@@ -45,7 +42,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 60000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -54,32 +51,8 @@ function runCli(
 	};
 }
 
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
 function cleanTestData(): void {
-	runSql(
+	db.runSql(
 		'DELETE FROM chunks; DELETE FROM story_entities; DELETE FROM entity_edges; DELETE FROM entity_aliases; DELETE FROM entities; DELETE FROM stories; DELETE FROM source_steps; DELETE FROM sources;',
 	);
 }
@@ -106,7 +79,7 @@ function ingestPdf(pdfPath: string): string {
 	}
 	const parts = pdfPath.split('/');
 	const filename = parts[parts.length - 1];
-	const sourceId = runSql(`SELECT id FROM sources WHERE filename = '${filename}' ORDER BY created_at DESC LIMIT 1;`);
+	const sourceId = db.runSql(`SELECT id FROM sources WHERE filename = '${filename}' ORDER BY created_at DESC LIMIT 1;`);
 	if (!sourceId) {
 		throw new Error(`No source record found for ${filename}`);
 	}
@@ -144,7 +117,7 @@ function ingestExtractSegmentEnrichEmbed(pdfPath: string): string {
 	}
 
 	// Verify status
-	const status = runSql(`SELECT status FROM stories WHERE source_id = '${sourceId}' LIMIT 1;`);
+	const status = db.runSql(`SELECT status FROM stories WHERE source_id = '${sourceId}' LIMIT 1;`);
 	if (status !== 'embedded') {
 		throw new Error(`Source ${sourceId} stories have status '${status}', expected 'embedded'`);
 	}
@@ -156,7 +129,7 @@ function ingestExtractSegmentEnrichEmbed(pdfPath: string): string {
  * Get a story ID from an embedded source.
  */
 function getEmbeddedStoryId(sourceId: string): string {
-	const storyId = runSql(`SELECT id FROM stories WHERE source_id = '${sourceId}' AND status = 'embedded' LIMIT 1;`);
+	const storyId = db.runSql(`SELECT id FROM stories WHERE source_id = '${sourceId}' AND status = 'embedded' LIMIT 1;`);
 	if (!storyId) {
 		throw new Error(`No embedded story found for source ${sourceId}`);
 	}
@@ -184,7 +157,7 @@ describe('Spec 35 — Graph Step', () => {
 	let embeddedStoryId: string | null = null;
 
 	beforeAll(() => {
-		pgAvailable = isPgAvailable();
+		pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) {
 			console.warn('SKIP: PostgreSQL container not available. Start with:\n' + '  docker compose up -d');
 			return;
@@ -224,7 +197,7 @@ describe('Spec 35 — Graph Step', () => {
 		expect(result.exitCode).toBe(0);
 
 		// Story status should be 'graphed'
-		const storyStatus = runSql(`SELECT status FROM stories WHERE id = '${embeddedStoryId}';`);
+		const storyStatus = db.runSql(`SELECT status FROM stories WHERE id = '${embeddedStoryId}';`);
 		expect(storyStatus).toBe('graphed');
 
 		// Command should exit 0 (already asserted above)
@@ -243,7 +216,7 @@ describe('Spec 35 — Graph Step', () => {
 		ingestExtractSegmentEnrichEmbed(SCANNED_PDF);
 
 		// Verify both have embedded stories
-		const embCount = runSql("SELECT COUNT(*) FROM stories WHERE status = 'embedded';");
+		const embCount = db.runSql("SELECT COUNT(*) FROM stories WHERE status = 'embedded';");
 		expect(Number.parseInt(embCount, 10)).toBeGreaterThanOrEqual(2);
 
 		// Graph all
@@ -251,10 +224,10 @@ describe('Spec 35 — Graph Step', () => {
 		expect(exitCode).toBe(0);
 
 		// All previously embedded stories should now be graphed
-		const remainingEmbedded = runSql("SELECT COUNT(*) FROM stories WHERE status = 'embedded';");
+		const remainingEmbedded = db.runSql("SELECT COUNT(*) FROM stories WHERE status = 'embedded';");
 		expect(Number.parseInt(remainingEmbedded, 10)).toBe(0);
 
-		const graphedCount = runSql("SELECT COUNT(*) FROM stories WHERE status = 'graphed';");
+		const graphedCount = db.runSql("SELECT COUNT(*) FROM stories WHERE status = 'graphed';");
 		expect(Number.parseInt(graphedCount, 10)).toBeGreaterThanOrEqual(2);
 
 		// Restore state
@@ -288,13 +261,13 @@ describe('Spec 35 — Graph Step', () => {
 		expect(exitCode).toBe(0);
 
 		// Source 1 stories should be graphed
-		const source1Graphed = runSql(
+		const source1Graphed = db.runSql(
 			`SELECT COUNT(*) FROM stories WHERE source_id = '${sourceId1}' AND status = 'graphed';`,
 		);
 		expect(Number.parseInt(source1Graphed, 10)).toBeGreaterThanOrEqual(1);
 
 		// Source 2 stories should NOT be graphed
-		const source2Status = runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId2}';`);
+		const source2Status = db.runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId2}';`);
 		expect(source2Status).not.toBe('graphed');
 
 		// Restore state
@@ -310,7 +283,7 @@ describe('Spec 35 — Graph Step', () => {
 		if (!pgAvailable || !embeddedStoryId) return;
 
 		// Ensure story is graphed
-		const currentStatus = runSql(`SELECT status FROM stories WHERE id = '${embeddedStoryId}';`);
+		const currentStatus = db.runSql(`SELECT status FROM stories WHERE id = '${embeddedStoryId}';`);
 		if (currentStatus !== 'graphed') {
 			const { exitCode } = runCli(['graph', embeddedStoryId], { timeout: 120000 });
 			expect(exitCode).toBe(0);
@@ -332,7 +305,7 @@ describe('Spec 35 — Graph Step', () => {
 		if (!pgAvailable || !embeddedStoryId || !embeddedSourceId) return;
 
 		// Ensure story is graphed first
-		const currentStatus = runSql(`SELECT status FROM stories WHERE id = '${embeddedStoryId}';`);
+		const currentStatus = db.runSql(`SELECT status FROM stories WHERE id = '${embeddedStoryId}';`);
 		if (currentStatus !== 'graphed') {
 			const { exitCode } = runCli(['graph', embeddedStoryId], { timeout: 120000 });
 			expect(exitCode).toBe(0);
@@ -343,7 +316,7 @@ describe('Spec 35 — Graph Step', () => {
 		expect(exitCode).toBe(0);
 
 		// Story should be graphed again
-		const status = runSql(`SELECT status FROM stories WHERE id = '${embeddedStoryId}';`);
+		const status = db.runSql(`SELECT status FROM stories WHERE id = '${embeddedStoryId}';`);
 		expect(status).toBe('graphed');
 	}, 120000);
 
@@ -353,7 +326,7 @@ describe('Spec 35 — Graph Step', () => {
 		if (!pgAvailable || !embeddedSourceId) return;
 
 		// Ensure stories are graphed first
-		const graphedCount = runSql(
+		const graphedCount = db.runSql(
 			`SELECT COUNT(*) FROM stories WHERE source_id = '${embeddedSourceId}' AND status = 'graphed';`,
 		);
 		if (Number.parseInt(graphedCount, 10) === 0) {
@@ -366,7 +339,7 @@ describe('Spec 35 — Graph Step', () => {
 		expect(exitCode).toBe(0);
 
 		// All stories from source should be graphed
-		const allGraphed = runSql(
+		const allGraphed = db.runSql(
 			`SELECT COUNT(*) FROM stories WHERE source_id = '${embeddedSourceId}' AND status = 'graphed';`,
 		);
 		expect(Number.parseInt(allGraphed, 10)).toBeGreaterThanOrEqual(1);
@@ -415,14 +388,14 @@ describe('Spec 35 — Graph Step', () => {
 		cleanStorageFixtures();
 
 		// Create two sources
-		runSql(
+		db.runSql(
 			`INSERT INTO sources (id, filename, file_hash, storage_path, page_count, status) VALUES ` +
 				`('11111111-1111-1111-1111-111111111111', 'qa09-src1.pdf', 'qa09-hash1', 'raw/qa09-src1.pdf', 1, 'embedded'), ` +
 				`('22222222-2222-2222-2222-222222222222', 'qa09-src2.pdf', 'qa09-hash2', 'raw/qa09-src2.pdf', 1, 'embedded');`,
 		);
 
 		// Create 3 stories: 2 from source 1, 1 from source 2
-		runSql(
+		db.runSql(
 			`INSERT INTO stories (id, source_id, title, gcs_markdown_uri, gcs_metadata_uri, status) VALUES ` +
 				`('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '11111111-1111-1111-1111-111111111111', 'Story A', 's/a.md', 's/a.meta.json', 'embedded'), ` +
 				`('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '11111111-1111-1111-1111-111111111111', 'Story B', 's/b.md', 's/b.meta.json', 'embedded'), ` +
@@ -430,13 +403,13 @@ describe('Spec 35 — Graph Step', () => {
 		);
 
 		// Create one shared entity
-		runSql(
+		db.runSql(
 			`INSERT INTO entities (id, name, type, attributes) VALUES ` +
 				`('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'Test Entity', 'person', '{}');`,
 		);
 
 		// Link all 3 stories to the entity via story_entities
-		runSql(
+		db.runSql(
 			`INSERT INTO story_entities (story_id, entity_id, confidence) VALUES ` +
 				`('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 0.9), ` +
 				`('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 0.9), ` +
@@ -446,7 +419,7 @@ describe('Spec 35 — Graph Step', () => {
 		// Create chunks with embeddings for each story (needed for MinHash dedup)
 		const emb1 = randomEmbeddingLiteral();
 		// Story C gets same embedding (will be detected as duplicate of Story A)
-		runSql(
+		db.runSql(
 			`INSERT INTO chunks (id, story_id, content, chunk_index, embedding) VALUES ` +
 				`('c1111111-1111-1111-1111-111111111111', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Some content about the entity', 0, ${emb1}), ` +
 				`('c2222222-2222-2222-2222-222222222222', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Different content entirely', 0, ${randomEmbeddingLiteral()}), ` +
@@ -455,7 +428,7 @@ describe('Spec 35 — Graph Step', () => {
 
 		// Pre-create a DUPLICATE_OF edge between story A (source 1) and story C (source 2)
 		// to simulate dedup detection
-		runSql(
+		db.runSql(
 			`INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, edge_type, story_id, confidence, attributes) VALUES ` +
 				`('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'DUPLICATE_OF', 'DUPLICATE_OF', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 0.95, ` +
 				`'{"storyIdA": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "storyIdB": "cccccccc-cccc-cccc-cccc-cccccccccccc", "similarity": 0.95}');`,
@@ -470,7 +443,9 @@ describe('Spec 35 — Graph Step', () => {
 		// But A and C are duplicates → they collapse.
 		// So independent sources = 1 (only source 1 with stories A+B, source 2's story C is collapsed)
 		// Per spec: independent_source_count should be 1
-		const sourceCount = runSql(`SELECT source_count FROM entities WHERE id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';`);
+		const sourceCount = db.runSql(
+			`SELECT source_count FROM entities WHERE id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';`,
+		);
 		// The source_count should reflect dedup-aware counting
 		// With the DUPLICATE_OF edge, the two sources should collapse
 		expect(Number.parseInt(sourceCount, 10)).toBeLessThanOrEqual(2);
@@ -496,14 +471,14 @@ describe('Spec 35 — Graph Step', () => {
 		cleanStorageFixtures();
 
 		// Create two sources
-		runSql(
+		db.runSql(
 			`INSERT INTO sources (id, filename, file_hash, storage_path, page_count, status) VALUES ` +
 				`('10101010-1010-1010-1010-101010101010', 'qa10-src1.pdf', 'qa10-hash-1', 'raw/qa10-src1.pdf', 1, 'embedded'), ` +
 				`('20202020-2020-2020-2020-202020202020', 'qa10-src2.pdf', 'qa10-hash-2', 'raw/qa10-src2.pdf', 1, 'embedded');`,
 		);
 
 		// Create two stories (both embedded, from different sources)
-		runSql(
+		db.runSql(
 			`INSERT INTO stories (id, source_id, title, gcs_markdown_uri, gcs_metadata_uri, status) VALUES ` +
 				`('a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1', '10101010-1010-1010-1010-101010101010', 'Story Alpha', 's/alpha.md', 's/alpha.meta.json', 'embedded'), ` +
 				`('b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2', '20202020-2020-2020-2020-202020202020', 'Story Beta', 's/beta.md', 's/beta.meta.json', 'embedded');`,
@@ -518,24 +493,24 @@ describe('Spec 35 — Graph Step', () => {
 		// real-world entity with different observed attributes.
 		// entity1 is the canonical, entity2 points to entity1 as canonical.
 
-		runSql(
+		db.runSql(
 			`INSERT INTO entities (id, name, type, attributes) VALUES ` +
 				`('e1e1e1e1-e1e1-e1e1-e1e1-e1e1e1e1e1e1', 'Roswell Incident (Alpha)', 'event', '{"date": "1947-06-14"}');`,
 		);
-		runSql(
+		db.runSql(
 			`INSERT INTO entities (id, canonical_id, name, type, attributes) VALUES ` +
 				`('e2e2e2e2-e2e2-e2e2-e2e2-e2e2e2e2e2e2', 'e1e1e1e1-e1e1-e1e1-e1e1-e1e1e1e1e1e1', 'Roswell Incident (Beta)', 'event', '{"date": "1947-07-08"}');`,
 		);
 
 		// Link entities to their respective stories
-		runSql(
+		db.runSql(
 			`INSERT INTO story_entities (story_id, entity_id, confidence) VALUES ` +
 				`('a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1', 'e1e1e1e1-e1e1-e1e1-e1e1-e1e1e1e1e1e1', 0.95), ` +
 				`('b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2', 'e2e2e2e2-e2e2-e2e2-e2e2-e2e2e2e2e2e2', 0.95);`,
 		);
 
 		// Create chunks with embeddings for each story (required for graph step)
-		runSql(
+		db.runSql(
 			`INSERT INTO chunks (id, story_id, content, chunk_index, embedding) VALUES ` +
 				`('ca1a1a1a-a1a1-a1a1-a1a1-a1a1a1a1a1a1', 'a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1', 'Roswell incident occurred on June 14 1947', 0, ${randomEmbeddingLiteral()}), ` +
 				`('cb2b2b2b-b2b2-b2b2-b2b2-b2b2b2b2b2b2', 'b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2', 'Roswell incident occurred on July 8 1947', 0, ${randomEmbeddingLiteral()});`,
@@ -551,12 +526,14 @@ describe('Spec 35 — Graph Step', () => {
 		// Check for POTENTIAL_CONTRADICTION edges
 		// Per spec: entities sharing the same canonical_id with different attribute values
 		// should be flagged.
-		const contradictionCount = runSql(`SELECT COUNT(*) FROM entity_edges WHERE edge_type = 'POTENTIAL_CONTRADICTION';`);
+		const contradictionCount = db.runSql(
+			`SELECT COUNT(*) FROM entity_edges WHERE edge_type = 'POTENTIAL_CONTRADICTION';`,
+		);
 		expect(Number.parseInt(contradictionCount, 10)).toBeGreaterThanOrEqual(1);
 
 		// Verify the contradiction references the conflicting attribute
 		if (Number.parseInt(contradictionCount, 10) > 0) {
-			const contradictionAttrs = runSql(
+			const contradictionAttrs = db.runSql(
 				`SELECT attributes::text FROM entity_edges WHERE edge_type = 'POTENTIAL_CONTRADICTION' LIMIT 1;`,
 			);
 			expect(contradictionAttrs).toMatch(/date/i);
@@ -565,7 +542,7 @@ describe('Spec 35 — Graph Step', () => {
 			// canonical entity. Both conflicting claim story IDs live in
 			// attributes.storyIdA / storyIdB. Lock this in so the encoding
 			// cannot drift without flagging the test.
-			const selfLoopRows = runSql(
+			const selfLoopRows = db.runSql(
 				`SELECT source_entity_id = target_entity_id FROM entity_edges WHERE edge_type = 'POTENTIAL_CONTRADICTION';`,
 			);
 			for (const row of selfLoopRows.split('\n').filter(Boolean)) {
@@ -592,17 +569,17 @@ describe('Spec 35 — Graph Step', () => {
 		if (!pgAvailable) return;
 
 		// Create an isolated source + story with status 'enriched' (not embedded)
-		runSql(
+		db.runSql(
 			`INSERT INTO sources (filename, file_hash, storage_path, page_count, status) ` +
 				`VALUES ('qa11-graph-test.pdf', 'qa11-graph-unique-hash', 'raw/qa11-graph-test.pdf', 1, 'enriched');`,
 		);
-		const sourceId = runSql(`SELECT id FROM sources WHERE file_hash = 'qa11-graph-unique-hash';`);
+		const sourceId = db.runSql(`SELECT id FROM sources WHERE file_hash = 'qa11-graph-unique-hash';`);
 
-		runSql(
+		db.runSql(
 			`INSERT INTO stories (source_id, title, gcs_markdown_uri, gcs_metadata_uri, status) ` +
 				`VALUES ('${sourceId}', 'test-invalid-graph-status', 'segments/test/dummy.md', 'segments/test/dummy.meta.json', 'enriched');`,
 		);
-		const storyId = runSql(
+		const storyId = db.runSql(
 			`SELECT id FROM stories WHERE source_id = '${sourceId}' AND title = 'test-invalid-graph-status' LIMIT 1;`,
 		);
 
@@ -613,7 +590,7 @@ describe('Spec 35 — Graph Step', () => {
 		expect(combined).toMatch(/GRAPH_INVALID_STATUS|invalid status|not embedded|cannot graph|must be.*embedded/i);
 
 		// Cleanup
-		runSql(
+		db.runSql(
 			`DELETE FROM chunks WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');` +
 				` DELETE FROM story_entities WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');` +
 				` DELETE FROM entity_edges WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');` +
@@ -642,23 +619,23 @@ describe('Spec 35 — Graph Step', () => {
 	 * the returned sourceId.
 	 */
 	function seedStoryWithNoRelationships(sourceId: string, storyId: string, entityIds: string[]): void {
-		runSql(
+		db.runSql(
 			`INSERT INTO sources (id, filename, file_hash, storage_path, page_count, status) ` +
 				`VALUES ('${sourceId}', 'qa13-cooccurrence.pdf', 'qa13-${sourceId}', 'raw/${sourceId}/original.pdf', 1, 'embedded');`,
 		);
-		runSql(
+		db.runSql(
 			`INSERT INTO stories (id, source_id, title, gcs_markdown_uri, gcs_metadata_uri, status) ` +
 				`VALUES ('${storyId}', '${sourceId}', 'qa13-story', 's/qa13.md', 's/qa13.meta.json', 'embedded');`,
 		);
 		const entityValues = entityIds.map((id, i) => `('${id}', 'Entity ${i}', 'person', '{}')`).join(', ');
-		runSql(`INSERT INTO entities (id, name, type, attributes) VALUES ${entityValues};`);
+		db.runSql(`INSERT INTO entities (id, name, type, attributes) VALUES ${entityValues};`);
 		const linkValues = entityIds.map((id) => `('${storyId}', '${id}', 0.9)`).join(', ');
-		runSql(`INSERT INTO story_entities (story_id, entity_id, confidence) VALUES ${linkValues};`);
+		db.runSql(`INSERT INTO story_entities (story_id, entity_id, confidence) VALUES ${linkValues};`);
 	}
 
 	function cleanupCooccurrenceFixture(sourceId: string, entityIds: string[]): void {
 		const idList = entityIds.map((id) => `'${id}'`).join(',');
-		runSql(
+		db.runSql(
 			`DELETE FROM entity_edges WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');` +
 				` DELETE FROM story_entities WHERE story_id IN (SELECT id FROM stories WHERE source_id = '${sourceId}');` +
 				(idList ? ` DELETE FROM entities WHERE id IN (${idList});` : '') +
@@ -699,7 +676,7 @@ describe('Spec 35 — Graph Step', () => {
 		const result = runCli(['graph', storyId], { timeout: 60_000 });
 		expect(result.exitCode).toBe(0);
 
-		const edgeCount = runSql(
+		const edgeCount = db.runSql(
 			`SELECT COUNT(*) FROM entity_edges WHERE story_id = '${storyId}' AND relationship = 'co_occurs_with';`,
 		);
 		expect(Number.parseInt(edgeCount, 10)).toBe(0);
@@ -730,7 +707,7 @@ describe('Spec 35 — Graph Step', () => {
 		});
 		expect(result.exitCode).toBe(0);
 
-		const edgeCount = runSql(
+		const edgeCount = db.runSql(
 			`SELECT COUNT(*) FROM entity_edges WHERE story_id = '${storyId}' AND relationship = 'co_occurs_with';`,
 		);
 		expect(Number.parseInt(edgeCount, 10)).toBe(expectedEdges);
@@ -814,7 +791,7 @@ describe('CLI Smoke Tests: graph', () => {
 	// ─── SMOKE-02: --force without story-id or --source gives error ───
 
 	it('SMOKE-02: mulder graph --force (no story-id, no --source) gives non-zero exit', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const { exitCode, stdout, stderr } = runCli(['graph', '--force']);
@@ -827,7 +804,7 @@ describe('CLI Smoke Tests: graph', () => {
 	// ─── SMOKE-03: invalid UUID as story-id ───
 
 	it('SMOKE-03: mulder graph with non-UUID story-id gives non-zero exit', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const { exitCode, stdout, stderr } = runCli(['graph', 'not-a-valid-uuid']);
@@ -850,7 +827,7 @@ describe('CLI Smoke Tests: graph', () => {
 	// ─── SMOKE-05: --source with --force is a valid combo ───
 
 	it('SMOKE-05: mulder graph --source <id> --force does not crash (valid combo)', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const fakeSourceId = '00000000-0000-0000-0000-000000000001';
@@ -879,7 +856,7 @@ describe('CLI Smoke Tests: graph', () => {
 	// ─── SMOKE-07: non-existent story-id gives meaningful error ───
 
 	it('SMOKE-07: mulder graph with non-existent UUID gives not-found error', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const fakeId = '00000000-0000-0000-0000-000000000000';
@@ -893,7 +870,7 @@ describe('CLI Smoke Tests: graph', () => {
 	// ─── SMOKE-08: --source with non-existent source-id does not crash ───
 
 	it('SMOKE-08: mulder graph --source <non-existent-id> does not crash', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const fakeSourceId = '00000000-0000-0000-0000-ffffffffffff';
@@ -923,7 +900,7 @@ describe('CLI Smoke Tests: graph', () => {
 	// ─── SMOKE-10: --force alone with story-id does not crash on nonexistent ───
 
 	it('SMOKE-10: mulder graph <nonexistent-id> --force gives error (not crash)', () => {
-		const pgAvailable = isPgAvailable();
+		const pgAvailable = db.isPgAvailable();
 		if (!pgAvailable) return;
 
 		const fakeId = '99999999-9999-9999-9999-999999999999';

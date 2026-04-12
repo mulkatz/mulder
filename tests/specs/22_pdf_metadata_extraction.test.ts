@@ -3,16 +3,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as db from '../lib/db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const FIXTURE_DIR = resolve(ROOT, 'fixtures/raw');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
-
-const PG_CONTAINER = 'mulder-pg-test';
-const PG_USER = 'mulder';
-const PG_PASSWORD = 'mulder';
 
 let tmpDir: string;
 let pgAvailable: boolean;
@@ -25,7 +22,7 @@ let pgAvailable: boolean;
  * and handles corrupt/encrypted PDFs gracefully.
  *
  * Tests interact through system boundaries only: CLI subprocess, SQL via
- * docker exec psql, and filesystem. Never imports from packages/ or apps/.
+ * the shared env-driven SQL helper, and filesystem. Never imports from packages/ or apps/.
  */
 
 // ---------------------------------------------------------------------------
@@ -41,7 +38,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 30000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -50,32 +47,8 @@ function runCli(
 	};
 }
 
-function runSql(sql: string): string {
-	const result = spawnSync(
-		'docker',
-		['exec', PG_CONTAINER, 'psql', '-U', PG_USER, '-d', 'mulder', '-t', '-A', '-c', sql],
-		{ encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] },
-	);
-	if (result.status !== 0) {
-		throw new Error(`psql failed (exit ${result.status}): ${result.stderr}`);
-	}
-	return (result.stdout ?? '').trim();
-}
-
-function isPgAvailable(): boolean {
-	try {
-		const result = spawnSync('docker', ['exec', PG_CONTAINER, 'pg_isready', '-U', PG_USER], {
-			encoding: 'utf-8',
-			timeout: 5000,
-		});
-		return result.status === 0;
-	} catch {
-		return false;
-	}
-}
-
 function cleanSourceData(): void {
-	runSql('DELETE FROM source_steps; DELETE FROM sources;');
+	db.runSql('DELETE FROM source_steps; DELETE FROM sources;');
 }
 
 function writeTestConfig(overrides?: { max_pages?: number }): string {
@@ -171,7 +144,7 @@ function createMinimalPdf(pageCount: number): Buffer {
 
 beforeAll(() => {
 	tmpDir = mkdtempSync(join(tmpdir(), 'mulder-qa-44-'));
-	pgAvailable = isPgAvailable();
+	pgAvailable = db.isPgAvailable();
 	if (pgAvailable) {
 		// Ensure migrations are applied — the schema may have been destroyed by
 		// other specs (e.g., spec 12's docker compose down -v) during the full suite.
@@ -245,7 +218,7 @@ describe('Issue #44: Lightweight PDF Metadata Extraction', () => {
 		expect(result.exitCode).toBe(0);
 
 		// Query the metadata JSONB column
-		const metadataRaw = runSql("SELECT metadata::text FROM sources WHERE filename = 'native-text-sample.pdf';");
+		const metadataRaw = db.runSql("SELECT metadata::text FROM sources WHERE filename = 'native-text-sample.pdf';");
 		expect(metadataRaw).not.toBe('');
 
 		const metadata = JSON.parse(metadataRaw);
