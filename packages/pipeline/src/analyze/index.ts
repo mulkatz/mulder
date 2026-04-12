@@ -710,7 +710,9 @@ export async function execute(
 			config.thresholds.temporal_clustering,
 		);
 
-		const persistedCount = (await replaceSpatioTemporalClustersSnapshot(pool, computation.snapshotRows)).length;
+		const persistedCount = computation.nothingToAnalyze
+			? 0
+			: (await replaceSpatioTemporalClustersSnapshot(pool, computation.snapshotRows)).length;
 
 		const data = makeSpatioTemporalData(computation, persistedCount);
 		const durationMs = Math.round(performance.now() - startTime);
