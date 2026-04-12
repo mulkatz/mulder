@@ -317,27 +317,35 @@ describe('Spec 62 — Source Reliability Scoring', () => {
 			env: { MULDER_CONFIG: enabledConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('one selector at a time');
+		expect(result.stderr).toContain('one selector or --full');
 	});
 
-	it('CLI-04: --reliability --full exits non-zero because --full belongs to M6-G7', () => {
+	it('CLI-04: --reliability --full exits non-zero because full mode and single-pass selectors are mutually exclusive', () => {
 		const result = runCli(['analyze', '--reliability', '--full'], {
 			env: { MULDER_CONFIG: enabledConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('M6-G7');
+		expect(result.stderr).toContain('--full cannot be combined');
 	});
 
-	it('CLI-05: no args exits non-zero and asks for an analysis selector', () => {
+	it('CLI-05: no args now runs full analyze mode by default', () => {
+		if (!pgAvailable) return;
+		seedConnectedFixture();
+
 		const result = runCli(['analyze'], { env: { MULDER_CONFIG: enabledConfigPath } });
-		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('--contradictions');
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain('reliability');
+		expect(result.stderr).toContain('Analyze complete');
 	});
 
-	it('CLI-06: --full exits non-zero because the full Analyze orchestrator is not implemented yet', () => {
+	it('CLI-06: --full runs the full analyze sequence explicitly', () => {
+		if (!pgAvailable) return;
+		seedConnectedFixture();
+
 		const result = runCli(['analyze', '--full'], { env: { MULDER_CONFIG: enabledConfigPath } });
-		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('M6-G7');
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain('contradictions');
+		expect(result.stderr).toContain('Analyze complete');
 	});
 
 	it('CLI-07: --evidence-chains exits non-zero when no thesis input is configured', () => {
@@ -369,7 +377,7 @@ describe('CLI Smoke Tests: analyze reliability', () => {
 			env: { MULDER_CONFIG: enabledConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('one selector at a time');
+		expect(result.stderr).toContain('one selector or --full');
 	});
 
 	it('SMOKE-03: mulder analyze --reliability --spatio-temporal exits non-zero with selector validation', () => {
@@ -377,6 +385,6 @@ describe('CLI Smoke Tests: analyze reliability', () => {
 			env: { MULDER_CONFIG: enabledConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('one selector at a time');
+		expect(result.stderr).toContain('one selector or --full');
 	});
 });

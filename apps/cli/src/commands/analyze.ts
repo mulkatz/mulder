@@ -10,7 +10,7 @@
  */
 
 import { closeAllPools, createLogger, createServiceRegistry, getWorkerPool, loadConfig } from '@mulder/core';
-import type { AnalyzeResult } from '@mulder/pipeline';
+import type { AnalyzePassResult, AnalyzeResult } from '@mulder/pipeline';
 import { executeAnalyze } from '@mulder/pipeline';
 import type { Command } from 'commander';
 import { withErrorHandler } from '../lib/errors.js';
@@ -25,17 +25,7 @@ interface AnalyzeOptions {
 	thesis?: string[];
 }
 
-function hasUnsupportedSelector(options: AnalyzeOptions): boolean {
-	return Boolean(options.full);
-}
-
-function printUnsupportedSelectorMessage(options: AnalyzeOptions): void {
-	if (options.full) {
-		printError('--full is not implemented yet — it belongs to M6-G7');
-	}
-}
-
-function countImplementedSelectors(options: AnalyzeOptions): number {
+function countExplicitSelectors(options: AnalyzeOptions): number {
 	return (
 		Number(Boolean(options.contradictions)) +
 		Number(Boolean(options.reliability)) +
@@ -50,6 +40,25 @@ function normalizeTheses(values?: string[]): string[] {
 	}
 
 	return values.filter((value) => value.trim().length > 0);
+}
+
+function usesFullMode(options: AnalyzeOptions): boolean {
+	return Boolean(options.full) || countExplicitSelectors(options) === 0;
+}
+
+function printFullPassTable(result: AnalyzeResult): void {
+	if (result.data.mode !== 'full' || result.data.passes.length === 0) {
+		return;
+	}
+
+	const header = `${'Pass'.padEnd(18)}  ${'Status'.padEnd(8)}  Summary`;
+	const separator = '-'.repeat(header.length);
+	process.stdout.write(`${header}\n`);
+	process.stdout.write(`${separator}\n`);
+
+	for (const pass of result.data.passes) {
+		process.stdout.write(`${pass.pass.padEnd(18)}  ${pass.status.padEnd(8)}  ${pass.summary}\n`);
+	}
 }
 
 function printEvidenceChainsTable(result: AnalyzeResult): void {
@@ -138,6 +147,141 @@ function printSpatioTemporalTable(result: AnalyzeResult): void {
 	}
 }
 
+function printAnalyzeErrors(result: AnalyzeResult): void {
+	for (const error of result.errors) {
+		printError(`[${error.code}] ${error.message}`);
+	}
+}
+
+function summarizeFullPasses(passes: AnalyzePassResult[]): string {
+	const successCount = passes.filter((pass) => pass.status === 'success').length;
+	const partialCount = passes.filter((pass) => pass.status === 'partial').length;
+	const failedCount = passes.filter((pass) => pass.status === 'failed').length;
+	const skippedCount = passes.filter((pass) => pass.status === 'skipped').length;
+
+	return `${successCount} successful, ${partialCount} partial, ${failedCount} failed, ${skippedCount} skipped`;
+}
+
+function printFullAnalyzeResult(result: AnalyzeResult): void {
+	if (result.data.mode !== 'full') {
+		return;
+	}
+
+	printFullPassTable(result);
+	printAnalyzeErrors(result);
+
+	const summary = `${summarizeFullPasses(result.data.passes)} (${result.metadata.duration_ms}ms)`;
+
+	if (result.status === 'failed') {
+		printError(`Analyze failed: ${summary}`);
+		process.exit(1);
+		return;
+	}
+
+	if (result.status === 'partial') {
+		process.stderr.write(`Analyze partial: ${summary}\n`);
+		return;
+	}
+
+	printSuccess(`Analyze complete: ${summary}`);
+}
+
+function printSingleAnalyzeResult(result: AnalyzeResult): void {
+	printAnalyzeErrors(result);
+
+	if (result.data.mode === 'contradictions') {
+		if (result.data.pendingCount === 0) {
+			printSuccess(`Analyze complete: no pending contradiction edges found (${result.metadata.duration_ms}ms)`);
+			return;
+		}
+
+		const summary = `${result.data.processedCount} processed, ${result.data.confirmedCount} confirmed, ${result.data.dismissedCount} dismissed, ${result.data.failedCount} failed (${result.metadata.duration_ms}ms)`;
+
+		if (result.status === 'failed') {
+			printError(`Analyze failed: ${summary}`);
+			process.exit(1);
+		} else if (result.status === 'partial') {
+			process.stderr.write(`Analyze partial: ${summary}\n`);
+		} else {
+			printSuccess(`Analyze complete: ${summary}`);
+		}
+		return;
+	}
+
+	if (result.data.mode === 'reliability') {
+		if (result.data.outcomes.length === 0) {
+			printSuccess(`Analyze complete: no graph-connected sources found (${result.metadata.duration_ms}ms)`);
+			return;
+		}
+
+		if (result.data.belowThreshold) {
+			process.stderr.write(
+				`Analyze warning: corpus below meaningful reliability threshold (${result.data.sourceCount}/${result.data.threshold} graph-connected sources)\n`,
+			);
+		}
+
+		const summary = `${result.data.scoredCount} scored, ${result.data.sourceCount} graph-connected sources (${result.metadata.duration_ms}ms)`;
+
+		if (result.status === 'failed') {
+			printError(`Analyze failed: ${summary}`);
+			process.exit(1);
+		} else if (result.status === 'partial') {
+			process.stderr.write(`Analyze partial: ${summary}\n`);
+		} else {
+			printSuccess(`Analyze complete: ${summary}`);
+		}
+		return;
+	}
+
+	if (result.data.mode === 'spatio-temporal') {
+		if (result.data.warning) {
+			process.stderr.write(`Analyze warning: ${result.data.warning}\n`);
+		}
+
+		if (result.data.nothingToAnalyze) {
+			printSuccess(`Analyze complete: no clusterable events found (${result.metadata.duration_ms}ms)`);
+			return;
+		}
+
+		if (result.data.persistedCount === 0 && !result.data.belowThreshold) {
+			printSuccess(`Analyze complete: no clusters found (${result.metadata.duration_ms}ms)`);
+			return;
+		}
+
+		const summary = `${result.data.persistedCount} clusters persisted (${result.data.temporalClusterCount} temporal, ${result.data.spatialClusterCount} spatial, ${result.data.spatioTemporalClusterCount} spatio-temporal) (${result.metadata.duration_ms}ms)`;
+
+		if (result.status === 'failed') {
+			printError(`Analyze failed: ${summary}`);
+			process.exit(1);
+		} else if (result.status === 'partial') {
+			process.stderr.write(`Analyze partial: ${summary}\n`);
+		} else {
+			printSuccess(`Analyze complete: ${summary}`);
+		}
+		return;
+	}
+
+	if (result.data.mode !== 'evidence-chains') {
+		return;
+	}
+
+	if (result.data.supportingCount === 0 && result.data.contradictionCount === 0 && result.data.failedCount === 0) {
+		printSuccess(`Analyze complete: no evidence chains found (${result.metadata.duration_ms}ms)`);
+		return;
+	}
+
+	const summary = `${result.data.successCount} successful theses, ${result.data.failedCount} failed, ${result.data.supportingCount} supporting, ${result.data.contradictionCount} contradiction-backed (${result.metadata.duration_ms}ms)`;
+
+	if (result.status === 'failed') {
+		printError(`Analyze failed: ${summary}`);
+		process.exit(1);
+	} else if (result.status === 'partial') {
+		process.stderr.write(`Analyze partial: ${summary}\n`);
+	} else {
+		printSuccess(`Analyze complete: ${summary}`);
+	}
+}
+
 export function registerAnalyzeCommands(program: Command): void {
 	program
 		.command('analyze')
@@ -154,39 +298,34 @@ export function registerAnalyzeCommands(program: Command): void {
 			[],
 		)
 		.option('--spatio-temporal', 'compute spatio-temporal clusters')
-		.option('--full', 'run the full analyze orchestrator (not yet implemented)')
+		.option('--full', 'run all enabled analyze passes in sequence (default)')
 		.action(
 			withErrorHandler(async (options: AnalyzeOptions) => {
 				const rawTheses = normalizeTheses(options.thesis);
+				const fullMode = usesFullMode(options);
 
 				if (options.thesis && options.thesis.length > 0 && rawTheses.length === 0) {
-					printError('--thesis requires evidence-chain analysis and cannot be empty');
+					printError('--thesis requires at least one non-empty value');
 					process.exit(1);
 					return;
 				}
 
-				if (rawTheses.length > 0 && !options.evidenceChains) {
-					printError('--thesis can only be used with --evidence-chains');
+				if (rawTheses.length > 0 && !(options.evidenceChains || fullMode)) {
+					printError('--thesis can only be used with --evidence-chains or full analyze mode');
 					process.exit(1);
 					return;
 				}
 
-				const implementedSelectorCount = countImplementedSelectors(options);
+				const explicitSelectorCount = countExplicitSelectors(options);
 
-				if (implementedSelectorCount === 0 && !hasUnsupportedSelector(options)) {
-					printError('Provide an analysis selector such as --contradictions');
+				if (explicitSelectorCount > 1) {
+					printError('Running multiple analyze selectors together is not supported — use one selector or --full');
 					process.exit(1);
 					return;
 				}
 
-				if (implementedSelectorCount > 1) {
-					printError('Running multiple analyze selectors together is not implemented yet — use one selector at a time');
-					process.exit(1);
-					return;
-				}
-
-				if (hasUnsupportedSelector(options)) {
-					printUnsupportedSelectorMessage(options);
+				if (options.full && explicitSelectorCount > 0) {
+					printError('--full cannot be combined with explicit single-pass selectors');
 					process.exit(1);
 					return;
 				}
@@ -212,6 +351,7 @@ export function registerAnalyzeCommands(program: Command): void {
 				try {
 					const result = await executeAnalyze(
 						{
+							full: fullMode,
 							contradictions: options.contradictions ?? false,
 							reliability: options.reliability ?? false,
 							evidenceChains: options.evidenceChains ?? false,
@@ -230,97 +370,14 @@ export function registerAnalyzeCommands(program: Command): void {
 						printReliabilityTable(result);
 					} else if (result.data.mode === 'spatio-temporal') {
 						printSpatioTemporalTable(result);
-					} else {
+					} else if (result.data.mode === 'evidence-chains') {
 						printEvidenceChainsTable(result);
 					}
 
-					for (const error of result.errors) {
-						printError(`[${error.code}] ${error.message}`);
-					}
-
-					if (result.data.mode === 'contradictions') {
-						if (result.data.pendingCount === 0) {
-							printSuccess(`Analyze complete: no pending contradiction edges found (${result.metadata.duration_ms}ms)`);
-							return;
-						}
-
-						const summary = `${result.data.processedCount} processed, ${result.data.confirmedCount} confirmed, ${result.data.dismissedCount} dismissed, ${result.data.failedCount} failed (${result.metadata.duration_ms}ms)`;
-
-						if (result.status === 'failed') {
-							printError(`Analyze failed: ${summary}`);
-							process.exit(1);
-						} else if (result.status === 'partial') {
-							process.stderr.write(`Analyze partial: ${summary}\n`);
-						} else {
-							printSuccess(`Analyze complete: ${summary}`);
-						}
-					} else if (result.data.mode === 'reliability') {
-						if (result.data.outcomes.length === 0) {
-							printSuccess(`Analyze complete: no graph-connected sources found (${result.metadata.duration_ms}ms)`);
-							return;
-						}
-
-						if (result.data.belowThreshold) {
-							process.stderr.write(
-								`Analyze warning: corpus below meaningful reliability threshold (${result.data.sourceCount}/${result.data.threshold} graph-connected sources)\n`,
-							);
-						}
-
-						const summary = `${result.data.scoredCount} scored, ${result.data.sourceCount} graph-connected sources (${result.metadata.duration_ms}ms)`;
-
-						if (result.status === 'failed') {
-							printError(`Analyze failed: ${summary}`);
-							process.exit(1);
-						} else if (result.status === 'partial') {
-							process.stderr.write(`Analyze partial: ${summary}\n`);
-						} else {
-							printSuccess(`Analyze complete: ${summary}`);
-						}
-					} else if (result.data.mode === 'spatio-temporal') {
-						if (result.data.warning) {
-							process.stderr.write(`Analyze warning: ${result.data.warning}\n`);
-						}
-
-						if (result.data.nothingToAnalyze) {
-							printSuccess(`Analyze complete: no clusterable events found (${result.metadata.duration_ms}ms)`);
-							return;
-						}
-
-						if (result.data.persistedCount === 0 && !result.data.belowThreshold) {
-							printSuccess(`Analyze complete: no clusters found (${result.metadata.duration_ms}ms)`);
-							return;
-						}
-
-						const summary = `${result.data.persistedCount} clusters persisted (${result.data.temporalClusterCount} temporal, ${result.data.spatialClusterCount} spatial, ${result.data.spatioTemporalClusterCount} spatio-temporal) (${result.metadata.duration_ms}ms)`;
-
-						if (result.status === 'failed') {
-							printError(`Analyze failed: ${summary}`);
-							process.exit(1);
-						} else if (result.status === 'partial') {
-							process.stderr.write(`Analyze partial: ${summary}\n`);
-						} else {
-							printSuccess(`Analyze complete: ${summary}`);
-						}
+					if (result.data.mode === 'full') {
+						printFullAnalyzeResult(result);
 					} else {
-						if (
-							result.data.supportingCount === 0 &&
-							result.data.contradictionCount === 0 &&
-							result.data.failedCount === 0
-						) {
-							printSuccess(`Analyze complete: no evidence chains found (${result.metadata.duration_ms}ms)`);
-							return;
-						}
-
-						const summary = `${result.data.successCount} successful theses, ${result.data.failedCount} failed, ${result.data.supportingCount} supporting, ${result.data.contradictionCount} contradiction-backed (${result.metadata.duration_ms}ms)`;
-
-						if (result.status === 'failed') {
-							printError(`Analyze failed: ${summary}`);
-							process.exit(1);
-						} else if (result.status === 'partial') {
-							process.stderr.write(`Analyze partial: ${summary}\n`);
-						} else {
-							printSuccess(`Analyze complete: ${summary}`);
-						}
+						printSingleAnalyzeResult(result);
 					}
 				} finally {
 					await closeAllPools();

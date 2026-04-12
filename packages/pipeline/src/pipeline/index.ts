@@ -31,6 +31,7 @@ import {
 	upsertPipelineRunSource,
 } from '@mulder/core';
 import type pg from 'pg';
+import { execute as executeAnalyze } from '../analyze/index.js';
 import { execute as executeEmbed } from '../embed/index.js';
 import { execute as executeEnrich } from '../enrich/index.js';
 import { execute as executeExtract } from '../extract/index.js';
@@ -38,6 +39,7 @@ import { execute as executeGraph } from '../graph/index.js';
 import { execute as executeIngest } from '../ingest/index.js';
 import { execute as executeSegment } from '../segment/index.js';
 import type {
+	PipelineGlobalAnalysisOutcome,
 	PipelineRunInput,
 	PipelineRunOptions,
 	PipelineRunResult,
@@ -47,6 +49,7 @@ import type {
 
 // Re-export types for the package barrel.
 export type {
+	PipelineGlobalAnalysisOutcome,
 	PipelineRunInput,
 	PipelineRunOptions,
 	PipelineRunResult,
@@ -248,6 +251,22 @@ function computePlannedSteps(options: PipelineRunOptions): PipelineStepName[] {
 	}
 
 	return STEP_ORDER.slice(fromIdx, upToIdx + 1);
+}
+
+function createSkippedGlobalAnalysis(summary: string): PipelineGlobalAnalysisOutcome {
+	return {
+		status: 'skipped',
+		summary,
+		result: null,
+	};
+}
+
+function summarizeGlobalAnalyzeResult(result: Awaited<ReturnType<typeof executeAnalyze>>): string {
+	if (result.data.mode === 'full') {
+		return `${result.data.successCount} successful, ${result.data.partialCount} partial, ${result.data.failedCount} failed, ${result.data.skippedCount} skipped`;
+	}
+
+	return result.status;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -572,6 +591,11 @@ export async function execute(
 
 		log.info({ plannedSteps, dryRunSourceCount }, 'pipeline.run.dry_run');
 
+		const dryRunAnalysis =
+			config.analysis.enabled && plannedSteps.includes('graph') && options.upTo === undefined
+				? createSkippedGlobalAnalysis('dry run — global analyze would run after graph')
+				: createSkippedGlobalAnalysis('dry run — global analyze would not run');
+
 		return {
 			status: 'success',
 			runId: '',
@@ -584,6 +608,7 @@ export async function execute(
 				failedSources: 0,
 				skippedSources: dryRunSourceCount,
 				sources: [],
+				analysis: dryRunAnalysis,
 			},
 			errors: [],
 			metadata: {
@@ -675,6 +700,25 @@ export async function execute(
 			}
 		}
 
+		let globalAnalysis: PipelineGlobalAnalysisOutcome;
+		if (options.upTo !== undefined) {
+			globalAnalysis = createSkippedGlobalAnalysis('pipeline stopped before global analyze');
+		} else if (!plannedSteps.includes('graph')) {
+			globalAnalysis = createSkippedGlobalAnalysis('planned steps stop before graph');
+		} else if (!config.analysis.enabled) {
+			globalAnalysis = createSkippedGlobalAnalysis('analysis disabled by config');
+		} else if (completedCount === 0) {
+			globalAnalysis = createSkippedGlobalAnalysis('no sources reached graph successfully');
+		} else {
+			const analyzeResult = await executeAnalyze({ full: true }, config, services, pool, runLog);
+			errors.push(...analyzeResult.errors);
+			globalAnalysis = {
+				status: analyzeResult.status,
+				summary: summarizeGlobalAnalyzeResult(analyzeResult),
+				result: analyzeResult,
+			};
+		}
+
 		// 6. Finalisation (Phase 3).
 		let runStatus: 'success' | 'partial' | 'failed';
 		if (sources.length === 0) {
@@ -684,6 +728,12 @@ export async function execute(
 		} else if (completedCount === 0) {
 			runStatus = 'failed';
 		} else {
+			runStatus = 'partial';
+		}
+
+		if (globalAnalysis.status === 'failed') {
+			runStatus = 'failed';
+		} else if (globalAnalysis.status === 'partial' && runStatus !== 'failed') {
 			runStatus = 'partial';
 		}
 
@@ -698,6 +748,7 @@ export async function execute(
 				totalSources: sources.length,
 				completedSources: completedCount,
 				failedSources: failedCount,
+				globalAnalysisStatus: globalAnalysis.status,
 			},
 			'pipeline.run.finish',
 		);
@@ -714,12 +765,13 @@ export async function execute(
 				failedSources: failedCount,
 				skippedSources: 0,
 				sources: sourceOutcomes,
+				analysis: globalAnalysis,
 			},
 			errors,
 			metadata: {
 				duration_ms: durationMs,
-				items_processed: completedCount,
-				items_skipped: 0,
+				items_processed: completedCount + (globalAnalysis.result?.metadata.items_processed ?? 0),
+				items_skipped: globalAnalysis.result?.metadata.items_skipped ?? 0,
 			},
 		};
 	} catch (cause) {

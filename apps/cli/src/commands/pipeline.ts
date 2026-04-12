@@ -69,7 +69,7 @@ function shortId(id: string): string {
 function registerRunSubcommand(parent: Command): void {
 	parent
 		.command('run')
-		.description('Run the full pipeline (ingest → extract → segment → enrich → embed → graph)')
+		.description('Run the full pipeline (ingest → extract → segment → enrich → embed → graph → [analyze])')
 		.argument('[path]', 'Path to a PDF file or directory')
 		.option('--up-to <step>', `Stop after this step (one of: ${RUN_FLAG_STEPS.join('|')})`)
 		.option('--from <step>', `Resume from this step (one of: ${RUN_FLAG_STEPS.join('|')})`)
@@ -81,6 +81,7 @@ function registerRunSubcommand(parent: Command): void {
 Examples:
   $ mulder pipeline run ./pdfs/                          # Full pipeline on every PDF in a directory
   $ mulder pipeline run paper.pdf --up-to enrich         # Stop after entity extraction
+  $ mulder pipeline run paper.pdf --up-to graph          # Stop before global analyze
   $ mulder pipeline run paper.pdf --from embed           # Resume after enrich on an existing source`,
 		)
 		.action(
@@ -155,6 +156,7 @@ Examples:
 					if (options.dryRun) {
 						process.stdout.write(`Planned steps: ${result.data.plannedSteps.join(' → ')}\n`);
 						process.stdout.write(`Sources to process: ${result.data.totalSources}\n`);
+						process.stdout.write(`Global analyze: ${result.data.analysis.summary}\n`);
 						printSuccess('Dry run complete (no changes made)');
 						return;
 					}
@@ -179,6 +181,8 @@ Examples:
 							process.stdout.write(`... ${result.data.sources.length - rowLimit} more rows truncated\n`);
 						}
 					}
+
+					process.stdout.write(`Global analyze: ${result.data.analysis.status} — ${result.data.analysis.summary}\n`);
 
 					const summary = `${result.data.totalSources} sources, ${result.data.completedSources} completed, ${result.data.failedSources} failed (${result.metadata.duration_ms}ms)`;
 

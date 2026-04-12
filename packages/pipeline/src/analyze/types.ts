@@ -8,12 +8,17 @@
 import type { StepError } from '@mulder/core';
 
 export interface AnalyzeInput {
+	full?: boolean;
 	contradictions?: boolean;
 	reliability?: boolean;
 	evidenceChains?: boolean;
 	spatioTemporal?: boolean;
 	theses?: string[];
 }
+
+export type AnalyzePassName = 'contradictions' | 'reliability' | 'evidence-chains' | 'spatio-temporal';
+
+export type AnalyzePassStatus = 'success' | 'partial' | 'failed' | 'skipped';
 
 export type ContradictionVerdict = 'confirmed' | 'dismissed';
 
@@ -122,11 +127,38 @@ export interface SpatioTemporalAnalyzeData {
 	warning: string | null;
 }
 
-export type AnalyzeData =
+export type SingleAnalyzeData =
 	| ContradictionAnalyzeData
 	| ReliabilityAnalyzeData
 	| EvidenceChainsAnalyzeData
 	| SpatioTemporalAnalyzeData;
+
+export interface AnalyzePassResult {
+	pass: AnalyzePassName;
+	status: AnalyzePassStatus;
+	summary: string;
+	data: SingleAnalyzeData | null;
+	errors: StepError[];
+	metadata: {
+		duration_ms: number;
+		items_processed: number;
+		items_skipped: number;
+		items_cached: number;
+	};
+}
+
+export interface FullAnalyzeData {
+	mode: 'full';
+	passCount: number;
+	attemptedCount: number;
+	successCount: number;
+	partialCount: number;
+	failedCount: number;
+	skippedCount: number;
+	passes: AnalyzePassResult[];
+}
+
+export type AnalyzeData = SingleAnalyzeData | FullAnalyzeData;
 
 export interface AnalyzeResult {
 	status: 'success' | 'partial' | 'failed';

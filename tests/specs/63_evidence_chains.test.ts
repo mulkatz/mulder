@@ -425,7 +425,7 @@ describe('Spec 63 — Evidence Chains', () => {
 			env: { MULDER_CONFIG: enabledEmptyThesisConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('one selector at a time');
+		expect(result.stderr).toContain('one selector or --full');
 	});
 
 	it('CLI-06: `--evidence-chains --contradictions` exits non-zero because multi-selector analyze is not implemented yet', () => {
@@ -433,15 +433,15 @@ describe('Spec 63 — Evidence Chains', () => {
 			env: { MULDER_CONFIG: enabledEmptyThesisConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('one selector at a time');
+		expect(result.stderr).toContain('one selector or --full');
 	});
 
-	it('CLI-07: `--evidence-chains --full` exits non-zero because `--full` belongs to M6-G7', () => {
+	it('CLI-07: `--evidence-chains --full` exits non-zero because full mode and single-pass selectors are mutually exclusive', () => {
 		const result = runCli(['analyze', '--evidence-chains', '--full'], {
 			env: { MULDER_CONFIG: enabledEmptyThesisConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('M6-G7');
+		expect(result.stderr).toContain('--full cannot be combined');
 	});
 
 	it('CLI-08: `--evidence-chains --thesis ""` exits non-zero with thesis validation feedback', () => {
@@ -449,13 +449,18 @@ describe('Spec 63 — Evidence Chains', () => {
 			env: { MULDER_CONFIG: enabledEmptyThesisConfigPath },
 		});
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('cannot be empty');
+		expect(result.stderr).toContain('at least one non-empty value');
 	});
 
-	it('CLI-09: `mulder analyze` with no args exits non-zero and asks for an analysis selector', () => {
+	it('CLI-09: `mulder analyze` with no args now runs full analyze mode and skips thesis-less evidence chains', () => {
+		if (!pgAvailable) return;
+		seedSupportFixture();
+
 		const result = runCli(['analyze'], { env: { MULDER_CONFIG: enabledEmptyThesisConfigPath } });
-		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('analysis selector');
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain('evidence-chains');
+		expect(result.stdout).toContain('skipped');
+		expect(result.stderr).toContain('Analyze complete');
 	});
 
 	it('CLI-10: `--spatio-temporal` now succeeds as a no-op when no clusterable events exist', () => {

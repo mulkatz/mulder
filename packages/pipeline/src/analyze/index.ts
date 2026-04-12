@@ -44,13 +44,17 @@ import { computeSourceReliability } from './reliability.js';
 import { computeSpatioTemporalClusters } from './spatio-temporal.js';
 import type {
 	AnalyzeInput,
+	AnalyzePassName,
+	AnalyzePassResult,
 	AnalyzeResult,
 	ContradictionAnalyzeData,
 	ContradictionResolutionOutcome,
 	ContradictionResolutionResponse,
 	EvidenceChainsAnalyzeData,
 	EvidenceChainThesisOutcome,
+	FullAnalyzeData,
 	ReliabilityAnalyzeData,
+	SingleAnalyzeData,
 	SourceReliabilityOutcome,
 	SpatioTemporalAnalyzeData,
 } from './types.js';
@@ -58,6 +62,8 @@ import type {
 export type {
 	AnalyzeData,
 	AnalyzeInput,
+	AnalyzePassName,
+	AnalyzePassResult,
 	AnalyzeResult,
 	ContradictionAnalyzeData,
 	ContradictionResolutionOutcome,
@@ -65,7 +71,9 @@ export type {
 	ContradictionVerdict,
 	EvidenceChainsAnalyzeData,
 	EvidenceChainThesisOutcome,
+	FullAnalyzeData,
 	ReliabilityAnalyzeData,
+	SingleAnalyzeData,
 	SourceReliabilityOutcome,
 	SpatioTemporalAnalyzeData,
 	SpatioTemporalCluster,
@@ -466,287 +474,384 @@ function makeSpatioTemporalData(
 	};
 }
 
-export async function execute(
-	input: AnalyzeInput,
-	config: MulderConfig,
-	services: Services,
-	pool: pg.Pool | undefined,
-	logger: Logger,
-): Promise<AnalyzeResult> {
-	const log = createChildLogger(logger, {
-		step: STEP_NAME,
-		contradictions: input.contradictions ?? false,
-		reliability: input.reliability ?? false,
-		evidenceChains: input.evidenceChains ?? false,
-		spatioTemporal: input.spatioTemporal ?? false,
-	});
-	const startTime = performance.now();
+const FULL_PASS_ORDER: readonly AnalyzePassName[] = [
+	'contradictions',
+	'reliability',
+	'evidence-chains',
+	'spatio-temporal',
+] as const;
 
-	if (!pool) {
-		throw new AnalyzeError('Database pool is required for analyze step', ANALYZE_ERROR_CODES.ANALYZE_WRITE_FAILED);
-	}
-
-	const hasRawThesisOverrides = Array.isArray(input.theses) && input.theses.length > 0;
-	const thesisOverrides = normalizeThesisList(input.theses);
-	if (hasRawThesisOverrides && thesisOverrides.length === 0) {
-		throw new AnalyzeError(
-			'At least one non-empty thesis override is required',
-			ANALYZE_ERROR_CODES.ANALYZE_THESIS_INPUT_MISSING,
-			{
-				context: { thesisCount: input.theses?.length ?? 0 },
-			},
-		);
-	}
-
-	if (hasRawThesisOverrides && !input.evidenceChains) {
-		throw new AnalyzeError(
-			'The --thesis override can only be used with evidence-chain analysis',
-			ANALYZE_ERROR_CODES.ANALYZE_VALIDATION_FAILED,
-			{
-				context: { thesisCount: thesisOverrides.length },
-			},
-		);
-	}
-
-	const selectedModes = [
+function getSelectedModes(input: AnalyzeInput): AnalyzePassName[] {
+	return [
 		input.contradictions ? 'contradictions' : null,
 		input.reliability ? 'reliability' : null,
 		input.evidenceChains ? 'evidence-chains' : null,
 		input.spatioTemporal ? 'spatio-temporal' : null,
-	].filter(
-		(value): value is 'contradictions' | 'reliability' | 'evidence-chains' | 'spatio-temporal' => value !== null,
+	].filter((value): value is AnalyzePassName => value !== null);
+}
+
+function summarizeAnalyzeData(data: SingleAnalyzeData): string {
+	switch (data.mode) {
+		case 'contradictions':
+			return data.pendingCount === 0
+				? 'no pending contradiction edges'
+				: `${data.processedCount} processed, ${data.confirmedCount} confirmed, ${data.dismissedCount} dismissed, ${data.failedCount} failed`;
+		case 'reliability':
+			return data.outcomes.length === 0
+				? 'no graph-connected sources found'
+				: `${data.scoredCount} scored, ${data.sourceCount} graph-connected sources`;
+		case 'evidence-chains':
+			return data.supportingCount === 0 && data.contradictionCount === 0 && data.failedCount === 0
+				? 'no evidence chains found'
+				: `${data.successCount} successful theses, ${data.failedCount} failed, ${data.supportingCount} supporting, ${data.contradictionCount} contradiction-backed`;
+		case 'spatio-temporal':
+			if (data.nothingToAnalyze) {
+				return 'no clusterable events found';
+			}
+			if (data.persistedCount === 0 && !data.belowThreshold) {
+				return 'no clusters found';
+			}
+			if (data.belowThreshold) {
+				return data.warning ?? `insufficient event density (${data.eventCount}/${data.threshold})`;
+			}
+			return `${data.persistedCount} clusters persisted (${data.temporalClusterCount} temporal, ${data.spatialClusterCount} spatial, ${data.spatioTemporalClusterCount} spatio-temporal)`;
+	}
+}
+
+function getPassMetadataTotals(passes: AnalyzePassResult[]): AnalyzeResult['metadata'] {
+	return {
+		duration_ms: passes.reduce((total, pass) => total + pass.metadata.duration_ms, 0),
+		items_processed: passes.reduce((total, pass) => total + pass.metadata.items_processed, 0),
+		items_skipped: passes.reduce((total, pass) => total + pass.metadata.items_skipped, 0),
+		items_cached: passes.reduce((total, pass) => total + pass.metadata.items_cached, 0),
+	};
+}
+
+function createSkippedPassResult(pass: AnalyzePassName, summary: string): AnalyzePassResult {
+	return {
+		pass,
+		status: 'skipped',
+		summary,
+		data: null,
+		errors: [],
+		metadata: {
+			duration_ms: 0,
+			items_processed: 0,
+			items_skipped: 1,
+			items_cached: 0,
+		},
+	};
+}
+
+function createFailedPassResult(pass: AnalyzePassName, error: AnalyzeError): AnalyzePassResult {
+	return {
+		pass,
+		status: 'failed',
+		summary: error.message,
+		data: null,
+		errors: [toStepError(error, pass)],
+		metadata: {
+			duration_ms: 0,
+			items_processed: 0,
+			items_skipped: 0,
+			items_cached: 0,
+		},
+	};
+}
+
+function toAnalyzePassResult(pass: AnalyzePassName, result: AnalyzeResult): AnalyzePassResult {
+	if (result.data.mode === 'full') {
+		throw new AnalyzeError(
+			'Full analyze results cannot be nested inside full analyze pass results',
+			ANALYZE_ERROR_CODES.ANALYZE_VALIDATION_FAILED,
+			{
+				context: { pass },
+			},
+		);
+	}
+
+	return {
+		pass,
+		status: result.status,
+		summary: summarizeAnalyzeData(result.data),
+		data: result.data,
+		errors: result.errors,
+		metadata: result.metadata,
+	};
+}
+
+function makeFullAnalyzeData(passes: AnalyzePassResult[]): FullAnalyzeData {
+	const attemptedPasses = passes.filter((pass) => pass.status !== 'skipped');
+	const successCount = passes.filter((pass) => pass.status === 'success').length;
+	const partialCount = passes.filter((pass) => pass.status === 'partial').length;
+	const failedCount = passes.filter((pass) => pass.status === 'failed').length;
+	const skippedCount = passes.filter((pass) => pass.status === 'skipped').length;
+
+	return {
+		mode: 'full',
+		passCount: passes.length,
+		attemptedCount: attemptedPasses.length,
+		successCount,
+		partialCount,
+		failedCount,
+		skippedCount,
+		passes,
+	};
+}
+
+function getFullAnalyzeStatus(data: FullAnalyzeData): AnalyzeResult['status'] {
+	if (data.attemptedCount === 0) {
+		return 'success';
+	}
+	if (data.failedCount === data.attemptedCount) {
+		return 'failed';
+	}
+	if (data.failedCount > 0 || data.partialCount > 0) {
+		return 'partial';
+	}
+	return 'success';
+}
+
+async function executeContradictionsPass(
+	config: MulderConfig,
+	services: Services,
+	pool: pg.Pool,
+	log: Logger,
+): Promise<AnalyzeResult> {
+	const startTime = performance.now();
+
+	if (!config.analysis.enabled || !config.analysis.contradictions) {
+		throw new AnalyzeError(
+			'Contradiction analysis is disabled in the active configuration',
+			ANALYZE_ERROR_CODES.ANALYZE_DISABLED,
+			{
+				context: {
+					enabled: config.analysis.enabled,
+					contradictions: config.analysis.contradictions,
+				},
+			},
+		);
+	}
+
+	const pendingEdges = await findEdgesByType(pool, 'POTENTIAL_CONTRADICTION');
+	const outcomes: ContradictionResolutionOutcome[] = [];
+	const errors: StepError[] = [];
+
+	for (const edge of pendingEdges) {
+		try {
+			const context = await hydrateContext(pool, edge);
+			const outcome = await resolveEdge(context, config, services, pool);
+			outcomes.push(outcome);
+		} catch (cause: unknown) {
+			const analyzeError =
+				cause instanceof AnalyzeError
+					? cause
+					: new AnalyzeError(`Unexpected analyze failure for edge ${edge.id}`, ANALYZE_ERROR_CODES.ANALYZE_LLM_FAILED, {
+							cause,
+							context: { edgeId: edge.id },
+						});
+			errors.push(toStepError(analyzeError, edge.id));
+			log.warn({ err: cause, edgeId: edge.id }, 'Analyze failed for contradiction edge — continuing');
+		}
+	}
+
+	const data = makeContradictionData(outcomes, errors.length, pendingEdges.length);
+	const status = errors.length === 0 ? 'success' : outcomes.length > 0 ? 'partial' : 'failed';
+	const durationMs = Math.round(performance.now() - startTime);
+
+	log.info(
+		{
+			mode: data.mode,
+			pendingCount: data.pendingCount,
+			processedCount: data.processedCount,
+			confirmedCount: data.confirmedCount,
+			dismissedCount: data.dismissedCount,
+			failedCount: data.failedCount,
+			duration_ms: durationMs,
+		},
+		'Analyze step completed',
 	);
-	if (selectedModes.length !== 1) {
-		throw new AnalyzeError('Exactly one analyze selector must be enabled', ANALYZE_ERROR_CODES.ANALYZE_DISABLED, {
-			context: { selectedModes },
-		});
-	}
 
-	if (input.contradictions) {
-		if (!config.analysis.enabled || !config.analysis.contradictions) {
-			throw new AnalyzeError(
-				'Contradiction analysis is disabled in the active configuration',
-				ANALYZE_ERROR_CODES.ANALYZE_DISABLED,
-				{
-					context: {
-						enabled: config.analysis.enabled,
-						contradictions: config.analysis.contradictions,
-					},
-				},
-			);
-		}
+	return {
+		status,
+		data,
+		errors,
+		metadata: {
+			duration_ms: durationMs,
+			items_processed: data.processedCount,
+			items_skipped: 0,
+			items_cached: 0,
+		},
+	};
+}
 
-		const pendingEdges = await findEdgesByType(pool, 'POTENTIAL_CONTRADICTION');
-		const outcomes: ContradictionResolutionOutcome[] = [];
-		const errors: StepError[] = [];
+async function executeEvidenceChainsPass(
+	config: MulderConfig,
+	pool: pg.Pool,
+	log: Logger,
+	thesisOverrides: string[],
+): Promise<AnalyzeResult> {
+	const startTime = performance.now();
 
-		for (const edge of pendingEdges) {
-			try {
-				const context = await hydrateContext(pool, edge);
-				const outcome = await resolveEdge(context, config, services, pool);
-				outcomes.push(outcome);
-			} catch (cause: unknown) {
-				const analyzeError =
-					cause instanceof AnalyzeError
-						? cause
-						: new AnalyzeError(
-								`Unexpected analyze failure for edge ${edge.id}`,
-								ANALYZE_ERROR_CODES.ANALYZE_LLM_FAILED,
-								{
-									cause,
-									context: { edgeId: edge.id },
-								},
-							);
-				errors.push(toStepError(analyzeError, edge.id));
-				log.warn({ err: cause, edgeId: edge.id }, 'Analyze failed for contradiction edge — continuing');
-			}
-		}
-
-		const data = makeContradictionData(outcomes, errors.length, pendingEdges.length);
-		const status = errors.length === 0 ? 'success' : outcomes.length > 0 ? 'partial' : 'failed';
-		const durationMs = Math.round(performance.now() - startTime);
-
-		log.info(
+	if (!config.analysis.enabled || !config.analysis.evidence_chains) {
+		throw new AnalyzeError(
+			'Evidence chain analysis is disabled in the active configuration',
+			ANALYZE_ERROR_CODES.ANALYZE_DISABLED,
 			{
-				mode: data.mode,
-				pendingCount: data.pendingCount,
-				processedCount: data.processedCount,
-				confirmedCount: data.confirmedCount,
-				dismissedCount: data.dismissedCount,
-				failedCount: data.failedCount,
-				duration_ms: durationMs,
-			},
-			'Analyze step completed',
-		);
-
-		return {
-			status,
-			data,
-			errors,
-			metadata: {
-				duration_ms: durationMs,
-				items_processed: data.processedCount,
-				items_skipped: 0,
-				items_cached: 0,
-			},
-		};
-	}
-
-	if (input.evidenceChains) {
-		if (!config.analysis.enabled || !config.analysis.evidence_chains) {
-			throw new AnalyzeError(
-				'Evidence chain analysis is disabled in the active configuration',
-				ANALYZE_ERROR_CODES.ANALYZE_DISABLED,
-				{
-					context: {
-						enabled: config.analysis.enabled,
-						evidenceChains: config.analysis.evidence_chains,
-					},
+				context: {
+					enabled: config.analysis.enabled,
+					evidenceChains: config.analysis.evidence_chains,
 				},
-			);
-		}
-
-		const thesisInputs =
-			thesisOverrides.length > 0 ? thesisOverrides : normalizeThesisList(config.analysis.evidence_theses);
-		if (thesisInputs.length === 0) {
-			throw new AnalyzeError(
-				'At least one thesis query is required for evidence-chain analysis',
-				ANALYZE_ERROR_CODES.ANALYZE_THESIS_INPUT_MISSING,
-			);
-		}
-
-		const outcomes: EvidenceChainThesisOutcome[] = [];
-		const errors: StepError[] = [];
-
-		for (const thesis of thesisInputs) {
-			try {
-				const computation = await computeEvidenceChainsForThesis(pool, config, thesis);
-				const computedAt = new Date();
-				const snapshotRows = buildEvidenceChainInputs(computation.thesis, computation, computedAt);
-				const writtenCount = await replaceEvidenceChainsSnapshot(pool, computation.thesis, snapshotRows);
-
-				outcomes.push({
-					thesis: computation.thesis,
-					status: 'success',
-					seedCount: computation.seedIds.length,
-					supportingCount: computation.supportingChains.length,
-					contradictionCount: computation.contradictionChains.length,
-					writtenCount,
-				});
-			} catch (cause: unknown) {
-				const analyzeError =
-					cause instanceof AnalyzeError
-						? cause
-						: new AnalyzeError(
-								`Unexpected analyze failure for thesis "${thesis}"`,
-								ANALYZE_ERROR_CODES.ANALYZE_TRAVERSAL_FAILED,
-								{
-									cause,
-									context: { thesis },
-								},
-							);
-				errors.push(toStepError(analyzeError, thesis));
-				outcomes.push({
-					thesis,
-					status: 'failed',
-					seedCount: 0,
-					supportingCount: 0,
-					contradictionCount: 0,
-					writtenCount: 0,
-				});
-				log.warn({ err: cause, thesis }, 'Analyze failed for evidence-chain thesis — continuing');
-			}
-		}
-
-		const data = makeEvidenceChainsData(outcomes);
-		const status =
-			errors.length === 0 ? 'success' : outcomes.some((outcome) => outcome.status === 'success') ? 'partial' : 'failed';
-		const durationMs = Math.round(performance.now() - startTime);
-
-		log.info(
-			{
-				mode: data.mode,
-				thesisCount: data.thesisCount,
-				processedCount: data.processedCount,
-				successCount: data.successCount,
-				failedCount: data.failedCount,
-				supportingCount: data.supportingCount,
-				contradictionCount: data.contradictionCount,
-				duration_ms: durationMs,
 			},
-			'Analyze step completed',
 		);
-
-		return {
-			status,
-			data,
-			errors,
-			metadata: {
-				duration_ms: durationMs,
-				items_processed: data.processedCount,
-				items_skipped: data.failedCount,
-				items_cached: 0,
-			},
-		};
 	}
 
-	if (input.spatioTemporal) {
-		if (!config.analysis.enabled || !config.analysis.spatio_temporal) {
-			throw new AnalyzeError(
-				'Spatio-temporal analysis is disabled in the active configuration',
-				ANALYZE_ERROR_CODES.ANALYZE_DISABLED,
-				{
-					context: {
-						enabled: config.analysis.enabled,
-						spatioTemporal: config.analysis.spatio_temporal,
-					},
+	const thesisInputs =
+		thesisOverrides.length > 0 ? thesisOverrides : normalizeThesisList(config.analysis.evidence_theses);
+	if (thesisInputs.length === 0) {
+		throw new AnalyzeError(
+			'At least one thesis query is required for evidence-chain analysis',
+			ANALYZE_ERROR_CODES.ANALYZE_THESIS_INPUT_MISSING,
+		);
+	}
+
+	const outcomes: EvidenceChainThesisOutcome[] = [];
+	const errors: StepError[] = [];
+
+	for (const thesis of thesisInputs) {
+		try {
+			const computation = await computeEvidenceChainsForThesis(pool, config, thesis);
+			const computedAt = new Date();
+			const snapshotRows = buildEvidenceChainInputs(computation.thesis, computation, computedAt);
+			const writtenCount = await replaceEvidenceChainsSnapshot(pool, computation.thesis, snapshotRows);
+
+			outcomes.push({
+				thesis: computation.thesis,
+				status: 'success',
+				seedCount: computation.seedIds.length,
+				supportingCount: computation.supportingChains.length,
+				contradictionCount: computation.contradictionChains.length,
+				writtenCount,
+			});
+		} catch (cause: unknown) {
+			const analyzeError =
+				cause instanceof AnalyzeError
+					? cause
+					: new AnalyzeError(
+							`Unexpected analyze failure for thesis "${thesis}"`,
+							ANALYZE_ERROR_CODES.ANALYZE_TRAVERSAL_FAILED,
+							{
+								cause,
+								context: { thesis },
+							},
+						);
+			errors.push(toStepError(analyzeError, thesis));
+			outcomes.push({
+				thesis,
+				status: 'failed',
+				seedCount: 0,
+				supportingCount: 0,
+				contradictionCount: 0,
+				writtenCount: 0,
+			});
+			log.warn({ err: cause, thesis }, 'Analyze failed for evidence-chain thesis — continuing');
+		}
+	}
+
+	const data = makeEvidenceChainsData(outcomes);
+	const status =
+		errors.length === 0 ? 'success' : outcomes.some((outcome) => outcome.status === 'success') ? 'partial' : 'failed';
+	const durationMs = Math.round(performance.now() - startTime);
+
+	log.info(
+		{
+			mode: data.mode,
+			thesisCount: data.thesisCount,
+			processedCount: data.processedCount,
+			successCount: data.successCount,
+			failedCount: data.failedCount,
+			supportingCount: data.supportingCount,
+			contradictionCount: data.contradictionCount,
+			duration_ms: durationMs,
+		},
+		'Analyze step completed',
+	);
+
+	return {
+		status,
+		data,
+		errors,
+		metadata: {
+			duration_ms: durationMs,
+			items_processed: data.processedCount,
+			items_skipped: data.failedCount,
+			items_cached: 0,
+		},
+	};
+}
+
+async function executeSpatioTemporalPass(config: MulderConfig, pool: pg.Pool, log: Logger): Promise<AnalyzeResult> {
+	const startTime = performance.now();
+
+	if (!config.analysis.enabled || !config.analysis.spatio_temporal) {
+		throw new AnalyzeError(
+			'Spatio-temporal analysis is disabled in the active configuration',
+			ANALYZE_ERROR_CODES.ANALYZE_DISABLED,
+			{
+				context: {
+					enabled: config.analysis.enabled,
+					spatioTemporal: config.analysis.spatio_temporal,
 				},
-			);
-		}
-
-		const computation = await computeSpatioTemporalClusters(
-			pool,
-			config.analysis.cluster_window_days,
-			config.thresholds.temporal_clustering,
-		);
-
-		const persistedCount = computation.nothingToAnalyze
-			? 0
-			: (await replaceSpatioTemporalClustersSnapshot(pool, computation.snapshotRows)).length;
-
-		const data = makeSpatioTemporalData(computation, persistedCount);
-		const durationMs = Math.round(performance.now() - startTime);
-
-		log.info(
-			{
-				mode: data.mode,
-				eventCount: data.eventCount,
-				timestampEventCount: data.timestampEventCount,
-				geometryEventCount: data.geometryEventCount,
-				spatioTemporalEventCount: data.spatioTemporalEventCount,
-				persistedCount: data.persistedCount,
-				temporalClusterCount: data.temporalClusterCount,
-				spatialClusterCount: data.spatialClusterCount,
-				spatioTemporalClusterCount: data.spatioTemporalClusterCount,
-				belowThreshold: data.belowThreshold,
-				nothingToAnalyze: data.nothingToAnalyze,
-				duration_ms: durationMs,
 			},
-			'Analyze step completed',
 		);
-
-		return {
-			status: 'success',
-			data,
-			errors: [],
-			metadata: {
-				duration_ms: durationMs,
-				items_processed: data.persistedCount,
-				items_skipped: data.belowThreshold ? data.eventCount : 0,
-				items_cached: 0,
-			},
-		};
 	}
+
+	const computation = await computeSpatioTemporalClusters(
+		pool,
+		config.analysis.cluster_window_days,
+		config.thresholds.temporal_clustering,
+	);
+
+	const persistedCount = computation.nothingToAnalyze
+		? 0
+		: (await replaceSpatioTemporalClustersSnapshot(pool, computation.snapshotRows)).length;
+
+	const data = makeSpatioTemporalData(computation, persistedCount);
+	const durationMs = Math.round(performance.now() - startTime);
+
+	log.info(
+		{
+			mode: data.mode,
+			eventCount: data.eventCount,
+			timestampEventCount: data.timestampEventCount,
+			geometryEventCount: data.geometryEventCount,
+			spatioTemporalEventCount: data.spatioTemporalEventCount,
+			persistedCount: data.persistedCount,
+			temporalClusterCount: data.temporalClusterCount,
+			spatialClusterCount: data.spatialClusterCount,
+			spatioTemporalClusterCount: data.spatioTemporalClusterCount,
+			belowThreshold: data.belowThreshold,
+			nothingToAnalyze: data.nothingToAnalyze,
+			duration_ms: durationMs,
+		},
+		'Analyze step completed',
+	);
+
+	return {
+		status: 'success',
+		data,
+		errors: [],
+		metadata: {
+			duration_ms: durationMs,
+			items_processed: data.persistedCount,
+			items_skipped: data.belowThreshold ? data.eventCount : 0,
+			items_cached: 0,
+		},
+	};
+}
+
+async function executeReliabilityPass(config: MulderConfig, pool: pg.Pool, log: Logger): Promise<AnalyzeResult> {
+	const startTime = performance.now();
 
 	if (!config.analysis.enabled || !config.analysis.reliability) {
 		throw new AnalyzeError(
@@ -859,4 +964,187 @@ export async function execute(
 			items_cached: 0,
 		},
 	};
+}
+
+async function executeSinglePass(
+	pass: AnalyzePassName,
+	config: MulderConfig,
+	services: Services,
+	pool: pg.Pool,
+	logger: Logger,
+	thesisOverrides: string[],
+): Promise<AnalyzeResult> {
+	const passLog = createChildLogger(logger, {
+		step: STEP_NAME,
+		pass,
+	});
+
+	switch (pass) {
+		case 'contradictions':
+			return executeContradictionsPass(config, services, pool, passLog);
+		case 'reliability':
+			return executeReliabilityPass(config, pool, passLog);
+		case 'evidence-chains':
+			return executeEvidenceChainsPass(config, pool, passLog, thesisOverrides);
+		case 'spatio-temporal':
+			return executeSpatioTemporalPass(config, pool, passLog);
+	}
+}
+
+async function executeFullAnalyze(
+	config: MulderConfig,
+	services: Services,
+	pool: pg.Pool,
+	logger: Logger,
+	thesisOverrides: string[],
+): Promise<AnalyzeResult> {
+	const log = createChildLogger(logger, {
+		step: STEP_NAME,
+		full: true,
+	});
+	const startTime = performance.now();
+
+	if (!config.analysis.enabled) {
+		throw new AnalyzeError('Analyze is disabled in the active configuration', ANALYZE_ERROR_CODES.ANALYZE_DISABLED, {
+			context: { enabled: config.analysis.enabled },
+		});
+	}
+
+	const passes: AnalyzePassResult[] = [];
+
+	for (const pass of FULL_PASS_ORDER) {
+		if (pass === 'contradictions' && !config.analysis.contradictions) {
+			passes.push(createSkippedPassResult(pass, 'disabled by config'));
+			continue;
+		}
+		if (pass === 'reliability' && !config.analysis.reliability) {
+			passes.push(createSkippedPassResult(pass, 'disabled by config'));
+			continue;
+		}
+		if (pass === 'evidence-chains') {
+			if (!config.analysis.evidence_chains) {
+				passes.push(createSkippedPassResult(pass, 'disabled by config'));
+				continue;
+			}
+			const thesisInputs =
+				thesisOverrides.length > 0 ? thesisOverrides : normalizeThesisList(config.analysis.evidence_theses);
+			if (thesisInputs.length === 0) {
+				passes.push(createSkippedPassResult(pass, 'no thesis input configured'));
+				continue;
+			}
+		}
+		if (pass === 'spatio-temporal' && !config.analysis.spatio_temporal) {
+			passes.push(createSkippedPassResult(pass, 'disabled by config'));
+			continue;
+		}
+
+		try {
+			const passResult = await executeSinglePass(pass, config, services, pool, log, thesisOverrides);
+			passes.push(toAnalyzePassResult(pass, passResult));
+		} catch (cause: unknown) {
+			const analyzeError =
+				cause instanceof AnalyzeError
+					? cause
+					: new AnalyzeError(
+							`Unexpected full analyze failure in ${pass}`,
+							ANALYZE_ERROR_CODES.ANALYZE_VALIDATION_FAILED,
+							{
+								cause,
+								context: { pass },
+							},
+						);
+			log.warn({ err: cause, pass }, 'Analyze full mode pass failed');
+			passes.push(createFailedPassResult(pass, analyzeError));
+		}
+	}
+
+	const data = makeFullAnalyzeData(passes);
+	const status = getFullAnalyzeStatus(data);
+	const durationMs = Math.round(performance.now() - startTime);
+	const metadataTotals = getPassMetadataTotals(passes);
+	const errors = passes.flatMap((pass) => pass.errors);
+
+	log.info(
+		{
+			mode: data.mode,
+			passCount: data.passCount,
+			attemptedCount: data.attemptedCount,
+			successCount: data.successCount,
+			partialCount: data.partialCount,
+			failedCount: data.failedCount,
+			skippedCount: data.skippedCount,
+			duration_ms: durationMs,
+		},
+		'Analyze step completed',
+	);
+
+	return {
+		status,
+		data,
+		errors,
+		metadata: {
+			duration_ms: durationMs,
+			items_processed: metadataTotals.items_processed,
+			items_skipped: metadataTotals.items_skipped,
+			items_cached: metadataTotals.items_cached,
+		},
+	};
+}
+
+export async function execute(
+	input: AnalyzeInput,
+	config: MulderConfig,
+	services: Services,
+	pool: pg.Pool | undefined,
+	logger: Logger,
+): Promise<AnalyzeResult> {
+	if (!pool) {
+		throw new AnalyzeError('Database pool is required for analyze step', ANALYZE_ERROR_CODES.ANALYZE_WRITE_FAILED);
+	}
+
+	const hasRawThesisOverrides = Array.isArray(input.theses) && input.theses.length > 0;
+	const thesisOverrides = normalizeThesisList(input.theses);
+	if (hasRawThesisOverrides && thesisOverrides.length === 0) {
+		throw new AnalyzeError(
+			'At least one non-empty thesis override is required',
+			ANALYZE_ERROR_CODES.ANALYZE_THESIS_INPUT_MISSING,
+			{
+				context: { thesisCount: input.theses?.length ?? 0 },
+			},
+		);
+	}
+
+	if (hasRawThesisOverrides && !input.evidenceChains && !input.full) {
+		throw new AnalyzeError(
+			'The --thesis override can only be used with evidence-chain analysis',
+			ANALYZE_ERROR_CODES.ANALYZE_VALIDATION_FAILED,
+			{
+				context: { thesisCount: thesisOverrides.length },
+			},
+		);
+	}
+
+	const selectedModes = getSelectedModes(input);
+
+	if (input.full) {
+		if (selectedModes.length > 0) {
+			throw new AnalyzeError(
+				'Full analyze mode cannot be combined with explicit single-pass selectors',
+				ANALYZE_ERROR_CODES.ANALYZE_VALIDATION_FAILED,
+				{
+					context: { selectedModes },
+				},
+			);
+		}
+
+		return executeFullAnalyze(config, services, pool, logger, thesisOverrides);
+	}
+
+	if (selectedModes.length !== 1) {
+		throw new AnalyzeError('Exactly one analyze selector must be enabled', ANALYZE_ERROR_CODES.ANALYZE_DISABLED, {
+			context: { selectedModes },
+		});
+	}
+
+	return executeSinglePass(selectedModes[0], config, services, pool, logger, thesisOverrides);
 }
