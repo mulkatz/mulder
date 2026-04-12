@@ -3,6 +3,7 @@ import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
+import { ensureSchema } from '../lib/schema.js';
 
 /**
  * Black-box end-to-end integration test for the full M1–M4 MVP pipeline.
@@ -42,7 +43,6 @@ const FIXTURE_DIR = resolve(ROOT, 'fixtures/raw');
 const EXTRACTED_DIR = resolve(ROOT, '.local/storage/extracted');
 const SEGMENTS_DIR = resolve(ROOT, '.local/storage/segments');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
-const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -64,19 +64,6 @@ function runCli(
 		stderr: result.stderr ?? '',
 		exitCode: result.status ?? 1,
 	};
-}
-
-/**
- * Ensure the schema exists before the test runs. Phase 1 of the QA Gate
- * identified finding P1-BASELINE-FLAKE-01: spec 08's afterAll drops all
- * tables, so downstream tests that don't re-migrate race against it. We
- * defend against that by running migrations in our own beforeAll.
- */
-function ensureSchema(): void {
-	const mig = runCli(['db', 'migrate', EXAMPLE_CONFIG]);
-	if (mig.exitCode !== 0) {
-		throw new Error(`Migration failed: ${mig.stdout} ${mig.stderr}`);
-	}
 }
 
 function cleanTestData(): void {

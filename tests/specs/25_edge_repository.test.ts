@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
+import { ensureSchema } from '../lib/schema.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CORE_MODULE = resolve(ROOT, 'packages/core/dist/index.js');
@@ -67,6 +68,7 @@ describe('Spec 25: Edge Repository', () => {
 			return;
 		}
 
+		ensureSchema();
 		pool = new pg.Pool(PG_CONFIG);
 
 		// Dynamically import repository functions from the built database barrel

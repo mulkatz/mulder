@@ -31,11 +31,12 @@ const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
  * Cost: ~€0.30 per run (one Document AI Layout Parser call against ~1 page).
  * Within the €3 sprint cap.
  *
- * Skipped by default behind `MULDER_E2E_GCP=true` so no developer machine
- * burns Document AI quota on every `pnpm test`.
+ * Skipped by default behind `MULDER_TEST_GCP=true` so no developer machine
+ * burns Document AI quota on every `pnpm test`. The legacy
+ * `MULDER_E2E_GCP=true` name is still accepted for local compatibility.
  *
  * Requires when running:
- * - `MULDER_E2E_GCP=true` env var
+ * - `MULDER_TEST_GCP=true` env var (or legacy `MULDER_E2E_GCP=true`)
  * - Working `gcloud` ADC for the configured project
  * - A real `mulder.config.yaml` with:
  *   - `dev_mode: false`
@@ -50,7 +51,7 @@ const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
  * will fail with a 404 from the Document AI endpoint.
  */
 
-const E2E_ENABLED = process.env.MULDER_E2E_GCP === 'true';
+const E2E_ENABLED = process.env.MULDER_TEST_GCP === 'true' || process.env.MULDER_E2E_GCP === 'true';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -178,9 +179,9 @@ describe('Spec 47 — Document AI Extraction (E2E, real GCP)', () => {
 });
 
 describe('Spec 47 — Document AI Extraction (smoke, no GCP)', () => {
-	it('SKIP-NOTICE: real-GCP test is gated behind MULDER_E2E_GCP=true', () => {
+	it('SKIP-NOTICE: real-GCP test is gated behind MULDER_TEST_GCP=true', () => {
 		// This always-running test exists so the suite never reports the spec
-		// as silently empty. When MULDER_E2E_GCP is unset, every E2E `it()`
+		// as silently empty. When the GCP env gate is unset, every E2E `it()`
 		// above is skipped via `it.skipIf` and only this notice runs.
 		if (!E2E_ENABLED) {
 			expect(E2E_ENABLED).toBe(false);
