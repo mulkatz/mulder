@@ -99,6 +99,7 @@ export const CONFIG_DEFAULTS = {
 		contradictions: true,
 		reliability: true,
 		evidence_chains: true,
+		evidence_theses: [],
 		spatio_temporal: true,
 		cluster_window_days: 30,
 	},

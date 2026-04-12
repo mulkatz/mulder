@@ -1,10 +1,11 @@
 /**
- * CLI command: `mulder analyze --contradictions`.
+ * CLI command: `mulder analyze`.
  *
  * Thin wrapper that validates selectors, loads config and services, runs the
  * graph-wide Analyze step, and formats the result.
  *
  * @see docs/specs/61_contradiction_resolution.spec.md §4.5
+ * @see docs/specs/63_evidence_chains.spec.md §4.5
  * @see docs/functional-spec.md §2.8
  */
 
@@ -21,19 +22,16 @@ interface AnalyzeOptions {
 	evidenceChains?: boolean;
 	spatioTemporal?: boolean;
 	full?: boolean;
+	thesis?: string[];
 }
 
 function hasUnsupportedSelector(options: AnalyzeOptions): boolean {
-	return Boolean(options.full || options.evidenceChains || options.spatioTemporal);
+	return Boolean(options.full || options.spatioTemporal);
 }
 
 function printUnsupportedSelectorMessage(options: AnalyzeOptions): void {
 	if (options.full) {
 		printError('--full is not implemented yet — it belongs to M6-G7');
-		return;
-	}
-	if (options.evidenceChains) {
-		printError('--evidence-chains is not implemented yet — it belongs to M6-G5');
 		return;
 	}
 	if (options.spatioTemporal) {
@@ -42,7 +40,37 @@ function printUnsupportedSelectorMessage(options: AnalyzeOptions): void {
 }
 
 function countImplementedSelectors(options: AnalyzeOptions): number {
-	return Number(Boolean(options.contradictions)) + Number(Boolean(options.reliability));
+	return (
+		Number(Boolean(options.contradictions)) +
+		Number(Boolean(options.reliability)) +
+		Number(Boolean(options.evidenceChains))
+	);
+}
+
+function normalizeTheses(values?: string[]): string[] {
+	if (!Array.isArray(values)) {
+		return [];
+	}
+
+	return values.filter((value) => value.trim().length > 0);
+}
+
+function printEvidenceChainsTable(result: AnalyzeResult): void {
+	if (result.data.mode !== 'evidence-chains' || result.data.outcomes.length === 0) {
+		return;
+	}
+
+	const header = `${'Thesis'.padEnd(40)}  ${'Status'.padEnd(8)}  ${'Seeds'.padEnd(5)}  ${'Support'.padEnd(7)}  ${'Contradict'.padEnd(10)}  Written`;
+	const separator = '-'.repeat(header.length);
+	process.stdout.write(`${header}\n`);
+	process.stdout.write(`${separator}\n`);
+
+	for (const outcome of result.data.outcomes) {
+		const thesis = outcome.thesis.length > 38 ? `${outcome.thesis.substring(0, 35)}...` : outcome.thesis;
+		process.stdout.write(
+			`${thesis.padEnd(40)}  ${outcome.status.padEnd(8)}  ${String(outcome.seedCount).padEnd(5)}  ${String(outcome.supportingCount).padEnd(7)}  ${String(outcome.contradictionCount).padEnd(10)}  ${outcome.writtenCount}\n`,
+		);
+	}
 }
 
 function printOutcomeTable(result: AnalyzeResult): void {
@@ -94,11 +122,33 @@ export function registerAnalyzeCommands(program: Command): void {
 		.description('Run graph-wide analysis passes')
 		.option('--contradictions', 'resolve pending contradiction edges')
 		.option('--reliability', 'score source reliability')
-		.option('--evidence-chains', 'compute evidence chains (not yet implemented)')
+		.option('--evidence-chains', 'compute evidence chains')
+		.option(
+			'--thesis <text>',
+			'repeatable thesis override for evidence-chain analysis',
+			(value: string, previous: string[] = []) => {
+				return [...previous, value];
+			},
+			[],
+		)
 		.option('--spatio-temporal', 'compute spatio-temporal clusters (not yet implemented)')
 		.option('--full', 'run the full analyze orchestrator (not yet implemented)')
 		.action(
 			withErrorHandler(async (options: AnalyzeOptions) => {
+				const rawTheses = normalizeTheses(options.thesis);
+
+				if (options.thesis && options.thesis.length > 0 && rawTheses.length === 0) {
+					printError('--thesis requires evidence-chain analysis and cannot be empty');
+					process.exit(1);
+					return;
+				}
+
+				if (rawTheses.length > 0 && !options.evidenceChains) {
+					printError('--thesis can only be used with --evidence-chains');
+					process.exit(1);
+					return;
+				}
+
 				const implementedSelectorCount = countImplementedSelectors(options);
 
 				if (implementedSelectorCount === 0 && !hasUnsupportedSelector(options)) {
@@ -142,6 +192,8 @@ export function registerAnalyzeCommands(program: Command): void {
 						{
 							contradictions: options.contradictions ?? false,
 							reliability: options.reliability ?? false,
+							evidenceChains: options.evidenceChains ?? false,
+							theses: rawTheses,
 						},
 						config,
 						services,
@@ -151,8 +203,10 @@ export function registerAnalyzeCommands(program: Command): void {
 
 					if (result.data.mode === 'contradictions') {
 						printOutcomeTable(result);
-					} else {
+					} else if (result.data.mode === 'reliability') {
 						printReliabilityTable(result);
+					} else {
+						printEvidenceChainsTable(result);
 					}
 
 					for (const error of result.errors) {
@@ -175,7 +229,7 @@ export function registerAnalyzeCommands(program: Command): void {
 						} else {
 							printSuccess(`Analyze complete: ${summary}`);
 						}
-					} else {
+					} else if (result.data.mode === 'reliability') {
 						if (result.data.outcomes.length === 0) {
 							printSuccess(`Analyze complete: no graph-connected sources found (${result.metadata.duration_ms}ms)`);
 							return;
@@ -188,6 +242,26 @@ export function registerAnalyzeCommands(program: Command): void {
 						}
 
 						const summary = `${result.data.scoredCount} scored, ${result.data.sourceCount} graph-connected sources (${result.metadata.duration_ms}ms)`;
+
+						if (result.status === 'failed') {
+							printError(`Analyze failed: ${summary}`);
+							process.exit(1);
+						} else if (result.status === 'partial') {
+							process.stderr.write(`Analyze partial: ${summary}\n`);
+						} else {
+							printSuccess(`Analyze complete: ${summary}`);
+						}
+					} else {
+						if (
+							result.data.supportingCount === 0 &&
+							result.data.contradictionCount === 0 &&
+							result.data.failedCount === 0
+						) {
+							printSuccess(`Analyze complete: no evidence chains found (${result.metadata.duration_ms}ms)`);
+							return;
+						}
+
+						const summary = `${result.data.successCount} successful theses, ${result.data.failedCount} failed, ${result.data.supportingCount} supporting, ${result.data.contradictionCount} contradiction-backed (${result.metadata.duration_ms}ms)`;
 
 						if (result.status === 'failed') {
 							printError(`Analyze failed: ${summary}`);

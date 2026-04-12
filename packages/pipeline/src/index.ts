@@ -6,6 +6,8 @@ export type {
 	ContradictionResolutionOutcome,
 	ContradictionResolutionResponse,
 	ContradictionVerdict,
+	EvidenceChainsAnalyzeData,
+	EvidenceChainThesisOutcome,
 	ReliabilityAnalyzeData,
 	SourceReliabilityOutcome,
 	WinningClaim,

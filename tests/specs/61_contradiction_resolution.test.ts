@@ -339,10 +339,11 @@ describe('Spec 61 — Contradiction Resolution', () => {
 		expect(result.stderr).toContain('Analyze complete');
 	});
 
-	it('CLI-08: --evidence-chains exits non-zero because evidence chains belong to M6-G5', () => {
+	it('CLI-08: --evidence-chains exits non-zero when no thesis input is configured', () => {
 		const result = runCli(['analyze', '--evidence-chains'], { env: { MULDER_CONFIG: enabledConfigPath } });
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stderr).toContain('M6-G5');
+		expect(result.stderr).toContain('ANALYZE_THESIS_INPUT_MISSING');
+		expect(result.stderr).toContain('At least one thesis query');
 	});
 
 	it('CLI-09: --spatio-temporal exits non-zero because clustering belongs to M6-G6', () => {

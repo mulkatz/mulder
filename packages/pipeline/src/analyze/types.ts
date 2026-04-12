@@ -10,6 +10,8 @@ import type { StepError } from '@mulder/core';
 export interface AnalyzeInput {
 	contradictions?: boolean;
 	reliability?: boolean;
+	evidenceChains?: boolean;
+	theses?: string[];
 }
 
 export type ContradictionVerdict = 'confirmed' | 'dismissed';
@@ -60,7 +62,29 @@ export interface ReliabilityAnalyzeData {
 	outcomes: SourceReliabilityOutcome[];
 }
 
-export type AnalyzeData = ContradictionAnalyzeData | ReliabilityAnalyzeData;
+export type EvidenceChainThesisStatus = 'success' | 'failed';
+
+export interface EvidenceChainThesisOutcome {
+	thesis: string;
+	status: EvidenceChainThesisStatus;
+	seedCount: number;
+	supportingCount: number;
+	contradictionCount: number;
+	writtenCount: number;
+}
+
+export interface EvidenceChainsAnalyzeData {
+	mode: 'evidence-chains';
+	thesisCount: number;
+	processedCount: number;
+	successCount: number;
+	failedCount: number;
+	supportingCount: number;
+	contradictionCount: number;
+	outcomes: EvidenceChainThesisOutcome[];
+}
+
+export type AnalyzeData = ContradictionAnalyzeData | ReliabilityAnalyzeData | EvidenceChainsAnalyzeData;
 
 export interface AnalyzeResult {
 	status: 'success' | 'partial' | 'failed';
