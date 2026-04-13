@@ -526,7 +526,7 @@ describe('Spec 67: Job Queue Repository', () => {
 		expect(reapedState).toBe('pending||true');
 	});
 
-	it('review blocker: reaper dead-letters exhausted stale jobs instead of leaving them pending', () => {
+	it('review blocker: reaper refunds a stale final-attempt claim back to a runnable pending job', () => {
 		if (!pgAvailable) return;
 
 		cleanJobData();
@@ -545,16 +545,19 @@ describe('Spec 67: Job Queue Repository', () => {
 				const result = await reapRunningJobs(pool, new Date(Date.now() - 2 * 60 * 60 * 1000));
 				const next = await dequeueJob(pool, 'worker-after-reap');
 				const state = await pool.query(
-					'SELECT status, worker_id, (started_at IS NULL) AS started_cleared, (finished_at IS NOT NULL) AS finished_set FROM jobs WHERE id = $1',
+					'SELECT status, attempts, worker_id, (started_at IS NULL) AS started_cleared, (finished_at IS NOT NULL) AS finished_set FROM jobs WHERE id = $1',
 					['00000000-0000-0000-0000-000000067702'],
 				);
 				const row = state.rows[0];
 
 				process.stderr.write('REAP_COUNT:' + result.count + '\\n');
 				process.stderr.write('NEXT_JOB:' + String(next?.id ?? 'null') + '\\n');
+				process.stderr.write('NEXT_ATTEMPTS:' + String(next?.attempts ?? 'null') + '\\n');
 				process.stderr.write(
 					'STATE:' +
 						row.status +
+						'|' +
+						String(row.attempts) +
 						'|' +
 						String(row.worker_id ?? '') +
 						'|' +
@@ -575,8 +578,9 @@ describe('Spec 67: Job Queue Repository', () => {
 		expect(exitCode).toBe(0);
 		expect(combined).not.toContain('SCRIPT_ERROR:');
 		expect(combined).toContain('REAP_COUNT:1');
-		expect(combined).toContain('NEXT_JOB:null');
-		expect(combined).toContain('STATE:dead_letter||true|true');
+		expect(combined).toContain('NEXT_JOB:00000000-0000-0000-0000-000000067702');
+		expect(combined).toContain('NEXT_ATTEMPTS:1');
+		expect(combined).toContain('STATE:running|1|worker-after-reap|false|false');
 	});
 
 	it('QA-08: fresh running jobs are not reaped', () => {

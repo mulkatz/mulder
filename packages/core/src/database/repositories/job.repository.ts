@@ -315,16 +315,12 @@ export async function markJobDeadLetter(pool: pg.Pool, id: string, errorLog?: st
 export async function reapRunningJobs(pool: pg.Pool, staleBefore: Date): Promise<ReapJobsResult> {
 	const sql = `
     UPDATE jobs
-    SET status = CASE
-          WHEN attempts >= max_attempts THEN 'dead_letter'::job_status
-          ELSE 'pending'::job_status
-        END,
+    -- Refund the in-flight claim so a crashed final-attempt job stays recoverable.
+    SET status = 'pending',
+        attempts = GREATEST(attempts - 1, 0),
         worker_id = NULL,
         started_at = NULL,
-        finished_at = CASE
-          WHEN attempts >= max_attempts THEN now()
-          ELSE NULL
-        END
+        finished_at = NULL
     WHERE status = 'running'
       AND started_at IS NOT NULL
       AND started_at < $1
