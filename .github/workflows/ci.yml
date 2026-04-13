@@ -46,8 +46,14 @@ jobs:
         run: pnpm typecheck
 
   test:
+    name: test (${{ matrix.shard_index }}/${{ matrix.shard_total }})
     runs-on: ubuntu-latest
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_index: [1, 2, 3]
+        shard_total: [3]
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -92,18 +98,11 @@ jobs:
       - name: Setup test config
         run: cp mulder.config.example.yaml mulder.config.yaml
 
-      - name: Run E2E health check (Spec 44)
-        run: pnpm test:health
-        env:
-          NODE_ENV: test
-          PGHOST: localhost
-          PGPORT: "5432"
-          PGUSER: mulder
-          PGPASSWORD: mulder
-          PGDATABASE: mulder
+      - name: Show shard plan
+        run: node scripts/test-shards.mjs summary ${{ matrix.shard_index }} ${{ matrix.shard_total }}
 
       - name: Run tests
-        run: pnpm test
+        run: pnpm test:shard -- ${{ matrix.shard_index }} ${{ matrix.shard_total }}
         env:
           NODE_ENV: test
           PGHOST: localhost

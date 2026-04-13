@@ -11,6 +11,8 @@
 		"typecheck": "turbo run typecheck",
 		"lint": "biome check .",
 		"lint:fix": "biome check --write .",
+		"test:shard": "node scripts/test-shards.mjs run",
+		"test:shards:verify": "node scripts/test-shards.mjs verify 3",
 		"test:health": "vitest run tests/specs/44_e2e_pipeline_integration.test.ts",
 		"test:gcp": "vitest run tests/specs/20_fixture_generator.test.ts tests/specs/47_document_ai_extraction.test.ts",
 		"test": "vitest run",
