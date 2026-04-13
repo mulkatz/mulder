@@ -92,6 +92,19 @@ function slugify(value: string): string {
 	);
 }
 
+type GroundingFixtureScenario = 'accepted' | 'invalid-coordinates' | 'invalid-date';
+
+function resolveGroundingFixtureScenario(entityName: string): GroundingFixtureScenario {
+	const normalizedName = entityName.trim().toLowerCase();
+	if (normalizedName.includes('invalid-coordinate') || normalizedName.includes('invalid coordinate')) {
+		return 'invalid-coordinates';
+	}
+	if (normalizedName.includes('invalid-date') || normalizedName.includes('invalid date')) {
+		return 'invalid-date';
+	}
+	return 'accepted';
+}
+
 // ────────────────────────────────────────────────────────────
 // Dev Storage Service
 // ────────────────────────────────────────────────────────────
@@ -398,6 +411,7 @@ class DevLlmService implements LlmService {
 		const nameMatch = options.prompt.match(/## Entity name\s+([^\n]+)/i);
 		const entityType = typeMatch?.[1]?.trim().toLowerCase() ?? 'entity';
 		const entityName = nameMatch?.[1]?.trim() ?? 'Dev Test Entity';
+		const fixtureScenario = resolveGroundingFixtureScenario(entityName);
 
 		let coordinates: Record<string, number> | null = null;
 		let attributes: Record<string, unknown> = {
@@ -435,7 +449,19 @@ class DevLlmService implements LlmService {
 			};
 		}
 
-		this.logger.debug({ entityName, entityType }, 'DevLlmService: groundedGenerate returning deterministic fixture');
+		if (fixtureScenario === 'invalid-coordinates') {
+			coordinates = { lat: 95, lng: 13.405 };
+		} else if (fixtureScenario === 'invalid-date') {
+			attributes = {
+				...attributes,
+				verified_date: '2999-12-31',
+			};
+		}
+
+		this.logger.debug(
+			{ entityName, entityType, fixtureScenario },
+			'DevLlmService: groundedGenerate returning deterministic fixture',
+		);
 
 		return {
 			text: JSON.stringify({

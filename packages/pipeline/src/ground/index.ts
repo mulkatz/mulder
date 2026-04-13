@@ -38,8 +38,8 @@ const groundedPayloadSchema = z.object({
 	confidence: z.number().min(0).max(1).nullable().optional(),
 	coordinates: z
 		.object({
-			lat: z.number().min(-90).max(90),
-			lng: z.number().min(-180).max(180),
+			lat: z.number().finite(),
+			lng: z.number().finite(),
 		})
 		.nullable()
 		.optional(),
@@ -47,6 +47,11 @@ const groundedPayloadSchema = z.object({
 });
 
 type GroundedPayload = z.infer<typeof groundedPayloadSchema>;
+type GroundedDateAttribute = 'verified_date' | 'founding_date';
+type GroundedCoordinatePair = { lat: number; lng: number };
+
+const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const DATE_ATTRIBUTES: readonly GroundedDateAttribute[] = ['verified_date', 'founding_date'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -128,6 +133,103 @@ function parseGroundedPayload(rawText: string): GroundedPayload {
 			GROUND_ERROR_CODES.GROUND_VALIDATION_FAILED,
 			{ cause },
 		);
+	}
+}
+
+function createValidationError(message: string, context: Record<string, unknown>): GroundError {
+	return new GroundError(message, GROUND_ERROR_CODES.GROUND_VALIDATION_FAILED, { context });
+}
+
+function assertPlausibleCoordinates(coordinates: GroundedCoordinatePair, fieldPath: string): void {
+	if (coordinates.lat < -90 || coordinates.lat > 90) {
+		throw createValidationError('Grounded latitude is outside the valid range', {
+			field: `${fieldPath}.lat`,
+			lat: coordinates.lat,
+		});
+	}
+	if (coordinates.lng < -180 || coordinates.lng > 180) {
+		throw createValidationError('Grounded longitude is outside the valid range', {
+			field: `${fieldPath}.lng`,
+			lng: coordinates.lng,
+		});
+	}
+}
+
+function parseIsoDate(value: string): Date | null {
+	const match = ISO_DATE_PATTERN.exec(value);
+	if (!match) {
+		return null;
+	}
+
+	const year = Number.parseInt(match[1], 10);
+	const month = Number.parseInt(match[2], 10);
+	const day = Number.parseInt(match[3], 10);
+	if (month < 1 || month > 12 || day < 1 || day > 31) {
+		return null;
+	}
+
+	const date = new Date(Date.UTC(year, month - 1, day));
+	if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+		return null;
+	}
+
+	return date;
+}
+
+function validateGroundedDateAttribute(value: unknown, key: GroundedDateAttribute, groundingDayUtcMs: number): void {
+	if (value === undefined || value === null) {
+		return;
+	}
+	if (typeof value !== 'string') {
+		throw createValidationError(`Grounded ${key} must be a YYYY-MM-DD string`, {
+			field: key,
+			value,
+		});
+	}
+
+	const parsedDate = parseIsoDate(value);
+	if (parsedDate === null) {
+		throw createValidationError(`Grounded ${key} must be a real YYYY-MM-DD calendar date`, {
+			field: key,
+			value,
+		});
+	}
+	if (parsedDate.getTime() > groundingDayUtcMs) {
+		throw createValidationError(`Grounded ${key} cannot be later than the grounding day`, {
+			field: key,
+			value,
+		});
+	}
+}
+
+function validatePayloadPlausibility(payload: GroundedPayload, groundedAt: Date): void {
+	if (payload.coordinates !== undefined && payload.coordinates !== null) {
+		assertPlausibleCoordinates(payload.coordinates, 'coordinates');
+	}
+
+	const geoPoint = payload.attributes.geo_point;
+	if (geoPoint !== undefined && geoPoint !== null) {
+		if (!isRecord(geoPoint)) {
+			throw createValidationError('Grounded attributes.geo_point must be an object with lat/lng numbers', {
+				field: 'attributes.geo_point',
+				value: geoPoint,
+			});
+		}
+
+		const lat = geoPoint.lat;
+		const lng = geoPoint.lng;
+		if (typeof lat !== 'number' || typeof lng !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+			throw createValidationError('Grounded attributes.geo_point must include finite lat/lng numbers', {
+				field: 'attributes.geo_point',
+				value: geoPoint,
+			});
+		}
+		assertPlausibleCoordinates({ lat, lng }, 'attributes.geo_point');
+	}
+
+	const groundingDayUtcMs = Date.UTC(groundedAt.getUTCFullYear(), groundedAt.getUTCMonth(), groundedAt.getUTCDate());
+	for (const key of DATE_ATTRIBUTES) {
+		validateGroundedDateAttribute(payload.attributes[key], key, groundingDayUtcMs);
 	}
 }
 
@@ -304,13 +406,14 @@ export async function execute(
 	}
 
 	const payload = parseGroundedPayload(groundedResponse.text);
+	const groundedAt = new Date();
+	validatePayloadPlausibility(payload, groundedAt);
 	const mergedAttributes = buildMergedAttributes(entity, payload);
 	const sourceUrlSet = new Set<string>();
 	collectSourceUrls(groundedResponse.groundingMetadata, sourceUrlSet);
 	const sourceUrls = [...sourceUrlSet];
 	const coordinates = payload.coordinates ?? undefined;
 
-	const groundedAt = new Date();
 	const expiresAt = computeExpiryDate(config.grounding.cache_ttl_days, groundedAt);
 	const groundingRecord: Record<string, unknown> = {
 		summary: payload.summary ?? null,
