@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
-import { ensureSchema, truncateMulderTables } from '../lib/schema.js';
+import { ensureSchema } from '../lib/schema.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -101,16 +101,31 @@ function writeAnalyzeConfig(options?: {
 		analysisReplacement,
 	);
 	const withThreshold =
-		options?.threshold !== undefined
-			? withAnalysis.replace(/corroboration_meaningful:\s*\d+/, `corroboration_meaningful: ${options.threshold}`)
-			: withAnalysis;
+		withAnalysis.replace(/corroboration_meaningful:\s*\d+/, `corroboration_meaningful: ${options?.threshold ?? 2}`);
 	const configPath = join(tmpDir, `analyze-63-${Date.now()}-${Math.random().toString(16).slice(2)}.yaml`);
 	writeFileSync(configPath, withThreshold, 'utf-8');
 	return configPath;
 }
 
 function cleanTestData(): void {
-	truncateMulderTables();
+	db.runSql(
+		[
+			'DELETE FROM pipeline_run_sources',
+			'DELETE FROM pipeline_runs',
+			'DELETE FROM jobs',
+			'DELETE FROM evidence_chains',
+			'DELETE FROM spatio_temporal_clusters',
+			'DELETE FROM entity_grounding',
+			'DELETE FROM story_entities',
+			'DELETE FROM entity_edges',
+			'DELETE FROM entity_aliases',
+			'DELETE FROM taxonomy',
+			'DELETE FROM entities',
+			'DELETE FROM stories',
+			'DELETE FROM source_steps',
+			'DELETE FROM sources',
+		].join('; '),
+	);
 }
 
 function seedSource(args: { id: string; filename: string }): void {
@@ -233,7 +248,7 @@ function fetchDistinctTheses(): string[] {
 	return JSON.parse(raw) as string[];
 }
 
-describe('Spec 63 — Evidence Chains', () => {
+describe.sequential('Spec 63 — Evidence Chains', () => {
 	beforeAll(() => {
 		tmpDir = mkdtempSync(join(tmpdir(), 'mulder-qa-63-'));
 		enabledSingleThesisConfigPath = writeAnalyzeConfig({
