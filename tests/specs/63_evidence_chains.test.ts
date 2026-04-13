@@ -100,8 +100,10 @@ function writeAnalyzeConfig(options?: {
 		/analysis:\n[\s\S]*?\n# --- Sparse Graph Thresholds ---/,
 		analysisReplacement,
 	);
-	const withThreshold =
-		withAnalysis.replace(/corroboration_meaningful:\s*\d+/, `corroboration_meaningful: ${options?.threshold ?? 2}`);
+	const withThreshold = withAnalysis.replace(
+		/corroboration_meaningful:\s*\d+/,
+		`corroboration_meaningful: ${options?.threshold ?? 2}`,
+	);
 	const configPath = join(tmpDir, `analyze-63-${Date.now()}-${Math.random().toString(16).slice(2)}.yaml`);
 	writeFileSync(configPath, withThreshold, 'utf-8');
 	return configPath;

@@ -7,7 +7,6 @@ on:
 
 jobs:
   gcp-black-box:
-    if: ${{ secrets.GCP_CREDENTIALS_JSON != '' && secrets.MULDER_GCP_CONFIG_YAML != '' }}
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -27,42 +26,66 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check required GCP secrets
+        id: secrets
+        shell: bash
+        env:
+          GCP_CREDENTIALS_JSON: ${{ secrets.GCP_CREDENTIALS_JSON }}
+          MULDER_GCP_CONFIG_YAML: ${{ secrets.MULDER_GCP_CONFIG_YAML }}
+        run: |
+          if [[ -n "$GCP_CREDENTIALS_JSON" && -n "$MULDER_GCP_CONFIG_YAML" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping GCP black-box lane because required secrets are not configured."
+          fi
+
       - uses: pnpm/action-setup@v4
+        if: ${{ steps.secrets.outputs.available == 'true' }}
 
       - uses: actions/setup-node@v4
+        if: ${{ steps.secrets.outputs.available == 'true' }}
         with:
           node-version: 22
           cache: pnpm
 
       - uses: google-github-actions/auth@v2
+        if: ${{ steps.secrets.outputs.available == 'true' }}
         with:
           credentials_json: ${{ secrets.GCP_CREDENTIALS_JSON }}
 
       - uses: google-github-actions/setup-gcloud@v2
+        if: ${{ steps.secrets.outputs.available == 'true' }}
 
-      - run: pnpm install --frozen-lockfile
+      - if: ${{ steps.secrets.outputs.available == 'true' }}
+        run: pnpm install --frozen-lockfile
 
       - name: Build packages
+        if: ${{ steps.secrets.outputs.available == 'true' }}
         run: pnpm build
 
       - name: Install PostGIS into PostgreSQL container
+        if: ${{ steps.secrets.outputs.available == 'true' }}
         run: |
           PG_CONTAINER=$(docker ps -q --filter "ancestor=pgvector/pgvector:pg17")
           docker exec "$PG_CONTAINER" bash -c "apt-get update && apt-get install -y --no-install-recommends postgresql-17-postgis-3 postgresql-17-postgis-3-scripts && rm -rf /var/lib/apt/lists/*"
 
       - name: Install PostgreSQL extensions
+        if: ${{ steps.secrets.outputs.available == 'true' }}
         run: |
           PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS vector;"
           PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
           PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 
       - name: Write GCP test config
+        if: ${{ steps.secrets.outputs.available == 'true' }}
         run: |
           cat <<'EOF' > mulder.config.yaml
           ${{ secrets.MULDER_GCP_CONFIG_YAML }}
           EOF
 
       - name: Run GCP black-box lane
+        if: ${{ steps.secrets.outputs.available == 'true' }}
         run: pnpm test:gcp
         env:
           NODE_ENV: test
