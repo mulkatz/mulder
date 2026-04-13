@@ -333,7 +333,7 @@ thresholds:
   corroboration_meaningful: 50     # Dokumente bis Corroboration Scores > "insufficient data"
   graph_community_detection: 100   # Entities bis Community Detection sinnvoll ist
   temporal_clustering: 30          # Events mit Timestamps bis Clustering sinnvoll ist
-  source_reliability: 50           # Dokumente bis PageRank stabil ist
+  source_reliability: 50           # Verbundene Quellen im Graphen, bevor PageRank stabil ist
   pattern_discovery: 100           # Dokumente bis Anomalie-Detection sinnvoll ist (Phase 2)
 ```
 

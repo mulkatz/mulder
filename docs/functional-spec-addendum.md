@@ -1005,7 +1005,7 @@ translation:
 
 > **Replaces:** §2.8 source reliability scoring (PageRank → single float)
 >
-> **What exists:** §2.8 defines source reliability scoring via weighted PageRank on a citation graph, producing a single `sources.reliability_score` float (0–1).
+> **What exists:** §2.8 defines source reliability scoring via weighted PageRank on a source graph built from cross-source entity co-occurrence, producing a single `sources.reliability_score` float (0–1).
 >
 > **What this replaces with:** Multi-dimensional credibility profiles with N configurable dimensions. No aggregate score. PageRank becomes one possible input signal, not the sole score. The `sources.reliability_score` column is superseded by the credibility profile table.
 
