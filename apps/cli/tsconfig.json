@@ -8,6 +8,7 @@
 	"references": [
 		{ "path": "../../packages/core" },
 		{ "path": "../../packages/pipeline" },
+		{ "path": "../../packages/worker" },
 		{ "path": "../../packages/retrieval" },
 		{ "path": "../../packages/taxonomy" }
 	]

@@ -62,6 +62,9 @@ importers:
       '@mulder/taxonomy':
         specifier: workspace:*
         version: link:../../packages/taxonomy
+      '@mulder/worker':
+        specifier: workspace:*
+        version: link:../../packages/worker
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -205,6 +208,9 @@ importers:
       '@mulder/pipeline':
         specifier: workspace:*
         version: link:../pipeline
+      '@mulder/taxonomy':
+        specifier: workspace:*
+        version: link:../taxonomy
 
   tests:
     devDependencies:
