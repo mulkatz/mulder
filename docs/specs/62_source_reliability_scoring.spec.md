@@ -4,7 +4,7 @@ title: "Source Reliability Scoring"
 roadmap_step: M6-G4
 functional_spec: ["§2.8", "§5.3"]
 scope: single
-issue: "https://github.com/mulkatz/mulder/issues/152"
+issue: "https://github.com/mulkatz/mulder/issues/163"
 created: 2026-04-12
 ---
 
@@ -12,14 +12,14 @@ created: 2026-04-12
 
 ## 1. Objective
 
-Implement the second Analyze sub-step so `mulder analyze --reliability` computes a single `sources.reliability_score` float using a weighted PageRank-style graph over already-ingested source relationships, then persists the result for downstream evidence, export, and UI consumers. Per `§2.8`, the analysis runs over the full corpus rather than a single story, and per `§5.3` it must surface when the corpus is too sparse for the score to be considered stable. This spec intentionally delivers the current roadmap model; if the later credibility-profile design supersedes it, the scoring engine should be isolated enough to be swapped out without rewriting the CLI surface.
+Implement the second Analyze sub-step so `mulder analyze --reliability` computes a single `sources.reliability_score` float using a weighted PageRank-style graph over entity co-occurrence between distinct sources, then persists the result for downstream evidence, export, and UI consumers. Per `§2.8`, the analysis runs over the full corpus rather than a single story, and per `§5.3` it must surface when the corpus is too sparse for the score to be considered stable. This spec intentionally captures the shipped M6 contract: until Mulder has a provenance or citation-link schema, shared-entity co-occurrence is the authoritative source-graph input for reliability scoring. If the later credibility-profile design supersedes it, the scoring engine should be isolated enough to be swapped out without rewriting the CLI surface.
 
 ## 2. Boundaries
 
 - **Roadmap Step:** `M6-G4` — Source reliability scoring — `mulder analyze --reliability`
 - **Target:** `packages/pipeline/src/analyze/types.ts`, `packages/pipeline/src/analyze/reliability.ts`, `packages/pipeline/src/analyze/index.ts`, `packages/pipeline/src/index.ts`, `apps/cli/src/commands/analyze.ts`
-- **In scope:** building a source graph from current corpus data, running weighted PageRank, normalizing scores into `0..1`, writing `sources.reliability_score`, exposing the `--reliability` CLI flow, and warning when corpus size is below `thresholds.source_reliability`
-- **Out of scope:** multi-dimensional credibility profiles (`M11-L1`), evidence chains (`M6-G5`), spatio-temporal clustering (`M6-G6`), the `--full` analyze orchestrator (`M6-G7`), schema changes, UI/API presentation work, or adding brand-new provenance/citation tables
+- **In scope:** building a source graph from shared-entity co-occurrence across sources, running weighted PageRank, normalizing scores into `0..1`, writing `sources.reliability_score`, exposing the `--reliability` CLI flow, and warning when graph-connected source count is below `thresholds.source_reliability`
+- **Out of scope:** multi-dimensional credibility profiles (`M11-L1`), evidence chains (`M6-G5`), spatio-temporal clustering (`M6-G6`), new full-mode orchestration logic beyond preserving the explicit `--reliability` selector contract after `M6-G7`, schema changes, UI/API presentation work, or adding brand-new provenance/citation tables
 - **Constraints:** stay within the existing Analyze package and CLI surface; reuse current repositories and database schema; keep the scoring module isolated from contradiction resolution so later replacement or expansion remains tractable; and treat sparse-corpus handling as a warning/degradation concern, not a reason to fail the step
 
 ## 3. Dependencies
@@ -55,7 +55,7 @@ None. The step uses existing config:
 - Represent source-to-source links as weighted edges based on shared entities across distinct sources; because the current schema has no dedicated citation table, entity co-occurrence is the authoritative graph input for this step
 - Run weighted PageRank over that graph, normalize the converged values into `0..1`, and persist them with `updateSource(...)`
 - The Analyze CLI must allow exactly one active implemented selector at a time: `--contradictions` or `--reliability`
-- Sparse-corpus handling should annotate the result and CLI summary when eligible source count is below `thresholds.source_reliability`, but still persist computed scores so existing consumers can use the interim signal
+- Sparse-corpus handling should annotate the result and CLI summary when graph-connected source count is below `thresholds.source_reliability`, but still persist computed scores so existing consumers can use the interim signal
 
 ### 4.5 Implementation Phases
 
@@ -74,7 +74,7 @@ Single phase — implement the typed reliability contract, scoring engine, Analy
    - Then: the command exits `0`, reports the same number of scored sources, and previously stored reliability scores remain unchanged within exact persisted precision
 
 3. **QA-03: Sparse corpora succeed with a degradation warning**
-   - Given: eligible source count is below `thresholds.source_reliability` but at least one graph-connected source pair exists
+   - Given: graph-connected source count is below `thresholds.source_reliability` but at least one graph-connected source pair exists
    - When: `mulder analyze --reliability` runs
    - Then: the command exits `0`, persists reliability scores, and clearly warns that the corpus is below the meaningful reliability threshold
 
@@ -97,14 +97,14 @@ Single phase — implement the typed reliability contract, scoring engine, Analy
 | CLI-01 | `--reliability` | Exit `0`, scores all eligible sources and prints a reliability table |
 | CLI-02 | `--reliability` *(run twice)* | Exit `0`, second run preserves the first run’s scores |
 | CLI-03 | `--contradictions --reliability` | Exit non-zero, because multi-selector analyze orchestration belongs to `M6-G7` |
-| CLI-04 | `--reliability --full` | Exit non-zero, because `--full` is not implemented yet |
+| CLI-04 | `--reliability --full` | Exit non-zero, because explicit selectors remain mutually exclusive with full mode |
 
 ### Selector validation
 
 | # | Args / Flags | Expected Behavior |
 |---|-------------|-------------------|
-| CLI-05 | *(no args)* | Exit non-zero, usage/help indicates that an analysis selector is required |
-| CLI-06 | `--full` | Exit non-zero, because the full Analyze orchestrator is not implemented yet |
+| CLI-05 | *(no args)* | Exit `0`, because bare `mulder analyze` now defaults to the full Analyze orchestrator from Spec 65 |
+| CLI-06 | `--full` | Exit `0`, because the full Analyze orchestrator is implemented in Spec 65 |
 | CLI-07 | `--evidence-chains` | Exit non-zero, because evidence chains belong to `M6-G5` |
 | CLI-08 | `--spatio-temporal` | Exit non-zero, because clustering belongs to `M6-G6` |
 

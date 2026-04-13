@@ -491,7 +491,7 @@ interface StepResult<T> {
    - Update edge status + store Gemini analysis
 
 2. **Source reliability scoring:**
-   - Build citation graph (sources citing other sources, entity co-occurrence)
+   - Build a source graph from entity co-occurrence across distinct sources
    - Run weighted PageRank algorithm
    - Score each source on a 0-1 scale
    - Update `sources.reliability_score`
@@ -1467,7 +1467,7 @@ thresholds:
   corroboration_meaningful: 50     # Documents before corroboration scores are reliable
   graph_community_detection: 100   # Entities before community detection is meaningful
   temporal_clustering: 30          # Events with timestamps before clustering activates
-  source_reliability: 50           # Documents before PageRank stabilizes
+  source_reliability: 50           # Graph-connected sources before PageRank stabilizes
 ```
 
 **Degradation behavior:**
