@@ -188,7 +188,7 @@ export async function dequeueJob(pool: pg.Pool, workerId: string): Promise<Deque
     WHERE id = (
       SELECT id
       FROM jobs
-      WHERE status = 'pending' AND attempts < max_attempts
+      WHERE status = 'pending' AND attempts <= max_attempts
       ORDER BY created_at ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
@@ -289,6 +289,8 @@ export async function markJobDeadLetter(pool: pg.Pool, id: string, errorLog?: st
         error_log = COALESCE($2, error_log),
         finished_at = now()
     WHERE id = $1
+      AND attempts >= max_attempts
+      AND status IN ('pending', 'running', 'failed')
     RETURNING *
   `;
 
@@ -315,12 +317,16 @@ export async function markJobDeadLetter(pool: pg.Pool, id: string, errorLog?: st
 export async function reapRunningJobs(pool: pg.Pool, staleBefore: Date): Promise<ReapJobsResult> {
 	const sql = `
     UPDATE jobs
-    -- Refund the in-flight claim so a crashed final-attempt job stays recoverable.
-    SET status = 'pending',
-        attempts = GREATEST(attempts - 1, 0),
+    SET status = CASE
+          WHEN attempts > max_attempts THEN 'dead_letter'::job_status
+          ELSE 'pending'::job_status
+        END,
         worker_id = NULL,
         started_at = NULL,
-        finished_at = NULL
+        finished_at = CASE
+          WHEN attempts > max_attempts THEN now()
+          ELSE NULL
+        END
     WHERE status = 'running'
       AND started_at IS NOT NULL
       AND started_at < $1

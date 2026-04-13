@@ -249,8 +249,8 @@ describe('Spec 67: Job Queue Repository', () => {
 				('00000000-0000-0000-0000-000000067402', 'pipeline_run', '{"state":"completed"}', 'completed', 1, 3, 'worker-done', now() - interval '4 minutes', now() - interval '6 minutes'),
 				('00000000-0000-0000-0000-000000067403', 'pipeline_run', '{"state":"failed"}', 'failed', 1, 3, 'worker-failed', now() - interval '4 minutes', now() - interval '6 minutes'),
 				('00000000-0000-0000-0000-000000067404', 'pipeline_run', '{"state":"dead"}', 'dead_letter', 3, 3, 'worker-dead', now() - interval '4 minutes', now() - interval '6 minutes'),
-				('00000000-0000-0000-0000-000000067405', 'pipeline_run', '{"state":"exhausted"}', 'pending', 3, 3, NULL, NULL, now() - interval '3 minutes'),
-				('00000000-0000-0000-0000-000000067406', 'pipeline_run', '{"state":"runnable"}', 'pending', 0, 3, NULL, NULL, now() - interval '2 minutes');
+				('00000000-0000-0000-0000-000000067405', 'pipeline_run', '{"state":"recovery"}', 'pending', 3, 3, NULL, NULL, now() - interval '3 minutes'),
+				('00000000-0000-0000-0000-000000067406', 'pipeline_run', '{"state":"exhausted"}', 'pending', 4, 3, NULL, NULL, now() - interval '2 minutes');
 		`);
 
 		const { stdout, stderr, exitCode } = runScript(`
@@ -274,10 +274,10 @@ describe('Spec 67: Job Queue Repository', () => {
 		const combined = stdout + stderr;
 		expect(exitCode).toBe(0);
 		expect(combined).not.toContain('SCRIPT_ERROR:');
-		expect(combined).toContain('CLAIMED_ID:00000000-0000-0000-0000-000000067406');
+		expect(combined).toContain('CLAIMED_ID:00000000-0000-0000-0000-000000067405');
 		expect(combined).toContain('CLAIMED_STATUS:running');
 
-		const exhaustedStatus = db.runSql("SELECT status FROM jobs WHERE id = '00000000-0000-0000-0000-000000067405';");
+		const exhaustedStatus = db.runSql("SELECT status FROM jobs WHERE id = '00000000-0000-0000-0000-000000067406';");
 		const runningOwner = db.runSql("SELECT worker_id FROM jobs WHERE id = '00000000-0000-0000-0000-000000067401';");
 		expect(exhaustedStatus).toBe('pending');
 		expect(runningOwner).toBe('worker-old');
@@ -526,7 +526,7 @@ describe('Spec 67: Job Queue Repository', () => {
 		expect(reapedState).toBe('pending||true');
 	});
 
-	it('review blocker: reaper refunds a stale final-attempt claim back to a runnable pending job', () => {
+	it('review blocker: reaper allows one recovery pickup for a stale final-attempt claim without creating infinite retries', () => {
 		if (!pgAvailable) return;
 
 		cleanJobData();
@@ -544,6 +544,12 @@ describe('Spec 67: Job Queue Repository', () => {
 			try {
 				const result = await reapRunningJobs(pool, new Date(Date.now() - 2 * 60 * 60 * 1000));
 				const next = await dequeueJob(pool, 'worker-after-reap');
+				await pool.query(
+					"UPDATE jobs SET started_at = now() - interval '3 hours' WHERE id = $1",
+					['00000000-0000-0000-0000-000000067702'],
+				);
+				const secondReap = await reapRunningJobs(pool, new Date(Date.now() - 2 * 60 * 60 * 1000));
+				const thirdClaim = await dequeueJob(pool, 'worker-third');
 				const state = await pool.query(
 					'SELECT status, attempts, worker_id, (started_at IS NULL) AS started_cleared, (finished_at IS NOT NULL) AS finished_set FROM jobs WHERE id = $1',
 					['00000000-0000-0000-0000-000000067702'],
@@ -552,6 +558,8 @@ describe('Spec 67: Job Queue Repository', () => {
 
 				process.stderr.write('REAP_COUNT:' + result.count + '\\n');
 				process.stderr.write('NEXT_JOB:' + String(next?.id ?? 'null') + '\\n');
+				process.stderr.write('SECOND_REAP_COUNT:' + secondReap.count + '\\n');
+				process.stderr.write('THIRD_JOB:' + String(thirdClaim?.id ?? 'null') + '\\n');
 				process.stderr.write('NEXT_ATTEMPTS:' + String(next?.attempts ?? 'null') + '\\n');
 				process.stderr.write(
 					'STATE:' +
@@ -579,8 +587,10 @@ describe('Spec 67: Job Queue Repository', () => {
 		expect(combined).not.toContain('SCRIPT_ERROR:');
 		expect(combined).toContain('REAP_COUNT:1');
 		expect(combined).toContain('NEXT_JOB:00000000-0000-0000-0000-000000067702');
-		expect(combined).toContain('NEXT_ATTEMPTS:1');
-		expect(combined).toContain('STATE:running|1|worker-after-reap|false|false');
+		expect(combined).toContain('SECOND_REAP_COUNT:1');
+		expect(combined).toContain('THIRD_JOB:null');
+		expect(combined).toContain('NEXT_ATTEMPTS:2');
+		expect(combined).toContain('STATE:dead_letter|2||true|true');
 	});
 
 	it('QA-08: fresh running jobs are not reaped', () => {

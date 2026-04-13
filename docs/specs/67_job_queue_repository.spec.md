@@ -66,7 +66,7 @@ SET status = 'running',
     worker_id = $1
 WHERE id = (
   SELECT id FROM jobs
-  WHERE status = 'pending' AND attempts < max_attempts
+  WHERE status = 'pending' AND attempts <= max_attempts
   ORDER BY created_at ASC
   FOR UPDATE SKIP LOCKED
   LIMIT 1
@@ -78,6 +78,7 @@ Failure updates must preserve retry semantics:
 
 - if the just-finished attempt still has retries remaining, keep the failure visible with `status = 'failed'`, store `error_log`, and stamp `finished_at`
 - if `attempts >= max_attempts`, transition the row to `status = 'dead_letter'`
+- if the reaper resets a stale `running` row, it returns the row to `pending` without changing `attempts`; a pending row at exactly `max_attempts` is allowed one recovery pickup, and any later crash or explicit failure after that pickup must end in `dead_letter`
 
 This spec does not add the later retry reset flow; it only preserves the terminal states the next milestones consume.
 
@@ -122,9 +123,9 @@ None. Callers may pass `max_attempts` when enqueueing, typically sourced from th
    - Then: the oldest pending row is returned, its status becomes `running`, `attempts` increments by one, `worker_id` is stored, and a second dequeue does not return the same row again
 
 4. **QA-04: Dequeue skips unrunnable jobs**
-   - Given: jobs already `running`, already terminal, or already at `attempts >= max_attempts`
+   - Given: jobs already `running`, already terminal, or already beyond the retry budget (`attempts > max_attempts`)
    - When: `dequeueJob` runs
-   - Then: those rows are ignored and only a runnable pending job can be claimed
+   - Then: those rows are ignored, while a pending row at exactly `attempts = max_attempts` remains eligible for one recovery pickup after reap
 
 5. **QA-05: Mark completed finalizes the claimed job**
    - Given: a running job
