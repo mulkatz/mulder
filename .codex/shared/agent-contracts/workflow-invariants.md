@@ -18,9 +18,10 @@
 
 ## Naming Conventions
 
-- Commit subjects must use professional conventional prefixes: `feat:`, `fix:`, `refactor:`, `chore:`, or `docs:`.
+- Commit subjects must use professional conventional prefixes: `feat:`, `fix:`, `refactor:`, `chore:`, `docs:`, or `test:`.
 - Use `feat:` for main spec delivery phases.
 - Use `fix:` for QA or review remediation, regressions, or bug fixes.
+- Use `test:` for black-box QA test additions or targeted test-only corrections.
 - Use `refactor:`, `chore:`, and `docs:` only when the work truly matches those categories.
 - Commit summaries should be concise, imperative, and specific to the delivered phase.
 - Issue titles created by architect or auto-pilot should follow the Mulder scheme: `[Domain] Observable system change — {TARGET_STEP}`.
