@@ -11,6 +11,6 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@mulder/core": "workspace:*"
+		"@mulder/pipeline": "workspace:*"
 	}
 }

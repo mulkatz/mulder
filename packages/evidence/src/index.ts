@@ -1,1 +1,23 @@
-export {};
+export type {
+	AnalyzeData,
+	AnalyzeInput,
+	AnalyzePassName,
+	AnalyzePassResult,
+	AnalyzeResult,
+	ContradictionAnalyzeData,
+	ContradictionResolutionOutcome,
+	ContradictionResolutionResponse,
+	ContradictionVerdict,
+	EvidenceChainsAnalyzeData,
+	EvidenceChainThesisOutcome,
+	FullAnalyzeData,
+	ReliabilityAnalyzeData,
+	SingleAnalyzeData,
+	SourceReliabilityOutcome,
+	SpatioTemporalAnalyzeData,
+	SpatioTemporalCluster,
+	SpatioTemporalClusterType,
+	SpatioTemporalEvent,
+	WinningClaim,
+} from '@mulder/pipeline';
+export { executeAnalyze } from '@mulder/pipeline';

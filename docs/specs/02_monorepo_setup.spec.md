@@ -177,8 +177,8 @@ Each package follows the same pattern:
 | `packages/retrieval` | `@mulder/retrieval` | `@mulder/core` |
 | `packages/taxonomy` | `@mulder/taxonomy` | `@mulder/core` |
 | `packages/worker` | `@mulder/worker` | `@mulder/core`, `@mulder/pipeline` |
-| `packages/evidence` | `@mulder/evidence` | `@mulder/core` |
-| `apps/cli` | `@mulder/cli` | `@mulder/core`, `@mulder/pipeline`, `@mulder/retrieval`, `@mulder/taxonomy`, `@mulder/evidence`, `@mulder/worker` |
+| `packages/evidence` | `@mulder/evidence` | `@mulder/pipeline` |
+| `apps/cli` | `@mulder/cli` | `@mulder/core`, `@mulder/pipeline`, `@mulder/retrieval`, `@mulder/taxonomy` |
 | `apps/api` | `@mulder/api` | `@mulder/core`, `@mulder/retrieval`, `@mulder/taxonomy`, `@mulder/evidence`, `@mulder/worker` |
 
 Per §13 package dependency graph.
@@ -216,7 +216,7 @@ Per §13 package dependency graph.
 }
 ```
 
-**Each `src/index.ts`:** Empty barrel export (`export {};`) to make build succeed.
+**Each `src/index.ts`:** Minimal package entry point. In the initial scaffolding phase these can be empty barrels (`export {};`), but later specs may replace them with real public exports as package boundaries solidify.
 
 ### 4.3 Directory Scaffolding
 
@@ -252,7 +252,7 @@ node_modules/
 
 **Phase 1:** Root config files (package.json, pnpm-workspace.yaml, turbo.json, tsconfig.base.json, biome.json, vitest.config.ts)
 **Phase 2:** Core package (packages/core) — no dependencies, the foundation
-**Phase 3:** Leaf packages (pipeline, retrieval, taxonomy, evidence) — depend only on core
+**Phase 3:** Leaf packages (pipeline, retrieval, taxonomy, evidence) — start from the package graph in §4.2 and add only the workspace dependencies each package actually needs
 **Phase 4:** Worker package — depends on core + pipeline
 **Phase 5:** Apps (cli, api) — depend on multiple packages
 **Phase 6:** `pnpm install` + `pnpm turbo run build` + `biome check` — verify everything compiles

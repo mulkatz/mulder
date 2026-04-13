@@ -2220,7 +2220,7 @@ mulder/
 │   │       ├── loop.ts             # Worker event loop
 │   │       └── reaper.ts           # Stuck job recovery
 │   │
-│   └── evidence/                   # v2.0: Evidence analysis
+│   └── evidence/                   # Public evidence/analyze facade over pipeline analyze exports
 │       ├── package.json
 │       └── src/
 │           ├── contradictions.ts
@@ -2267,12 +2267,12 @@ mulder/
 ### Package Dependencies
 
 ```
-apps/cli     → packages/core, packages/pipeline, packages/retrieval, packages/taxonomy, packages/evidence, packages/worker
+apps/cli     → packages/core, packages/pipeline, packages/retrieval, packages/taxonomy
 apps/api     → packages/core, packages/retrieval, packages/taxonomy, packages/evidence, packages/worker
-packages/pipeline  → packages/core
+packages/pipeline  → packages/core, packages/retrieval, packages/taxonomy
 packages/retrieval → packages/core
 packages/taxonomy  → packages/core
-packages/evidence  → packages/core
+packages/evidence  → packages/pipeline
 packages/worker    → packages/core, packages/pipeline
 ```
 

@@ -1,9 +1,14 @@
 {
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
+		"baseUrl": ".",
+		"ignoreDeprecations": "6.0",
 		"outDir": "dist",
+		"paths": {
+			"@mulder/pipeline": ["../pipeline/src/index.ts"]
+		},
 		"rootDir": "src"
 	},
 	"include": ["src"],
-	"references": [{ "path": "../core" }]
+	"references": [{ "path": "../pipeline" }]
 }
