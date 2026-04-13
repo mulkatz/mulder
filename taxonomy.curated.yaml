@@ -1,0 +1,8 @@
+# Mulder Taxonomy — exported 2026-04-12T21:49:28.327Z
+# Edit entries: change status, rename canonicals, add/remove aliases.
+# Then run `mulder taxonomy merge` to apply changes.
+#
+# Status values: confirmed | auto | rejected
+# - confirmed: human-verified, bootstrap won't touch these
+# - auto: machine-generated, may be replaced by re-bootstrap
+# - rejected: hidden from normalization, preserved for reference
