@@ -265,6 +265,24 @@ function printSingleAnalyzeResult(result: AnalyzeResult): void {
 		return;
 	}
 
+	if (result.data.warning) {
+		process.stderr.write(`Analyze warning: ${result.data.warning}\n`);
+	}
+
+	if (result.data.belowThreshold) {
+		const summary = `${result.data.skippedCount} theses skipped (${result.metadata.duration_ms}ms)`;
+
+		if (result.status === 'failed') {
+			printError(`Analyze failed: ${summary}`);
+			process.exit(1);
+		} else if (result.status === 'partial') {
+			process.stderr.write(`Analyze partial: ${summary}\n`);
+		} else {
+			printSuccess(`Analyze complete: ${summary}`);
+		}
+		return;
+	}
+
 	if (result.data.supportingCount === 0 && result.data.contradictionCount === 0 && result.data.failedCount === 0) {
 		printSuccess(`Analyze complete: no evidence chains found (${result.metadata.duration_ms}ms)`);
 		return;

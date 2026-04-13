@@ -39,7 +39,12 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { z as z3 } from 'zod/v3';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { computeEvidenceChainsForThesis, type EvidenceChainThesisComputation } from './evidence-chains.js';
+import {
+	buildEvidenceChainsWarning,
+	computeEvidenceChainsForThesis,
+	type EvidenceChainThesisComputation,
+	loadEvidenceChainsAvailability,
+} from './evidence-chains.js';
 import { computeSourceReliability } from './reliability.js';
 import { computeSpatioTemporalClusters } from './spatio-temporal.js';
 import type {
@@ -51,6 +56,7 @@ import type {
 	ContradictionResolutionOutcome,
 	ContradictionResolutionResponse,
 	EvidenceChainsAnalyzeData,
+	EvidenceChainsAvailability,
 	EvidenceChainThesisOutcome,
 	FullAnalyzeData,
 	ReliabilityAnalyzeData,
@@ -70,6 +76,7 @@ export type {
 	ContradictionResolutionResponse,
 	ContradictionVerdict,
 	EvidenceChainsAnalyzeData,
+	EvidenceChainsAvailability,
 	EvidenceChainThesisOutcome,
 	FullAnalyzeData,
 	ReliabilityAnalyzeData,
@@ -219,6 +226,17 @@ function buildEvidenceChainInputs(
 	];
 }
 
+function buildSkippedEvidenceChainOutcomes(theses: string[]): EvidenceChainThesisOutcome[] {
+	return theses.map((thesis) => ({
+		thesis,
+		status: 'skipped',
+		seedCount: 0,
+		supportingCount: 0,
+		contradictionCount: 0,
+		writtenCount: 0,
+	}));
+}
+
 async function replaceEvidenceChainsSnapshot(
 	pool: pg.Pool,
 	thesis: string,
@@ -252,20 +270,29 @@ async function replaceEvidenceChainsSnapshot(
 	}
 }
 
-function makeEvidenceChainsData(outcomes: EvidenceChainThesisOutcome[]): EvidenceChainsAnalyzeData {
+function makeEvidenceChainsData(
+	outcomes: EvidenceChainThesisOutcome[],
+	availability: EvidenceChainsAvailability,
+): EvidenceChainsAnalyzeData {
 	const supportingCount = outcomes.reduce((total, outcome) => total + outcome.supportingCount, 0);
 	const contradictionCount = outcomes.reduce((total, outcome) => total + outcome.contradictionCount, 0);
 	const successCount = outcomes.filter((outcome) => outcome.status === 'success').length;
 	const failedCount = outcomes.filter((outcome) => outcome.status === 'failed').length;
+	const skippedCount = outcomes.filter((outcome) => outcome.status === 'skipped').length;
 
 	return {
 		mode: 'evidence-chains',
 		thesisCount: outcomes.length,
-		processedCount: outcomes.length,
+		processedCount: successCount + failedCount,
 		successCount,
+		skippedCount,
 		failedCount,
 		supportingCount,
 		contradictionCount,
+		sourceCount: availability.sourceCount,
+		threshold: availability.threshold,
+		belowThreshold: availability.belowThreshold,
+		warning: availability.warning,
 		outcomes,
 	};
 }
@@ -501,6 +528,11 @@ function summarizeAnalyzeData(data: SingleAnalyzeData): string {
 				? 'no graph-connected sources found'
 				: `${data.scoredCount} scored, ${data.sourceCount} graph-connected sources`;
 		case 'evidence-chains':
+			if (data.belowThreshold) {
+				return data.skippedCount > 0
+					? `${data.skippedCount} theses skipped`
+					: (data.warning ?? 'evidence chains not yet available');
+			}
 			return data.supportingCount === 0 && data.contradictionCount === 0 && data.failedCount === 0
 				? 'no evidence chains found'
 				: `${data.successCount} successful theses, ${data.failedCount} failed, ${data.supportingCount} supporting, ${data.contradictionCount} contradiction-backed`;
@@ -715,10 +747,29 @@ async function executeEvidenceChainsPass(
 		);
 	}
 
-	const outcomes: EvidenceChainThesisOutcome[] = [];
+	const availability = await loadEvidenceChainsAvailability(pool, config.thresholds.corroboration_meaningful);
+
+	if (availability.belowThreshold) {
+		log.warn(
+			{
+				sourceCount: availability.sourceCount,
+				threshold: availability.threshold,
+				belowThreshold: availability.belowThreshold,
+			},
+			'Evidence chains not yet available — corpus below meaningful threshold',
+		);
+	}
+
+	const outcomes: EvidenceChainThesisOutcome[] = availability.belowThreshold
+		? buildSkippedEvidenceChainOutcomes(thesisInputs)
+		: [];
 	const errors: StepError[] = [];
 
 	for (const thesis of thesisInputs) {
+		if (availability.belowThreshold) {
+			continue;
+		}
+
 		try {
 			const computation = await computeEvidenceChainsForThesis(pool, config, thesis);
 			const computedAt = new Date();
@@ -758,7 +809,7 @@ async function executeEvidenceChainsPass(
 		}
 	}
 
-	const data = makeEvidenceChainsData(outcomes);
+	const data = makeEvidenceChainsData(outcomes, availability);
 	const status =
 		errors.length === 0 ? 'success' : outcomes.some((outcome) => outcome.status === 'success') ? 'partial' : 'failed';
 	const durationMs = Math.round(performance.now() - startTime);
@@ -784,7 +835,7 @@ async function executeEvidenceChainsPass(
 		metadata: {
 			duration_ms: durationMs,
 			items_processed: data.processedCount,
-			items_skipped: data.failedCount,
+			items_skipped: data.skippedCount + data.failedCount,
 			items_cached: 0,
 		},
 	};
@@ -1030,6 +1081,16 @@ async function executeFullAnalyze(
 				thesisOverrides.length > 0 ? thesisOverrides : normalizeThesisList(config.analysis.evidence_theses);
 			if (thesisInputs.length === 0) {
 				passes.push(createSkippedPassResult(pass, 'no thesis input configured'));
+				continue;
+			}
+			const availability = await loadEvidenceChainsAvailability(pool, config.thresholds.corroboration_meaningful);
+			if (availability.belowThreshold) {
+				passes.push(
+					createSkippedPassResult(
+						pass,
+						availability.warning ?? buildEvidenceChainsWarning(availability.sourceCount, availability.threshold),
+					),
+				);
 				continue;
 			}
 		}

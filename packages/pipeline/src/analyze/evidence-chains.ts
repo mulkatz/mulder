@@ -10,9 +10,16 @@
  */
 
 import type { MulderConfig } from '@mulder/core';
-import { ANALYZE_ERROR_CODES, AnalyzeError, createChildLogger, createLogger } from '@mulder/core';
+import {
+	ANALYZE_ERROR_CODES,
+	AnalyzeError,
+	countProcessedSources,
+	createChildLogger,
+	createLogger,
+} from '@mulder/core';
 import { extractQueryEntities } from '@mulder/retrieval';
 import type pg from 'pg';
+import type { EvidenceChainsAvailability } from './types.js';
 
 export interface EvidenceChainPath {
 	path: string[];
@@ -46,6 +53,24 @@ const moduleLogger = createChildLogger(logger, { module: 'analyze-evidence-chain
 
 function normalizeThesis(thesis: string): string {
 	return thesis.trim();
+}
+
+export function buildEvidenceChainsWarning(sourceCount: number, threshold: number): string {
+	return `evidence chains degraded: not yet available until the corpus reaches the meaningful threshold (${sourceCount}/${threshold} processed sources)`;
+}
+
+export async function loadEvidenceChainsAvailability(
+	pool: pg.Pool,
+	threshold: number,
+): Promise<EvidenceChainsAvailability> {
+	const sourceCount = await countProcessedSources(pool);
+
+	return {
+		sourceCount,
+		threshold,
+		belowThreshold: sourceCount < threshold,
+		warning: sourceCount < threshold ? buildEvidenceChainsWarning(sourceCount, threshold) : null,
+	};
 }
 
 async function resolveThesisSeedIds(pool: pg.Pool, thesis: string): Promise<string[]> {

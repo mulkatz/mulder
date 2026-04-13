@@ -37,6 +37,7 @@ let pgAvailable = false;
 let enabledSingleThesisConfigPath: string;
 let enabledDualThesisConfigPath: string;
 let enabledEmptyThesisConfigPath: string;
+let sparseThresholdConfigPath: string;
 let disabledConfigPath: string;
 let featureDisabledConfigPath: string;
 
@@ -72,6 +73,7 @@ function writeAnalyzeConfig(options?: {
 	enabled?: boolean;
 	evidenceChains?: boolean;
 	evidenceTheses?: string[];
+	threshold?: number;
 }): string {
 	const base = readFileSync(EXAMPLE_CONFIG, 'utf-8');
 	const devModeEnabled = base.replace(/^dev_mode:\s*false$/m, 'dev_mode: true');
@@ -98,8 +100,12 @@ function writeAnalyzeConfig(options?: {
 		/analysis:\n[\s\S]*?\n# --- Sparse Graph Thresholds ---/,
 		analysisReplacement,
 	);
+	const withThreshold =
+		options?.threshold !== undefined
+			? withAnalysis.replace(/corroboration_meaningful:\s*\d+/, `corroboration_meaningful: ${options.threshold}`)
+			: withAnalysis;
 	const configPath = join(tmpDir, `analyze-63-${Date.now()}-${Math.random().toString(16).slice(2)}.yaml`);
-	writeFileSync(configPath, withAnalysis, 'utf-8');
+	writeFileSync(configPath, withThreshold, 'utf-8');
 	return configPath;
 }
 
@@ -146,6 +152,23 @@ function seedAlias(args: { id: string; entityId: string; alias: string }): void 
 function linkStoryEntity(storyId: string, entityId: string): void {
 	db.runSql(
 		`INSERT INTO story_entities (story_id, entity_id, confidence, mention_count) VALUES (${sqlString(storyId)}, ${sqlString(entityId)}, 0.9, 1)`,
+	);
+}
+
+function seedEvidenceChain(args: {
+	id: string;
+	thesis: string;
+	path: string[];
+	strength: number;
+	supports: boolean;
+}): void {
+	db.runSql(
+		[
+			'INSERT INTO evidence_chains (id, thesis, path, strength, supports, computed_at)',
+			`VALUES (${sqlString(args.id)}, ${sqlString(args.thesis)}, ARRAY[${args.path
+				.map((entry) => sqlString(entry))
+				.join(', ')}]::uuid[], ${args.strength}, ${args.supports}, now())`,
+		].join(' '),
 	);
 }
 
@@ -224,6 +247,12 @@ describe('Spec 63 — Evidence Chains', () => {
 			evidenceTheses: [THESIS_PRIMARY, THESIS_SECONDARY],
 		});
 		enabledEmptyThesisConfigPath = writeAnalyzeConfig({ enabled: true, evidenceChains: true, evidenceTheses: [] });
+		sparseThresholdConfigPath = writeAnalyzeConfig({
+			enabled: true,
+			evidenceChains: true,
+			evidenceTheses: [THESIS_PRIMARY],
+			threshold: 5,
+		});
 		disabledConfigPath = writeAnalyzeConfig({ enabled: false, evidenceChains: true, evidenceTheses: [THESIS_PRIMARY] });
 		featureDisabledConfigPath = writeAnalyzeConfig({
 			enabled: true,
@@ -253,7 +282,26 @@ describe('Spec 63 — Evidence Chains', () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it('QA-01: configured evidence theses persist supporting chains', () => {
+	it('QA-01: sparse corpora skip evidence-chain traversal and writes', () => {
+		if (!pgAvailable) return;
+		seedEvidenceChain({
+			id: '00000000-0000-0000-0000-000000630501',
+			thesis: THESIS_PRIMARY,
+			path: [ENTITY_ACME_ID, ENTITY_BERLIN_ID],
+			strength: 0.88,
+			supports: true,
+		});
+		const beforeChains = fetchChains(THESIS_PRIMARY);
+		const result = runCli(['analyze', '--evidence-chains'], {
+			env: { MULDER_CONFIG: sparseThresholdConfigPath },
+		});
+		expect(result.exitCode).toBe(0);
+		expect(result.stderr).toContain('not yet available');
+		expect(fetchChains(THESIS_PRIMARY)).toEqual(beforeChains);
+		expect(fetchDistinctTheses()).toEqual([THESIS_PRIMARY]);
+	});
+
+	it('QA-02: configured evidence theses persist supporting chains', () => {
 		if (!pgAvailable) return;
 		seedSupportFixture();
 
@@ -271,7 +319,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		}
 	});
 
-	it('QA-02: re-running the same thesis is idempotent', () => {
+	it('QA-03: re-running the same thesis is idempotent', () => {
 		if (!pgAvailable) return;
 		seedMixedFixture();
 
@@ -295,7 +343,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(secondChains).toEqual(firstChains);
 	});
 
-	it('QA-03: CLI thesis overrides work without config theses', () => {
+	it('QA-04: CLI thesis overrides work without config theses', () => {
 		if (!pgAvailable) return;
 		seedSupportFixture();
 
@@ -306,7 +354,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(fetchDistinctTheses()).toEqual([THESIS_PRIMARY]);
 	});
 
-	it('QA-04: confirmed contradiction evidence is persisted as non-supporting', () => {
+	it('QA-05: confirmed contradiction evidence is persisted as non-supporting', () => {
 		if (!pgAvailable) return;
 		seedMixedFixture();
 
@@ -318,7 +366,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(chains.some((chain) => Number(chain.strength) > 0)).toBe(true);
 	});
 
-	it('QA-05: missing thesis input fails before traversal or writes', () => {
+	it('QA-06: missing thesis input fails before traversal or writes', () => {
 		if (!pgAvailable) return;
 
 		const result = runCli(['analyze', '--evidence-chains'], { env: { MULDER_CONFIG: enabledEmptyThesisConfigPath } });
@@ -328,7 +376,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(fetchChains()).toHaveLength(0);
 	});
 
-	it('QA-06: unresolvable theses report partial failure without blocking valid ones', () => {
+	it('QA-07: unresolvable theses report partial failure without blocking valid ones', () => {
 		if (!pgAvailable) return;
 		seedSupportFixture();
 
@@ -343,7 +391,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(fetchChains(THESIS_UNRESOLVED)).toHaveLength(0);
 	});
 
-	it('QA-07: disabled evidence-chain analysis fails before writes', () => {
+	it('QA-08: disabled evidence-chain analysis fails before writes', () => {
 		if (!pgAvailable) return;
 		seedSupportFixture();
 
@@ -360,7 +408,17 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(fetchChains()).toHaveLength(0);
 	});
 
-	it('CLI-01: `--evidence-chains` uses configured thesis strings and persists evidence-chain rows', () => {
+	it('CLI-01: `--evidence-chains` below `thresholds.corroboration_meaningful` reports sparse-data gating and persists no evidence-chain rows', () => {
+		if (!pgAvailable) return;
+		seedSupportFixture();
+
+		const result = runCli(['analyze', '--evidence-chains'], { env: { MULDER_CONFIG: sparseThresholdConfigPath } });
+		expect(result.exitCode).toBe(0);
+		expect(result.stderr).toContain('not yet available');
+		expect(fetchChains()).toHaveLength(0);
+	});
+
+	it('CLI-02: `--evidence-chains` uses configured thesis strings and persists evidence-chain rows', () => {
 		if (!pgAvailable) return;
 		seedSupportFixture();
 
@@ -372,7 +430,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(fetchDistinctTheses()).toEqual([THESIS_PRIMARY, THESIS_SECONDARY]);
 	});
 
-	it('CLI-02: `--evidence-chains --thesis <text>` computes rows for the provided thesis only', () => {
+	it('CLI-03: `--evidence-chains --thesis <text>` computes rows for the provided thesis only', () => {
 		if (!pgAvailable) return;
 		seedSupportFixture();
 
@@ -383,7 +441,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(fetchDistinctTheses()).toEqual([THESIS_PRIMARY]);
 	});
 
-	it('CLI-03: `--evidence-chains --thesis "A" --thesis "B"` processes both thesis strings in one run', () => {
+	it('CLI-04: `--evidence-chains --thesis "A" --thesis "B"` processes both thesis strings in one run', () => {
 		if (!pgAvailable) return;
 		seedSupportFixture();
 
@@ -396,7 +454,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(fetchDistinctTheses()).toEqual([THESIS_PRIMARY, THESIS_SECONDARY]);
 	});
 
-	it('CLI-04: `--evidence-chains` run twice preserves the first run snapshot', () => {
+	it('CLI-05: `--evidence-chains` run twice preserves the first run snapshot', () => {
 		if (!pgAvailable) return;
 		seedMixedFixture();
 
@@ -420,7 +478,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(secondSnapshot).toEqual(firstSnapshot);
 	});
 
-	it('CLI-05: `--evidence-chains --reliability` exits non-zero because multi-selector analyze is not implemented yet', () => {
+	it('CLI-06: `--evidence-chains --reliability` exits non-zero because multi-selector analyze is not implemented yet', () => {
 		const result = runCli(['analyze', '--evidence-chains', '--reliability'], {
 			env: { MULDER_CONFIG: enabledEmptyThesisConfigPath },
 		});
@@ -428,7 +486,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(result.stderr).toContain('one selector or --full');
 	});
 
-	it('CLI-06: `--evidence-chains --contradictions` exits non-zero because multi-selector analyze is not implemented yet', () => {
+	it('CLI-07: `--evidence-chains --contradictions` exits non-zero because multi-selector analyze is not implemented yet', () => {
 		const result = runCli(['analyze', '--evidence-chains', '--contradictions'], {
 			env: { MULDER_CONFIG: enabledEmptyThesisConfigPath },
 		});
@@ -436,7 +494,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(result.stderr).toContain('one selector or --full');
 	});
 
-	it('CLI-07: `--evidence-chains --full` exits non-zero because full mode and single-pass selectors are mutually exclusive', () => {
+	it('CLI-08: `--evidence-chains --full` exits non-zero because full mode and single-pass selectors are mutually exclusive', () => {
 		const result = runCli(['analyze', '--evidence-chains', '--full'], {
 			env: { MULDER_CONFIG: enabledEmptyThesisConfigPath },
 		});
@@ -444,7 +502,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(result.stderr).toContain('--full cannot be combined');
 	});
 
-	it('CLI-08: `--evidence-chains --thesis ""` exits non-zero with thesis validation feedback', () => {
+	it('CLI-09: `--evidence-chains --thesis ""` exits non-zero with thesis validation feedback', () => {
 		const result = runCli(['analyze', '--evidence-chains', '--thesis', ''], {
 			env: { MULDER_CONFIG: enabledEmptyThesisConfigPath },
 		});
@@ -452,7 +510,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(result.stderr).toContain('at least one non-empty value');
 	});
 
-	it('CLI-09: `mulder analyze` with no args now runs full analyze mode and skips thesis-less evidence chains', () => {
+	it('CLI-10: `mulder analyze` with no args now runs full analyze mode and skips thesis-less evidence chains', () => {
 		if (!pgAvailable) return;
 		seedSupportFixture();
 
@@ -463,7 +521,7 @@ describe('Spec 63 — Evidence Chains', () => {
 		expect(result.stderr).toContain('Analyze complete');
 	});
 
-	it('CLI-10: `--spatio-temporal` now succeeds as a no-op when no clusterable events exist', () => {
+	it('CLI-11: `--spatio-temporal` now succeeds as a no-op when no clusterable events exist', () => {
 		if (!pgAvailable) return;
 
 		const result = runCli(['analyze', '--spatio-temporal'], { env: { MULDER_CONFIG: enabledEmptyThesisConfigPath } });

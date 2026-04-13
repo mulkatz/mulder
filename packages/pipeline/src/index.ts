@@ -9,6 +9,7 @@ export type {
 	ContradictionResolutionResponse,
 	ContradictionVerdict,
 	EvidenceChainsAnalyzeData,
+	EvidenceChainsAvailability,
 	EvidenceChainThesisOutcome,
 	FullAnalyzeData,
 	ReliabilityAnalyzeData,

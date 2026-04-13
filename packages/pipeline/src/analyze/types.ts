@@ -68,7 +68,7 @@ export interface ReliabilityAnalyzeData {
 	outcomes: SourceReliabilityOutcome[];
 }
 
-export type EvidenceChainThesisStatus = 'success' | 'failed';
+export type EvidenceChainThesisStatus = 'success' | 'failed' | 'skipped';
 
 export interface EvidenceChainThesisOutcome {
 	thesis: string;
@@ -79,14 +79,26 @@ export interface EvidenceChainThesisOutcome {
 	writtenCount: number;
 }
 
+export interface EvidenceChainsAvailability {
+	sourceCount: number;
+	threshold: number;
+	belowThreshold: boolean;
+	warning: string | null;
+}
+
 export interface EvidenceChainsAnalyzeData {
 	mode: 'evidence-chains';
 	thesisCount: number;
 	processedCount: number;
 	successCount: number;
+	skippedCount: number;
 	failedCount: number;
 	supportingCount: number;
 	contradictionCount: number;
+	sourceCount: number;
+	threshold: number;
+	belowThreshold: boolean;
+	warning: string | null;
 	outcomes: EvidenceChainThesisOutcome[];
 }
 
