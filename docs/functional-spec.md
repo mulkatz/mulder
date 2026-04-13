@@ -1474,7 +1474,7 @@ thresholds:
 - **Taxonomy** < threshold: Entities are extracted but not normalized. Raw entity names in the graph.
 - **Corroboration** < threshold: Score returned as `null` / `"insufficient_data"`, not `1`.
 - **Hybrid Retrieval** with sparse data: All three strategies (vector, fulltext, graph) still execute. The graph strategy naturally returns 0 hits when there are no entities to seed traversal — this is the "fallback to pure vector search" behavior in practice. RRF fusion handles the empty-strategy case correctly: only the strategies that returned results contribute to the fused list. The `confidence.degraded` flag is set so the orchestrator and clients can react.
-- **Evidence chains** < threshold: Feature disabled, API endpoint returns `501 Not Yet Available` with explanation.
+- **Evidence chains** < `thresholds.corroboration_meaningful`: Feature disabled for sparse corpora. `mulder analyze --evidence-chains` reports a clear degraded/not-yet-available reason, performs no traversal, and does not write `evidence_chains` rows. The future API endpoint returns `501 Not Yet Available` with explanation.
 
 **API response `confidence` object:**
 ```json
