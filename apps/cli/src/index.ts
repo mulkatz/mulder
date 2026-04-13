@@ -29,6 +29,7 @@ import { registerSegmentCommands } from './commands/segment.js';
 import { registerShowCommands } from './commands/show.js';
 import { registerStatusCommand } from './commands/status.js';
 import { registerTaxonomyCommands } from './commands/taxonomy.js';
+import { registerWorkerCommands } from './commands/worker.js';
 
 const program = new Command()
 	.name('mulder')
@@ -53,6 +54,7 @@ registerQueryCommands(program);
 registerSegmentCommands(program);
 registerShowCommands(program);
 registerStatusCommand(program);
+registerWorkerCommands(program);
 registerTaxonomyCommands(program);
 
 program.parse();
