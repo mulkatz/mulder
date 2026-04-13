@@ -117,6 +117,7 @@ let dockerAvailable = false;
 let postgresStarted = false;
 let firestoreStarted = false;
 let firestoreImageAvailable = false;
+let postgresVolumeName = '';
 const stoppedConflictingContainers: string[] = [];
 
 describe('Spec 12: Docker Compose — pgvector + PostGIS + Firestore Emulator', () => {
@@ -157,6 +158,21 @@ describe('Spec 12: Docker Compose — pgvector + PostGIS + Firestore Emulator', 
 			const pgHealthy = waitForHealthy(PG_CONTAINER, 90_000);
 			if (pgHealthy) {
 				postgresStarted = true;
+				const volumeResult = spawnSync(
+					'docker',
+					[
+						'inspect',
+						'--format',
+						'{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}',
+						PG_CONTAINER,
+					],
+					{
+						encoding: 'utf-8',
+						timeout: 5_000,
+						stdio: ['pipe', 'pipe', 'pipe'],
+					},
+				);
+				postgresVolumeName = (volumeResult.stdout ?? '').trim();
 			} else {
 				const logs = containerLogs(PG_CONTAINER);
 				console.warn(`WARNING: mulder-postgres did not reach healthy status. Logs:\n${logs.slice(-500)}`);
@@ -364,13 +380,15 @@ describe('Spec 12: Docker Compose — pgvector + PostGIS + Firestore Emulator', 
 		});
 		expect((fsResult.stdout ?? '').trim()).toBe('');
 
-		// Verify named volume is removed
-		const volResult = spawnSync('docker', ['volume', 'ls', '--filter', 'name=pgdata', '--format', '{{.Name}}'], {
-			encoding: 'utf-8',
-			timeout: 5_000,
-			stdio: ['pipe', 'pipe', 'pipe'],
-		});
-		expect((volResult.stdout ?? '').trim()).toBe('');
+		// Verify the specific postgres data volume created by this compose run is removed.
+		if (postgresVolumeName) {
+			const volResult = spawnSync('docker', ['volume', 'inspect', postgresVolumeName], {
+				encoding: 'utf-8',
+				timeout: 5_000,
+				stdio: ['pipe', 'pipe', 'pipe'],
+			});
+			expect(volResult.status).not.toBe(0);
+		}
 
 		// Mark services as stopped so afterAll doesn't try double-down
 		postgresStarted = false;
