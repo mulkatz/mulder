@@ -5,6 +5,8 @@
 - Use the shared target rules to resolve the milestone.
 - If any milestone steps are still incomplete, warn and proceed only as a partial review.
 
+The functional spec remains the source of truth even when the implementation seems more reasonable.
+
 Record:
 
 ```text
@@ -22,11 +24,26 @@ STEP_COUNT
 - Deduplicate the final section list.
 - Map each section to a line range in `docs/functional-spec.md` by locating the header and the next header of equal or higher level.
 
+Record the results explicitly so the review can reference them later:
+
+```text
+SECTIONS_FROM_STEPS
+CROSS_REFERENCES
+ALL_SECTIONS
+```
+
 ## Build Review Batches
 
 - Group the sections into 3-5 related review batches.
 - Keep each batch small enough to review inline with context intact.
 - Batch by shared implementation scope rather than by arbitrary section number.
+
+Prefer batches like:
+
+- config + CLI
+- database + migrations
+- shared services + infrastructure
+- repo structure + cross-cutting conventions
 
 ## Review Execution
 
@@ -46,6 +63,15 @@ For each batch:
 
 Run the review inline. Do not split the milestone review across workers.
 
+Use systematic per-section checks where relevant:
+
+- types and signatures
+- DDL and indexes
+- config keys and defaults
+- CLI flags and usage
+- error codes and failure behavior
+- architecture pattern compliance
+
 ## Cross-Cutting Checks
 
 After the section-by-section review, perform a cross-cutting pass for:
@@ -56,6 +82,12 @@ After the section-by-section review, perform a cross-cutting pass for:
 - package structure and workspace references
 - existence and black-box nature of spec tests where relevant
 
+Also compare `CLAUDE.md` against the reviewed implementation and functional-spec sections:
+
+- repo structure accuracy
+- architecture pattern accuracy
+- contradictions or drift
+
 ## Report
 
 Write `docs/reviews/{milestone-id}-review.md` with:
@@ -65,6 +97,19 @@ Write `docs/reviews/{milestone-id}-review.md` with:
 - per-section divergences
 - cross-cutting review notes
 - overall verdict: `PASS`, `PASS_WITH_WARNINGS`, or `NEEDS_ATTENTION`
+
+Recommended report shape:
+
+- frontmatter
+- summary with severity counts
+- per-section divergences
+- cross-cutting convention review
+- `CLAUDE.md` consistency section
+- recommendations grouped into must-fix, should-fix, and for-consideration
+
+When this workflow persists a review report, use a professional `docs:` commit prefix.
+
+Milestone review does not use retry loops or sub-workers. Keep the evaluation inline so cross-section context stays intact across the whole milestone.
 
 ## Final Output
 

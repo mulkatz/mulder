@@ -22,6 +22,8 @@ MILESTONE: <milestone>
 STEP_TITLE: <roadmap title>
 ```
 
+If the user provided a grouped step range, record the grouped work item explicitly and decide during scope assessment whether it remains one spec, one phased spec, or a multi-spec split.
+
 ## Functional Spec Reading
 
 - Extract `§` references from the roadmap step's spec column.
@@ -30,6 +32,8 @@ STEP_TITLE: <roadmap title>
 - Do not broaden the read scope unless a blocking inconsistency forces it.
 
 Use header searches like `^#{2,4}\s*4\.1\b` to locate sections and stop at the next header of equal or higher level.
+
+Do not read unrelated functional-spec sections "just in case." The roadmap references are the contract for architect context.
 
 ## Scope Classification
 
@@ -77,6 +81,14 @@ Requirements:
 - `CLI Test Matrix` is required only when the step adds or changes CLI commands. Otherwise say `N/A — no CLI commands in this step.`
 - `Cost Considerations` is required when the step touches paid services or cost-sensitive execution.
 
+Additional quality rules:
+
+- Use exact target file paths in `Boundaries` and `Blueprint`.
+- Make `Dependencies` explicit even when the answer is `None`.
+- Use Given/When/Then QA conditions that a separate verification worker can execute without implementation knowledge.
+- For foundational steps, express QA conditions in shell-observable behavior rather than assuming the test harness already exists.
+- For CLI steps, enumerate the actual command surface and the meaningful flag combinations rather than writing a token placeholder matrix.
+
 ## Issue And Project Metadata
 
 Create or update the linked GitHub issue so it is self-contained:
@@ -86,6 +98,12 @@ Create or update the linked GitHub issue so it is self-contained:
 - spec path and roadmap step
 - QA conditions as acceptance checklist
 - expected branch reference using `feat/{issue-number}-{short-kebab-descriptor}`
+
+Preserve the original issue intent:
+
+- labels are for domain and work type only
+- project-board fields carry status, phase, priority, step, and spec path when that board exists
+- the issue body should be reviewable on its own without opening the spec first
 
 Preserve the repository's label and project-board conventions when they exist:
 
@@ -98,6 +116,20 @@ After creating the issue, write its URL back into the spec frontmatter.
 
 - Move the target roadmap step to in-progress when the workflow is meant to advance state.
 - Do not mark the step complete here.
+
+## Standalone Persistence
+
+When `architect` is run as a standalone workflow and the repository policy expects persistence:
+
+- stage the spec file plus any roadmap change
+- commit with a professional `docs:` prefix
+- keep the commit summary traceable to the step and spec number
+
+Recommended shape:
+
+```text
+docs: add spec NN for TARGET_STEP
+```
 
 ## Final Report
 

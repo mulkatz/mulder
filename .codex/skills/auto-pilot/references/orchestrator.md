@@ -32,6 +32,8 @@ Maintain this task list:
 6. Finalize: merge, close issue, update roadmap
 ```
 
+Keep the parent thread focused on this ledger plus short phase summaries. Do not drag full implementation, test, or review reasoning forward after each phase.
+
 ## Phase 0: Pre-Flight
 
 Run inline:
@@ -58,6 +60,11 @@ If the gates pass:
 
 This workflow must be runnable from a clean worktree that is detached at the current `origin/main` commit.
 
+Record the starting mode for finalize:
+
+- `START_MODE=main-branch`
+- `START_MODE=main-aligned-detached`
+
 ## Phase 1: Architect
 
 Run inline using `.codex/skills/architect/references/workflow.md`.
@@ -70,6 +77,12 @@ Requirements:
 - stop for approval on `multi-spec`
 - create or update the spec, issue, project metadata, and roadmap in-progress state
 - ensure the issue title follows `[Domain] Observable system change — {TARGET_STEP}`
+
+The architect phase is also responsible for preserving the original GitHub hygiene:
+
+- domain and type labels
+- project-board fields when configured
+- functional-spec traceability in the spec and issue
 
 Fold the results into the ledger:
 
@@ -95,6 +108,17 @@ Spawn a fresh `worker` agent with `fork_context: false`. Pass only the implement
 - read `.codex/skills/implement/references/worker.md`
 - reconstruct all domain context from repository files and the handoff payload
 
+The implement payload should include only the current structured state:
+
+- `SPEC_PATH`
+- `SPEC_NUMBER`
+- optional `TARGET_STEP`
+- optional `ISSUE_NUMBER`
+- optional `ISSUE_URL`
+- `ITERATION`
+- optional `BRANCH_NAME`
+- optional `FAILURES`
+
 Parse only the required implement output fields back into the ledger.
 
 The implementation branch must follow the typed Mulder naming scheme from the shared workflow invariants, with `feat/{issue-number}-{short-kebab-descriptor}` as the normal roadmap default.
@@ -111,7 +135,22 @@ Spawn a fresh `worker` agent with `fork_context: false`. Pass only the verify ha
 - read `.codex/skills/verify/references/worker.md`
 - reconstruct context only from allowed repository files and the handoff payload
 
+The verify payload should include:
+
+- `SPEC_PATH`
+- `SPEC_NUMBER`
+- `BRANCH_NAME`
+- `ITERATION`
+- optional `TARGET_STEP`
+- optional `TEST_MISMATCH`
+
 Parse the verify contract.
+
+This phase owns the QA gate:
+
+- black-box QA conditions
+- CLI matrix execution
+- discovery-driven smoke coverage when the spec has CLI surface
 
 Verdict handling:
 
@@ -121,6 +160,8 @@ Verdict handling:
 - `FAIL` with iteration cap reached -> stop and report the blocked state
 
 If implement reported `TEST_MISMATCH`, include it in the verify handoff so the verifier can inspect the assertion rather than force code to match a bad test.
+
+If verify reports a regression in pre-existing tests, treat it as a real failure and loop back through implement when retries remain.
 
 ## Phase 4: Review
 
@@ -132,12 +173,23 @@ Spawn a fresh `worker` agent with `fork_context: false`. Pass only the review ha
 - read `.codex/skills/review/references/worker.md`
 - reconstruct context from the repo plus the handoff payload
 
+The review payload should include:
+
+- `SPEC_PATH`
+- `SPEC_NUMBER`
+- `BRANCH_NAME`
+- optional `TARGET_STEP`
+- optional `PR_NUMBER`
+- optional `PR_URL`
+
 Decision handling:
 
 - `APPROVED` -> finalize
 - `CHANGES_REQUESTED` with only warnings -> finalize and note warnings
 - `CHANGES_REQUESTED` with blocking issues and retries left -> convert blocking issues into the next `FAILURES`, reset `VERDICT` to pending, then rerun implement -> verify -> review
 - `CHANGES_REQUESTED` with blocking issues and no retries left -> stop and report the blocked state
+
+Warnings alone must not trigger an extra implementation cycle.
 
 Use the same malformed-output recovery rule as other workers.
 
@@ -148,9 +200,12 @@ Finalize inline only when the gates pass:
 - merge the PR
 - close or update issue state
 - update roadmap from in-progress to complete
+- preserve the issue auto-close path by keeping `Closes #{ISSUE_NUMBER}` in the PR body when an issue exists
 - return the local checkout to a clean main-aligned state:
   - local `main` when the run started attached to `main`
   - detached at updated `origin/main` when the run started from a detached worktree base
+
+If a devlog entry is warranted by repository practice, write it on the feature branch before merge using a professional `docs:` or `refactor:` style summary that reflects the actual change.
 
 If the workflow is blocked instead of passed, do not force completion. Return the current ledger plus the blocking issues or failed conditions.
 
