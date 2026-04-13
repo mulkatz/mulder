@@ -25,12 +25,8 @@ import { dispatchJob } from './dispatch.js';
 import {
 	createWorkerId,
 	describeWorkerError,
-	isSupportedJobType,
-	WORKER_ERROR_CODES,
 	type WorkerActiveJobSnapshot,
-	type WorkerDispatchContext,
 	type WorkerDispatchFn,
-	WorkerError,
 	type WorkerJobEnvelope,
 	type WorkerJobStatusSnapshot,
 	type WorkerQueueCounts,
@@ -150,12 +146,6 @@ export async function processNextJob(context: WorkerRuntimeContext, workerId: st
 	const job = await dequeueJob(context.pool, workerId);
 	if (!job) {
 		return { state: 'idle', job: null, error: null };
-	}
-
-	if (!isSupportedJobType(job.type)) {
-		throw new WorkerError(`Unsupported job type "${job.type}"`, WORKER_ERROR_CODES.WORKER_UNKNOWN_JOB_TYPE, {
-			context: { jobId: job.id, jobType: job.type, workerId },
-		});
 	}
 
 	const typedJob = toWorkerJobEnvelope(job);

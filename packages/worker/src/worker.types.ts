@@ -19,18 +19,35 @@ import type pg from 'pg';
 // Supported job types
 // ────────────────────────────────────────────────────────────
 
-export type SupportedJobType = 'pipeline_run';
+export type SourceStepJobType = 'extract' | 'segment';
+export type StoryStepJobType = 'enrich' | 'embed' | 'graph';
+export type LegacyWorkerJobType = 'pipeline_run';
+export type SupportedJobType = SourceStepJobType | StoryStepJobType;
+export type WorkerJobType = SupportedJobType | LegacyWorkerJobType;
 
-export interface PipelineRunJobPayload {
+export interface SourceStepJobPayload {
 	sourceId: string;
+	force?: boolean;
+	fallbackOnly?: boolean;
+}
+
+export interface StoryStepJobPayload {
+	storyId: string;
 	force?: boolean;
 }
 
+export type LegacyPipelineRunJobPayload = SourceStepJobPayload;
+
 export type WorkerJobPayloadMap = {
-	pipeline_run: PipelineRunJobPayload;
+	extract: SourceStepJobPayload;
+	segment: SourceStepJobPayload;
+	enrich: StoryStepJobPayload;
+	embed: StoryStepJobPayload;
+	graph: StoryStepJobPayload;
+	pipeline_run: LegacyPipelineRunJobPayload;
 };
 
-export interface WorkerJobEnvelope<TType extends SupportedJobType = SupportedJobType> {
+export interface WorkerJobEnvelope<TType extends WorkerJobType = WorkerJobType> {
 	id: string;
 	type: TType;
 	payload: WorkerJobPayloadMap[TType];
@@ -151,7 +168,7 @@ export function describeWorkerError(error: unknown): string {
 }
 
 export function isSupportedJobType(type: string): type is SupportedJobType {
-	return type === 'pipeline_run';
+	return type === 'extract' || type === 'segment' || type === 'enrich' || type === 'embed' || type === 'graph';
 }
 
 export function createWorkerId(slot = 0): string {

@@ -11,7 +11,11 @@ export {
 	startWorker,
 } from './runtime.js';
 export type {
-	PipelineRunJobPayload,
+	LegacyPipelineRunJobPayload,
+	SourceStepJobPayload,
+	SourceStepJobType,
+	StoryStepJobPayload,
+	StoryStepJobType,
 	SupportedJobType,
 	WorkerActiveJobSnapshot,
 	WorkerDispatchContext,
@@ -19,6 +23,7 @@ export type {
 	WorkerErrorCode,
 	WorkerJobEnvelope,
 	WorkerJobStatusSnapshot,
+	WorkerJobType,
 	WorkerQueueCounts,
 	WorkerReapOptions,
 	WorkerRuntimeOptions,
