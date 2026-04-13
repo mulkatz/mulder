@@ -126,6 +126,7 @@ export type {
 	DequeueJobResult,
 	EnqueueJobInput,
 	Job,
+	JobClaim,
 	JobFilter,
 	JobPayload,
 	JobStatus,

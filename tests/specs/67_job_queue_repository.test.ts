@@ -299,7 +299,11 @@ describe('Spec 67: Job Queue Repository', () => {
 			const pool = getWorkerPool(config);
 
 			try {
-				const job = await markJobCompleted(pool, '00000000-0000-0000-0000-000000067501');
+				const job = await markJobCompleted(pool, {
+					jobId: '00000000-0000-0000-0000-000000067501',
+					workerId: 'worker-qa05',
+					attempts: 1,
+				});
 				process.stderr.write('STATUS:' + job.status + '\\n');
 				process.stderr.write('WORKER:' + job.workerId + '\\n');
 				process.stderr.write('HAS_FINISHED_AT:' + (job.finishedAt instanceof Date) + '\\n');
@@ -337,8 +341,24 @@ describe('Spec 67: Job Queue Repository', () => {
 			const pool = getWorkerPool(config);
 
 			try {
-				const retryable = await markJobFailed(pool, '00000000-0000-0000-0000-000000067601', 'retryable failure');
-				const exhausted = await markJobFailed(pool, '00000000-0000-0000-0000-000000067602', 'exhausted failure');
+				const retryable = await markJobFailed(
+					pool,
+					{
+						jobId: '00000000-0000-0000-0000-000000067601',
+						workerId: 'worker-qa06-a',
+						attempts: 1,
+					},
+					'retryable failure',
+				);
+				const exhausted = await markJobFailed(
+					pool,
+					{
+						jobId: '00000000-0000-0000-0000-000000067602',
+						workerId: 'worker-qa06-b',
+						attempts: 3,
+					},
+					'exhausted failure',
+				);
 
 				process.stderr.write('RETRYABLE_STATUS:' + retryable.status + '\\n');
 				process.stderr.write('RETRYABLE_LOG:' + retryable.errorLog + '\\n');
@@ -363,6 +383,108 @@ describe('Spec 67: Job Queue Repository', () => {
 		expect(combined).toContain('EXHAUSTED_STATUS:dead_letter');
 		expect(combined).toContain('EXHAUSTED_LOG:exhausted failure');
 		expect(combined).toContain('EXHAUSTED_FINISHED:true');
+	});
+
+	it('review blocker: terminal updates require the active claim token', () => {
+		if (!pgAvailable) return;
+
+		cleanJobData();
+		db.runSql(`
+			INSERT INTO jobs (id, type, payload, status, attempts, max_attempts, created_at)
+			VALUES
+				('00000000-0000-0000-0000-000000067611', 'pipeline_run', '{"sourceId":"stale-complete"}', 'pending', 0, 3, now() - interval '4 minutes'),
+				('00000000-0000-0000-0000-000000067612', 'pipeline_run', '{"sourceId":"stale-fail"}', 'pending', 0, 3, now() - interval '3 minutes');
+		`);
+
+		const { stdout, stderr, exitCode } = runScript(`
+			import { closeAllPools, dequeueJob, findJobById, getWorkerPool, markJobCompleted, markJobFailed } from '${DB_MODULE}';
+
+			const config = ${DB_CONFIG_JSON};
+			const pool = getWorkerPool(config);
+
+			function toClaim(job, label) {
+				if (!job || !job.workerId) {
+					throw new Error('Missing claim for ' + label);
+				}
+				return {
+					jobId: job.id,
+					workerId: job.workerId,
+					attempts: job.attempts,
+				};
+			}
+
+			function getErrorCode(error) {
+				if (typeof error === 'object' && error !== null && 'code' in error) {
+					return String(error.code);
+				}
+				return 'unknown';
+			}
+
+			try {
+				const staleCompleteClaim = toClaim(await dequeueJob(pool, 'worker-stale-complete'), 'stale-complete');
+				await pool.query(
+					"UPDATE jobs SET status = 'pending', worker_id = NULL, started_at = NULL WHERE id = $1",
+					[staleCompleteClaim.jobId],
+				);
+				const activeCompleteClaim = toClaim(await dequeueJob(pool, 'worker-active-complete'), 'active-complete');
+
+				let staleCompleteCode = 'none';
+				try {
+					await markJobCompleted(pool, staleCompleteClaim);
+				} catch (error) {
+					staleCompleteCode = getErrorCode(error);
+				}
+
+				const completeState = await findJobById(pool, activeCompleteClaim.jobId);
+
+				const staleFailClaim = toClaim(await dequeueJob(pool, 'worker-stale-fail'), 'stale-fail');
+				await pool.query(
+					"UPDATE jobs SET status = 'pending', worker_id = NULL, started_at = NULL WHERE id = $1",
+					[staleFailClaim.jobId],
+				);
+				const activeFailClaim = toClaim(await dequeueJob(pool, 'worker-active-fail'), 'active-fail');
+				await markJobCompleted(pool, activeFailClaim);
+
+				let staleFailCode = 'none';
+				try {
+					await markJobFailed(pool, staleFailClaim, 'late failure');
+				} catch (error) {
+					staleFailCode = getErrorCode(error);
+				}
+
+				const failState = await findJobById(pool, activeFailClaim.jobId);
+
+				process.stderr.write('STALE_COMPLETE_CODE:' + staleCompleteCode + '\\n');
+				process.stderr.write(
+					'COMPLETE_STATE:' + completeState?.status + '|' + completeState?.workerId + '|' + completeState?.attempts + '\\n',
+				);
+				process.stderr.write('STALE_FAIL_CODE:' + staleFailCode + '\\n');
+				process.stderr.write(
+					'FAIL_STATE:' +
+						failState?.status +
+						'|' +
+						failState?.workerId +
+						'|' +
+						failState?.attempts +
+						'|' +
+						String(failState?.errorLog ?? '') +
+						'\\n',
+				);
+			} catch (error) {
+				process.stderr.write('SCRIPT_ERROR:' + error.message + '\\n');
+				process.exit(1);
+			} finally {
+				await closeAllPools();
+			}
+		`);
+
+		const combined = stdout + stderr;
+		expect(exitCode).toBe(0);
+		expect(combined).not.toContain('SCRIPT_ERROR:');
+		expect(combined).toContain('STALE_COMPLETE_CODE:DB_NOT_FOUND');
+		expect(combined).toContain('COMPLETE_STATE:running|worker-active-complete|2');
+		expect(combined).toContain('STALE_FAIL_CODE:DB_NOT_FOUND');
+		expect(combined).toContain('FAIL_STATE:completed|worker-active-fail|2|');
 	});
 
 	it('QA-07: reaper resets stale running jobs back to pending', () => {
@@ -402,6 +524,59 @@ describe('Spec 67: Job Queue Repository', () => {
 			"SELECT status || '|' || COALESCE(worker_id, '') || '|' || (started_at IS NULL)::text FROM jobs WHERE id = '00000000-0000-0000-0000-000000067701';",
 		);
 		expect(reapedState).toBe('pending||true');
+	});
+
+	it('review blocker: reaper dead-letters exhausted stale jobs instead of leaving them pending', () => {
+		if (!pgAvailable) return;
+
+		cleanJobData();
+		db.runSql(`
+			INSERT INTO jobs (id, type, payload, status, attempts, max_attempts, worker_id, started_at, created_at)
+			VALUES ('00000000-0000-0000-0000-000000067702', 'pipeline_run', '{"sourceId":"stale-exhausted"}', 'running', 1, 1, 'worker-stale', now() - interval '3 hours', now() - interval '4 hours');
+		`);
+
+		const { stdout, stderr, exitCode } = runScript(`
+			import { closeAllPools, dequeueJob, getWorkerPool, reapRunningJobs } from '${DB_MODULE}';
+
+			const config = ${DB_CONFIG_JSON};
+			const pool = getWorkerPool(config);
+
+			try {
+				const result = await reapRunningJobs(pool, new Date(Date.now() - 2 * 60 * 60 * 1000));
+				const next = await dequeueJob(pool, 'worker-after-reap');
+				const state = await pool.query(
+					'SELECT status, worker_id, (started_at IS NULL) AS started_cleared, (finished_at IS NOT NULL) AS finished_set FROM jobs WHERE id = $1',
+					['00000000-0000-0000-0000-000000067702'],
+				);
+				const row = state.rows[0];
+
+				process.stderr.write('REAP_COUNT:' + result.count + '\\n');
+				process.stderr.write('NEXT_JOB:' + String(next?.id ?? 'null') + '\\n');
+				process.stderr.write(
+					'STATE:' +
+						row.status +
+						'|' +
+						String(row.worker_id ?? '') +
+						'|' +
+						String(row.started_cleared) +
+						'|' +
+						String(row.finished_set) +
+						'\\n',
+				);
+			} catch (error) {
+				process.stderr.write('SCRIPT_ERROR:' + error.message + '\\n');
+				process.exit(1);
+			} finally {
+				await closeAllPools();
+			}
+		`);
+
+		const combined = stdout + stderr;
+		expect(exitCode).toBe(0);
+		expect(combined).not.toContain('SCRIPT_ERROR:');
+		expect(combined).toContain('REAP_COUNT:1');
+		expect(combined).toContain('NEXT_JOB:null');
+		expect(combined).toContain('STATE:dead_letter||true|true');
 	});
 
 	it('QA-08: fresh running jobs are not reaped', () => {

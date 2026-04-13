@@ -67,6 +67,7 @@ export type {
 	GraphTraversalResult,
 	GroundingCoordinates,
 	Job,
+	JobClaim,
 	JobFilter,
 	JobPayload,
 	JobStatus,

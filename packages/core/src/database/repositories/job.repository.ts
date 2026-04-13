@@ -16,6 +16,7 @@ import type {
 	DequeueJobResult,
 	EnqueueJobInput,
 	Job,
+	JobClaim,
 	JobFilter,
 	JobPayload,
 	JobStatus,
@@ -211,23 +212,27 @@ export async function dequeueJob(pool: pg.Pool, workerId: string): Promise<Deque
 	}
 }
 
-export async function markJobCompleted(pool: pg.Pool, id: string): Promise<Job> {
+export async function markJobCompleted(pool: pg.Pool, claim: JobClaim): Promise<Job> {
+	const id = claim.jobId;
 	const sql = `
     UPDATE jobs
     SET status = 'completed',
         finished_at = now()
     WHERE id = $1
+      AND status = 'running'
+      AND worker_id = $2
+      AND attempts = $3
     RETURNING *
   `;
 
 	try {
-		const result = await pool.query<JobRow>(sql, [id]);
+		const result = await pool.query<JobRow>(sql, [id, claim.workerId, claim.attempts]);
 		if (result.rows.length === 0) {
-			throw new DatabaseError(`Job not found: ${id}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
-				context: { id },
+			throw new DatabaseError(`Active job claim not found: ${id}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+				context: { id, claim },
 			});
 		}
-		repoLogger.debug({ jobId: id }, 'Job marked completed');
+		repoLogger.debug({ jobId: id, claim }, 'Job marked completed');
 		return mapJobRow(result.rows[0]);
 	} catch (error: unknown) {
 		if (error instanceof DatabaseError) {
@@ -235,12 +240,13 @@ export async function markJobCompleted(pool: pg.Pool, id: string): Promise<Job> 
 		}
 		throw new DatabaseError('Failed to mark job completed', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause: error,
-			context: { id },
+			context: { id, claim },
 		});
 	}
 }
 
-export async function markJobFailed(pool: pg.Pool, id: string, errorLog: string): Promise<Job> {
+export async function markJobFailed(pool: pg.Pool, claim: JobClaim, errorLog: string): Promise<Job> {
+	const id = claim.jobId;
 	const sql = `
     UPDATE jobs
     SET status = CASE
@@ -250,17 +256,20 @@ export async function markJobFailed(pool: pg.Pool, id: string, errorLog: string)
         error_log = $2,
         finished_at = now()
     WHERE id = $1
+      AND status = 'running'
+      AND worker_id = $3
+      AND attempts = $4
     RETURNING *
   `;
 
 	try {
-		const result = await pool.query<JobRow>(sql, [id, errorLog]);
+		const result = await pool.query<JobRow>(sql, [id, errorLog, claim.workerId, claim.attempts]);
 		if (result.rows.length === 0) {
-			throw new DatabaseError(`Job not found: ${id}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
-				context: { id },
+			throw new DatabaseError(`Active job claim not found: ${id}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+				context: { id, claim },
 			});
 		}
-		repoLogger.debug({ jobId: id, status: result.rows[0].status }, 'Job marked failed');
+		repoLogger.debug({ jobId: id, claim, status: result.rows[0].status }, 'Job marked failed');
 		return mapJobRow(result.rows[0]);
 	} catch (error: unknown) {
 		if (error instanceof DatabaseError) {
@@ -268,7 +277,7 @@ export async function markJobFailed(pool: pg.Pool, id: string, errorLog: string)
 		}
 		throw new DatabaseError('Failed to mark job failed', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause: error,
-			context: { id },
+			context: { id, claim },
 		});
 	}
 }
@@ -306,10 +315,16 @@ export async function markJobDeadLetter(pool: pg.Pool, id: string, errorLog?: st
 export async function reapRunningJobs(pool: pg.Pool, staleBefore: Date): Promise<ReapJobsResult> {
 	const sql = `
     UPDATE jobs
-    SET status = 'pending',
+    SET status = CASE
+          WHEN attempts >= max_attempts THEN 'dead_letter'::job_status
+          ELSE 'pending'::job_status
+        END,
         worker_id = NULL,
         started_at = NULL,
-        finished_at = NULL
+        finished_at = CASE
+          WHEN attempts >= max_attempts THEN now()
+          ELSE NULL
+        END
     WHERE status = 'running'
       AND started_at IS NOT NULL
       AND started_at < $1

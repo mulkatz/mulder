@@ -56,6 +56,13 @@ export interface JobFilter {
 /** Result of a dequeue attempt. */
 export type DequeueJobResult = Job | null;
 
+/** Active claim token returned by dequeue and required for terminal updates. */
+export interface JobClaim {
+	jobId: string;
+	workerId: string;
+	attempts: number;
+}
+
 /** Summary returned by stale-job reaping. */
 export interface ReapJobsResult {
 	count: number;
