@@ -135,15 +135,18 @@ importers:
 
   packages/evidence:
     dependencies:
-      '@mulder/core':
+      '@mulder/pipeline':
         specifier: workspace:*
-        version: link:../core
+        version: link:../pipeline
 
   packages/pipeline:
     dependencies:
       '@mulder/core':
         specifier: workspace:*
         version: link:../core
+      '@mulder/retrieval':
+        specifier: workspace:*
+        version: link:../retrieval
       '@mulder/taxonomy':
         specifier: workspace:*
         version: link:../taxonomy

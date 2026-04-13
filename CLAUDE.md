@@ -201,7 +201,7 @@ mulder/
 │   ├── retrieval/                # Hybrid search: vector, fulltext, graph, fusion, reranker
 │   ├── taxonomy/                 # Bootstrap, normalize, merge
 │   ├── worker/                   # Job queue consumer (FOR UPDATE SKIP LOCKED)
-│   └── evidence/                 # v2.0: Contradictions, reliability, chains, spatiotemporal
+│   └── evidence/                 # Public evidence/analyze facade over pipeline analyze exports
 │
 ├── apps/
 │   ├── cli/                      # CLI application (commands/ + lib/)
@@ -218,6 +218,8 @@ mulder/
 │
 └── demo/                         # Demo UI
 ```
+
+`packages/evidence` is the public package boundary for Analyze-facing consumers. Keep the underlying analyze implementation in `packages/pipeline` unless a later spec intentionally migrates that code.
 
 ## Key Patterns
 
