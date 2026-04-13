@@ -38,15 +38,25 @@ Run inline:
 
 - `git status --porcelain`
 - `git branch --show-current`
+- `git rev-parse HEAD`
+- `git rev-parse origin/main`
 - `gh auth status`
 
 Gate conditions:
 
 - dirty tree: stop and tell the user to start from a clean state
-- not on `main`: stop unless the user explicitly wants a different starting branch
+- on local branch `main`: allowed
+- detached `HEAD` exactly at `origin/main`: allowed, especially for worktrees that are intentionally pinned to the current main tip
+- detached `HEAD` not at `origin/main`: stop unless the user explicitly wants to start from that exact commit
+- on any other branch: stop unless the user explicitly wants a different starting branch
 - unauthenticated GitHub CLI: stop and surface the missing auth
 
-If the gates pass, pull the latest `main`.
+If the gates pass:
+
+- on local branch `main`: pull the latest `main`
+- on detached `HEAD` at `origin/main`: do not block; treat the current commit as a valid main-aligned base and create the feature branch from it
+
+This workflow must be runnable from a clean worktree that is detached at the current `origin/main` commit.
 
 ## Phase 1: Architect
 
@@ -138,7 +148,9 @@ Finalize inline only when the gates pass:
 - merge the PR
 - close or update issue state
 - update roadmap from in-progress to complete
-- return the local branch to `main` and refresh if appropriate
+- return the local checkout to a clean main-aligned state:
+  - local `main` when the run started attached to `main`
+  - detached at updated `origin/main` when the run started from a detached worktree base
 
 If the workflow is blocked instead of passed, do not force completion. Return the current ledger plus the blocking issues or failed conditions.
 
