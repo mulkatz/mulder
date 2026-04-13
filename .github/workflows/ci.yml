@@ -45,10 +45,67 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+  health:
+    runs-on: ubuntu-latest
+    needs: build
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: mulder
+          POSTGRES_PASSWORD: mulder
+          POSTGRES_DB: mulder
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mulder"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Install PostGIS into PostgreSQL container
+        run: |
+          PG_CONTAINER=$(docker ps -q --filter "ancestor=pgvector/pgvector:pg17")
+          docker exec "$PG_CONTAINER" bash -c "apt-get update && apt-get install -y --no-install-recommends postgresql-17-postgis-3 postgresql-17-postgis-3-scripts && rm -rf /var/lib/apt/lists/*"
+
+      - name: Install PostgreSQL extensions
+        run: |
+          PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+          PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+
+      - name: Setup test config
+        run: cp mulder.config.example.yaml mulder.config.yaml
+
+      - name: Run E2E health check (Spec 44)
+        run: pnpm test:health
+        env:
+          NODE_ENV: test
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: mulder
+          PGPASSWORD: mulder
+          PGDATABASE: mulder
+
   test:
     name: test (${{ matrix.shard_index }}/${{ matrix.shard_total }})
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, health]
     strategy:
       fail-fast: false
       matrix:
