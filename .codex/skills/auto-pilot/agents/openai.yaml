@@ -1,7 +1,7 @@
 interface:
   display_name: "Auto Pilot"
-  short_description: "Run Mulder's full roadmap workflow."
-  default_prompt: "Use $auto-pilot to run the Mulder roadmap-step workflow from spec through verification and review."
+  short_description: "Orchestrate Mulder roadmap delivery."
+  default_prompt: "Use $auto-pilot to orchestrate the full Mulder roadmap-step workflow from spec creation through verification, review, and finalization."
 
 policy:
   allow_implicit_invocation: false

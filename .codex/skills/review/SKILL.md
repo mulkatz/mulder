@@ -1,51 +1,36 @@
 ---
 name: review
-description: "Perform the Mulder architect review gate in Codex. Use this when the user wants the old Claude `/review` workflow: compare the PR or branch against the spec, architecture rules, and relevant functional-spec sections, then approve or request changes."
+description: "Launch Mulder's architect-review worker for a PR, branch, or spec. Use this when a change needs the final architecture and spec-compliance gate."
 ---
 
 # Review
 
-Use this skill for Mulder's final architect-level implementation review.
+Use this skill as a thin launcher for a fresh architect-review worker.
 
-## Source Of Truth
+Read these files before acting:
 
-Read `.claude/commands/review.md` before acting. Use it as the review contract while keeping Codex's review-reporting style.
-
-Do not modify `.claude/commands/review.md`.
+- `.codex/shared/agent-contracts/authority.md`
+- `.codex/shared/agent-contracts/target-resolution.md`
+- `.codex/shared/agent-contracts/handoff-schemas.md`
+- `.codex/shared/agent-contracts/output-schemas.md`
+- `.codex/shared/agent-contracts/workflow-invariants.md`
+- `.codex/skills/review/references/worker.md`
 
 ## Workflow
 
-1. Resolve the target PR, branch, or spec.
-2. Read `CLAUDE.md`, the spec, and the PR diff in the order defined by the Claude command.
-3. Read functional-spec sections only when something in the diff or spec looks questionable.
-4. Review for blocking issues first: spec compliance, architectural alignment, integration correctness, and material edge cases.
-5. Keep non-blocking observations separate from real defects.
-6. If running as a standalone review and the user wants merge behavior, follow the original workflow's post-review actions rather than inventing a new close-out path.
+1. Resolve the target using the shared review-resolution rules.
+2. Build the review handoff payload using the exact shared input schema, carrying `TARGET_STEP` only when the resolved target can provide it.
+3. Spawn a fresh `worker` agent with `fork_context: false`.
+4. Instruct the worker to rebuild review context from repo files and `references/worker.md`.
+5. Validate the returned output against the shared review output schema.
+6. If the response is malformed, request one contract-only restatement. If it is still malformed, stop and report a blocked state.
 
 ## Codex Adaptation Rules
 
-- Follow the repository's review expectations: findings first, ordered by severity, with file and line references.
-- Focus on real bugs, regressions, architectural drift, or missing integration.
-- Do not turn the review into a style pass.
-- Preserve the Claude workflow's selective-depth rule: start with spec and diff, then read functional spec only when needed.
-- Preserve the original approval vocabulary: `APPROVED` or `CHANGES_REQUESTED`.
-- Assume this skill may run in a fresh sub-agent with only a spec reference plus branch or PR identifiers. Reconstruct the review context from repo files and the diff instead of relying on the parent thread.
+- This skill always launches a fresh worker, even when invoked directly.
+- Preserve findings-first reporting and the `APPROVED | CHANGES_REQUESTED` verdict vocabulary.
+- Keep `SKILL.md` lean; detailed review behavior lives in `references/worker.md`.
 
 ## Output
 
-Return a compact parseable summary first:
-
-```text
-REVIEW_VERDICT: APPROVED | CHANGES_REQUESTED
-```
-
-If changes are requested, include one block per issue:
-
-```text
-ISSUE: <short title>
-SEVERITY: blocking | warning
-FILE: <path:line>
-PROBLEM: <what's wrong>
-FIX: <specific fix needed>
-SPEC_REF: <violated spec section or CLAUDE.md rule>
-```
+Return the exact review output schema from `.codex/shared/agent-contracts/output-schemas.md`.

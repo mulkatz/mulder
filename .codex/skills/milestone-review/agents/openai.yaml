@@ -1,7 +1,7 @@
 interface:
   display_name: "Milestone Review"
   short_description: "Audit a Mulder milestone against spec."
-  default_prompt: "Use $milestone-review to compare a completed Mulder milestone against the functional spec and write the divergence report."
+  default_prompt: "Use $milestone-review to compare a completed Mulder milestone against the functional spec and write the divergence report under docs/reviews."
 
 policy:
   allow_implicit_invocation: false

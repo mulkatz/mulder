@@ -1,66 +1,36 @@
 ---
 name: verify
-description: "Run Mulder black-box verification in Codex. Use this when the user wants the old Claude `/verify` workflow: derive QA checks from a spec, write black-box tests without reading implementation internals, run them, and report clear failures with evidence."
+description: "Launch Mulder's verification worker from a spec or roadmap step. Use this when black-box QA, regression checks, and parseable failure evidence are required."
 ---
 
 # Verify
 
-Use this skill for Mulder QA verification against a spec.
+Use this skill as a thin launcher for a fresh verification worker.
 
-## Source Of Truth
+Read these files before acting:
 
-Read `.claude/commands/verify.md` before acting. Treat it as the authoritative QA workflow and adapt only the tool mechanics to Codex.
-
-Do not modify `.claude/commands/verify.md`.
+- `.codex/shared/agent-contracts/authority.md`
+- `.codex/shared/agent-contracts/target-resolution.md`
+- `.codex/shared/agent-contracts/handoff-schemas.md`
+- `.codex/shared/agent-contracts/output-schemas.md`
+- `.codex/shared/agent-contracts/workflow-invariants.md`
+- `.codex/skills/verify/references/worker.md`
 
 ## Workflow
 
-1. Resolve the target spec exactly as the Claude command describes.
-2. Read only the allowed sections of the spec and `CLAUDE.md`.
-3. Respect the black-box boundary. Do not read implementation files under `packages/`, `src/`, or `apps/` unless the original workflow explicitly allows a narrow exception.
-4. Check test infrastructure first, but still write the tests even when infrastructure is partially unavailable.
-5. Write or rerun the spec tests in `tests/specs/`.
-6. Generate CLI smoke coverage when the spec's CLI matrix is not `N/A`.
-7. Run both the targeted spec tests and the full test suite when the original workflow calls for it.
-8. Distinguish implementation failures, skipped infrastructure-dependent checks, regressions, and test bugs.
+1. Resolve the target using the shared spec-resolution rules.
+2. Build the verify handoff payload using the exact shared input schema, carrying `TARGET_STEP` only when the resolved spec or launcher context can provide it.
+3. Spawn a fresh `worker` agent with `fork_context: false`.
+4. Instruct the worker to rebuild context only from allowed files and `references/worker.md`.
+5. Validate the returned output against the shared verify output schema.
+6. If the response is malformed, request one contract-only restatement. If it is still malformed, stop and report a blocked state.
 
 ## Codex Adaptation Rules
 
-- Keep the QA contract, CLI matrix handling, and smoke-test behavior from the Claude command.
-- Assume this skill may run in a fresh sub-agent. Build context only from the allowed spec sections, the allowed `CLAUDE.md` sections, the branch under test, and any narrow mismatch note from the coordinator.
-- If invoked from `auto-pilot`, treat implementation failure evidence and any `TEST_MISMATCH` note as inputs to evaluate, not as extra permission to read implementation internals.
-- Report evidence in a way that an implementation agent can act on directly.
-- If a test is wrong relative to the spec, fix the test and state the mismatch explicitly instead of forcing the implementation to match a bad assertion.
-- Preserve the verdict structure from the Claude workflow:
-  - totals
-  - passed, failed, skipped
-  - `PASS | FAIL | PARTIAL`
-  - one evidence block per failing condition
-- Preserve the rule that previous spec regressions count as failures against the verdict.
+- This skill always launches a fresh worker, even when invoked directly.
+- Preserve the black-box boundary and verdict vocabulary.
+- Keep `SKILL.md` lean; detailed QA behavior lives in `references/worker.md`.
 
 ## Output
 
-Return the verdict in a compact parseable form:
-
-```text
-TOTAL: <number of conditions>
-PASSED: <count>
-FAILED: <count>
-SKIPPED: <count>
-VERDICT: PASS | FAIL | PARTIAL
-```
-
-For each failure, include:
-
-```text
-FAILURE: <condition name>
-EXPECTED: <what should happen>
-ACTUAL: <what happened>
-EVIDENCE: <proof>
-```
-
-If you correct a bad test assertion, also report:
-
-```text
-TEST_FIX: <what assertion changed and why>
-```
+Return the exact verify output schema from `.codex/shared/agent-contracts/output-schemas.md`.

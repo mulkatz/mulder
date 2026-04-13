@@ -1,61 +1,38 @@
 ---
 name: implement
-description: "Implement a Mulder spec in Codex. Use this when the user wants the old Claude `/implement` workflow: resolve the spec, study the codebase, plan carefully, implement the required files, verify build and lint integrity, and prepare the branch and PR."
+description: "Launch Mulder's implementation worker from a spec, roadmap step, or issue. Use this when the task is to build a spec-aligned change with branch and PR traceability."
 ---
 
 # Implement
 
-Use this skill when the task is to build a specific Mulder spec or roadmap step.
+Use this skill as a thin launcher for a fresh implementation worker.
 
-## Source Of Truth
+Read these files before acting:
 
-Read `.claude/commands/implement.md` before acting. Treat it as the implementation contract, adapted for Codex tools and policies.
-
-Do not modify `.claude/commands/implement.md`.
+- `.codex/shared/agent-contracts/authority.md`
+- `.codex/shared/agent-contracts/target-resolution.md`
+- `.codex/shared/agent-contracts/handoff-schemas.md`
+- `.codex/shared/agent-contracts/output-schemas.md`
+- `.codex/shared/agent-contracts/workflow-invariants.md`
+- `.codex/skills/implement/references/worker.md`
 
 ## Workflow
 
-1. Resolve the spec reference exactly as the Claude command describes, including spec number, filename, full path, roadmap step, issue, or the most recent in-progress roadmap step.
-2. Read the spec, `CLAUDE.md`, roadmap context, required functional-spec sections, and milestone cross-references.
-3. Study adjacent implementation patterns before planning.
-4. Create an explicit execution plan with `update_plan` before writing code.
-5. Implement only the scoped work from the spec, file by file and phase by phase.
-6. Run the build and lint verification required by the original command.
-7. Create or resume the feature branch and prepare the PR with the same traceability the old workflow expects.
+1. Resolve the target using the shared spec-resolution rules.
+2. Build the implement handoff payload using the exact shared input schema, carrying through `TARGET_STEP`, `ISSUE_NUMBER`, and `ISSUE_URL` only when the resolved spec or launcher context can provide them.
+3. Spawn a fresh `worker` agent with `fork_context: false`.
+4. Instruct the worker to rebuild context from the repository and follow `references/worker.md`.
+5. Validate the returned output against the shared implement output schema.
+6. If the worker response is malformed, request one contract-only restatement. If it is still malformed, stop and report a blocked state.
+7. Return only the compact handoff summary.
 
 ## Codex Adaptation Rules
 
-- Replace EnterPlanMode or ExitPlanMode instructions with Codex planning and `update_plan`.
-- Do not write tests unless the user explicitly asks or the workflow being executed is `auto-pilot` and verification is being handled separately.
-- Keep the original stop conditions for ambiguous specs, missing dependencies, or oversized scopes.
-- Do not invent Claude-specific attribution trailers during commits.
-- Assume this skill may be run inside a fresh sub-agent with little or no parent-thread context. Reconstruct context from the spec, roadmap, functional spec, and codebase rather than relying on chat history.
-- If invoked from `auto-pilot`, treat the handoff payload as the only workflow memory you need: spec reference, issue or branch identifiers, iteration number, and any failure evidence for retries.
-- Preserve the original planning requirements:
-  - file creation order
-  - exports and imports per file
-  - exact database and config changes from the spec
-  - integration wiring
-  - commit sequence by phase
-  - risk check before code
-- Preserve the original size or split thresholds from the Claude command. If the plan is oversized, stop and present the split rather than silently proceeding.
-- Preserve the resume behavior when the feature branch already exists: inspect blueprint files, classify them as done, partial, or missing, and continue from the first incomplete item.
-- Preserve the original cost-safety behavior when the spec calls for paid services.
+- This skill always launches a fresh worker, even when invoked directly by the user.
+- Do not rely on parent-thread memory; rely on repo files plus the structured handoff.
+- Keep the output contract stable so `auto-pilot` and standalone invocations behave the same way.
+- Keep `SKILL.md` lean; detailed implementation behavior lives in `references/worker.md`.
 
 ## Output
 
-Return a compact handoff summary that a coordinator can parse without needing your full reasoning:
-
-```text
-BRANCH_NAME: <branch>
-PR_URL: <full URL or empty>
-PR_NUMBER: <number or empty>
-FILES_CHANGED: <comma-separated list>
-DEVIATIONS: <spec deviations or "none">
-```
-
-If this is a retry and a test assertion appears wrong relative to the spec, also report:
-
-```text
-TEST_MISMATCH: <test file:line> asserts <X>, but spec says <Y>
-```
+Return the exact implement output schema from `.codex/shared/agent-contracts/output-schemas.md`.
