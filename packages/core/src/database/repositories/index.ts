@@ -111,6 +111,26 @@ export {
 } from './evidence-chain.repository.js';
 export type { GraphTraversalResult } from './graph-traversal.repository.js';
 export { traverseGraph } from './graph-traversal.repository.js';
+export {
+	countJobs,
+	dequeueJob,
+	enqueueJob,
+	findJobById,
+	findJobs,
+	markJobCompleted,
+	markJobDeadLetter,
+	markJobFailed,
+	reapRunningJobs,
+} from './job.repository.js';
+export type {
+	DequeueJobResult,
+	EnqueueJobInput,
+	Job,
+	JobFilter,
+	JobPayload,
+	JobStatus,
+	ReapJobsResult,
+} from './job.types.js';
 export type { PipelineStep } from './pipeline-reset.js';
 export { gcOrphanedEntities, resetPipelineStep } from './pipeline-reset.js';
 export {
