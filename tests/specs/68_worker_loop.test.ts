@@ -162,7 +162,6 @@ function startWorker(args: string[] = []): {
 } {
 	const child = spawn('node', [CLI, 'worker', 'start', ...args], {
 		cwd: ROOT,
-		encoding: 'utf-8',
 		stdio: ['ignore', 'pipe', 'pipe'],
 		env: {
 			...process.env,

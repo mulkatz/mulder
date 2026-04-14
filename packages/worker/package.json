@@ -12,7 +12,6 @@
 	},
 	"dependencies": {
 		"@mulder/core": "workspace:*",
-		"@mulder/pipeline": "workspace:*",
-		"@mulder/taxonomy": "workspace:*"
+		"@mulder/pipeline": "workspace:*"
 	}
 }

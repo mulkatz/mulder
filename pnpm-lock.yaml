@@ -214,9 +214,6 @@ importers:
       '@mulder/pipeline':
         specifier: workspace:*
         version: link:../pipeline
-      '@mulder/taxonomy':
-        specifier: workspace:*
-        version: link:../taxonomy
 
   tests:
     devDependencies:
