@@ -197,6 +197,8 @@ Move from CLI to HTTP. Job queue, async workers, a full REST API over the pipeli
 
 **Also read for all M7 steps:** [`docs/api-architecture.md`](./api-architecture.md) (framework choice, route structure, middleware stack, OpenAPI strategy, key trade-offs), §10 (full job queue section — especially §10.3 transaction discipline), §14 (design decisions — PostgreSQL queue, auto-commit dequeue, per-step job slicing)
 
+**Verification guidance for M7:** use package-local builds plus step- or milestone-scoped spec tests while iterating (`pnpm test:scope -- step M7-Hx` / `pnpm test:scope -- milestone M7`). Do not default to the full CI-equivalent suite for routine API milestone work.
+
 **Testable:** HTTP API for everything. Workers process jobs asynchronously. Deployable to Cloud Run. First demoable web UI (split-view PDF + derived Markdown) consuming the real API.
 
 **Note on H11 (Document Viewer):** An earlier attempt to ship the viewer as an off-roadmap demoability feature (reverted in commit 90bee3a, issue #127 closed) was deferred here because the clean path requires a real HTTP API to sit on — not a dev-only Vite filesystem plugin that would have bypassed the service abstraction. The viewer is a pure React client in `demo/` that fetches from H10's routes, works identically in dev and prod, and is NOT a separate off-roadmap spec.

@@ -255,6 +255,18 @@ mulder/
 - `NODE_ENV=test` actively **blocks** all real GCP calls (throws, not fallback)
 - Dev-mode LLM cache (`.mulder-cache.db`) saves tokens during prompt iteration
 
+## Verification Strategy
+
+- Default to **step-scoped or milestone-scoped verification**, not a full CI-equivalent sweep on every change
+- Use `pnpm test:scope -- step <roadmap-step>` to run only the spec tests for the step you are implementing
+- Use `pnpm test:scope -- milestone <milestone>` when a change spans multiple steps inside one milestone
+- For API/workers work in **M7**, do **not** default to `pnpm test`, `pnpm test:shard`, or a manual reproduction of `.github/workflows/ci.yml`
+- During **M7**, prefer this verification order:
+  - touched package builds/typechecks (`pnpm --filter @mulder/api build`, `pnpm --filter @mulder/worker build`, etc.)
+  - `pnpm test:scope -- step M7-Hx`
+  - escalate to `pnpm test:scope -- milestone M7` only for shared API/worker contracts
+- Reserve full CI-equivalent runs for cross-cutting changes, release hardening, or when the user explicitly asks for them
+
 ## Error Handling
 
 - Per-document, per-step status tracking in `source_steps` table (PostgreSQL, authoritative)

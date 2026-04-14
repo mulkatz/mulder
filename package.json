@@ -11,6 +11,7 @@
 		"typecheck": "turbo run typecheck",
 		"lint": "biome check .",
 		"lint:fix": "biome check --write .",
+		"test:scope": "node scripts/test-scope.mjs",
 		"test:shard": "node scripts/test-shards.mjs run",
 		"test:shards:verify": "node scripts/test-shards.mjs verify 3",
 		"test:health": "vitest run tests/specs/44_e2e_pipeline_integration.test.ts",
