@@ -5,12 +5,29 @@
  * serves as documentation and test reference.
  */
 
+import type { ApiConfig } from './types.js';
+
+const apiDefaults: ApiConfig = {
+	port: 8080,
+	auth: {
+		api_keys: [],
+	},
+	rate_limiting: {
+		enabled: true,
+	},
+	explorer: {
+		enabled: true,
+	},
+};
+
 export const CONFIG_DEFAULTS = {
 	dev_mode: false,
 
 	project: {
 		supported_locales: ['en'],
 	},
+
+	api: apiDefaults,
 
 	gcp: {
 		cloud_sql: {

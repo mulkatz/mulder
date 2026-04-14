@@ -1,33 +1,32 @@
-import { performance } from 'node:perf_hooks';
-import { createChildLogger, createLogger, type Logger } from '@mulder/core';
+import { type ApiConfig, CONFIG_DEFAULTS, createLogger, type Logger } from '@mulder/core';
 import { Hono } from 'hono';
+import { createAuthMiddleware } from './middleware/auth.js';
+import { createBodyLimitMiddleware } from './middleware/body-limit.js';
+import { createErrorHandler } from './middleware/error-handler.js';
+import { createRateLimitMiddleware } from './middleware/rate-limit.js';
+import { createRequestContextMiddleware } from './middleware/request-context.js';
+import { createRequestIdMiddleware } from './middleware/request-id.js';
+import { createSecureHeadersMiddleware } from './middleware/secure-headers.js';
 import { registerHealthRoute } from './routes/health.js';
 
 export interface AppOptions {
 	logger?: Logger;
+	config?: ApiConfig;
 }
 
 export function createApp(options: AppOptions = {}): Hono {
 	const rootLogger = options.logger ?? createLogger();
-	const requestLogger = createChildLogger(rootLogger, { module: 'api' });
+	const apiConfig = options.config ?? CONFIG_DEFAULTS.api;
+
 	const app = new Hono();
 
-	app.use('*', async (c, next) => {
-		const startedAt = performance.now();
-		try {
-			await next();
-		} finally {
-			requestLogger.info(
-				{
-					method: c.req.method,
-					path: c.req.path,
-					status: c.res.status,
-					duration_ms: Math.round(performance.now() - startedAt),
-				},
-				'request completed',
-			);
-		}
-	});
+	app.onError(createErrorHandler(rootLogger));
+	app.use('*', createRequestIdMiddleware());
+	app.use('*', createRequestContextMiddleware(rootLogger));
+	app.use('*', createSecureHeadersMiddleware());
+	app.use('*', createBodyLimitMiddleware());
+	app.use('*', createAuthMiddleware(apiConfig));
+	app.use('*', createRateLimitMiddleware(apiConfig));
 
 	registerHealthRoute(app);
 

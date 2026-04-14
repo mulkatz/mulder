@@ -1,7 +1,13 @@
 // ── Shared error hierarchy ──────────────────────────────────
 
+export { ZodError } from 'zod';
 export type {
 	AnalysisConfig,
+	ApiAuthConfig,
+	ApiAuthKeyConfig,
+	ApiConfig,
+	ApiExplorerConfig,
+	ApiRateLimitingConfig,
 	CloudSqlConfig,
 	ConfigIssue,
 	DeduplicationConfig,
