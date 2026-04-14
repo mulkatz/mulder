@@ -25,8 +25,8 @@ import { dispatchJob } from './dispatch.js';
 import {
 	createWorkerId,
 	describeWorkerError,
-	type WorkerDispatchContext,
 	type WorkerActiveJobSnapshot,
+	type WorkerDispatchContext,
 	type WorkerDispatchFn,
 	type WorkerJobEnvelope,
 	type WorkerJobStatusSnapshot,
@@ -87,11 +87,77 @@ function mapJob(job: Awaited<ReturnType<typeof findJobs>>[number]): WorkerJobSta
 	};
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isWorkerJobEnvelopeType(type: string): type is WorkerJobEnvelope['type'] {
+	return (
+		type === 'extract' ||
+		type === 'segment' ||
+		type === 'enrich' ||
+		type === 'embed' ||
+		type === 'graph' ||
+		type === 'pipeline_run'
+	);
+}
+
+function readOptionalBoolean(payload: Record<string, unknown>, key: string): boolean | undefined {
+	return typeof payload[key] === 'boolean' ? payload[key] : undefined;
+}
+
+function toWorkerJobPayload(job: Job): WorkerJobEnvelope['payload'] {
+	if (!isRecord(job.payload)) {
+		throw new Error(`Job ${job.id} payload must be an object`);
+	}
+
+	if (job.type === 'extract' || job.type === 'segment' || job.type === 'pipeline_run') {
+		const sourceId =
+			typeof job.payload.sourceId === 'string'
+				? job.payload.sourceId
+				: typeof job.payload.source_id === 'string'
+					? job.payload.source_id
+					: null;
+		if (!sourceId) {
+			throw new Error(`Job ${job.id} is missing sourceId`);
+		}
+
+		return {
+			sourceId,
+			force: readOptionalBoolean(job.payload, 'force'),
+			fallbackOnly: readOptionalBoolean(job.payload, 'fallbackOnly'),
+		};
+	}
+
+	if (job.type === 'enrich' || job.type === 'embed' || job.type === 'graph') {
+		const storyId =
+			typeof job.payload.storyId === 'string'
+				? job.payload.storyId
+				: typeof job.payload.story_id === 'string'
+					? job.payload.story_id
+					: null;
+		if (!storyId) {
+			throw new Error(`Job ${job.id} is missing storyId`);
+		}
+
+		return {
+			storyId,
+			force: readOptionalBoolean(job.payload, 'force'),
+		};
+	}
+
+	throw new Error(`Unsupported job type "${job.type}"`);
+}
+
 function toWorkerJobEnvelope(job: Job): WorkerJobEnvelope {
+	if (!isWorkerJobEnvelopeType(job.type)) {
+		throw new Error(`Unsupported job type "${job.type}"`);
+	}
+
 	return {
 		...job,
-		type: job.type as WorkerJobEnvelope['type'],
-		payload: job.payload as unknown as WorkerJobEnvelope['payload'],
+		type: job.type,
+		payload: toWorkerJobPayload(job),
 	};
 }
 
