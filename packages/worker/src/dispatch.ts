@@ -505,18 +505,6 @@ export const dispatchJob: WorkerDispatchFn = async (job, context) => {
 		}
 		case 'pipeline_run': {
 			const payload = parsePipelineRunPayload(job);
-			if (!payload.runId) {
-				const result = await executeExtract(
-					{ sourceId: payload.sourceId, force: payload.force ?? false },
-					config,
-					services,
-					pool,
-					log,
-				);
-				assertStepSucceeded(job, 'pipeline_run', result.status);
-				return;
-			}
-
 			const runOptions: PipelineRunOptions = {
 				sourceIds: [payload.sourceId],
 				force: payload.force ?? false,
