@@ -25,6 +25,7 @@ import { dispatchJob } from './dispatch.js';
 import {
 	createWorkerId,
 	describeWorkerError,
+	type WorkerDispatchContext,
 	type WorkerActiveJobSnapshot,
 	type WorkerDispatchFn,
 	type WorkerJobEnvelope,
