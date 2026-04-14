@@ -264,6 +264,7 @@ mulder/
 - During **M7**, prefer this verification order:
   - touched package builds/typechecks (`pnpm --filter @mulder/api build`, `pnpm --filter @mulder/worker build`, etc.)
   - `pnpm test:scope -- step M7-Hx`
+  - `pnpm test:api:e2e` for HTTP/API end-to-end coverage across M7-H3 through M7-H10
   - escalate to `pnpm test:scope -- milestone M7` only for shared API/worker contracts
 - Reserve full CI-equivalent runs for cross-cutting changes, release hardening, or when the user explicitly asks for them
 

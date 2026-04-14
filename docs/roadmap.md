@@ -197,7 +197,7 @@ Move from CLI to HTTP. Job queue, async workers, a full REST API over the pipeli
 
 **Also read for all M7 steps:** [`docs/api-architecture.md`](./api-architecture.md) (framework choice, route structure, middleware stack, OpenAPI strategy, key trade-offs), §10 (full job queue section — especially §10.3 transaction discipline), §14 (design decisions — PostgreSQL queue, auto-commit dequeue, per-step job slicing)
 
-**Verification guidance for M7:** use package-local builds plus step- or milestone-scoped spec tests while iterating (`pnpm test:scope -- step M7-Hx` / `pnpm test:scope -- milestone M7`). Do not default to the full CI-equivalent suite for routine API milestone work.
+**Verification guidance for M7:** use package-local builds plus step- or milestone-scoped spec tests while iterating (`pnpm test:scope -- step M7-Hx` / `pnpm test:scope -- milestone M7`). For HTTP work, use `pnpm test:api:e2e` as the API-focused end-to-end lane for M7-H3 through M7-H10. Do not default to the full CI-equivalent suite for routine API milestone work.
 
 **Testable:** HTTP API for everything. Workers process jobs asynchronously. Deployable to Cloud Run. First demoable web UI (split-view PDF + derived Markdown) consuming the real API.
 

@@ -28,6 +28,14 @@ import { printError, printSuccess } from '../lib/output.js';
 
 const DEFAULT_CONCURRENCY = 1;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
+const QUEUE_STATUS_ROWS = [
+	['pending', (snapshot: WorkerStatusSnapshot) => snapshot.queue.pending],
+	['running', (snapshot: WorkerStatusSnapshot) => snapshot.queue.running],
+	['completed', (snapshot: WorkerStatusSnapshot) => snapshot.queue.completed],
+	['failed', (snapshot: WorkerStatusSnapshot) => snapshot.queue.failed],
+	['dead_letter', (snapshot: WorkerStatusSnapshot) => snapshot.queue.deadLetter],
+	['total', (snapshot: WorkerStatusSnapshot) => snapshot.queue.total],
+] as const;
 
 function parsePositiveInteger(value: string | undefined, optionName: string, fallback: number): number {
 	if (value === undefined) {
@@ -54,12 +62,9 @@ function formatTimestamp(value: Date | null): string {
 
 function printQueueStatus(snapshot: WorkerStatusSnapshot): void {
 	process.stdout.write(`\n${chalk.bold('Queue')}\n`);
-	process.stdout.write(`  Pending      ${snapshot.queue.pending}\n`);
-	process.stdout.write(`  Running      ${snapshot.queue.running}\n`);
-	process.stdout.write(`  Completed    ${snapshot.queue.completed}\n`);
-	process.stdout.write(`  Failed       ${snapshot.queue.failed}\n`);
-	process.stdout.write(`  Dead letter  ${snapshot.queue.deadLetter}\n`);
-	process.stdout.write(`  Total        ${snapshot.queue.total}\n`);
+	for (const [label, selectCount] of QUEUE_STATUS_ROWS) {
+		process.stdout.write(`  ${label.padEnd(12)} ${String(selectCount(snapshot))}\n`);
+	}
 
 	process.stdout.write(`\n${chalk.bold('Active workers')}\n`);
 	if (snapshot.activeWorkers.length === 0) {
@@ -105,9 +110,13 @@ function printReapSummary(result: { count: number; jobIds: string[]; staleBefore
 	}
 }
 
-function createAbortController(): { controller: AbortController; cleanup: () => void } {
+function createAbortController(): { controller: AbortController; cleanup: () => void; wasInterrupted: () => boolean } {
 	const controller = new AbortController();
+	let interrupted = false;
 	const stop = (): void => {
+		interrupted = true;
+		process.exitCode = 0;
+		process.stderr.write('Shutting down worker...\n');
 		controller.abort();
 	};
 	process.once('SIGINT', stop);
@@ -118,6 +127,7 @@ function createAbortController(): { controller: AbortController; cleanup: () => 
 			process.off('SIGINT', stop);
 			process.off('SIGTERM', stop);
 		},
+		wasInterrupted: () => interrupted,
 	};
 }
 
@@ -156,15 +166,16 @@ export function registerWorkerCommands(program: Command): void {
 		.option('--poll-interval <ms>', 'polling interval in milliseconds (default: 5000)')
 		.action(
 			withErrorHandler(async (options: WorkerStartCliOptions) => {
-				const ctx = await loadWorkerContext();
-				if (!ctx) return;
-
-				const concurrency = parsePositiveInteger(options.concurrency, 'concurrency', DEFAULT_CONCURRENCY);
-				const pollIntervalMs = parsePositiveInteger(options.pollInterval, 'poll-interval', DEFAULT_POLL_INTERVAL_MS);
-				const workerId = createWorkerId();
-				const { controller, cleanup } = createAbortController();
+				const { controller, cleanup, wasInterrupted } = createAbortController();
+				let ctx: Awaited<ReturnType<typeof loadWorkerContext>> | null = null;
 
 				try {
+					ctx = await loadWorkerContext();
+					if (!ctx) return;
+
+					const concurrency = parsePositiveInteger(options.concurrency, 'concurrency', DEFAULT_CONCURRENCY);
+					const pollIntervalMs = parsePositiveInteger(options.pollInterval, 'poll-interval', DEFAULT_POLL_INTERVAL_MS);
+					const workerId = createWorkerId();
 					const runtimeOptions: WorkerRuntimeOptions = {
 						concurrency,
 						pollIntervalMs,
@@ -183,9 +194,18 @@ export function registerWorkerCommands(program: Command): void {
 					printSuccess(
 						`Worker stopped cleanly (${result.processedCount} processed, ${result.failedCount} failed, ${result.idlePollCount} idle polls)`,
 					);
+					if (wasInterrupted()) {
+						process.exitCode = 0;
+					}
 				} finally {
+					const interrupted = wasInterrupted();
 					cleanup();
-					await closeAllPools();
+					if (ctx) {
+						await closeAllPools();
+					}
+					if (interrupted) {
+						process.exit(0);
+					}
 				}
 			}),
 		);
