@@ -34,6 +34,10 @@ interface PipelineRunAcceptance {
 	job: Job;
 }
 
+interface CountRow {
+	count: string;
+}
+
 const PIPELINE_STEP_SET = new Set<string>(PIPELINE_STEP_VALUES);
 
 function isPipelineStep(value: string): value is PipelineStep {
@@ -166,6 +170,29 @@ function deriveRetryStep(latest: PipelineRunSource, explicitStep?: PipelineStep)
 	return latest.currentStep;
 }
 
+async function assertNoInFlightPipelineJob(pool: Queryable, sourceId: string): Promise<void> {
+	const result = await pool.query<CountRow>(
+		`
+			SELECT COUNT(*) AS count
+			FROM jobs
+			WHERE type = 'pipeline_run'
+				AND status IN ('pending', 'running')
+				AND COALESCE(payload->>'sourceId', payload->>'source_id') = $1
+		`,
+		[sourceId],
+	);
+
+	if ((Number.parseInt(result.rows[0]?.count ?? '0', 10) || 0) > 0) {
+		throw new PipelineError(
+			`Source ${sourceId} already has an accepted pipeline job in progress`,
+			PIPELINE_ERROR_CODES.PIPELINE_RETRY_CONFLICT,
+			{
+				context: { sourceId },
+			},
+		);
+	}
+}
+
 async function enqueuePipelineJob(
 	pool: Queryable,
 	input: {
@@ -214,6 +241,7 @@ export async function createPipelineRetryJob(input: PipelineRetryRequest): Promi
 	const { pool } = resolveContext();
 	return await runInTransaction(pool, async (client) => {
 		const source = await requireSource(client, input.source_id);
+		await assertNoInFlightPipelineJob(client, source.id);
 		const latest = await findLatestPipelineRunSourceForSource(client as Pool, source.id);
 		const step = deriveRetryStep(assertRetryableSource(source, latest), input.step);
 		const run = await createPipelineRun(client as Pool, {

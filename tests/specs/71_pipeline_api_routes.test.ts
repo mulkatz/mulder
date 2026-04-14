@@ -114,6 +114,20 @@ function insertFailedPipelineStep(sourceId: string, step: string, tag = 'retry-s
 	);
 }
 
+function insertPendingPipelineJob(sourceId: string): string {
+	const jobId = randomUUID();
+	const runId = randomUUID();
+	db.runSql(
+		[
+			`INSERT INTO pipeline_runs (id, tag, options, status, created_at)`,
+			`VALUES ('${runId}', 'accepted-run', '${JSON.stringify({ source_id: sourceId })}'::jsonb, 'running', now());`,
+			`INSERT INTO jobs (id, type, payload, status, attempts, max_attempts, created_at)`,
+			`VALUES ('${jobId}', 'pipeline_run', '${JSON.stringify({ sourceId, runId, from: 'extract', upTo: 'extract', force: false })}'::jsonb, 'pending', 0, 3, now());`,
+		].join(' '),
+	);
+	return jobId;
+}
+
 async function loadApiApp(): Promise<{ request: (input: string | Request, init?: RequestInit) => Promise<Response> }> {
 	const module = await import(pathToFileURL(API_APP_DIST).href);
 	if (typeof module.createApp !== 'function') {
@@ -367,6 +381,29 @@ describe('Spec 71 — Async Pipeline API Routes', () => {
 		expect((runRow.options as Record<string, unknown>).source_id).toBe(sourceId);
 		expect((runRow.options as Record<string, unknown>).step).toBe('segment');
 		expect((runRow.options as Record<string, unknown>).retry).toBe(true);
+	});
+
+	it('QA-05b: retry requests are rejected when the source already has an in-flight async pipeline job', async () => {
+		const sourceId = randomUUID();
+		insertSourceRow(sourceId);
+		insertFailedPipelineStep(sourceId, 'extract');
+		insertPendingPipelineJob(sourceId);
+
+		const beforeJobs = db.runSql('SELECT COUNT(*) FROM jobs;');
+		const beforeRuns = db.runSql("SELECT COUNT(*) FROM pipeline_runs WHERE tag != 'retry-seed';");
+
+		const response = await apiPost(app, '/api/pipeline/retry', {
+			source_id: sourceId,
+		});
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			error: {
+				code: 'PIPELINE_RETRY_CONFLICT',
+			},
+		});
+		expect(db.runSql('SELECT COUNT(*) FROM jobs;')).toBe(beforeJobs);
+		expect(db.runSql("SELECT COUNT(*) FROM pipeline_runs WHERE tag != 'retry-seed';")).toBe(beforeRuns);
 	});
 
 	it('QA-06: the worker can dequeue and execute an API-created pipeline job', async () => {
