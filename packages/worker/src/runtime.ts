@@ -215,19 +215,19 @@ export async function processNextJob(context: WorkerRuntimeContext, workerId: st
 		return { state: 'idle', job: null, error: null };
 	}
 
-	const typedJob = toWorkerJobEnvelope(job);
-
 	const claim = {
-		jobId: typedJob.id,
+		jobId: job.id,
 		workerId,
-		attempts: typedJob.attempts,
+		attempts: job.attempts,
 	};
-	const jobLog = createChildLogger(workerLog, { jobId: typedJob.id, jobType: typedJob.type });
+	const jobLog = createChildLogger(workerLog, { jobId: job.id, jobType: job.type });
 	const dispatch = context.dispatch ?? dispatchJob;
 
-	jobLog.info({ attempts: typedJob.attempts }, 'Job claimed');
+	jobLog.info({ attempts: job.attempts }, 'Job claimed');
 
+	let typedJob: WorkerJobEnvelope | null = null;
 	try {
+		typedJob = toWorkerJobEnvelope(job);
 		await dispatch(typedJob, getWorkerDispatchContext(context, workerId));
 		await markJobCompleted(context.pool, claim);
 		jobLog.info('Job completed');
