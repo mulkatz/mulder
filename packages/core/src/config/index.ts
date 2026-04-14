@@ -10,6 +10,11 @@ export { loadConfig } from './loader.js';
 export { mulderConfigSchema } from './schema.js';
 export type {
 	AnalysisConfig,
+	ApiAuthConfig,
+	ApiAuthKeyConfig,
+	ApiConfig,
+	ApiExplorerConfig,
+	ApiRateLimitingConfig,
 	CloudSqlConfig,
 	DeduplicationConfig,
 	DocumentAiConfig,

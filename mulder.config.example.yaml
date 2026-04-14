@@ -8,6 +8,18 @@ project:
   description: "Domain-specific document intelligence"
   supported_locales: ["en"]          # UI + prompt language (entity resolution works across ALL languages)
 
+# --- API ---
+api:
+  port: 8080
+  auth:
+    api_keys:
+      - name: "cli"
+        key: "${MULDER_API_KEY}"      # Bearer token accepted by protected routes
+  rate_limiting:
+    enabled: true                     # In-memory token buckets per Cloud Run instance
+  explorer:
+    enabled: true                     # Scalar /reference UI
+
 # --- GCP ---
 gcp:
   project_id: "my-gcp-project"

@@ -51,6 +51,33 @@ const projectSchema = z.object({
 	supported_locales: z.array(z.string().min(1)).default(['en']),
 });
 
+// --- API ---
+
+const apiAuthKeySchema = z.object({
+	name: z.string().min(1),
+	key: z.string().min(1),
+});
+
+const apiAuthSchema = z.object({
+	api_keys: z.array(apiAuthKeySchema).default([]),
+});
+
+const apiRateLimitingSchema = z.object({
+	enabled: z.boolean().default(true),
+});
+
+const apiExplorerSchema = z.object({
+	enabled: z.boolean().default(true),
+});
+
+const apiObj = z.object({
+	port: z.number().int().positive().default(8080),
+	auth: apiAuthSchema.default(defaults(apiAuthSchema)),
+	rate_limiting: apiRateLimitingSchema.default(defaults(apiRateLimitingSchema)),
+	explorer: apiExplorerSchema.default(defaults(apiExplorerSchema)),
+});
+const apiSchema = apiObj.default(defaults(apiObj));
+
 // --- GCP ---
 
 const cloudSqlSchema = z.object({
@@ -358,6 +385,7 @@ const patternDiscoverySchema = patternDiscoveryObj.default(defaults(patternDisco
  */
 const baseMulderConfigSchema = z.object({
 	project: projectSchema,
+	api: apiSchema,
 	gcp: gcpSchema.optional(),
 	dev_mode: z.boolean().default(false),
 	ontology: ontologySchema,
@@ -424,6 +452,7 @@ export const mulderConfigSchema = baseMulderConfigSchema.superRefine((data, ctx)
 // Export section schemas for reuse
 export {
 	analysisSchema,
+	apiSchema,
 	cloudSqlSchema,
 	deduplicationSchema,
 	documentAiSchema,
