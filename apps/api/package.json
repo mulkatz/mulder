@@ -11,10 +11,12 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@hono/node-server": "^1.15.0",
 		"@mulder/core": "workspace:*",
 		"@mulder/retrieval": "workspace:*",
 		"@mulder/taxonomy": "workspace:*",
 		"@mulder/evidence": "workspace:*",
-		"@mulder/worker": "workspace:*"
+		"@mulder/worker": "workspace:*",
+		"hono": "^4.7.11"
 	}
 }
