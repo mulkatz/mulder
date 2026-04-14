@@ -200,6 +200,16 @@ function assertStepSucceeded(job: WorkerJobEnvelope, stepName: string, status: s
 	);
 }
 
+function assertPipelineRunCompleted(job: WorkerJobEnvelope, status: string): void {
+	if (status === 'success' || status === 'partial') {
+		return;
+	}
+
+	throw new WorkerError(`pipeline_run job ${job.id} finished with status ${status}`, WORKER_ERROR_CODES.WORKER_LOOP_FAILED, {
+		context: { jobId: job.id, jobType: job.type, status },
+	});
+}
+
 export const dispatchJob: WorkerDispatchFn = async (job, context) => {
 	const log = createChildLogger(context.logger, { jobId: job.id, jobType: job.type });
 	const config: MulderConfig = context.config;
@@ -268,7 +278,7 @@ export const dispatchJob: WorkerDispatchFn = async (job, context) => {
 				runOptions.tag = payload.tag;
 			}
 			const result = await executePipelineRun({ options: runOptions }, config, services, pool, log);
-			assertStepSucceeded(job, 'pipeline_run', result.status);
+			assertPipelineRunCompleted(job, result.status);
 			return;
 		}
 		default:
