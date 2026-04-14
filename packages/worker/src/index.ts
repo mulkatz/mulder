@@ -12,6 +12,7 @@ export {
 } from './runtime.js';
 export type {
 	LegacyPipelineRunJobPayload,
+	PipelineRunJobPayload,
 	SourceStepJobPayload,
 	SourceStepJobType,
 	StoryStepJobPayload,

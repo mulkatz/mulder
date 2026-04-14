@@ -53,6 +53,9 @@ importers:
       hono:
         specifier: ^4.7.11
         version: 4.12.12
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
 
   apps/cli:
     dependencies:
@@ -229,12 +232,18 @@ importers:
       '@mulder/retrieval':
         specifier: workspace:*
         version: link:../packages/retrieval
+      '@mulder/worker':
+        specifier: workspace:*
+        version: link:../packages/worker
       '@types/node':
         specifier: ^25.5.0
         version: 25.5.0
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0
+      hono:
+        specifier: ^4.7.11
+        version: 4.12.12
       pg:
         specifier: ^8.20.0
         version: 8.20.0

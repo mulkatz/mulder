@@ -36,6 +36,8 @@ export interface PipelineRunOptions {
 	from?: PipelineStepName;
 	/** Optional human-readable tag attached to the `pipeline_runs` row. */
 	tag?: string;
+	/** Reuse an externally created `pipeline_runs` row instead of creating a new one. */
+	runId?: string;
 	/** If true, emit the plan without executing any step or writing to the DB. */
 	dryRun?: boolean;
 	/** If provided, skip `ingest` and operate on existing sources with these ids. Used by `pipeline retry`. */

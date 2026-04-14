@@ -10,7 +10,16 @@
 
 import type { MulderConfig, Services } from '@mulder/core';
 import { createChildLogger } from '@mulder/core';
-import { executeEmbed, executeEnrich, executeExtract, executeGraph, executeSegment } from '@mulder/pipeline';
+import {
+	executeEmbed,
+	executeEnrich,
+	executeExtract,
+	executeGraph,
+	executePipelineRun,
+	executeSegment,
+	type PipelineRunOptions,
+	type PipelineStepName,
+} from '@mulder/pipeline';
 import {
 	type SupportedJobType,
 	WORKER_ERROR_CODES,
@@ -115,6 +124,70 @@ function parseStoryStepPayload(job: WorkerJobEnvelope): {
 	return payload;
 }
 
+function isPipelineStep(value: string): value is PipelineStepName {
+	return value === 'extract' || value === 'segment' || value === 'enrich' || value === 'embed' || value === 'graph';
+}
+
+function parsePipelineRunPayload(job: WorkerJobEnvelope): {
+	sourceId: string;
+	runId?: string;
+	from?: PipelineStepName;
+	upTo?: PipelineStepName;
+	tag?: string;
+	force?: boolean;
+} {
+	if (!isRecord(job.payload)) {
+		throw invalidPayload(job, `Job ${job.id} payload must be an object`, { field: 'payload' });
+	}
+
+	const sourceId = readStringField(job, 'sourceId', 'source_id');
+	if (!sourceId) {
+		throw invalidPayload(job, `pipeline_run jobs require a non-empty sourceId`, { field: 'sourceId' });
+	}
+
+	const payload: {
+		sourceId: string;
+		runId?: string;
+		from?: PipelineStepName;
+		upTo?: PipelineStepName;
+		tag?: string;
+		force?: boolean;
+	} = { sourceId };
+
+	const runId = readStringField(job, 'runId', 'run_id');
+	if (runId) {
+		payload.runId = runId;
+	}
+
+	const from = readStringField(job, 'from');
+	if (from) {
+		if (!isPipelineStep(from)) {
+			throw invalidPayload(job, `pipeline_run jobs require a valid from step`, { field: 'from', value: from });
+		}
+		payload.from = from;
+	}
+
+	const upTo = readStringField(job, 'upTo', 'up_to');
+	if (upTo) {
+		if (!isPipelineStep(upTo)) {
+			throw invalidPayload(job, `pipeline_run jobs require a valid upTo step`, { field: 'upTo', value: upTo });
+		}
+		payload.upTo = upTo;
+	}
+
+	const tag = readStringField(job, 'tag');
+	if (tag) {
+		payload.tag = tag;
+	}
+
+	const force = asBoolean(job.payload.force);
+	if (force !== undefined) {
+		payload.force = force;
+	}
+
+	return payload;
+}
+
 function assertStepSucceeded(job: WorkerJobEnvelope, stepName: string, status: string): void {
 	if (status === 'success') {
 		return;
@@ -125,6 +198,16 @@ function assertStepSucceeded(job: WorkerJobEnvelope, stepName: string, status: s
 		WORKER_ERROR_CODES.WORKER_LOOP_FAILED,
 		{ context: { jobId: job.id, jobType: job.type, status } },
 	);
+}
+
+function assertPipelineRunCompleted(job: WorkerJobEnvelope, status: string): void {
+	if (status === 'success' || status === 'partial') {
+		return;
+	}
+
+	throw new WorkerError(`pipeline_run job ${job.id} finished with status ${status}`, WORKER_ERROR_CODES.WORKER_LOOP_FAILED, {
+		context: { jobId: job.id, jobType: job.type, status },
+	});
 }
 
 export const dispatchJob: WorkerDispatchFn = async (job, context) => {
@@ -165,9 +248,37 @@ export const dispatchJob: WorkerDispatchFn = async (job, context) => {
 			return;
 		}
 		case 'pipeline_run': {
-			const payload = parseSourceStepPayload(job);
-			const result = await executeExtract(payload, config, services, pool, log);
-			assertStepSucceeded(job, 'pipeline_run', result.status);
+			const payload = parsePipelineRunPayload(job);
+			if (!payload.runId) {
+				const result = await executeExtract(
+					{ sourceId: payload.sourceId, force: payload.force ?? false },
+					config,
+					services,
+					pool,
+					log,
+				);
+				assertStepSucceeded(job, 'pipeline_run', result.status);
+				return;
+			}
+
+			const runOptions: PipelineRunOptions = {
+				sourceIds: [payload.sourceId],
+				force: payload.force ?? false,
+			};
+			if (payload.runId) {
+				runOptions.runId = payload.runId;
+			}
+			if (payload.from) {
+				runOptions.from = payload.from;
+			}
+			if (payload.upTo) {
+				runOptions.upTo = payload.upTo;
+			}
+			if (payload.tag) {
+				runOptions.tag = payload.tag;
+			}
+			const result = await executePipelineRun({ options: runOptions }, config, services, pool, log);
+			assertPipelineRunCompleted(job, result.status);
 			return;
 		}
 		default:

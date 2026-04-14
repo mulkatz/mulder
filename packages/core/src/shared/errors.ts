@@ -25,8 +25,12 @@ export type ConfigErrorCode = (typeof CONFIG_ERROR_CODES)[keyof typeof CONFIG_ER
 export const PIPELINE_ERROR_CODES = {
 	/** Source row not found in DB during pipeline run. */
 	PIPELINE_SOURCE_NOT_FOUND: 'PIPELINE_SOURCE_NOT_FOUND',
+	/** Externally supplied pipeline run row does not exist. */
+	PIPELINE_RUN_NOT_FOUND: 'PIPELINE_RUN_NOT_FOUND',
 	/** Source status does not match the expected step entry condition. */
 	PIPELINE_WRONG_STATUS: 'PIPELINE_WRONG_STATUS',
+	/** Retry requested but the latest failed step cannot be retried. */
+	PIPELINE_RETRY_CONFLICT: 'PIPELINE_RETRY_CONFLICT',
 	/** A pipeline step threw — wraps the underlying step error code. */
 	PIPELINE_STEP_FAILED: 'PIPELINE_STEP_FAILED',
 	/** @reserved D6 pipeline orchestrator retry exhaustion */

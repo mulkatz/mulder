@@ -9,7 +9,7 @@ interface ErrorResponseBody {
 	};
 }
 
-type ApiErrorStatus = 400 | 401 | 403 | 404 | 413 | 429 | 500 | 503;
+type ApiErrorStatus = 400 | 401 | 403 | 404 | 409 | 413 | 429 | 500 | 503;
 
 function getLogger(c: Context, fallbackLogger: Logger): Logger {
 	const requestContext = c.get('requestContext');
@@ -41,6 +41,10 @@ export function mapErrorToStatus(error: MulderError): ApiErrorStatus {
 
 	if (code.includes('NOT_FOUND')) {
 		return 404;
+	}
+
+	if (code.includes('CONFLICT')) {
+		return 409;
 	}
 
 	if (code.includes('VALIDATION') || code.startsWith('CONFIG_') || code.includes('INVALID')) {
@@ -100,8 +104,7 @@ export function createErrorHandler(fallbackLogger: Logger): ErrorHandler {
 				c.header('X-Request-Id', requestId);
 			}
 
-			const zodError = error as ZodError;
-			return c.json(buildErrorBody('VALIDATION_ERROR', 'Invalid request', zodError.flatten()), 400);
+			return c.json(buildErrorBody('VALIDATION_ERROR', 'Invalid request', error.flatten()), 400);
 		}
 
 		logger.error({ err: error, request_id: requestId }, 'Unhandled API error');
