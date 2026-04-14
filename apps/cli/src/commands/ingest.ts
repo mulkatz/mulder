@@ -29,7 +29,7 @@ interface IngestOptions {
  * mulder ingest <path>
  *   --dry-run         Validate without uploading
  *   --tag <tag>       Tag ingested sources (repeatable)
- *   --cost-estimate   Show cost estimate (stub: "not yet implemented")
+ *   --cost-estimate   Planned for M8-I2; currently prints a placeholder message
  * ```
  */
 export function registerIngestCommands(program: Command): void {
@@ -39,7 +39,7 @@ export function registerIngestCommands(program: Command): void {
 		.argument('<path>', 'path to a PDF file or directory containing PDFs')
 		.option('--dry-run', 'validate without uploading or creating DB records')
 		.option('--tag <tag>', 'tag ingested sources (repeatable)', collect, [])
-		.option('--cost-estimate', 'estimate pipeline cost before ingesting')
+		.option('--cost-estimate', 'planned for M8-I2; currently prints a placeholder message')
 		.addHelpText(
 			'after',
 			`
@@ -51,7 +51,7 @@ Examples:
 		.action(
 			withErrorHandler(async (inputPath: string, options: IngestOptions) => {
 				if (options.costEstimate) {
-					process.stderr.write('Cost estimation is not yet implemented (M8-I2)\n');
+					process.stderr.write('Cost estimation is planned for M8-I2 and is not implemented yet.\n');
 					return;
 				}
 

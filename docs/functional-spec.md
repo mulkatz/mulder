@@ -2128,7 +2128,7 @@ The build sequence follows dependencies. Each step is independently testable.
 | # | What | Produces | Depends on |
 |---|------|----------|------------|
 | I1 | Evaluation framework + golden test set | `eval/`, `mulder eval` | B7, C2, C8 |
-| I2 | Cost estimator | `mulder ingest --cost-estimate`, `mulder reprocess --cost-estimate` | B4, D6 |
+| I2 | Cost estimator | `mulder ingest/pipeline/reprocess --cost-estimate` | B4, D6 |
 | I3 | Terraform budget alerts | `terraform/modules/budget/` | — |
 | I4 | Schema evolution / reprocessing | `mulder reprocess`, config_hash tracking | D6 |
 | I5 | Dead Letter Queue | `dead_letter` job status + `mulder retry` CLI | H2 |
