@@ -36,7 +36,17 @@ export interface StoryStepJobPayload {
 	force?: boolean;
 }
 
-export type LegacyPipelineRunJobPayload = SourceStepJobPayload;
+export interface PipelineRunJobPayload {
+	sourceId: string;
+	runId?: string;
+	from?: string;
+	upTo?: string;
+	tag?: string;
+	force?: boolean;
+	fallbackOnly?: boolean;
+}
+
+export type LegacyPipelineRunJobPayload = PipelineRunJobPayload;
 
 export type WorkerJobPayloadMap = {
 	extract: SourceStepJobPayload;

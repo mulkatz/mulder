@@ -24,6 +24,7 @@ import {
 	createPipelineRun,
 	finalizePipelineRun,
 	findAllSources,
+	findPipelineRunById,
 	findSourceById,
 	findStoriesBySourceId,
 	PIPELINE_ERROR_CODES,
@@ -625,11 +626,18 @@ export async function execute(
 		});
 	}
 
-	// 3. Create the run row.
-	const run = await createPipelineRun(pool, {
-		tag: options.tag ?? null,
-		options: serializeOptions(options),
-	});
+	// 3. Create or reuse the run row.
+	const run = options.runId
+		? await findPipelineRunById(pool, options.runId)
+		: await createPipelineRun(pool, {
+				tag: options.tag ?? null,
+				options: serializeOptions(options),
+			});
+	if (!run) {
+		throw new PipelineError(`Pipeline run not found: ${options.runId}`, PIPELINE_ERROR_CODES.PIPELINE_RUN_NOT_FOUND, {
+			context: { runId: options.runId },
+		});
+	}
 	const runLog = createChildLogger(log, { runId: run.id });
 	runLog.info({ runId: run.id, tag: run.tag, plannedSteps }, 'pipeline.run.start');
 

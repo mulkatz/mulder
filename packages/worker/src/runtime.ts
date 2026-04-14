@@ -25,6 +25,7 @@ import { dispatchJob } from './dispatch.js';
 import {
 	createWorkerId,
 	describeWorkerError,
+	type PipelineRunJobPayload,
 	type WorkerActiveJobSnapshot,
 	type WorkerDispatchContext,
 	type WorkerDispatchFn,
@@ -106,27 +107,87 @@ function readOptionalBoolean(payload: Record<string, unknown>, key: string): boo
 	return typeof payload[key] === 'boolean' ? payload[key] : undefined;
 }
 
+function readOptionalString(
+	payload: Record<string, unknown>,
+	primaryKey: string,
+	fallbackKey?: string,
+): string | undefined {
+	if (typeof payload[primaryKey] === 'string' && payload[primaryKey].trim().length > 0) {
+		return payload[primaryKey].trim();
+	}
+	if (fallbackKey && typeof payload[fallbackKey] === 'string' && payload[fallbackKey].trim().length > 0) {
+		return payload[fallbackKey].trim();
+	}
+	return undefined;
+}
+
 function toWorkerJobPayload(job: Job): WorkerJobEnvelope['payload'] {
 	if (!isRecord(job.payload)) {
 		throw new Error(`Job ${job.id} payload must be an object`);
 	}
 
-	if (job.type === 'extract' || job.type === 'segment' || job.type === 'pipeline_run') {
-		const sourceId =
-			typeof job.payload.sourceId === 'string'
-				? job.payload.sourceId
-				: typeof job.payload.source_id === 'string'
-					? job.payload.source_id
-					: null;
+	if (job.type === 'extract' || job.type === 'segment') {
+		const sourceId = readOptionalString(job.payload, 'sourceId', 'source_id');
 		if (!sourceId) {
 			throw new Error(`Job ${job.id} is missing sourceId`);
 		}
 
-		return {
+		const payload: WorkerJobEnvelope['payload'] = {
 			sourceId,
-			force: readOptionalBoolean(job.payload, 'force'),
-			fallbackOnly: readOptionalBoolean(job.payload, 'fallbackOnly'),
 		};
+
+		const force = readOptionalBoolean(job.payload, 'force');
+		if (force !== undefined) {
+			payload.force = force;
+		}
+
+		const fallbackOnly = readOptionalBoolean(job.payload, 'fallbackOnly');
+		if (fallbackOnly !== undefined) {
+			payload.fallbackOnly = fallbackOnly;
+		}
+
+		return payload;
+	}
+
+	if (job.type === 'pipeline_run') {
+		const sourceId = readOptionalString(job.payload, 'sourceId', 'source_id');
+		if (!sourceId) {
+			throw new Error(`Job ${job.id} is missing sourceId`);
+		}
+
+		const payload: PipelineRunJobPayload = { sourceId };
+
+		const force = readOptionalBoolean(job.payload, 'force');
+		if (force !== undefined) {
+			payload.force = force;
+		}
+
+		const fallbackOnly = readOptionalBoolean(job.payload, 'fallbackOnly');
+		if (fallbackOnly !== undefined) {
+			payload.fallbackOnly = fallbackOnly;
+		}
+
+		const runId = readOptionalString(job.payload, 'runId', 'run_id');
+		if (runId) {
+			payload.runId = runId;
+		}
+
+		const from = readOptionalString(job.payload, 'from');
+		if (from) {
+			payload.from = from;
+		}
+
+		const upTo = readOptionalString(job.payload, 'upTo', 'up_to');
+		if (upTo) {
+			payload.upTo = upTo;
+		}
+
+		const tag = readOptionalString(job.payload, 'tag');
+		if (tag) {
+			payload.tag = tag;
+		}
+
+		return payload;
 	}
 
 	if (job.type === 'enrich' || job.type === 'embed' || job.type === 'graph') {
