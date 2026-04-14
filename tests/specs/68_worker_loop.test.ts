@@ -210,13 +210,11 @@ function expectLabelWithCount(output: string, label: string, count: number): voi
 }
 
 describe('Spec 68: Worker Loop', () => {
-	const pgAvailable = db.isPgAvailable();
+	let pgAvailable = false;
 
 	beforeAll(() => {
-		if (!pgAvailable) {
-			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
-			return;
-		}
+		db.requirePg();
+		pgAvailable = true;
 
 		ensureSchema();
 		cleanTables();
@@ -236,8 +234,6 @@ describe('Spec 68: Worker Loop', () => {
 	});
 
 	it('QA-01: worker start claims and completes a runnable job', async () => {
-		if (!pgAvailable) return;
-
 		cleanTables();
 
 		const ingest = runCli(['ingest', NATIVE_TEXT_PDF], { timeout: 120_000 });
@@ -276,8 +272,6 @@ describe('Spec 68: Worker Loop', () => {
 	}, 180_000);
 
 	it('QA-02: failed handlers mark the job failed or dead-letter according to retry state', async () => {
-		if (!pgAvailable) return;
-
 		async function runFailureCase(maxAttempts: number): Promise<JobRecord> {
 			cleanTables();
 
@@ -313,8 +307,6 @@ describe('Spec 68: Worker Loop', () => {
 	}, 180_000);
 
 	it('QA-03: idle polling does not mutate the queue', async () => {
-		if (!pgAvailable) return;
-
 		cleanTables();
 
 		const worker = startWorker(['--poll-interval', '100']);
@@ -331,8 +323,6 @@ describe('Spec 68: Worker Loop', () => {
 	}, 30_000);
 
 	it('QA-04: the worker never requires a long-lived transaction around step execution', async () => {
-		if (!pgAvailable) return;
-
 		cleanTables();
 
 		const ingest = runCli(['ingest', NATIVE_TEXT_PDF], { timeout: 120_000 });
@@ -368,8 +358,6 @@ describe('Spec 68: Worker Loop', () => {
 	}, 180_000);
 
 	it('QA-05: worker status reports running and pending queue state', async () => {
-		if (!pgAvailable) return;
-
 		cleanTables();
 
 		insertJob({
@@ -448,8 +436,6 @@ describe('Spec 68: Worker Loop', () => {
 	}, 30_000);
 
 	it('QA-06: worker reap resets stale running jobs and leaves fresh jobs alone', async () => {
-		if (!pgAvailable) return;
-
 		cleanTables();
 
 		const staleJobId = randomUUID();
@@ -492,8 +478,6 @@ describe('Spec 68: Worker Loop', () => {
 	}, 30_000);
 
 	it('QA-07: graceful shutdown stops polling without corrupting the claimed job state', async () => {
-		if (!pgAvailable) return;
-
 		cleanTables();
 
 		const worker = startWorker(['--poll-interval', '100']);
