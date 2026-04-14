@@ -38,6 +38,25 @@ export function isPgAvailable(): boolean {
 	return runDbRunner(['ready'], 5_000).exitCode === 0;
 }
 
+export function requirePg(): void {
+	const result = runDbRunner(['ready'], 5_000);
+	if (result.exitCode === 0) {
+		return;
+	}
+
+	const stderr = result.stderr.trim();
+	const stdout = result.stdout.trim();
+	const details = [stderr, stdout].filter(Boolean).join('\n');
+
+	throw new Error(
+		[
+			`PostgreSQL is required for this spec test but is not reachable.`,
+			`Tried ${TEST_PG_USER}@${TEST_PG_HOST}:${TEST_PG_PORT}/${TEST_PG_DATABASE}.`,
+			details ? `pg_isready output:\n${details}` : 'pg_isready returned a non-zero exit code with no output.',
+		].join('\n'),
+	);
+}
+
 export function runSql(sql: string): string {
 	const encodedSql = Buffer.from(sql, 'utf8').toString('base64');
 	const result = runDbRunner(['query', encodedSql], 15_000);

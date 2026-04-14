@@ -66,14 +66,11 @@ function cleanJobData(): void {
 }
 
 describe('Spec 67: Job Queue Repository', () => {
-	let pgAvailable: boolean;
+	let pgAvailable = false;
 
 	beforeAll(() => {
-		pgAvailable = db.isPgAvailable();
-		if (!pgAvailable) {
-			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
-			return;
-		}
+		db.requirePg();
+		pgAvailable = true;
 
 		tmpDir = mkdtempSync(join(tmpdir(), 'mulder-qa-67-'));
 
@@ -95,8 +92,6 @@ describe('Spec 67: Job Queue Repository', () => {
 	});
 
 	it('QA-01: enqueue creates a pending job with the expected defaults', () => {
-		if (!pgAvailable) return;
-
 		cleanJobData();
 
 		const { stdout, stderr, exitCode } = runScript(`
@@ -140,8 +135,6 @@ describe('Spec 67: Job Queue Repository', () => {
 	});
 
 	it('QA-02: job lookup and filtered listing expose queue state newest-first', () => {
-		if (!pgAvailable) return;
-
 		cleanJobData();
 		db.runSql(`
 			INSERT INTO jobs (id, type, payload, status, created_at)
@@ -194,8 +187,6 @@ describe('Spec 67: Job Queue Repository', () => {
 	});
 
 	it('QA-03: dequeue claims the oldest runnable pending job exactly once', () => {
-		if (!pgAvailable) return;
-
 		cleanJobData();
 		db.runSql(`
 			INSERT INTO jobs (id, type, payload, status, created_at)
@@ -239,8 +230,6 @@ describe('Spec 67: Job Queue Repository', () => {
 	});
 
 	it('QA-04: dequeue skips unrunnable jobs', () => {
-		if (!pgAvailable) return;
-
 		cleanJobData();
 		db.runSql(`
 			INSERT INTO jobs (id, type, payload, status, attempts, max_attempts, worker_id, started_at, created_at)
@@ -284,8 +273,6 @@ describe('Spec 67: Job Queue Repository', () => {
 	});
 
 	it('QA-05: mark completed finalizes the claimed job', () => {
-		if (!pgAvailable) return;
-
 		cleanJobData();
 		db.runSql(`
 			INSERT INTO jobs (id, type, payload, status, attempts, max_attempts, worker_id, started_at)
@@ -324,8 +311,6 @@ describe('Spec 67: Job Queue Repository', () => {
 	});
 
 	it('QA-06: mark failed preserves retry semantics and dead-letters exhausted jobs', () => {
-		if (!pgAvailable) return;
-
 		cleanJobData();
 		db.runSql(`
 			INSERT INTO jobs (id, type, payload, status, attempts, max_attempts, worker_id, started_at)
@@ -386,8 +371,6 @@ describe('Spec 67: Job Queue Repository', () => {
 	});
 
 	it('review blocker: terminal updates require the active claim token', () => {
-		if (!pgAvailable) return;
-
 		cleanJobData();
 		db.runSql(`
 			INSERT INTO jobs (id, type, payload, status, attempts, max_attempts, created_at)
@@ -488,8 +471,6 @@ describe('Spec 67: Job Queue Repository', () => {
 	});
 
 	it('QA-07: reaper resets stale running jobs back to pending', () => {
-		if (!pgAvailable) return;
-
 		cleanJobData();
 		db.runSql(`
 			INSERT INTO jobs (id, type, payload, status, attempts, max_attempts, worker_id, started_at)
@@ -527,8 +508,6 @@ describe('Spec 67: Job Queue Repository', () => {
 	});
 
 	it('review blocker: reaper allows one recovery pickup for a stale final-attempt claim without creating infinite retries', () => {
-		if (!pgAvailable) return;
-
 		cleanJobData();
 		db.runSql(`
 			INSERT INTO jobs (id, type, payload, status, attempts, max_attempts, worker_id, started_at, created_at)
@@ -594,8 +573,6 @@ describe('Spec 67: Job Queue Repository', () => {
 	});
 
 	it('QA-08: fresh running jobs are not reaped', () => {
-		if (!pgAvailable) return;
-
 		cleanJobData();
 		db.runSql(`
 			INSERT INTO jobs (id, type, payload, status, attempts, max_attempts, worker_id, started_at)
@@ -631,8 +608,6 @@ describe('Spec 67: Job Queue Repository', () => {
 	});
 
 	it('QA-09: repository exports are available through the public @mulder/core barrel', () => {
-		if (!pgAvailable) return;
-
 		cleanJobData();
 
 		const { stdout, stderr, exitCode } = runScript(`
