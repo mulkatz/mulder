@@ -16,7 +16,6 @@ type SpawnedProcess = ReturnType<typeof spawn>;
 async function buildApiPackage(): Promise<void> {
 	const result = spawnSync('pnpm', ['build'], {
 		cwd: API_DIR,
-		encoding: 'utf-8',
 		stdio: ['ignore', 'pipe', 'pipe'],
 		env: {
 			...process.env,
@@ -26,7 +25,7 @@ async function buildApiPackage(): Promise<void> {
 
 	expect(result.status ?? 1).toBe(0);
 	if ((result.status ?? 1) !== 0) {
-		throw new Error(`API build failed:\n${result.stdout ?? ''}\n${result.stderr ?? ''}`);
+		throw new Error(`API build failed:\n${result.stdout?.toString() ?? ''}\n${result.stderr?.toString() ?? ''}`);
 	}
 }
 
@@ -69,7 +68,6 @@ async function waitForHealth(url: string, timeoutMs = 10_000): Promise<Response>
 function startApiServer(port: number): SpawnedProcess {
 	return spawn('node', [API_INDEX], {
 		cwd: ROOT,
-		encoding: 'utf-8',
 		stdio: ['ignore', 'pipe', 'pipe'],
 		env: {
 			...process.env,
@@ -156,7 +154,6 @@ describe('Spec 69: Hono Server Scaffold', () => {
 	it('QA-04: the api package builds successfully with the scaffolded runtime', async () => {
 		const buildResult = spawnSync('pnpm', ['build'], {
 			cwd: API_DIR,
-			encoding: 'utf-8',
 			stdio: ['ignore', 'pipe', 'pipe'],
 			env: {
 				...process.env,
