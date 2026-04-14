@@ -8,6 +8,7 @@ import { createRequestContextMiddleware } from './middleware/request-context.js'
 import { createRequestIdMiddleware } from './middleware/request-id.js';
 import { createSecureHeadersMiddleware } from './middleware/secure-headers.js';
 import { registerHealthRoute } from './routes/health.js';
+import { registerJobRoutes } from './routes/jobs.js';
 import { registerPipelineRoutes } from './routes/pipeline.js';
 
 export interface AppOptions {
@@ -30,6 +31,7 @@ export function createApp(options: AppOptions = {}): Hono {
 	app.use('*', createRateLimitMiddleware(apiConfig));
 
 	registerHealthRoute(app);
+	registerJobRoutes(app);
 	registerPipelineRoutes(app);
 
 	return app;
