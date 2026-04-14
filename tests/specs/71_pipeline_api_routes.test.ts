@@ -136,6 +136,23 @@ async function loadApiApp(): Promise<{ request: (input: string | Request, init?:
 	});
 }
 
+type ApiApp = Awaited<ReturnType<typeof loadApiApp>>;
+
+interface PipelineAcceptedResponse {
+	data: {
+		job_id: string;
+		status: 'pending';
+		run_id: string;
+	};
+	links: {
+		status: string;
+	};
+}
+
+async function readPipelineAcceptedResponse(response: Response): Promise<PipelineAcceptedResponse> {
+	return (await response.json()) as PipelineAcceptedResponse;
+}
+
 async function apiPost(app: ApiApp, path: string, body: unknown): Promise<Response> {
 	return await app.request(`http://localhost${path}`, {
 		method: 'POST',
@@ -206,7 +223,7 @@ describe('Spec 71 — Async Pipeline API Routes', () => {
 
 		expect(response.status).toBe(202);
 		expect(response.headers.get('content-type')).toContain('application/json');
-		const body = await response.json();
+		const body = await readPipelineAcceptedResponse(response);
 		expect(body).toMatchObject({
 			data: {
 				job_id: expect.any(String),
@@ -323,7 +340,7 @@ describe('Spec 71 — Async Pipeline API Routes', () => {
 		});
 
 		expect(response.status).toBe(202);
-		const body = await response.json();
+		const body = await readPipelineAcceptedResponse(response);
 		expect(body.data.status).toBe('pending');
 		expect(body.links.status).toMatch(/^\/api\/jobs\/[0-9a-f-]+$/i);
 
@@ -368,14 +385,18 @@ describe('Spec 71 — Async Pipeline API Routes', () => {
 			tag: 'worker-integration',
 		});
 		expect(response.status).toBe(202);
-		const body = await response.json();
+		const body = await readPipelineAcceptedResponse(response);
 
 		const workerConfig = coreModule.loadConfig(EXAMPLE_CONFIG);
 		const workerLogger = coreModule.createLogger();
+		const cloudSql = workerConfig.gcp?.cloud_sql;
+		if (!cloudSql) {
+			throw new Error('Expected worker config to include GCP Cloud SQL settings');
+		}
 		const runtimeContext: WorkerRuntimeContext = {
 			config: workerConfig,
 			services: coreModule.createServiceRegistry(workerConfig, workerLogger),
-			pool: coreModule.getWorkerPool(workerConfig.gcp.cloud_sql),
+			pool: coreModule.getWorkerPool(cloudSql),
 			logger: workerLogger,
 		};
 

@@ -104,8 +104,7 @@ export function createErrorHandler(fallbackLogger: Logger): ErrorHandler {
 				c.header('X-Request-Id', requestId);
 			}
 
-			const zodError = error as ZodError;
-			return c.json(buildErrorBody('VALIDATION_ERROR', 'Invalid request', zodError.flatten()), 400);
+			return c.json(buildErrorBody('VALIDATION_ERROR', 'Invalid request', error.flatten()), 400);
 		}
 
 		logger.error({ err: error, request_id: requestId }, 'Unhandled API error');

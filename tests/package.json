@@ -9,9 +9,11 @@
 		"@mulder/core": "workspace:*",
 		"@mulder/eval": "workspace:*",
 		"@mulder/pipeline": "workspace:*",
+		"@mulder/worker": "workspace:*",
 		"@mulder/retrieval": "workspace:*",
 		"@types/node": "^25.5.0",
 		"@types/pg": "^8.20.0",
+		"hono": "^4.7.11",
 		"pg": "^8.20.0"
 	}
 }
