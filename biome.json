@@ -39,6 +39,7 @@
 			"!**/node_modules",
 			"!**/dist",
 			"!**/.turbo",
+			"!tmp-*",
 			"!fixtures",
 			"!**/demo",
 			"!**/.claude",
