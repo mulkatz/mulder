@@ -7,15 +7,24 @@ import {
 	DATABASE_ERROR_CODES,
 	DatabaseError,
 	findAllSources,
+	findLatestPipelineRunSourceForSource,
+	findPipelineRunById,
 	findSourceById,
+	findSourceSteps,
+	findStoriesBySourceId,
 	getQueryPool,
+	type Job,
 	type Logger,
 	loadConfig,
 	type MulderConfig,
 	MulderError,
+	type PipelineRun,
+	type PipelineRunSource,
 	type Services,
 	type Source,
 	type SourceFilter,
+	type SourceStep,
+	type Story,
 } from '@mulder/core';
 import type pg from 'pg';
 import type {
@@ -23,9 +32,11 @@ import type {
 	DocumentListItem,
 	DocumentListQuery,
 	DocumentListResponse,
+	DocumentObservabilityResponse,
 	DocumentPageItem,
 	DocumentPagesResponse,
 } from '../routes/documents.schemas.js';
+import { PIPELINE_STEP_VALUES } from '../routes/pipeline.schemas.js';
 
 interface DocumentContext {
 	config: MulderConfig;
@@ -183,6 +194,557 @@ function buildPageArtifact(sourceId: string, pageNumber: number): DocumentArtifa
 	};
 }
 
+function getProjectionField<T>(projection: Record<string, unknown>, ...keys: string[]): T | null {
+	for (const key of keys) {
+		const value = projection[key];
+		if (value !== undefined && value !== null) {
+			return value as T;
+		}
+	}
+
+	return null;
+}
+
+function readProjectionString(projection: Record<string, unknown>, ...keys: string[]): string | null {
+	const value = getProjectionField<unknown>(projection, ...keys);
+	return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function readProjectionNumber(projection: Record<string, unknown>, ...keys: string[]): number | null {
+	const value = getProjectionField<unknown>(projection, ...keys);
+	return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function readProjectionBoolean(projection: Record<string, unknown>, ...keys: string[]): boolean | null {
+	const value = getProjectionField<unknown>(projection, ...keys);
+	return typeof value === 'boolean' ? value : null;
+}
+
+function readProjectionDateString(projection: Record<string, unknown>, ...keys: string[]): string | null {
+	return readProjectionString(projection, ...keys);
+}
+
+function toIsoStringOrNull(value: Date | null | undefined): string | null {
+	return value ? value.toISOString() : null;
+}
+
+interface DocumentObservabilitySourceProjection {
+	status: string | null;
+	extracted_at: string | null;
+	segmented_at: string | null;
+	page_count: number | null;
+	story_count: number | null;
+	vision_fallback_count: number | null;
+	vision_fallback_capped: boolean | null;
+}
+
+interface DocumentObservabilityStoryProjection {
+	status: string | null;
+	enriched_at: string | null;
+	embedded_at: string | null;
+	graphed_at: string | null;
+	entities_extracted: number | null;
+	chunks_created: number | null;
+}
+
+interface DocumentObservabilityProgress {
+	run_id: string;
+	run_status: PipelineRun['status'];
+	current_step: string;
+	source_status: PipelineRunSource['status'];
+	updated_at: string;
+	error_message: string | null;
+}
+
+interface DocumentObservabilityStep {
+	step: string;
+	status: 'pending' | 'completed' | 'failed' | 'partial';
+	completed_at: string | null;
+	error_message: string | null;
+}
+
+interface DocumentObservabilityTimelineEvent {
+	scope: 'job' | 'source' | 'story';
+	event: string;
+	status: string;
+	occurred_at: string;
+	step: string | null;
+	story_id: string | null;
+	details: Record<string, unknown>;
+}
+
+interface DocumentObservabilityJob {
+	job_id: string;
+	status: Job['status'];
+	attempts: number;
+	max_attempts: number;
+	error_log: string | null;
+	created_at: string;
+	started_at: string | null;
+	finished_at: string | null;
+}
+
+const SOURCE_STEP_ORDER = new Map<string, number>(PIPELINE_STEP_VALUES.map((step, index) => [step, index]));
+
+function sortSourceSteps(steps: SourceStep[]): SourceStep[] {
+	return [...steps].sort((left, right) => {
+		const leftIndex = SOURCE_STEP_ORDER.get(left.stepName) ?? Number.POSITIVE_INFINITY;
+		const rightIndex = SOURCE_STEP_ORDER.get(right.stepName) ?? Number.POSITIVE_INFINITY;
+		if (leftIndex !== rightIndex) {
+			return leftIndex - rightIndex;
+		}
+
+		return left.stepName.localeCompare(right.stepName);
+	});
+}
+
+function mapSourceStep(step: SourceStep): DocumentObservabilityStep {
+	return {
+		step: step.stepName,
+		status: step.status,
+		completed_at: toIsoStringOrNull(step.completedAt),
+		error_message: step.errorMessage,
+	};
+}
+
+function buildSourceProjection(
+	projection: Record<string, unknown> | null,
+): DocumentObservabilitySourceProjection | null {
+	if (!projection) {
+		return null;
+	}
+
+	return {
+		status: readProjectionString(projection, 'status'),
+		extracted_at: readProjectionDateString(projection, 'extractedAt', 'extracted_at'),
+		segmented_at: readProjectionDateString(projection, 'segmentedAt', 'segmented_at'),
+		page_count: readProjectionNumber(projection, 'pageCount', 'page_count'),
+		story_count: readProjectionNumber(projection, 'storyCount', 'story_count'),
+		vision_fallback_count: readProjectionNumber(projection, 'visionFallbackCount', 'vision_fallback_count'),
+		vision_fallback_capped: readProjectionBoolean(projection, 'visionFallbackCapped', 'vision_fallback_capped'),
+	};
+}
+
+function buildStoryProjection(projection: Record<string, unknown> | null): DocumentObservabilityStoryProjection | null {
+	if (!projection) {
+		return null;
+	}
+
+	return {
+		status: readProjectionString(projection, 'status'),
+		enriched_at: readProjectionDateString(projection, 'enrichedAt', 'enriched_at'),
+		embedded_at: readProjectionDateString(projection, 'embeddedAt', 'embedded_at'),
+		graphed_at: readProjectionDateString(projection, 'graphedAt', 'graphed_at'),
+		entities_extracted: readProjectionNumber(projection, 'entitiesExtracted', 'entities_extracted'),
+		chunks_created: readProjectionNumber(projection, 'chunksCreated', 'chunks_created'),
+	};
+}
+
+function sortTimelineEvents(events: DocumentObservabilityTimelineEvent[]): DocumentObservabilityTimelineEvent[] {
+	return [...events].sort((left, right) => {
+		const timestampComparison = left.occurred_at.localeCompare(right.occurred_at);
+		if (timestampComparison !== 0) {
+			return timestampComparison;
+		}
+
+		const scopeComparison = left.scope.localeCompare(right.scope);
+		if (scopeComparison !== 0) {
+			return scopeComparison;
+		}
+
+		return left.event.localeCompare(right.event);
+	});
+}
+
+function makeTimelineEvent(
+	input: Omit<DocumentObservabilityTimelineEvent, 'details'> & { details?: Record<string, unknown> },
+): DocumentObservabilityTimelineEvent {
+	return {
+		...input,
+		details: input.details ?? {},
+	};
+}
+
+function buildSourceTimelineEvents(
+	sourceId: string,
+	job: DocumentObservabilityJob | null,
+	progress: DocumentObservabilityProgress | null,
+	sourceProjection: DocumentObservabilitySourceProjection | null,
+	steps: SourceStep[],
+): DocumentObservabilityTimelineEvent[] {
+	const events: DocumentObservabilityTimelineEvent[] = [];
+	const currentStep = progress?.current_step ?? null;
+	const progressUpdatedAt = progress?.updated_at ?? null;
+
+	if (job) {
+		events.push(
+			makeTimelineEvent({
+				scope: 'job',
+				event: 'job.created',
+				status: job.status,
+				occurred_at: job.created_at,
+				step: null,
+				story_id: null,
+				details: {
+					job_id: job.job_id,
+					attempts: job.attempts,
+					max_attempts: job.max_attempts,
+				},
+			}),
+		);
+
+		if (job.started_at) {
+			events.push(
+				makeTimelineEvent({
+					scope: 'job',
+					event: 'job.started',
+					status: job.status,
+					occurred_at: job.started_at,
+					step: currentStep,
+					story_id: null,
+					details: {
+						job_id: job.job_id,
+					},
+				}),
+			);
+		}
+
+		if (job.finished_at) {
+			events.push(
+				makeTimelineEvent({
+					scope: 'job',
+					event: 'job.finished',
+					status: job.status,
+					occurred_at: job.finished_at,
+					step: currentStep,
+					story_id: null,
+					details: {
+						job_id: job.job_id,
+						error_log: job.error_log,
+					},
+				}),
+			);
+		}
+	}
+
+	if (progress && progressUpdatedAt) {
+		events.push(
+			makeTimelineEvent({
+				scope: 'job',
+				event: 'run.progress',
+				status: progress.source_status,
+				occurred_at: progressUpdatedAt,
+				step: progress.current_step,
+				story_id: null,
+				details: {
+					run_id: progress.run_id,
+					source_id: sourceId,
+					run_status: progress.run_status,
+					error_message: progress.error_message,
+				},
+			}),
+		);
+	}
+
+	for (const step of steps) {
+		if (step.status === 'completed' && step.completedAt) {
+			events.push(
+				makeTimelineEvent({
+					scope: 'source',
+					event: 'source_step.completed',
+					status: step.status,
+					occurred_at: step.completedAt.toISOString(),
+					step: step.stepName,
+					story_id: null,
+					details: {
+						source_id: sourceId,
+						origin: 'postgresql',
+					},
+				}),
+			);
+			continue;
+		}
+
+		if (step.status === 'failed') {
+			const occurredAt = step.completedAt?.toISOString() ?? progressUpdatedAt;
+			if (!occurredAt) {
+				continue;
+			}
+
+			events.push(
+				makeTimelineEvent({
+					scope: 'source',
+					event: 'source_step.failed',
+					status: step.status,
+					occurred_at: occurredAt,
+					step: step.stepName,
+					story_id: null,
+					details: {
+						source_id: sourceId,
+						origin: 'postgresql',
+						error_message: step.errorMessage,
+					},
+				}),
+			);
+		}
+	}
+
+	if (sourceProjection) {
+		if (sourceProjection.extracted_at) {
+			events.push(
+				makeTimelineEvent({
+					scope: 'source',
+					event: 'source.projection.extracted',
+					status: sourceProjection.status ?? 'unknown',
+					occurred_at: sourceProjection.extracted_at,
+					step: 'extract',
+					story_id: null,
+					details: {
+						source_id: sourceId,
+						projection: 'documents',
+						field: 'extractedAt',
+					},
+				}),
+			);
+		}
+
+		if (sourceProjection.segmented_at) {
+			events.push(
+				makeTimelineEvent({
+					scope: 'source',
+					event: 'source.projection.segmented',
+					status: sourceProjection.status ?? 'unknown',
+					occurred_at: sourceProjection.segmented_at,
+					step: 'segment',
+					story_id: null,
+					details: {
+						source_id: sourceId,
+						projection: 'documents',
+						field: 'segmentedAt',
+					},
+				}),
+			);
+		}
+	}
+
+	return events;
+}
+
+function buildStoryTimelineEvents(
+	story: Story,
+	projection: DocumentObservabilityStoryProjection | null,
+): DocumentObservabilityTimelineEvent[] {
+	if (!projection) {
+		return [];
+	}
+
+	const events: DocumentObservabilityTimelineEvent[] = [];
+
+	if (projection.enriched_at) {
+		events.push(
+			makeTimelineEvent({
+				scope: 'story',
+				event: 'story.projection.enriched',
+				status: projection.status ?? story.status,
+				occurred_at: projection.enriched_at,
+				step: 'enrich',
+				story_id: story.id,
+				details: {
+					projection: 'stories',
+					field: 'enrichedAt',
+				},
+			}),
+		);
+	}
+
+	if (projection.embedded_at) {
+		events.push(
+			makeTimelineEvent({
+				scope: 'story',
+				event: 'story.projection.embedded',
+				status: projection.status ?? story.status,
+				occurred_at: projection.embedded_at,
+				step: 'embed',
+				story_id: story.id,
+				details: {
+					projection: 'stories',
+					field: 'embeddedAt',
+				},
+			}),
+		);
+	}
+
+	if (projection.graphed_at) {
+		events.push(
+			makeTimelineEvent({
+				scope: 'story',
+				event: 'story.projection.graphed',
+				status: projection.status ?? story.status,
+				occurred_at: projection.graphed_at,
+				step: 'graph',
+				story_id: story.id,
+				details: {
+					projection: 'stories',
+					field: 'graphedAt',
+				},
+			}),
+		);
+	}
+
+	return events;
+}
+
+async function loadLatestJobForSource(pool: pg.Pool, sourceId: string): Promise<DocumentObservabilityJob | null> {
+	const result = await pool.query<{
+		id: string;
+		status: Job['status'];
+		attempts: number;
+		max_attempts: number;
+		error_log: string | null;
+		created_at: Date;
+		started_at: Date | null;
+		finished_at: Date | null;
+	}>(
+		`
+			SELECT id, status, attempts, max_attempts, error_log, created_at, started_at, finished_at
+			FROM jobs
+			WHERE COALESCE(payload->>'sourceId', payload->>'source_id') = $1
+			ORDER BY created_at DESC, id DESC
+			LIMIT 1
+		`,
+		[sourceId],
+	);
+
+	const row = result.rows[0];
+	if (!row) {
+		return null;
+	}
+
+	return {
+		job_id: row.id,
+		status: row.status,
+		attempts: row.attempts,
+		max_attempts: row.max_attempts,
+		error_log: row.error_log,
+		created_at: row.created_at.toISOString(),
+		started_at: toIsoStringOrNull(row.started_at),
+		finished_at: toIsoStringOrNull(row.finished_at),
+	};
+}
+
+async function resolveObservabilityState(
+	pool: pg.Pool,
+	sourceId: string,
+): Promise<{
+	job: DocumentObservabilityJob | null;
+	progress: DocumentObservabilityProgress | null;
+}> {
+	const [latestJob, latestRunSource] = await Promise.all([
+		loadLatestJobForSource(pool, sourceId),
+		findLatestPipelineRunSourceForSource(pool, sourceId),
+	]);
+
+	if (!latestRunSource) {
+		return {
+			job: latestJob,
+			progress: null,
+		};
+	}
+
+	const run = await findPipelineRunById(pool, latestRunSource.runId);
+	if (!run) {
+		return {
+			job: latestJob,
+			progress: null,
+		};
+	}
+
+	return {
+		job: latestJob,
+		progress: {
+			run_id: latestRunSource.runId,
+			run_status: run.status,
+			current_step: latestRunSource.currentStep,
+			source_status: latestRunSource.status,
+			updated_at: latestRunSource.updatedAt.toISOString(),
+			error_message: latestRunSource.errorMessage,
+		},
+	};
+}
+
+async function buildDocumentObservabilityResponse(id: string, logger: Logger): Promise<DocumentObservabilityResponse> {
+	const requestLogger = createRouteLogger(logger, {
+		action: 'observability',
+		source_id: id,
+	});
+	const { config, pool } = resolveContext();
+	const services = createServiceRegistry(config, requestLogger);
+	const startedAt = performance.now();
+	const source = await requireSource(pool, id);
+
+	const [sourceProjectionRecord, sourceSteps, stories, observabilityState] = await Promise.all([
+		services.firestore.getDocument('documents', id),
+		findSourceSteps(pool, id),
+		findStoriesBySourceId(pool, id),
+		resolveObservabilityState(pool, id),
+	]);
+
+	const orderedSteps = sortSourceSteps(sourceSteps);
+	const sourceProjection = buildSourceProjection(sourceProjectionRecord);
+	const storyProjections = await Promise.all(
+		stories.map(async (story) => {
+			const projectionRecord = await services.firestore.getDocument('stories', story.id);
+			return {
+				story,
+				projection: buildStoryProjection(projectionRecord),
+			};
+		}),
+	);
+
+	const job = observabilityState.job;
+	const progress = observabilityState.progress;
+
+	const timeline = sortTimelineEvents([
+		...buildSourceTimelineEvents(source.id, job, progress, sourceProjection, orderedSteps),
+		...storyProjections.flatMap(({ story, projection }) => buildStoryTimelineEvents(story, projection)),
+	]);
+
+	const response: DocumentObservabilityResponse = {
+		data: {
+			source: {
+				id: source.id,
+				filename: source.filename,
+				status: source.status,
+				page_count: source.pageCount,
+				steps: orderedSteps.map(mapSourceStep),
+				projection: sourceProjection,
+			},
+			stories: storyProjections.map(({ story, projection }) => ({
+				id: story.id,
+				title: story.title,
+				status: story.status,
+				page_start: story.pageStart,
+				page_end: story.pageEnd,
+				projection,
+			})),
+			job,
+			progress,
+			timeline,
+		},
+	};
+
+	requestLogger.info(
+		{
+			story_count: response.data.stories.length,
+			timeline_count: response.data.timeline.length,
+			duration_ms: Math.round(performance.now() - startedAt),
+		},
+		'document observability request completed',
+	);
+
+	return response;
+}
+
 function notFoundError(message: string, context: Record<string, unknown>): MulderError {
 	return new MulderError(message, DOCUMENT_NOT_FOUND_CODE, { context });
 }
@@ -305,6 +867,11 @@ async function buildDocumentListResponse(input: DocumentListQuery, logger: Logge
 export async function listDocuments(input: DocumentListQuery, logger?: Logger): Promise<DocumentListResponse> {
 	const rootLogger = logger ?? createLogger();
 	return await buildDocumentListResponse(input, rootLogger);
+}
+
+export async function getDocumentObservability(id: string, logger?: Logger): Promise<DocumentObservabilityResponse> {
+	const rootLogger = logger ?? createLogger();
+	return await buildDocumentObservabilityResponse(id, rootLogger);
 }
 
 export async function streamDocumentPdf(id: string, logger?: Logger): Promise<Response> {
