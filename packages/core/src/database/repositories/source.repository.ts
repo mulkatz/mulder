@@ -127,26 +127,61 @@ function buildSourceFilterClause(filter?: SourceFilter): { conditions: string[];
  * On conflict (duplicate hash), returns the existing record with an updated
  * `updated_at` timestamp.
  */
-export async function createSource(pool: pg.Pool, input: CreateSourceInput): Promise<Source> {
+export async function createSource(pool: Queryable, input: CreateSourceInput): Promise<Source> {
+	const columns = input.id
+		? [
+				'id',
+				'filename',
+				'storage_path',
+				'file_hash',
+				'page_count',
+				'has_native_text',
+				'native_text_ratio',
+				'tags',
+				'metadata',
+			]
+		: [
+				'filename',
+				'storage_path',
+				'file_hash',
+				'page_count',
+				'has_native_text',
+				'native_text_ratio',
+				'tags',
+				'metadata',
+			];
+	const values = input.id
+		? [
+				input.id,
+				input.filename,
+				input.storagePath,
+				input.fileHash,
+				input.pageCount ?? null,
+				input.hasNativeText ?? false,
+				input.nativeTextRatio ?? 0,
+				input.tags ?? [],
+				JSON.stringify(input.metadata ?? {}),
+			]
+		: [
+				input.filename,
+				input.storagePath,
+				input.fileHash,
+				input.pageCount ?? null,
+				input.hasNativeText ?? false,
+				input.nativeTextRatio ?? 0,
+				input.tags ?? [],
+				JSON.stringify(input.metadata ?? {}),
+			];
+	const placeholders = values.map((_, index) => `$${index + 1}`).join(', ');
 	const sql = `
-    INSERT INTO sources (filename, storage_path, file_hash, page_count, has_native_text, native_text_ratio, tags, metadata)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    INSERT INTO sources (${columns.join(', ')})
+    VALUES (${placeholders})
     ON CONFLICT (file_hash) DO UPDATE SET updated_at = now()
     RETURNING *
   `;
-	const params = [
-		input.filename,
-		input.storagePath,
-		input.fileHash,
-		input.pageCount ?? null,
-		input.hasNativeText ?? false,
-		input.nativeTextRatio ?? 0,
-		input.tags ?? [],
-		JSON.stringify(input.metadata ?? {}),
-	];
 
 	try {
-		const result = await pool.query<SourceRow>(sql, params);
+		const result = await pool.query<SourceRow>(sql, values);
 		const row = result.rows[0];
 		repoLogger.debug({ sourceId: row.id, fileHash: input.fileHash }, 'Source created or found');
 		return mapSourceRow(row);
@@ -185,7 +220,7 @@ export async function findSourceById(pool: Queryable, id: string): Promise<Sourc
  *
  * @returns The source, or `null` if not found.
  */
-export async function findSourceByHash(pool: pg.Pool, hash: string): Promise<Source | null> {
+export async function findSourceByHash(pool: Queryable, hash: string): Promise<Source | null> {
 	const sql = 'SELECT * FROM sources WHERE file_hash = $1';
 
 	try {
@@ -423,7 +458,7 @@ export async function deleteSource(pool: pg.Pool, id: string): Promise<boolean> 
  *
  * Sets `completed_at = now()` when the status is `completed`.
  */
-export async function upsertSourceStep(pool: pg.Pool, input: UpsertSourceStepInput): Promise<SourceStep> {
+export async function upsertSourceStep(pool: Queryable, input: UpsertSourceStepInput): Promise<SourceStep> {
 	const completedAt = input.status === 'completed' ? 'now()' : 'NULL';
 
 	const sql = `

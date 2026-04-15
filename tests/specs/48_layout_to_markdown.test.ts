@@ -471,7 +471,9 @@ describe('Spec 48 — Layout-to-Markdown Converter', () => {
 				}
 				return realUpload(path, content, contentType);
 			},
+			createUploadSession: realServices.storage.createUploadSession.bind(realServices.storage),
 			download: realServices.storage.download.bind(realServices.storage),
+			getMetadata: realServices.storage.getMetadata.bind(realServices.storage),
 			exists: realServices.storage.exists.bind(realServices.storage),
 			list: realServices.storage.list.bind(realServices.storage),
 			delete: realServices.storage.delete.bind(realServices.storage),

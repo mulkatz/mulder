@@ -1,44 +1,253 @@
-import { useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Upload as UploadIcon, FileText, X, Sparkles, Check, ChevronRight, Loader2 } from 'lucide-react';
+import { Check, ChevronRight, FileText, Loader2, Upload as UploadIcon, X } from 'lucide-react';
 
-type UploadStage = 'idle' | 'dropped' | 'analyzing' | 'metadata' | 'processing';
+type UploadStage = 'idle' | 'ready' | 'uploading' | 'finalizing' | 'processing' | 'complete' | 'error';
 
-const autoFilledFields = [
-  { label: 'Quellentyp', value: 'Fachzeitschrift', filled: true },
-  { label: 'Titel', value: 'MUFON UFO Journal', filled: true },
-  { label: 'Ausgabe', value: '03/2017', filled: true },
-  { label: 'Herausgeber', value: 'MUFON Inc.', filled: true },
-  { label: 'Datum', value: '2017-03-01', filled: true },
-  { label: 'Sprache', value: 'Englisch', filled: true },
-  { label: 'Seiten', value: '96', filled: true },
-];
+interface UploadJobState {
+  jobId: string;
+  sourceId: string;
+}
+
+interface UploadTarget {
+  url: string;
+  method: 'PUT';
+  headers: Record<string, string>;
+  transport: 'gcs_resumable' | 'dev_proxy';
+}
+
+interface JobPayload {
+  result_status?: 'created' | 'duplicate';
+  resolved_source_id?: string;
+  duplicate_of_source_id?: string;
+  pipeline_job_id?: string;
+}
+
+interface JobDetailResponse {
+  data: {
+    job: {
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'dead_letter';
+      error_log: string | null;
+      payload: JobPayload;
+    };
+  };
+}
+
+const apiBase = import.meta.env.VITE_MULDER_API_BASE_URL ?? '';
+const apiKey = import.meta.env.VITE_MULDER_API_KEY ?? '';
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${bytes} B`;
+}
+
+function apiUrl(path: string): string {
+  return path.startsWith('http') ? path : `${apiBase}${path}`;
+}
+
+function buildApiHeaders(contentType = 'application/json'): HeadersInit {
+  return {
+    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    'Content-Type': contentType,
+  };
+}
 
 export default function UploadPage() {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [stage, setStage] = useState<UploadStage>('idle');
-  const [visibleFields, setVisibleFields] = useState(0);
+  const [jobState, setJobState] = useState<UploadJobState | null>(null);
+  const [sourceLink, setSourceLink] = useState<string | null>(null);
+  const [resultLabel, setResultLabel] = useState<string>('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleDrop = () => {
-    setStage('dropped');
-    setTimeout(() => {
-      setStage('analyzing');
-      setTimeout(() => {
-        setStage('metadata');
-        // Animate fields appearing one by one
-        autoFilledFields.forEach((_, i) => {
-          setTimeout(() => setVisibleFields(i + 1), 300 + i * 200);
+  const fileSummary = useMemo(() => {
+    if (!file) return null;
+    return `${formatBytes(file.size)} · ${file.type || 'application/pdf'}`;
+  }, [file]);
+
+  useEffect(() => {
+    if (!jobState) {
+      return;
+    }
+
+    let cancelled = false;
+    const interval = window.setInterval(async () => {
+      try {
+        const response = await fetch(apiUrl(`/api/jobs/${jobState.jobId}`), {
+          headers: buildApiHeaders(),
         });
-      }, 1500);
-    }, 800);
+        if (!response.ok) {
+          throw new Error(`Status polling failed (${response.status})`);
+        }
+
+        const body = (await response.json()) as JobDetailResponse;
+        if (cancelled) {
+          return;
+        }
+
+        const { job } = body.data;
+        if (job.status === 'pending' || job.status === 'running') {
+          setStage('processing');
+          return;
+        }
+
+        window.clearInterval(interval);
+
+        if (job.status === 'completed') {
+          const resolvedSourceId = job.payload.resolved_source_id ?? jobState.sourceId;
+          setSourceLink(`/sources/${resolvedSourceId}`);
+          if (job.payload.result_status === 'duplicate') {
+            setResultLabel('Dokument bereits vorhanden');
+          } else {
+            setResultLabel('Quelle angelegt und Pipeline gestartet');
+          }
+          setStage('complete');
+          return;
+        }
+
+        setErrorMessage(job.error_log ?? 'Die Verarbeitung konnte nicht abgeschlossen werden.');
+        setStage('error');
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setErrorMessage(error instanceof Error ? error.message : 'Statusprüfung fehlgeschlagen');
+        setStage('error');
+      }
+    }, 1500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [jobState]);
+
+  const openPicker = () => {
+    fileInputRef.current?.click();
   };
 
-  const handleConfirm = () => {
-    setStage('processing');
+  const reset = () => {
+    setFile(null);
+    setJobState(null);
+    setSourceLink(null);
+    setResultLabel('');
+    setErrorMessage(null);
+    setStage('idle');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextFile = event.target.files?.[0] ?? null;
+    setFile(nextFile);
+    setJobState(null);
+    setSourceLink(null);
+    setResultLabel('');
+    setErrorMessage(null);
+    setStage(nextFile ? 'ready' : 'idle');
+  };
+
+  const handleUpload = async () => {
+    if (!file) {
+      return;
+    }
+
+    setErrorMessage(null);
+    setStage('uploading');
+
+    try {
+      const initiateResponse = await fetch(apiUrl('/api/uploads/documents/initiate'), {
+        method: 'POST',
+        headers: buildApiHeaders(),
+        body: JSON.stringify({
+          filename: file.name,
+          size_bytes: file.size,
+          content_type: file.type || 'application/pdf',
+        }),
+      });
+
+      if (!initiateResponse.ok) {
+        const error = (await initiateResponse.json()) as { error?: { message?: string } };
+        throw new Error(error.error?.message ?? `Upload initiation failed (${initiateResponse.status})`);
+      }
+
+      const initiateBody = (await initiateResponse.json()) as {
+        data: {
+          source_id: string;
+          storage_path: string;
+          upload: UploadTarget;
+        };
+      };
+
+      const uploadHeaders: HeadersInit = {
+        ...initiateBody.data.upload.headers,
+        'Content-Type': file.type || 'application/pdf',
+        ...(initiateBody.data.upload.transport === 'dev_proxy' && apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      };
+
+      const uploadResponse = await fetch(apiUrl(initiateBody.data.upload.url), {
+        method: initiateBody.data.upload.method,
+        headers: uploadHeaders,
+        body: file,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Direct upload failed (${uploadResponse.status})`);
+      }
+
+      setStage('finalizing');
+
+      const completeResponse = await fetch(apiUrl('/api/uploads/documents/complete'), {
+        method: 'POST',
+        headers: buildApiHeaders(),
+        body: JSON.stringify({
+          source_id: initiateBody.data.source_id,
+          filename: file.name,
+          storage_path: initiateBody.data.storage_path,
+          start_pipeline: true,
+        }),
+      });
+
+      if (!completeResponse.ok) {
+        const error = (await completeResponse.json()) as { error?: { message?: string } };
+        throw new Error(error.error?.message ?? `Finalize failed (${completeResponse.status})`);
+      }
+
+      const completeBody = (await completeResponse.json()) as {
+        data: {
+          job_id: string;
+          source_id: string;
+        };
+      };
+
+      setJobState({
+        jobId: completeBody.data.job_id,
+        sourceId: completeBody.data.source_id,
+      });
+      setStage('processing');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Upload fehlgeschlagen');
+      setStage('error');
+    }
   };
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
-      {/* Breadcrumb */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        className="hidden"
+        onChange={handleFileSelect}
+      />
+
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-6">
         <Link to="/" className="hover:text-foreground no-underline text-muted-foreground">Übersicht</Link>
         <ChevronRight size={12} />
@@ -47,179 +256,123 @@ export default function UploadPage() {
 
       <h1 className="text-xl font-semibold mb-1">Quelldokument hochladen</h1>
       <p className="text-sm text-muted-foreground mb-6">
-        Laden Sie ein PDF hoch — die KI extrahiert automatisch Metadaten, identifiziert Artikel und verknüpft Akteure.
+        Laden Sie ein PDF hoch. Mulder reserviert zuerst eine Upload-Session, überträgt die Datei direkt in den Speicher und startet danach die Verarbeitung im Hintergrund.
       </p>
 
-      {stage === 'idle' && (
+      {(stage === 'idle' || stage === 'ready') && (
         <button
-          onClick={handleDrop}
+          onClick={openPicker}
           className="w-full rounded-[var(--radius)] border-2 border-dashed border-primary/40 bg-primary/5 p-12 text-center transition-colors hover:border-primary hover:bg-primary/10 cursor-pointer"
         >
           <UploadIcon size={40} className="mx-auto mb-4 text-primary/60" />
-          <div className="text-sm font-medium text-foreground">PDF-Dateien hierher ziehen oder klicken zum Durchsuchen</div>
-          <div className="mt-1 text-xs text-muted-foreground">Einzeldateien oder Stapel-Upload · Nur PDF · Max 500 MB</div>
+          <div className="text-sm font-medium text-foreground">PDF auswählen</div>
+          <div className="mt-1 text-xs text-muted-foreground">Browser startet danach einen direkten Upload und queue-basiertes Finalisieren</div>
         </button>
       )}
 
-      {stage === 'dropped' && (
-        <div className="rounded-[var(--radius)] border bg-card p-6">
+      {file && (
+        <div className="mt-6 rounded-[var(--radius)] border bg-card p-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-[var(--radius)] border bg-muted">
-              <FileText size={20} className="text-muted-foreground" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-[var(--radius)] border bg-primary/10">
+              <FileText size={20} className="text-primary" />
             </div>
-            <div className="flex-1">
-              <div className="text-sm font-medium">MUFON_UFO_Journal_03_2017.pdf</div>
-              <div className="text-xs text-muted-foreground">18.4 MB · Wird hochgeladen...</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium">{file.name}</div>
+              <div className="text-xs text-muted-foreground">{fileSummary}</div>
             </div>
-            <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
-              <div className="h-full w-3/4 rounded-full bg-primary animate-pulse" />
-            </div>
+            {(stage === 'idle' || stage === 'ready' || stage === 'error') && (
+              <button className="text-muted-foreground hover:text-foreground" onClick={reset}>
+                <X size={16} />
+              </button>
+            )}
+            {stage === 'complete' && (
+              <span className="flex items-center gap-1.5 text-xs font-medium text-primary">
+                <Check size={14} /> Abgeschlossen
+              </span>
+            )}
           </div>
         </div>
       )}
 
-      {(stage === 'analyzing' || stage === 'metadata' || stage === 'processing') && (
-        <div className="space-y-6">
-          {/* File info */}
-          <div className="rounded-[var(--radius)] border bg-card p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-[var(--radius)] border bg-primary/10">
-                <FileText size={20} className="text-primary" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium">MUFON_UFO_Journal_03_2017.pdf</div>
-                <div className="text-xs text-muted-foreground">18.4 MB · 96 Seiten</div>
-              </div>
-              {stage !== 'processing' && (
-                <button className="text-muted-foreground hover:text-foreground">
-                  <X size={16} />
-                </button>
-              )}
-              {stage === 'processing' && (
-                <span className="flex items-center gap-1.5 text-xs font-medium text-primary">
-                  <Check size={14} /> Hochgeladen
-                </span>
-              )}
-            </div>
+      {file && stage === 'ready' && (
+        <div className="mt-6 rounded-[var(--radius)] border bg-card p-4 flex items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-medium">Bereit für den Upload</div>
+            <div className="text-xs text-muted-foreground">Die API reserviert zuerst eine Session und die Datei geht dann direkt in den Speicher.</div>
           </div>
+          <button
+            onClick={handleUpload}
+            className="flex items-center gap-1.5 rounded-[var(--radius)] border border-primary bg-primary px-4 py-2 text-xs font-medium text-primary-foreground"
+          >
+            <UploadIcon size={14} /> Upload starten
+          </button>
+        </div>
+      )}
 
-          {/* AI Analysis indicator */}
-          {stage === 'analyzing' && (
-            <div className="rounded-[var(--radius)] border border-primary/30 bg-primary/5 p-6 text-center">
-              <Loader2 size={24} className="mx-auto mb-3 text-primary animate-spin" />
-              <div className="text-sm font-medium">KI analysiert das Dokument...</div>
-              <div className="mt-1 text-xs text-muted-foreground">Liest Titelseite und Inhaltsverzeichnis zur Metadaten-Extraktion</div>
-            </div>
-          )}
-
-          {/* Metadata form - auto-filled by AI */}
-          {(stage === 'metadata' || stage === 'processing') && (
-            <div className="rounded-[var(--radius)] border bg-card">
-              <div className="flex items-center gap-2 border-b px-4 py-3">
-                <Sparkles size={14} className="text-accent dark:text-accent" />
-                <h2 className="text-sm font-semibold">Metadaten — automatisch von KI ausgefüllt</h2>
-                <span className="ml-auto rounded bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-medium text-primary">
-                  Gemini 2.5 Flash
-                </span>
-              </div>
-              <div className="p-4 space-y-3">
-                {autoFilledFields.map((field, i) => (
-                  <div
-                    key={field.label}
-                    className={`transition-all duration-300 ${
-                      i < visibleFields ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 h-0 overflow-hidden'
-                    }`}
-                  >
-                    <label className="block text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">
-                      {field.label}
-                    </label>
-                    <div className="relative">
-                      <div className={`rounded-[var(--radius)] border px-3 py-2 text-sm ${
-                        stage === 'processing' ? 'bg-muted/50 text-muted-foreground' : 'bg-card'
-                      }`}>
-                        {field.value}
-                      </div>
-                      {field.filled && i < visibleFields && stage !== 'processing' && (
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[10px] text-primary font-medium">
-                          <Sparkles size={10} /> AI
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {stage === 'metadata' && visibleFields >= autoFilledFields.length && (
-                <div className="border-t px-4 py-3 flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">
-                    Prüfen und bei Bedarf korrigieren. KI-Konfidenz: <span className="font-mono font-medium text-green-600 dark:text-green-400">94%</span>
-                  </span>
-                  <button
-                    onClick={handleConfirm}
-                    className="flex items-center gap-1.5 rounded-[var(--radius)] border border-primary bg-primary px-4 py-2 text-xs font-medium text-primary-foreground"
-                  >
-                    <Check size={14} /> Bestätigen & Verarbeitung starten
-                  </button>
+      {(stage === 'uploading' || stage === 'finalizing' || stage === 'processing') && (
+        <div className="mt-6 rounded-[var(--radius)] border bg-card">
+          <div className="border-b px-4 py-3">
+            <h2 className="text-sm font-semibold">Verarbeitungsstatus</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Die Seite kann geöffnet bleiben, während der Job im Hintergrund weiterläuft.</p>
+          </div>
+          <div className="p-4 space-y-3">
+            {[
+              { label: 'Upload-Session reservieren', active: stage !== 'uploading' ? false : true, done: stage === 'finalizing' || stage === 'processing' },
+              { label: 'Datei direkt in den Speicher übertragen', active: stage === 'uploading', done: stage === 'finalizing' || stage === 'processing' },
+              { label: 'Upload finalisieren', active: stage === 'finalizing', done: stage === 'processing' },
+              { label: 'Pipeline-Job anlegen', active: stage === 'processing', done: false },
+            ].map((step, index) => (
+              <div key={step.label} className="flex items-center gap-3">
+                <div className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-mono font-bold ${
+                  step.done
+                    ? 'border-[#86efac] bg-[#dcfce7] text-[#15803d]'
+                    : step.active
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border text-muted-foreground'
+                }`}>
+                  {step.done ? <Check size={14} /> : index + 1}
                 </div>
-              )}
-            </div>
-          )}
+                <div className="flex-1">
+                  <div className={`text-xs font-medium ${step.active ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    {step.label}
+                  </div>
+                </div>
+                {step.active && <Loader2 size={14} className="text-primary animate-spin" />}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-          {/* Processing pipeline */}
-          {stage === 'processing' && (
-            <div className="rounded-[var(--radius)] border bg-card">
-              <div className="border-b px-4 py-3">
-                <h2 className="text-sm font-semibold">Verarbeitungs-Pipeline</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">Geschätzte Dauer: 3–5 Minuten</p>
-              </div>
-              <div className="p-4 space-y-3">
-                {['OCR & Layout-Analyse', 'Berichts-Segmentierung', 'Akteur-Extraktion', 'Embedding-Generierung', 'Netzwerk-Aktualisierung'].map((step, i) => {
-                  const isActive = i === 1;
-                  const isDone = i === 0;
-                  return (
-                    <div key={step} className="flex items-center gap-3">
-                      <div className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-mono font-bold ${
-                        isDone
-                          ? 'border-[#86efac] bg-[#dcfce7] text-[#15803d] dark:bg-green-900/30 dark:text-green-400'
-                          : isActive
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border text-muted-foreground'
-                      }`}>
-                        {isDone ? <Check size={14} /> : i + 1}
-                      </div>
-                      <div className="flex-1">
-                        <div className={`text-xs font-medium ${isDone ? 'text-muted-foreground' : isActive ? 'text-foreground' : 'text-muted-foreground'}`}>
-                          {step}
-                        </div>
-                        {isActive && (
-                          <div className="mt-1.5">
-                            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                              <div className="h-full w-2/5 rounded-full bg-primary transition-all animate-pulse" />
-                            </div>
-                            <div className="mt-1 font-mono text-[10px] text-muted-foreground">
-                              Identifiziere Artikel und Berichtsgrenzen... 12 Berichte bisher gefunden
-                            </div>
-                          </div>
-                        )}
-                        {isDone && (
-                          <div className="text-[10px] text-muted-foreground">96 Seiten analysiert · 387 Textblöcke · 52 Bilder erkannt</div>
-                        )}
-                      </div>
-                      {isActive && <Loader2 size={14} className="text-primary animate-spin" />}
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="border-t px-4 py-3 flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  Sie können diese Seite verlassen — die Verarbeitung läuft im Hintergrund weiter.
-                </span>
-                <Link to="/" className="text-xs text-primary hover:underline no-underline">
-                  Zurück zur Übersicht
-                </Link>
-              </div>
-            </div>
-          )}
+      {stage === 'complete' && (
+        <div className="mt-6 rounded-[var(--radius)] border border-primary/30 bg-primary/5 p-6">
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <Check size={16} className="text-primary" />
+            {resultLabel}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {sourceLink ? 'Die Quelle ist jetzt in der Bibliothek sichtbar.' : 'Der Job wurde abgeschlossen.'}
+          </p>
+          <div className="mt-4 flex items-center gap-3">
+            {sourceLink && (
+              <Link to={sourceLink} className="text-xs text-primary hover:underline no-underline">
+                Zur Quelle
+              </Link>
+            )}
+            <Link to="/sources" className="text-xs text-muted-foreground hover:text-foreground no-underline">
+              Zur Quellen-Bibliothek
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {stage === 'error' && (
+        <div className="mt-6 rounded-[var(--radius)] border border-red-300 bg-red-50 p-4">
+          <div className="text-sm font-medium text-red-700">Upload fehlgeschlagen</div>
+          <p className="mt-1 text-xs text-red-700/80">{errorMessage ?? 'Bitte erneut versuchen.'}</p>
+          <button onClick={reset} className="mt-3 text-xs text-red-700 hover:underline">
+            Neu starten
+          </button>
         </div>
       )}
     </div>

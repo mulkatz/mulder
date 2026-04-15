@@ -11,6 +11,7 @@ export {
 	startWorker,
 } from './runtime.js';
 export type {
+	DocumentUploadFinalizeJobPayload,
 	LegacyPipelineRunJobPayload,
 	PipelineRunJobPayload,
 	SourceStepJobPayload,
@@ -18,6 +19,7 @@ export type {
 	StoryStepJobPayload,
 	StoryStepJobType,
 	SupportedJobType,
+	UploadFinalizeJobType,
 	WorkerActiveJobSnapshot,
 	WorkerDispatchContext,
 	WorkerDispatchFn,

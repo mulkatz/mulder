@@ -124,6 +124,34 @@ export async function enqueueJob(pool: Queryable, input: EnqueueJobInput): Promi
 	}
 }
 
+export async function mergeJobPayload(pool: Queryable, id: string, patch: JobPayload): Promise<Job> {
+	const sql = `
+    UPDATE jobs
+    SET payload = COALESCE(payload, '{}'::jsonb) || $2::jsonb
+    WHERE id = $1
+    RETURNING *
+  `;
+
+	try {
+		const result = await pool.query<JobRow>(sql, [id, JSON.stringify(patch)]);
+		if (result.rows.length === 0) {
+			throw new DatabaseError(`Job not found: ${id}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+				context: { id },
+			});
+		}
+		repoLogger.debug({ jobId: id }, 'Job payload merged');
+		return mapJobRow(result.rows[0]);
+	} catch (error: unknown) {
+		if (error instanceof DatabaseError) {
+			throw error;
+		}
+		throw new DatabaseError('Failed to merge job payload', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { id },
+		});
+	}
+}
+
 export async function findJobById(pool: pg.Pool, id: string): Promise<Job | null> {
 	const sql = 'SELECT * FROM jobs WHERE id = $1';
 
@@ -214,9 +242,21 @@ export async function dequeueJob(pool: pg.Pool, workerId: string): Promise<Deque
 	}
 }
 
-export async function markJobCompleted(pool: pg.Pool, claim: JobClaim): Promise<Job> {
+export async function markJobCompleted(pool: pg.Pool, claim: JobClaim, payloadPatch?: JobPayload): Promise<Job> {
 	const id = claim.jobId;
-	const sql = `
+	const sql = payloadPatch
+		? `
+    UPDATE jobs
+    SET status = 'completed',
+        finished_at = now(),
+        payload = COALESCE(payload, '{}'::jsonb) || $4::jsonb
+    WHERE id = $1
+      AND status = 'running'
+      AND worker_id = $2
+      AND attempts = $3
+    RETURNING *
+  `
+		: `
     UPDATE jobs
     SET status = 'completed',
         finished_at = now()
@@ -228,7 +268,12 @@ export async function markJobCompleted(pool: pg.Pool, claim: JobClaim): Promise<
   `;
 
 	try {
-		const result = await pool.query<JobRow>(sql, [id, claim.workerId, claim.attempts]);
+		const result = await pool.query<JobRow>(
+			sql,
+			payloadPatch
+				? [id, claim.workerId, claim.attempts, JSON.stringify(payloadPatch)]
+				: [id, claim.workerId, claim.attempts],
+		);
 		if (result.rows.length === 0) {
 			throw new DatabaseError(`Active job claim not found: ${id}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
 				context: { id, claim },
