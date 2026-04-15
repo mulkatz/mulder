@@ -15,7 +15,7 @@ const CLI_DIR = resolve(ROOT, 'apps/cli');
 const CORE_DIST = resolve(CORE_DIR, 'dist/index.js');
 const API_APP_DIST = resolve(API_DIR, 'dist/app.js');
 const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
-const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.yaml');
+const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
 function buildPackage(packageDir: string): void {
 	const result = spawnSync('pnpm', ['build'], {
