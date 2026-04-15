@@ -1,6 +1,11 @@
 import type { Hono } from 'hono';
 import { getJobStatusById, listRecentJobs } from '../lib/job-status.js';
-import { JobDetailResponseSchema, JobListQuerySchema, JobListResponseSchema } from './jobs.schemas.js';
+import {
+	JobDetailParamsSchema,
+	JobDetailResponseSchema,
+	JobListQuerySchema,
+	JobListResponseSchema,
+} from './jobs.schemas.js';
 
 function readJobListQuery(url: string): Record<string, string | undefined> {
 	const searchParams = new URL(url).searchParams;
@@ -21,7 +26,8 @@ export function registerJobRoutes(app: Hono): void {
 	});
 
 	app.get('/api/jobs/:id', async (c) => {
-		const response = await getJobStatusById(c.req.param('id'));
+		const { id } = JobDetailParamsSchema.parse({ id: c.req.param('id') });
+		const response = await getJobStatusById(id);
 		JobDetailResponseSchema.parse(response);
 		return c.json(response, 200);
 	});
