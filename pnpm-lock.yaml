@@ -62,6 +62,9 @@ importers:
       '@mulder/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@mulder/eval':
+        specifier: workspace:*
+        version: link:../../packages/eval
       '@mulder/pipeline':
         specifier: workspace:*
         version: link:../../packages/pipeline

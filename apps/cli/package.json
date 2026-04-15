@@ -15,6 +15,7 @@
 	},
 	"dependencies": {
 		"@mulder/core": "workspace:*",
+		"@mulder/eval": "workspace:*",
 		"@mulder/worker": "workspace:*",
 		"@mulder/pipeline": "workspace:*",
 		"@mulder/retrieval": "workspace:*",
