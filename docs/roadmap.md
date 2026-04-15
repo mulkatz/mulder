@@ -188,7 +188,7 @@ Move from CLI to HTTP. Job queue, async workers, a full REST API over the pipeli
 | 🟢 | H3 | Hono server scaffold — app, node-server, health endpoint | §13 (apps/api/) |
 | 🟢 | H4 | Middleware — auth, rate limiting, error handling, request context | §10.6 (rate limiting tiers) |
 | 🟢 | H5 | Pipeline API routes (async) | §10.2, §10.6 |
-| 🟢 | H6 | Job status API | §10.6 |
+| 🟡 | H6 | Job status API | §10.6 |
 | 🟢 | H7 | Search API routes (sync) | §10.6, §5 |
 | 🟢 | H8 | Entity API routes (sync) | §10.6 |
 | ⚪ | H9 | Evidence API routes (sync) | §10.6 |
