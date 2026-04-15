@@ -126,10 +126,10 @@ describe('Spec 70: API Middleware Stack', () => {
 			},
 		});
 
-		app.get('/api/entities', (c) => c.json({ ok: true }, 200));
+		app.get('/api/evidence/ping', (c) => c.json({ ok: true }, 200));
 
 		for (let index = 0; index < 60; index += 1) {
-			const response = await app.request('http://localhost/api/entities', {
+			const response = await app.request('http://localhost/api/evidence/ping', {
 				method: 'GET',
 				headers: {
 					Authorization: 'Bearer test-api-key',
@@ -140,7 +140,7 @@ describe('Spec 70: API Middleware Stack', () => {
 			expect(response.status).toBe(200);
 		}
 
-		const throttled = await app.request('http://localhost/api/entities', {
+		const throttled = await app.request('http://localhost/api/evidence/ping', {
 			method: 'GET',
 			headers: {
 				Authorization: 'Bearer test-api-key',

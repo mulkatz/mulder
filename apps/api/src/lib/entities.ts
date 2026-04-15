@@ -1,13 +1,13 @@
 import { performance } from 'node:perf_hooks';
 import {
-	type Entity as CoreEntity,
-	type EntityAlias as CoreEntityAlias,
-	type EntityEdge as CoreEntityEdge,
 	countEntities,
 	createChildLogger,
 	createLogger,
 	DATABASE_ERROR_CODES,
 	DatabaseError,
+	type Entity,
+	type EntityAlias,
+	type EntityEdge,
 	type EntityFilter,
 	findAliasesByEntityId,
 	findAllEntities,
@@ -34,6 +34,10 @@ import type {
 	EntityResponse,
 	EntityStoryResponse,
 } from '../routes/entities.schemas.js';
+
+type CoreEntity = Entity;
+type CoreEntityAlias = EntityAlias;
+type CoreEntityEdge = EntityEdge;
 
 interface EntityContext {
 	pool: pg.Pool;

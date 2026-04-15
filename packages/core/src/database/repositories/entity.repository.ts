@@ -314,6 +314,38 @@ export async function countEntities(pool: pg.Pool, filter?: EntityFilter): Promi
 	}
 }
 
+export interface EntityCorroborationStats {
+	scoredCount: number;
+	avgCorroboration: number;
+}
+
+/**
+ * Summarizes corroboration over persisted entities without materializing rows.
+ *
+ * Mirrors the evidence summary semantics by excluding merged entities and only
+ * counting rows with an actual corroboration score.
+ */
+export async function getEntityCorroborationStats(pool: pg.Pool): Promise<EntityCorroborationStats> {
+	const sql = `
+    SELECT
+      COUNT(*) FILTER (WHERE corroboration_score IS NOT NULL AND taxonomy_status <> 'merged') AS scored_count,
+      COALESCE(AVG(corroboration_score) FILTER (WHERE corroboration_score IS NOT NULL AND taxonomy_status <> 'merged'), 0) AS avg_corroboration
+    FROM entities
+  `;
+
+	try {
+		const result = await pool.query<{ scored_count: string; avg_corroboration: string | number }>(sql);
+		return {
+			scoredCount: Number.parseInt(result.rows[0].scored_count, 10),
+			avgCorroboration: Number(result.rows[0].avg_corroboration),
+		};
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to summarize entity corroboration', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+		});
+	}
+}
+
 /**
  * Updates an entity record. Only provided fields are updated.
  * Sets `updated_at = now()` automatically.

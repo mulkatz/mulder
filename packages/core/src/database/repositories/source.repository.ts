@@ -215,6 +215,52 @@ export async function findAllSources(pool: pg.Pool, filter?: SourceFilter): Prom
 	}
 }
 
+export interface SourceReliabilityFilter {
+	limit?: number;
+	offset?: number;
+}
+
+/**
+ * Finds all sources with a persisted reliability score.
+ */
+export async function findScoredSources(pool: pg.Pool, filter?: SourceReliabilityFilter): Promise<Source[]> {
+	const limit = filter?.limit ?? 100;
+	const offset = filter?.offset ?? 0;
+	const sql = `
+    SELECT *
+    FROM sources
+    WHERE reliability_score IS NOT NULL
+    ORDER BY created_at DESC
+    LIMIT $1 OFFSET $2
+  `;
+
+	try {
+		const result = await pool.query<SourceRow>(sql, [limit, offset]);
+		return result.rows.map(mapSourceRow);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to find scored sources', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { filter },
+		});
+	}
+}
+
+/**
+ * Counts sources with a persisted reliability score.
+ */
+export async function countScoredSources(pool: pg.Pool): Promise<number> {
+	const sql = 'SELECT COUNT(*) FROM sources WHERE reliability_score IS NOT NULL';
+
+	try {
+		const result = await pool.query<{ count: string }>(sql);
+		return Number.parseInt(result.rows[0].count, 10);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to count scored sources', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+		});
+	}
+}
+
 /**
  * Counts sources matching the given filter. For pagination and status overview.
  */
