@@ -51,6 +51,10 @@ function resolveRateLimitTier(method: string, path: string, query: URLSearchPara
 		return 'relaxed';
 	}
 
+	if (normalizedMethod === 'GET' && (path === '/api/documents' || path.startsWith('/api/documents/'))) {
+		return 'standard';
+	}
+
 	if (normalizedMethod === 'POST' && path === '/api/search') {
 		const noRerank = query.get('no_rerank') === 'true' || query.get('rerank') === 'false';
 		return noRerank ? 'standard' : 'strict';

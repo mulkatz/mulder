@@ -18,7 +18,7 @@ const CORE_DIST = resolve(CORE_DIR, 'dist/index.js');
 const WORKER_DIST = resolve(WORKER_DIR, 'dist/index.js');
 const API_APP_DIST = resolve(API_DIR, 'dist/app.js');
 const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
-const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.yaml');
+const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 const NATIVE_TEXT_PDF = resolve(ROOT, 'fixtures/raw/native-text-sample.pdf');
 
 function buildPackage(packageDir: string): void {
