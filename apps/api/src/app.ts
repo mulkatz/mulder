@@ -10,6 +10,7 @@ import { createSecureHeadersMiddleware } from './middleware/secure-headers.js';
 import { registerHealthRoute } from './routes/health.js';
 import { registerJobRoutes } from './routes/jobs.js';
 import { registerPipelineRoutes } from './routes/pipeline.js';
+import { registerSearchRoute } from './routes/search.js';
 
 export interface AppOptions {
 	logger?: Logger;
@@ -33,6 +34,7 @@ export function createApp(options: AppOptions = {}): Hono {
 	registerHealthRoute(app);
 	registerJobRoutes(app);
 	registerPipelineRoutes(app);
+	registerSearchRoute(app);
 
 	return app;
 }
