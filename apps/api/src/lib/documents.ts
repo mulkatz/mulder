@@ -30,7 +30,6 @@ import type {
 interface DocumentContext {
 	config: MulderConfig;
 	pool: pg.Pool;
-	services: Services;
 }
 
 const DOCUMENT_NOT_FOUND_CODE = 'DOCUMENT_NOT_FOUND';
@@ -53,7 +52,7 @@ function createRouteLogger(rootLogger: Logger, metadata: Record<string, string |
 	});
 }
 
-function resolveContext(logger: Logger): DocumentContext {
+function resolveContext(): DocumentContext {
 	const configPath = resolveConfigPath();
 	if (cachedContext && cachedConfigPath === configPath) {
 		return cachedContext;
@@ -75,7 +74,6 @@ function resolveContext(logger: Logger): DocumentContext {
 	cachedContext = {
 		config,
 		pool: getQueryPool(config.gcp.cloud_sql),
-		services: createServiceRegistry(config, logger),
 	};
 	cachedConfigPath = configPath;
 
@@ -127,6 +125,31 @@ function buildPagePrefix(sourceId: string): string {
 
 function buildPagePath(sourceId: string, pageNumber: number): string {
 	return `${buildPagePrefix(sourceId)}page-${String(pageNumber).padStart(3, '0')}.png`;
+}
+
+function sanitizeContentDispositionFilename(filename: string): string {
+	let sanitized = '';
+	for (const char of filename) {
+		const code = char.charCodeAt(0);
+		if (code < 32 || code === 127 || char === '\\') {
+			sanitized += '_';
+			continue;
+		}
+
+		if (char === '"') {
+			sanitized += '\\"';
+			continue;
+		}
+
+		sanitized += char;
+	}
+
+	sanitized = sanitized.trim();
+	return sanitized.length > 0 ? sanitized : 'document.pdf';
+}
+
+function buildInlineContentDisposition(filename: string): string {
+	return `inline; filename="${sanitizeContentDispositionFilename(filename)}"`;
 }
 
 function buildPdfArtifact(source: Source): DocumentArtifact {
@@ -229,14 +252,6 @@ async function loadArtifactBytes(
 }
 
 async function buildDocumentListResponse(input: DocumentListQuery, logger: Logger): Promise<DocumentListResponse> {
-	const { pool, services } = resolveContext(logger);
-	const filter: SourceFilter = {
-		status: input.status,
-		search: input.search,
-		limit: input.limit,
-		offset: input.offset,
-	};
-	const startedAt = performance.now();
 	const requestLogger = createRouteLogger(logger, {
 		action: 'list',
 		status: input.status ?? null,
@@ -244,6 +259,15 @@ async function buildDocumentListResponse(input: DocumentListQuery, logger: Logge
 		limit: input.limit,
 		offset: input.offset,
 	});
+	const { config, pool } = resolveContext();
+	const services = createServiceRegistry(config, requestLogger);
+	const filter: SourceFilter = {
+		status: input.status,
+		search: input.search,
+		limit: input.limit,
+		offset: input.offset,
+	};
+	const startedAt = performance.now();
 
 	const [count, sources] = await Promise.all([countSources(pool, filter), findAllSources(pool, filter)]);
 	const documents = await Promise.all(
@@ -285,12 +309,13 @@ export async function listDocuments(input: DocumentListQuery, logger?: Logger): 
 
 export async function streamDocumentPdf(id: string, logger?: Logger): Promise<Response> {
 	const rootLogger = logger ?? createLogger();
-	const { pool, services } = resolveContext(rootLogger);
 	const requestLogger = createRouteLogger(rootLogger, {
 		action: 'stream',
 		artifact_kind: 'pdf',
 		source_id: id,
 	});
+	const { config, pool } = resolveContext();
+	const services = createServiceRegistry(config, requestLogger);
 	const startedAt = performance.now();
 	const source = await requireSource(pool, id);
 	const artifact = buildPdfArtifact(source);
@@ -309,19 +334,20 @@ export async function streamDocumentPdf(id: string, logger?: Logger): Promise<Re
 		status: 200,
 		headers: {
 			'Content-Type': artifact.content_type,
-			'Content-Disposition': `inline; filename="${source.filename.replaceAll('"', '\\"')}"`,
+			'Content-Disposition': buildInlineContentDisposition(source.filename),
 		},
 	});
 }
 
 export async function streamDocumentLayout(id: string, logger?: Logger): Promise<Response> {
 	const rootLogger = logger ?? createLogger();
-	const { pool, services } = resolveContext(rootLogger);
 	const requestLogger = createRouteLogger(rootLogger, {
 		action: 'stream',
 		artifact_kind: 'layout',
 		source_id: id,
 	});
+	const { config, pool } = resolveContext();
+	const services = createServiceRegistry(config, requestLogger);
 	const startedAt = performance.now();
 	const source = await requireSource(pool, id);
 	const artifact = buildLayoutArtifact(source);
@@ -346,12 +372,13 @@ export async function streamDocumentLayout(id: string, logger?: Logger): Promise
 
 export async function listDocumentPages(id: string, logger?: Logger): Promise<DocumentPagesResponse> {
 	const rootLogger = logger ?? createLogger();
-	const { pool, services } = resolveContext(rootLogger);
 	const requestLogger = createRouteLogger(rootLogger, {
 		action: 'pages',
 		artifact_kind: 'page_image',
 		source_id: id,
 	});
+	const { config, pool } = resolveContext();
+	const services = createServiceRegistry(config, requestLogger);
 	const startedAt = performance.now();
 	await requireSource(pool, id);
 	const pages = await listPageArtifacts(services, id);
@@ -379,13 +406,14 @@ export async function listDocumentPages(id: string, logger?: Logger): Promise<Do
 
 export async function streamDocumentPage(id: string, pageNumber: number, logger?: Logger): Promise<Response> {
 	const rootLogger = logger ?? createLogger();
-	const { pool, services } = resolveContext(rootLogger);
 	const requestLogger = createRouteLogger(rootLogger, {
 		action: 'stream',
 		artifact_kind: 'page_image',
 		source_id: id,
 		page_number: pageNumber,
 	});
+	const { config, pool } = resolveContext();
+	const services = createServiceRegistry(config, requestLogger);
 	const startedAt = performance.now();
 	const source = await requireSource(pool, id);
 	const artifact = buildPageArtifact(source.id, pageNumber);
