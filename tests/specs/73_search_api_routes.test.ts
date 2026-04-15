@@ -66,7 +66,7 @@ function buildMockServices(): Services {
 		embed: async () => [],
 	};
 	const llm: LlmService = {
-		generateStructured: async () => ({}),
+		generateStructured: async <T>() => ({}) as T,
 		generateText: async () => '',
 		groundedGenerate: async () => ({
 			text: '',
@@ -143,7 +143,7 @@ function createHybridResult(overrides?: Partial<HybridRetrievalResult>): HybridR
 	};
 }
 
-function authorizedHeaders(ip: string): HeadersInit {
+function authorizedHeaders(ip: string): Record<string, string> {
 	return {
 		Authorization: 'Bearer test-api-key',
 		'Content-Type': 'application/json',
@@ -151,7 +151,12 @@ function authorizedHeaders(ip: string): HeadersInit {
 	};
 }
 
-async function loadApiApp(): Promise<{ request: (input: string | Request, init?: RequestInit) => Promise<Response> }> {
+type ApiApp = {
+	request: (input: string | Request, init?: RequestInit) => Promise<Response>;
+	fetch: (input: string | Request, init?: RequestInit) => Promise<Response>;
+};
+
+async function loadApiApp(): Promise<ApiApp> {
 	const module = await import(pathToFileURL(API_APP_DIST).href);
 	if (typeof module.createApp !== 'function') {
 		throw new Error('API app module did not export createApp');
