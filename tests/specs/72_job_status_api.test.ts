@@ -63,43 +63,22 @@ function cleanState(): void {
 	);
 }
 
-function insertSourceRow(sourceId: string): void {
+function seedJobProgressState(input: {
+	runId: string;
+	sourceId: string;
+	currentStep: string;
+	sourceStatus: 'pending' | 'processing' | 'completed' | 'failed';
+	updatedAt: string;
+}): void {
 	const fileHash = `${randomUUID().replace(/-/g, '')}${randomUUID().replace(/-/g, '')}`;
 	db.runSql(
 		[
 			'INSERT INTO sources (id, filename, storage_path, file_hash, page_count, has_native_text, native_text_ratio, status, reliability_score, tags, metadata)',
-			`VALUES ('${sourceId}', 'route-test.pdf', '/tmp/route-test.pdf', '${fileHash}', 1, true, 1, 'ingested', NULL, ARRAY[]::text[], '{}'::jsonb)`,
+			`VALUES ('${input.sourceId}', 'route-test.pdf', '/tmp/route-test.pdf', '${fileHash}', 1, true, 1, 'ingested', NULL, ARRAY[]::text[], '{}'::jsonb)`,
 			'ON CONFLICT (id) DO UPDATE SET updated_at = now();',
-		].join(' '),
-	);
-}
-
-function insertPipelineRun(runId: string, status: 'running' | 'completed' | 'partial' | 'failed'): void {
-	db.runSql(
-		[
-			`INSERT INTO pipeline_runs (id, tag, options, status, created_at, finished_at)`,
-			`VALUES ('${runId}', 'status-test', '{}'::jsonb, '${status}', TIMESTAMPTZ '2026-04-14T12:00:02.000Z',`,
-			status === 'running' ? 'NULL' : `TIMESTAMPTZ '2026-04-14T12:00:06.000Z'`,
-			');',
-		].join(' '),
-	);
-}
-
-function insertPipelineRunSource(input: {
-	runId: string;
-	sourceId: string;
-	currentStep: string;
-	status: 'pending' | 'processing' | 'completed' | 'failed';
-	errorMessage?: string | null;
-	updatedAt: string;
-}): void {
-	db.runSql(
-		[
+			`INSERT INTO pipeline_runs (id, tag, options, status, created_at, finished_at) VALUES ('${input.runId}', 'status-test', '{}'::jsonb, 'running', TIMESTAMPTZ '2026-04-14T12:00:02.000Z', NULL);`,
 			'INSERT INTO pipeline_run_sources (run_id, source_id, current_step, status, error_message, updated_at)',
-			`VALUES ('${input.runId}', '${input.sourceId}', '${input.currentStep}', '${input.status}',`,
-			input.errorMessage === null || input.errorMessage === undefined ? 'NULL' : `'${input.errorMessage}'`,
-			`, TIMESTAMPTZ '${input.updatedAt}')`,
-			'ON CONFLICT (run_id, source_id) DO UPDATE SET current_step = EXCLUDED.current_step, status = EXCLUDED.status, error_message = EXCLUDED.error_message, updated_at = EXCLUDED.updated_at;',
+			`VALUES ('${input.runId}', '${input.sourceId}', '${input.currentStep}', '${input.sourceStatus}', NULL, TIMESTAMPTZ '${input.updatedAt}');`,
 		].join(' '),
 	);
 }
@@ -196,13 +175,11 @@ describe('Spec 72 — Job Status API', () => {
 		runId = randomUUID();
 		sourceId = randomUUID();
 		cleanState();
-		insertSourceRow(sourceId);
-		insertPipelineRun(runId, 'running');
-		insertPipelineRunSource({
+		seedJobProgressState({
 			runId,
 			sourceId,
 			currentStep: 'extract',
-			status: 'processing',
+			sourceStatus: 'processing',
 			updatedAt: '2026-04-14T12:00:05.000Z',
 		});
 		insertJob({
@@ -536,6 +513,20 @@ describe('Spec 72 — Job Status API', () => {
 			error: {
 				code: 'AUTH_UNAUTHORIZED',
 				message: 'A valid API key is required',
+			},
+		});
+	});
+
+	it('QA-05: malformed job ids return a validation error before the repository layer', async () => {
+		const response = await app.request('http://localhost/api/jobs/not-a-uuid', {
+			headers: authorizedHeaders(),
+		});
+
+		expect(response.status).toBe(400);
+		expect(await response.json()).toMatchObject({
+			error: {
+				code: 'VALIDATION_ERROR',
+				message: 'Invalid request',
 			},
 		});
 	});

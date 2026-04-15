@@ -15,6 +15,10 @@ export const JobListQuerySchema = z.object({
 	limit: z.coerce.number().int().positive().max(100).optional().default(20),
 });
 
+export const JobDetailParamsSchema = z.object({
+	id: z.string().uuid(),
+});
+
 export const JobSummarySchema = z.object({
 	id: z.string().uuid(),
 	type: z.string(),
@@ -80,5 +84,6 @@ export const JobDetailResponseSchema = z.object({
 });
 
 export type JobListQuery = z.infer<typeof JobListQuerySchema>;
+export type JobDetailParams = z.infer<typeof JobDetailParamsSchema>;
 export type JobListResponse = z.infer<typeof JobListResponseSchema>;
 export type JobDetailResponse = z.infer<typeof JobDetailResponseSchema>;
