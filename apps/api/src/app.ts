@@ -7,6 +7,7 @@ import { createRateLimitMiddleware } from './middleware/rate-limit.js';
 import { createRequestContextMiddleware } from './middleware/request-context.js';
 import { createRequestIdMiddleware } from './middleware/request-id.js';
 import { createSecureHeadersMiddleware } from './middleware/secure-headers.js';
+import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEntityRoutes } from './routes/entities.js';
 import { registerEvidenceRoutes } from './routes/evidence.js';
 import { registerHealthRoute } from './routes/health.js';
@@ -36,6 +37,7 @@ export function createApp(options: AppOptions = {}): Hono {
 	registerHealthRoute(app);
 	registerEntityRoutes(app);
 	registerEvidenceRoutes(app);
+	registerDocumentRoutes(app);
 	registerJobRoutes(app);
 	registerPipelineRoutes(app);
 	registerSearchRoute(app);

@@ -88,6 +88,35 @@ function mapSourceStepRow(row: SourceStepRow): SourceStep {
 	};
 }
 
+function escapeLikePattern(value: string): string {
+	return value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
+}
+
+function buildSourceFilterClause(filter?: SourceFilter): { conditions: string[]; params: unknown[] } {
+	const conditions: string[] = [];
+	const params: unknown[] = [];
+	let paramIndex = 1;
+
+	if (filter?.status) {
+		conditions.push(`status = $${paramIndex}`);
+		params.push(filter.status);
+		paramIndex++;
+	}
+
+	if (filter?.search) {
+		conditions.push(`filename ILIKE $${paramIndex} ESCAPE '\\'`);
+		params.push(`%${escapeLikePattern(filter.search)}%`);
+		paramIndex++;
+	}
+
+	if (filter?.tags && filter.tags.length > 0) {
+		conditions.push(`tags @> $${paramIndex}`);
+		params.push(filter.tags);
+	}
+
+	return { conditions, params };
+}
+
 // ────────────────────────────────────────────────────────────
 // Source CRUD
 // ────────────────────────────────────────────────────────────
@@ -180,26 +209,12 @@ export async function findSourceByHash(pool: pg.Pool, hash: string): Promise<Sou
  * Results are ordered by `created_at DESC`.
  */
 export async function findAllSources(pool: pg.Pool, filter?: SourceFilter): Promise<Source[]> {
-	const conditions: string[] = [];
-	const params: unknown[] = [];
-	let paramIndex = 1;
-
-	if (filter?.status) {
-		conditions.push(`status = $${paramIndex}`);
-		params.push(filter.status);
-		paramIndex++;
-	}
-
-	if (filter?.tags && filter.tags.length > 0) {
-		conditions.push(`tags @> $${paramIndex}`);
-		params.push(filter.tags);
-		paramIndex++;
-	}
-
+	const { conditions, params } = buildSourceFilterClause(filter);
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
 	const limit = filter?.limit ?? 100;
 	const offset = filter?.offset ?? 0;
+	const paramIndex = params.length + 1;
 
 	const sql = `SELECT * FROM sources ${whereClause} ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
 	params.push(limit, offset);
@@ -265,22 +280,7 @@ export async function countScoredSources(pool: pg.Pool): Promise<number> {
  * Counts sources matching the given filter. For pagination and status overview.
  */
 export async function countSources(pool: pg.Pool, filter?: SourceFilter): Promise<number> {
-	const conditions: string[] = [];
-	const params: unknown[] = [];
-	let paramIndex = 1;
-
-	if (filter?.status) {
-		conditions.push(`status = $${paramIndex}`);
-		params.push(filter.status);
-		paramIndex++;
-	}
-
-	if (filter?.tags && filter.tags.length > 0) {
-		conditions.push(`tags @> $${paramIndex}`);
-		params.push(filter.tags);
-		paramIndex++;
-	}
-
+	const { conditions, params } = buildSourceFilterClause(filter);
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 	const sql = `SELECT COUNT(*) FROM sources ${whereClause}`;
 

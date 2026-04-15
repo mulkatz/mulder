@@ -67,6 +67,8 @@ export interface UpdateSourceInput {
 /** Filters for querying sources. */
 export interface SourceFilter {
 	status?: SourceStatus;
+	/** Case-insensitive filename substring filter. */
+	search?: string;
 	tags?: string[];
 	limit?: number;
 	offset?: number;
