@@ -351,6 +351,62 @@ export async function findAllEdges(pool: pg.Pool, filter?: EdgeFilter): Promise<
 	}
 }
 
+export interface EdgeTypePageFilter {
+	edgeTypes: EdgeType[];
+	limit?: number;
+	offset?: number;
+}
+
+/**
+ * Finds all edges matching any of the provided edge types with pagination.
+ */
+export async function findAllEdgesByTypes(pool: pg.Pool, filter: EdgeTypePageFilter): Promise<EntityEdge[]> {
+	if (filter.edgeTypes.length === 0) {
+		return [];
+	}
+
+	const limit = filter.limit ?? 100;
+	const offset = filter.offset ?? 0;
+	const sql = `
+    SELECT *
+    FROM entity_edges
+    WHERE edge_type = ANY($1::text[])
+    ORDER BY created_at ASC, id ASC
+    LIMIT $2 OFFSET $3
+  `;
+
+	try {
+		const result = await pool.query<EdgeRow>(sql, [filter.edgeTypes, limit, offset]);
+		return result.rows.map(mapEdgeRow);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to find edges by type list', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { filter },
+		});
+	}
+}
+
+/**
+ * Counts edges matching any of the provided edge types.
+ */
+export async function countEdgesByTypes(pool: pg.Pool, edgeTypes: EdgeType[]): Promise<number> {
+	if (edgeTypes.length === 0) {
+		return 0;
+	}
+
+	const sql = 'SELECT COUNT(*) FROM entity_edges WHERE edge_type = ANY($1::text[])';
+
+	try {
+		const result = await pool.query<{ count: string }>(sql, [edgeTypes]);
+		return Number.parseInt(result.rows[0].count, 10);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to count edges by type list', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { edgeTypes },
+		});
+	}
+}
+
 /**
  * Counts edges matching the given filter. For pagination and status overview.
  */

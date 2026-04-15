@@ -82,6 +82,63 @@ export async function findEvidenceChainsByThesis(pool: Queryable, thesis: string
 	}
 }
 
+export async function findAllEvidenceChains(pool: Queryable): Promise<EvidenceChain[]> {
+	const sql = `
+    SELECT *
+    FROM evidence_chains
+    ORDER BY thesis ASC, supports DESC, strength DESC, computed_at DESC, id ASC
+  `;
+
+	try {
+		const result = await pool.query<EvidenceChainRow>(sql);
+		return result.rows.map(mapEvidenceChainRow);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to find evidence chains', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+		});
+	}
+}
+
+export async function countEvidenceChains(pool: Queryable): Promise<number> {
+	const sql = 'SELECT COUNT(*) FROM evidence_chains';
+
+	try {
+		const result = await pool.query<{ count: string }>(sql);
+		return Number.parseInt(result.rows[0].count, 10);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to count evidence chains', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+		});
+	}
+}
+
+export async function countEvidenceChainsByThesis(pool: Queryable, thesis: string): Promise<number> {
+	const sql = 'SELECT COUNT(*) FROM evidence_chains WHERE thesis = $1';
+
+	try {
+		const result = await pool.query<{ count: string }>(sql, [thesis]);
+		return Number.parseInt(result.rows[0].count, 10);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to count evidence chains by thesis', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { thesis },
+		});
+	}
+}
+
+export async function countEvidenceTheses(pool: Queryable): Promise<number> {
+	const sql = 'SELECT COUNT(DISTINCT thesis) FROM evidence_chains';
+
+	try {
+		const result = await pool.query<{ count: string }>(sql);
+		return Number.parseInt(result.rows[0].count, 10);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to count evidence theses', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+		});
+	}
+}
+
 export async function deleteEvidenceChainsByThesis(pool: Queryable, thesis: string): Promise<number> {
 	const sql = 'DELETE FROM evidence_chains WHERE thesis = $1';
 

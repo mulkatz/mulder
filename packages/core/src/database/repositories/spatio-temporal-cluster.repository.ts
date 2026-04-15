@@ -56,6 +56,10 @@ export interface CreateSpatioTemporalClusterInput {
 	computedAt?: Date;
 }
 
+export interface SpatioTemporalClusterFilter {
+	clusterType?: SpatioTemporalClusterType;
+}
+
 interface ClusterableEntityEventRow {
 	event_id: string;
 	iso_date: string | null;
@@ -284,5 +288,66 @@ export async function replaceSpatioTemporalClustersSnapshot(
 		);
 	} finally {
 		client.release();
+	}
+}
+
+export async function findAllSpatioTemporalClusters(
+	pool: Queryable,
+	filter?: SpatioTemporalClusterFilter,
+): Promise<SpatioTemporalCluster[]> {
+	const conditions: string[] = [];
+	const params: unknown[] = [];
+	let paramIndex = 1;
+
+	if (filter?.clusterType) {
+		conditions.push(`cluster_type = $${paramIndex}`);
+		params.push(filter.clusterType);
+		paramIndex++;
+	}
+
+	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+	const sql = `
+		SELECT *
+		FROM spatio_temporal_clusters
+		${whereClause}
+		ORDER BY cluster_type ASC NULLS LAST, computed_at DESC, id ASC
+	`;
+
+	try {
+		const result = await pool.query<SpatioTemporalClusterRow>(sql, params);
+		return result.rows.map(mapSpatioTemporalCluster);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to find spatio-temporal clusters', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { filter },
+		});
+	}
+}
+
+export async function countSpatioTemporalClusters(
+	pool: Queryable,
+	filter?: SpatioTemporalClusterFilter,
+): Promise<number> {
+	const conditions: string[] = [];
+	const params: unknown[] = [];
+	let paramIndex = 1;
+
+	if (filter?.clusterType) {
+		conditions.push(`cluster_type = $${paramIndex}`);
+		params.push(filter.clusterType);
+		paramIndex++;
+	}
+
+	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+	const sql = `SELECT COUNT(*) FROM spatio_temporal_clusters ${whereClause}`;
+
+	try {
+		const result = await pool.query<{ count: string }>(sql, params);
+		return Number.parseInt(result.rows[0].count, 10);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to count spatio-temporal clusters', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { filter },
+		});
 	}
 }

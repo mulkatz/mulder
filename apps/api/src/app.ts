@@ -8,6 +8,7 @@ import { createRequestContextMiddleware } from './middleware/request-context.js'
 import { createRequestIdMiddleware } from './middleware/request-id.js';
 import { createSecureHeadersMiddleware } from './middleware/secure-headers.js';
 import { registerEntityRoutes } from './routes/entities.js';
+import { registerEvidenceRoutes } from './routes/evidence.js';
 import { registerHealthRoute } from './routes/health.js';
 import { registerJobRoutes } from './routes/jobs.js';
 import { registerPipelineRoutes } from './routes/pipeline.js';
@@ -34,6 +35,7 @@ export function createApp(options: AppOptions = {}): Hono {
 
 	registerHealthRoute(app);
 	registerEntityRoutes(app);
+	registerEvidenceRoutes(app);
 	registerJobRoutes(app);
 	registerPipelineRoutes(app);
 	registerSearchRoute(app);

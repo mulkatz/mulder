@@ -31,13 +31,16 @@ export type {
 	FtsSearchResult,
 	VectorSearchResult,
 } from './chunk.types.js';
+export type { EdgeTypePageFilter } from './edge.repository.js';
 export {
 	countEdges,
+	countEdgesByTypes,
 	createEdge,
 	deleteEdge,
 	deleteEdgesBySourceId,
 	deleteEdgesByStoryId,
 	findAllEdges,
+	findAllEdgesByTypes,
 	findEdgeById,
 	findEdgesBetweenEntities,
 	findEdgesByEntityId,
@@ -55,7 +58,7 @@ export type {
 	EntityEdge,
 	UpdateEdgeInput,
 } from './edge.types.js';
-export type { AttributeCandidate, EmbeddingCandidate } from './entity.repository.js';
+export type { AttributeCandidate, EmbeddingCandidate, EntityCorroborationStats } from './entity.repository.js';
 export {
 	countEntities,
 	countEntitiesByType,
@@ -68,6 +71,7 @@ export {
 	findEntitiesByCanonicalId,
 	findEntitiesByType,
 	findEntityById,
+	getEntityCorroborationStats,
 	mergeEntities,
 	updateEntity,
 	updateEntityEmbedding,
@@ -105,8 +109,12 @@ export {
 } from './entity-grounding.repository.js';
 export type { CreateEvidenceChainInput, EvidenceChain } from './evidence-chain.repository.js';
 export {
+	countEvidenceChains,
+	countEvidenceChainsByThesis,
+	countEvidenceTheses,
 	createEvidenceChains,
 	deleteEvidenceChainsByThesis,
+	findAllEvidenceChains,
 	findEvidenceChainsByThesis,
 } from './evidence-chain.repository.js';
 export type { GraphTraversalResult } from './graph-traversal.repository.js';
@@ -153,13 +161,16 @@ export type {
 	PipelineRunStatus,
 	UpsertPipelineRunSourceInput,
 } from './pipeline-run.types.js';
+export type { SourceReliabilityFilter } from './source.repository.js';
 export {
+	countScoredSources,
 	countSources,
 	countSourcesByStatus,
 	createSource,
 	deleteSource,
 	deleteSourceStep,
 	findAllSources,
+	findScoredSources,
 	findSourceByHash,
 	findSourceById,
 	findSourceStep,
@@ -185,11 +196,14 @@ export type {
 	CreateSpatioTemporalClusterInput,
 	SpatialEntityEventPair,
 	SpatioTemporalCluster,
+	SpatioTemporalClusterFilter,
 	SpatioTemporalClusterType,
 } from './spatio-temporal-cluster.repository.js';
 export {
+	countSpatioTemporalClusters,
 	createSpatioTemporalClusters,
 	deleteAllSpatioTemporalClusters,
+	findAllSpatioTemporalClusters,
 	findSpatialEntityEventPairs,
 	loadClusterableEntityEvents,
 	replaceSpatioTemporalClustersSnapshot,
