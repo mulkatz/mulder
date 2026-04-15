@@ -205,9 +205,13 @@ function assertPipelineRunCompleted(job: WorkerJobEnvelope, status: string): voi
 		return;
 	}
 
-	throw new WorkerError(`pipeline_run job ${job.id} finished with status ${status}`, WORKER_ERROR_CODES.WORKER_LOOP_FAILED, {
-		context: { jobId: job.id, jobType: job.type, status },
-	});
+	throw new WorkerError(
+		`pipeline_run job ${job.id} finished with status ${status}`,
+		WORKER_ERROR_CODES.WORKER_LOOP_FAILED,
+		{
+			context: { jobId: job.id, jobType: job.type, status },
+		},
+	);
 }
 
 export const dispatchJob: WorkerDispatchFn = async (job, context) => {
