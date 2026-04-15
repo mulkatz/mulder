@@ -5,6 +5,7 @@ export type {
 	AnalysisConfig,
 	ApiAuthConfig,
 	ApiAuthKeyConfig,
+	ApiBudgetConfig,
 	ApiConfig,
 	ApiExplorerConfig,
 	ApiRateLimitingConfig,
@@ -41,6 +42,19 @@ export {
 	loadConfig,
 	mulderConfigSchema,
 } from './config/index.js';
+export {
+	BUDGETABLE_PIPELINE_STEP_VALUES,
+	budgetMonthStart,
+	completedStepsFromProgress,
+	estimateBudgetForSourceRun,
+	finalizeBudgetReservation,
+	secondsUntilNextBudgetMonth,
+} from './shared/budget.js';
+export type {
+	BudgetEstimate,
+	BudgetReservationFinalization,
+	BudgetablePipelineStep,
+} from './shared/budget.js';
 export type {
 	ApplyTaxonomyChangesInput,
 	AttributeCandidate,
@@ -53,6 +67,7 @@ export type {
 	CreateEntityAliasInput,
 	CreateEntityInput,
 	CreateEvidenceChainInput,
+	CreateMonthlyBudgetReservationInput,
 	CreatePipelineRunInput,
 	CreateSourceInput,
 	CreateSpatioTemporalClusterInput,
@@ -83,6 +98,9 @@ export type {
 	MergeEntitiesResult,
 	MigrationResult,
 	MigrationStatus,
+	MonthlyBudgetReservation,
+	MonthlyBudgetReservationStatus,
+	MonthlyBudgetSummary,
 	NormalizationResult,
 	PipelineRun,
 	PipelineRunSource,
@@ -146,6 +164,7 @@ export {
 	createEntity,
 	createEntityAlias,
 	createEvidenceChains,
+	createMonthlyBudgetReservation,
 	createPipelineRun,
 	createSource,
 	createSpatioTemporalClusters,
@@ -170,6 +189,7 @@ export {
 	deleteTaxonomyEntry,
 	dequeueJob,
 	enqueueJob,
+	finalizeMonthlyBudgetReservation,
 	finalizePipelineRun,
 	findAliasesByEntityId,
 	findAllEdges,
@@ -198,8 +218,10 @@ export {
 	findEvidenceChainsByThesis,
 	findJobById,
 	findJobs,
+	findLatestMonthlyBudgetReservationForSource,
 	findLatestPipelineRun,
 	findLatestPipelineRunSourceForSource,
+	findMonthlyBudgetReservationByRunId,
 	findPipelineRunById,
 	findPipelineRunSourceById,
 	findPipelineRunSourcesByRunId,
@@ -251,6 +273,7 @@ export {
 	upsertEntityGrounding,
 	upsertPipelineRunSource,
 	upsertSourceStep,
+	summarizeMonthlyBudgetReservations,
 } from './database/index.js';
 // ── LLM cache ────────────────────────────────────────────────
 export type { CacheEntry, CacheStats, LlmCache } from './llm-cache.js';

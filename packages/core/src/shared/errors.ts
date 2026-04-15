@@ -31,6 +31,8 @@ export const PIPELINE_ERROR_CODES = {
 	PIPELINE_WRONG_STATUS: 'PIPELINE_WRONG_STATUS',
 	/** Retry requested but the latest failed step cannot be retried. */
 	PIPELINE_RETRY_CONFLICT: 'PIPELINE_RETRY_CONFLICT',
+	/** Monthly budget gate rejected a new accepted run. */
+	PIPELINE_BUDGET_EXCEEDED: 'PIPELINE_BUDGET_EXCEEDED',
 	/** A pipeline step threw — wraps the underlying step error code. */
 	PIPELINE_STEP_FAILED: 'PIPELINE_STEP_FAILED',
 	/** @reserved D6 pipeline orchestrator retry exhaustion */

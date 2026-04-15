@@ -10,6 +10,20 @@
  */
 
 export {
+	createMonthlyBudgetReservation,
+	finalizeMonthlyBudgetReservation,
+	findLatestMonthlyBudgetReservationForSource,
+	findMonthlyBudgetReservationByRunId,
+	summarizeMonthlyBudgetReservations,
+} from './budget-reservation.repository.js';
+export type {
+	CreateMonthlyBudgetReservationInput,
+	FinalizeMonthlyBudgetReservationInput,
+	MonthlyBudgetReservation,
+	MonthlyBudgetReservationStatus,
+	MonthlyBudgetSummary,
+} from './budget-reservation.types.js';
+export {
 	countChunks,
 	createChunk,
 	createChunks,

@@ -70,11 +70,22 @@ const apiExplorerSchema = z.object({
 	enabled: z.boolean().default(true),
 });
 
+const apiBudgetSchema = z.object({
+	enabled: z.boolean().default(true),
+	monthly_limit_usd: z.number().positive().default(50),
+	extract_per_page_usd: z.number().nonnegative().default(0.006),
+	segment_per_page_usd: z.number().nonnegative().default(0.002),
+	enrich_per_source_usd: z.number().nonnegative().default(0.015),
+	embed_per_source_usd: z.number().nonnegative().default(0.004),
+	graph_per_source_usd: z.number().nonnegative().default(0.001),
+});
+
 const apiObj = z.object({
 	port: z.number().int().positive().default(8080),
 	auth: apiAuthSchema.default(defaults(apiAuthSchema)),
 	rate_limiting: apiRateLimitingSchema.default(defaults(apiRateLimitingSchema)),
 	explorer: apiExplorerSchema.default(defaults(apiExplorerSchema)),
+	budget: apiBudgetSchema.default(defaults(apiBudgetSchema)),
 });
 const apiSchema = apiObj.default(defaults(apiObj));
 
@@ -452,6 +463,7 @@ export const mulderConfigSchema = baseMulderConfigSchema.superRefine((data, ctx)
 // Export section schemas for reuse
 export {
 	analysisSchema,
+	apiBudgetSchema,
 	apiSchema,
 	cloudSqlSchema,
 	deduplicationSchema,

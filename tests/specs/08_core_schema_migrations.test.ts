@@ -59,6 +59,7 @@ function resetDatabase(): void {
 	const dropSql = [
 		'DROP FUNCTION IF EXISTS reset_pipeline_step CASCADE',
 		'DROP FUNCTION IF EXISTS gc_orphaned_entities CASCADE',
+		'DROP TABLE IF EXISTS monthly_budget_reservations CASCADE',
 		'DROP TABLE IF EXISTS pipeline_run_sources CASCADE',
 		'DROP TABLE IF EXISTS pipeline_runs CASCADE',
 		'DROP TABLE IF EXISTS jobs CASCADE',

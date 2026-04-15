@@ -20,11 +20,16 @@
 import { performance } from 'node:perf_hooks';
 import type { Logger, MulderConfig, Services, Source, SourceStatus, StepError, Story, StoryStatus } from '@mulder/core';
 import {
+	completedStepsFromProgress,
 	createChildLogger,
+	finalizeBudgetReservation,
+	finalizeMonthlyBudgetReservation,
 	createPipelineRun,
 	finalizePipelineRun,
+	findMonthlyBudgetReservationByRunId,
 	findAllSources,
 	findPipelineRunById,
+	findPipelineRunSourcesByRunId,
 	findSourceById,
 	findStoriesBySourceId,
 	PIPELINE_ERROR_CODES,
@@ -260,6 +265,54 @@ function createSkippedGlobalAnalysis(summary: string): PipelineGlobalAnalysisOut
 		summary,
 		result: null,
 	};
+}
+
+async function reconcileRunBudgetReservation(
+	pool: pg.Pool,
+	config: MulderConfig,
+	runId: string,
+): Promise<void> {
+	const reservation = await findMonthlyBudgetReservationByRunId(pool, runId);
+	if (!reservation) {
+		return;
+	}
+
+	const source = await findSourceById(pool, reservation.sourceId);
+	if (!source) {
+		await finalizeMonthlyBudgetReservation(pool, {
+			runId,
+			status: 'released',
+			committedUsd: 0,
+			releasedUsd: reservation.reservedEstimatedUsd,
+			metadata: { reason: 'source_missing' },
+		});
+		return;
+	}
+
+	const progressRows = await findPipelineRunSourcesByRunId(pool, runId);
+	const progress = progressRows.find((row) => row.sourceId === reservation.sourceId);
+	const completedSteps = progress
+		? completedStepsFromProgress(reservation.plannedSteps, progress.currentStep, progress.status)
+		: [];
+	const finalization = finalizeBudgetReservation({
+		source,
+		plannedSteps: reservation.plannedSteps,
+		completedSteps,
+		budget: config.api.budget,
+		extraction: config.extraction,
+		force: reservation.metadata.force === true,
+	});
+
+	await finalizeMonthlyBudgetReservation(pool, {
+		runId,
+		status: finalization.status,
+		committedUsd: finalization.committedUsd,
+		releasedUsd: finalization.releasedUsd,
+		metadata: {
+			progress_status: progress?.status ?? null,
+			current_step: progress?.currentStep ?? null,
+		},
+	});
 }
 
 function summarizeGlobalAnalyzeResult(result: Awaited<ReturnType<typeof executeAnalyze>>): string {
@@ -747,6 +800,7 @@ export async function execute(
 
 		const finalRunStatus = runStatus === 'success' ? 'completed' : runStatus === 'partial' ? 'partial' : 'failed';
 		await finalizePipelineRun(pool, run.id, finalRunStatus);
+		await reconcileRunBudgetReservation(pool, config, run.id);
 
 		const durationMs = Math.round(performance.now() - startTime);
 		runLog.info(
@@ -784,6 +838,7 @@ export async function execute(
 		};
 	} catch (cause) {
 		await finalizePipelineRun(pool, run.id, 'failed').catch(() => undefined);
+		await reconcileRunBudgetReservation(pool, config, run.id).catch(() => undefined);
 		throw cause;
 	}
 }

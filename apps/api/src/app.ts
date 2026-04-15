@@ -14,6 +14,7 @@ import { registerHealthRoute } from './routes/health.js';
 import { registerJobRoutes } from './routes/jobs.js';
 import { registerPipelineRoutes } from './routes/pipeline.js';
 import { registerSearchRoute } from './routes/search.js';
+import { registerStatusRoute } from './routes/status.js';
 
 export interface AppOptions {
 	logger?: Logger;
@@ -41,6 +42,7 @@ export function createApp(options: AppOptions = {}): Hono {
 	registerJobRoutes(app);
 	registerPipelineRoutes(app);
 	registerSearchRoute(app);
+	registerStatusRoute(app);
 
 	return app;
 }
