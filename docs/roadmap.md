@@ -190,7 +190,7 @@ Move from CLI to HTTP. Job queue, async workers, a full REST API over the pipeli
 | 🟢 | H5 | Pipeline API routes (async) | §10.2, §10.6 |
 | 🟢 | H6 | Job status API | §10.6 |
 | 🟢 | H7 | Search API routes (sync) | §10.6, §5 |
-| ⚪ | H8 | Entity API routes (sync) | §10.6 |
+| 🟢 | H8 | Entity API routes (sync) | §10.6 |
 | ⚪ | H9 | Evidence API routes (sync) | §10.6 |
 | ⚪ | H10 | Document retrieval routes — list/pdf/markdown sync routes | §10.6 |
 | ⚪ | H11 | Document Viewer UI — Vite+React split-view (PDF + layout.md) | §13 (demo/), consumes H10 |
