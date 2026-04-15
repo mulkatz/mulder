@@ -10,11 +10,11 @@ import {
 	PipelineError,
 	type PipelineStep,
 } from '@mulder/core';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { PipelineRetryRequest, PipelineRunRequest } from '../routes/pipeline.schemas.js';
 import { PIPELINE_STEP_VALUES } from '../routes/pipeline.schemas.js';
 
-type Queryable = Pick<Pool, 'query'>;
+type Queryable = Pool | PoolClient;
 
 type PipelineJobPayload = {
 	sourceId: string;
@@ -122,7 +122,7 @@ function buildRunOptions(input: {
 }
 
 async function requireSource(pool: Queryable, sourceId: string): Promise<Source> {
-	const source = await findSourceById(pool as Pool, sourceId);
+	const source = await findSourceById(pool, sourceId);
 	if (!source) {
 		throw new PipelineError(`Source not found: ${sourceId}`, PIPELINE_ERROR_CODES.PIPELINE_SOURCE_NOT_FOUND, {
 			context: { sourceId },
@@ -204,7 +204,7 @@ async function enqueuePipelineJob(
 		force: boolean;
 	},
 ): Promise<Job> {
-	return await enqueueJob(pool as Pool, {
+	return await enqueueJob(pool, {
 		type: 'pipeline_run',
 		payload: buildJobPayload(input),
 		maxAttempts: 3,
@@ -215,7 +215,7 @@ export async function createPipelineRunJob(input: PipelineRunRequest): Promise<P
 	const { pool } = resolveContext();
 	return await runInTransaction(pool, async (client) => {
 		const source = await requireSource(client, input.source_id);
-		const run = await createPipelineRun(client as Pool, {
+		const run = await createPipelineRun(client, {
 			tag: input.tag ?? null,
 			options: buildRunOptions({
 				sourceId: source.id,
@@ -242,9 +242,9 @@ export async function createPipelineRetryJob(input: PipelineRetryRequest): Promi
 	return await runInTransaction(pool, async (client) => {
 		const source = await requireSource(client, input.source_id);
 		await assertNoInFlightPipelineJob(client, source.id);
-		const latest = await findLatestPipelineRunSourceForSource(client as Pool, source.id);
+		const latest = await findLatestPipelineRunSourceForSource(client, source.id);
 		const step = deriveRetryStep(assertRetryableSource(source, latest), input.step);
-		const run = await createPipelineRun(client as Pool, {
+		const run = await createPipelineRun(client, {
 			tag: input.tag ?? null,
 			options: buildRunOptions({
 				sourceId: source.id,
