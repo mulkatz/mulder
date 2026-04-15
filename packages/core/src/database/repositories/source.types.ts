@@ -41,6 +41,7 @@ export interface Source {
 
 /** Input for creating a new source. */
 export interface CreateSourceInput {
+	id?: string;
 	filename: string;
 	storagePath: string;
 	fileHash: string;

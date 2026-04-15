@@ -24,6 +24,7 @@ import type pg from 'pg';
 import { dispatchJob } from './dispatch.js';
 import {
 	createWorkerId,
+	type DocumentUploadFinalizeJobPayload,
 	describeWorkerError,
 	type PipelineRunJobPayload,
 	type WorkerActiveJobSnapshot,
@@ -99,6 +100,7 @@ function isWorkerJobEnvelopeType(type: string): type is WorkerJobEnvelope['type'
 		type === 'enrich' ||
 		type === 'embed' ||
 		type === 'graph' ||
+		type === 'document_upload_finalize' ||
 		type === 'pipeline_run'
 	);
 }
@@ -185,6 +187,32 @@ function toWorkerJobPayload(job: Job): WorkerJobEnvelope['payload'] {
 		const tag = readOptionalString(job.payload, 'tag');
 		if (tag) {
 			payload.tag = tag;
+		}
+
+		return payload;
+	}
+
+	if (job.type === 'document_upload_finalize') {
+		const sourceId = readOptionalString(job.payload, 'sourceId', 'source_id');
+		const filename = readOptionalString(job.payload, 'filename');
+		const storagePath = readOptionalString(job.payload, 'storagePath', 'storage_path');
+		if (!sourceId || !filename || !storagePath) {
+			throw new Error(`Job ${job.id} is missing document upload finalize fields`);
+		}
+
+		const tags = Array.isArray(job.payload.tags)
+			? job.payload.tags.filter((tag): tag is string => typeof tag === 'string')
+			: undefined;
+
+		const payload: DocumentUploadFinalizeJobPayload = {
+			sourceId,
+			filename,
+			storagePath,
+			startPipeline: readOptionalBoolean(job.payload, 'startPipeline'),
+		};
+
+		if (tags && tags.length > 0) {
+			payload.tags = tags;
 		}
 
 		return payload;
@@ -289,13 +317,19 @@ export async function processNextJob(context: WorkerRuntimeContext, workerId: st
 	let typedJob: WorkerJobEnvelope | null = null;
 	try {
 		typedJob = toWorkerJobEnvelope(job);
-		await dispatch(typedJob, getWorkerDispatchContext(context, workerId));
-		await markJobCompleted(context.pool, claim);
+		const completionPayload = await dispatch(typedJob, getWorkerDispatchContext(context, workerId));
+		await markJobCompleted(context.pool, claim, isRecord(completionPayload) ? completionPayload : undefined);
 		jobLog.info('Job completed');
 		return { state: 'completed', job: typedJob, error: null };
 	} catch (error: unknown) {
 		const errorLog = describeWorkerError(error);
-		const updated = await markJobFailed(context.pool, claim, errorLog);
+		let updated: Awaited<ReturnType<typeof markJobFailed>> | null = null;
+		try {
+			updated = await markJobFailed(context.pool, claim, errorLog);
+		} catch (markError) {
+			jobLog.error({ err: markError, originalErr: error }, 'Job failure could not be persisted');
+			throw error;
+		}
 		jobLog.warn({ status: updated.status, err: error }, 'Job failed');
 		return {
 			state: updated.status === 'dead_letter' ? 'dead_letter' : 'failed',

@@ -128,6 +128,7 @@ export {
 	markJobCompleted,
 	markJobDeadLetter,
 	markJobFailed,
+	mergeJobPayload,
 	reapRunningJobs,
 } from './job.repository.js';
 export type {

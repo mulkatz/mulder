@@ -26,6 +26,24 @@ export interface StorageListResult {
 	paths: string[];
 }
 
+export interface StorageUploadSession {
+	url: string;
+	method: 'PUT';
+	headers: Record<string, string>;
+	transport: 'gcs_resumable' | 'dev_proxy';
+	expiresAt: string | null;
+}
+
+export interface CreateStorageUploadSessionOptions {
+	contentType: string;
+	expectedSizeBytes: number;
+}
+
+export interface StorageObjectMetadata {
+	sizeBytes: number;
+	contentType: string | null;
+}
+
 /**
  * Abstraction over Cloud Storage.
  * Upload, download, check existence, list, and delete objects from a bucket.
@@ -34,8 +52,14 @@ export interface StorageService {
 	/** Upload content (Buffer or string) to a bucket path. */
 	upload(bucketPath: string, content: Buffer | string, contentType?: string): Promise<void>;
 
+	/** Create a browser-facing direct upload session for a bucket path. */
+	createUploadSession(bucketPath: string, options: CreateStorageUploadSessionOptions): Promise<StorageUploadSession>;
+
 	/** Download content from a bucket path as a Buffer. */
 	download(bucketPath: string): Promise<Buffer>;
+
+	/** Read lightweight object metadata without downloading the full object. */
+	getMetadata(bucketPath: string): Promise<StorageObjectMetadata | null>;
 
 	/** Check whether an object exists at the given bucket path. */
 	exists(bucketPath: string): Promise<boolean>;
