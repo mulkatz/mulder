@@ -126,11 +126,11 @@ describe('Spec 70: API Middleware Stack', () => {
 			},
 		});
 
-		app.post('/api/search', (c) => c.json({ ok: true }, 200));
+		app.get('/api/entities', (c) => c.json({ ok: true }, 200));
 
-		for (let index = 0; index < 10; index += 1) {
-			const response = await app.request('http://localhost/api/search', {
-				method: 'POST',
+		for (let index = 0; index < 60; index += 1) {
+			const response = await app.request('http://localhost/api/entities', {
+				method: 'GET',
 				headers: {
 					Authorization: 'Bearer test-api-key',
 					'X-Forwarded-For': `203.0.113.${index + 1}`,
@@ -140,8 +140,8 @@ describe('Spec 70: API Middleware Stack', () => {
 			expect(response.status).toBe(200);
 		}
 
-		const throttled = await app.request('http://localhost/api/search', {
-			method: 'POST',
+		const throttled = await app.request('http://localhost/api/entities', {
+			method: 'GET',
 			headers: {
 				Authorization: 'Bearer test-api-key',
 				'X-Forwarded-For': '198.51.100.250',
@@ -156,7 +156,7 @@ describe('Spec 70: API Middleware Stack', () => {
 				message: 'Too many requests',
 				details: {
 					retry_after_seconds: expect.any(Number),
-					tier: 'strict',
+					tier: 'standard',
 				},
 			},
 		});
