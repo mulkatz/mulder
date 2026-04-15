@@ -27,6 +27,8 @@ import type {
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'pipeline-run-repository' });
 
+type Queryable = pg.Pool | pg.PoolClient;
+
 // ────────────────────────────────────────────────────────────
 // Row mappers (snake_case DB → camelCase TS)
 // ────────────────────────────────────────────────────────────
@@ -104,7 +106,7 @@ function mapPipelineRunSourceRow(row: PipelineRunSourceRow): PipelineRunSource {
  * (skipped on `--dry-run`). The returned `id` becomes the cursor key for
  * all subsequent `upsertPipelineRunSource` calls in this batch.
  */
-export async function createPipelineRun(pool: pg.Pool, input: CreatePipelineRunInput): Promise<PipelineRun> {
+export async function createPipelineRun(pool: Queryable, input: CreatePipelineRunInput): Promise<PipelineRun> {
 	const sql = `
     INSERT INTO pipeline_runs (tag, options, status)
     VALUES ($1, $2, 'running')
@@ -315,7 +317,7 @@ export async function findPipelineRunSourceById(
  * `mulder pipeline retry <source-id>` to find the failed step to retry.
  */
 export async function findLatestPipelineRunSourceForSource(
-	pool: pg.Pool,
+	pool: Queryable,
 	sourceId: string,
 ): Promise<PipelineRunSource | null> {
 	const sql = `

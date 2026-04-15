@@ -28,6 +28,8 @@ import type {
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'source-repository' });
 
+type Queryable = pg.Pool | pg.PoolClient;
+
 // ────────────────────────────────────────────────────────────
 // Row mappers (snake_case DB → camelCase TS)
 // ────────────────────────────────────────────────────────────
@@ -132,7 +134,7 @@ export async function createSource(pool: pg.Pool, input: CreateSourceInput): Pro
  *
  * @returns The source, or `null` if not found.
  */
-export async function findSourceById(pool: pg.Pool, id: string): Promise<Source | null> {
+export async function findSourceById(pool: Queryable, id: string): Promise<Source | null> {
 	const sql = 'SELECT * FROM sources WHERE id = $1';
 
 	try {

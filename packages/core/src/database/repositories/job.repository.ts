@@ -26,6 +26,8 @@ import type {
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'job-repository' });
 
+type Queryable = pg.Pool | pg.PoolClient;
+
 interface JobRow {
 	id: string;
 	type: string;
@@ -101,7 +103,7 @@ function buildJobFilter(filter?: JobFilter): { whereClause: string; params: unkn
 	};
 }
 
-export async function enqueueJob(pool: pg.Pool, input: EnqueueJobInput): Promise<Job> {
+export async function enqueueJob(pool: Queryable, input: EnqueueJobInput): Promise<Job> {
 	const sql = `
     INSERT INTO jobs (type, payload, max_attempts)
     VALUES ($1, $2, $3)
