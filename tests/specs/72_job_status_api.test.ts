@@ -156,7 +156,7 @@ async function loadApiApp(): Promise<{ request: (input: string | Request, init?:
 	});
 }
 
-function authorizedHeaders(): HeadersInit {
+function authorizedHeaders(): Record<string, string> {
 	return {
 		Authorization: 'Bearer test-api-key',
 		'X-Forwarded-For': '203.0.113.10',
