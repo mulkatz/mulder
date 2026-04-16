@@ -1,125 +1,78 @@
 /**
  * CLI command: `mulder reprocess`.
  *
- * Planning-only surface for selective reprocessing. This step computes the
- * config-hash diff and cost estimate but intentionally defers execution.
+ * Thin wrapper that validates the step flag, loads config/services, delegates
+ * selective planning/execution to the pipeline package, and formats the
+ * result for terminal use.
  */
 
-import {
-	closeAllPools,
-	findAllSources,
-	findSourceSteps,
-	getWorkerPool,
-	loadConfig,
-	type ReprocessableStep,
-	type Source,
-	type SourceStep,
-} from '@mulder/core';
-import { buildReprocessPlan } from '@mulder/pipeline';
+import { closeAllPools, createLogger, createServiceRegistry, getWorkerPool, loadConfig } from '@mulder/core';
+import type { ReprocessResult, ReprocessStepName } from '@mulder/pipeline';
+import { executeReprocess } from '@mulder/pipeline';
 import type { Command } from 'commander';
-import {
-	collectDbSourceProfiles,
-	estimateForSteps,
-	mapReprocessStepsToEstimateSteps,
-	printCostEstimate,
-} from '../lib/cost-estimate.js';
 import { withErrorHandler } from '../lib/errors.js';
-import { printError, printSuccess } from '../lib/output.js';
+import { printError, printJson, printSuccess } from '../lib/output.js';
 
 interface ReprocessOptions {
-	dryRun?: boolean;
 	step?: string;
+	dryRun?: boolean;
 	costEstimate?: boolean;
 }
 
-const VALID_REPROCESS_STEPS: ReprocessableStep[] = ['extract', 'segment', 'enrich', 'embed', 'graph'];
+const VALID_STEPS: readonly ReprocessStepName[] = ['extract', 'segment', 'enrich', 'embed', 'graph'] as const;
 
-function isReprocessableStep(value: string): value is ReprocessableStep {
-	return VALID_REPROCESS_STEPS.includes(value as ReprocessableStep);
+function isReprocessStep(value: string): value is ReprocessStepName {
+	return VALID_STEPS.includes(value as ReprocessStepName);
 }
 
-async function loadAllSources(pool: import('pg').Pool): Promise<Source[]> {
-	const sources: Source[] = [];
-	let offset = 0;
-	const limit = 1000;
-
-	while (true) {
-		const batch = await findAllSources(pool, { limit, offset });
-		sources.push(...batch);
-		if (batch.length < limit) {
-			break;
-		}
-		offset += limit;
-	}
-
-	return sources;
-}
-
-async function loadSourceStepsBySourceId(
-	pool: import('pg').Pool,
-	sources: Source[],
-): Promise<Map<string, SourceStep[]>> {
-	const sourceStepsBySourceId = new Map<string, SourceStep[]>();
-
-	for (const source of sources) {
-		sourceStepsBySourceId.set(source.id, await findSourceSteps(pool, source.id));
-	}
-
-	return sourceStepsBySourceId;
-}
-
-function printReprocessPlan(sources: Array<{ source: Source; steps: ReprocessableStep[] }>): void {
-	if (sources.length === 0) {
-		process.stdout.write('No sources require reprocessing.\n');
-		return;
-	}
-
-	process.stdout.write(`Sources requiring reprocess: ${sources.length}\n`);
-	for (const entry of sources) {
-		process.stdout.write(`- ${entry.source.filename} (${entry.source.id}): ${entry.steps.join(' -> ')}\n`);
-	}
-}
-
-function uniquePlannedSteps(sources: Array<{ steps: ReprocessableStep[] }>): ReprocessableStep[] {
-	const planned = new Set<ReprocessableStep>();
-	for (const entry of sources) {
-		for (const step of entry.steps) {
-			planned.add(step);
-		}
-	}
-	return VALID_REPROCESS_STEPS.filter((step) => planned.has(step));
+function summarizeResult(result: ReprocessResult): string {
+	const runId = result.summary.runId ?? 'n/a';
+	const globalAnalyze =
+		result.summary.globalAnalyzeStatus === 'not-run'
+			? 'analysis not run'
+			: `analysis ${result.summary.globalAnalyzeStatus}`;
+	return `${result.summary.completedSources} completed, ${result.summary.failedSources} failed, ${result.summary.skippedSources} skipped, ${globalAnalyze}, run ${runId} (${result.metadata.duration_ms}ms)`;
 }
 
 export function registerReprocessCommands(program: Command): void {
 	program
 		.command('reprocess')
-		.description('Plan selective reprocessing after config changes')
-		.option('--dry-run', 'show which sources would reprocess without executing')
-		.option('--step <step>', `force a specific step (one of: ${VALID_REPROCESS_STEPS.join('|')})`)
-		.option('--cost-estimate', 'show the estimated cost of the reprocess plan')
+		.description('Detect and rerun sources affected by config changes')
+		.option('--dry-run', 'show the selective reprocess plan without executing it')
+		.option('--step <step>', `force a step for all eligible sources (one of: ${VALID_STEPS.join('|')})`)
+		.option('--cost-estimate', 'planned for M8-I2; prints the plan without executing live work')
 		.addHelpText(
 			'after',
 			`
 Examples:
   $ mulder reprocess --dry-run
-  $ mulder reprocess --dry-run --cost-estimate
-  $ mulder reprocess --step enrich --dry-run --cost-estimate`,
+  $ mulder reprocess
+  $ mulder reprocess --step enrich
+  $ mulder reprocess --cost-estimate`,
 		)
 		.action(
 			withErrorHandler(async (options: ReprocessOptions) => {
-				let forcedStep: ReprocessableStep | undefined;
+				let step: ReprocessStepName | undefined;
 				if (options.step !== undefined) {
-					if (!isReprocessableStep(options.step)) {
-						printError(`Unknown reprocess step "${options.step}". Valid steps: ${VALID_REPROCESS_STEPS.join(', ')}`);
+					if (!isReprocessStep(options.step)) {
+						printError(`Unknown step "${options.step}". Valid steps: ${VALID_STEPS.join(', ')}`);
 						process.exit(1);
 						return;
 					}
-					forcedStep = options.step;
+					step = options.step;
 				}
 
 				const config = loadConfig();
+				const logger = createLogger();
+				const services = createServiceRegistry(config, logger);
+
+				if (!config.gcp && !config.dev_mode) {
+					printError('GCP configuration is required for reprocess (or enable dev_mode)');
+					process.exit(1);
+					return;
+				}
 				if (!config.gcp) {
-					printError('GCP configuration with cloud_sql is required for reprocess planning');
+					printError('GCP configuration with cloud_sql is required for reprocess');
 					process.exit(1);
 					return;
 				}
@@ -127,41 +80,49 @@ Examples:
 				const pool = getWorkerPool(config.gcp.cloud_sql);
 
 				try {
-					const sources = await loadAllSources(pool);
-					const sourceStepsBySourceId = await loadSourceStepsBySourceId(pool, sources);
-					const plan = buildReprocessPlan({
+					const result = await executeReprocess(
+						{
+							step,
+							dryRun: options.dryRun,
+							costEstimate: options.costEstimate,
+						},
 						config,
-						sources,
-						sourceStepsBySourceId,
-						forcedStep,
-					});
-
-					if (options.costEstimate) {
-						const estimate = estimateForSteps({
-							mode: 'reprocess',
-							sourceProfiles: collectDbSourceProfiles(plan.sources.map((entry) => entry.source)),
-							steps: mapReprocessStepsToEstimateSteps(uniquePlannedSteps(plan.sources)),
-							groundingEnabled: false,
-						});
-						printCostEstimate('Cost estimate for reprocess plan', estimate);
-					}
-
-					printReprocessPlan(plan.sources);
-
-					if (plan.sources.length === 0) {
-						printSuccess('No documents require reprocessing');
-						return;
-					}
-
-					if (options.dryRun) {
-						printSuccess('Dry run complete (no changes made)');
-						return;
-					}
-
-					printError(
-						'Reprocess execution lands in M8-I4; this command currently supports planning and estimation only',
+						services,
+						pool,
+						logger,
 					);
-					process.exit(1);
+
+					if (options.dryRun || options.costEstimate) {
+						printJson(result);
+						if (result.plan.plannedSourceCount === 0 && !result.plan.globalAnalyzePlanned) {
+							printSuccess('No sources require reprocessing');
+						} else if (options.costEstimate) {
+							printSuccess(
+								`Cost estimate placeholder: ${result.plan.plannedSourceCount} sources, ${result.plan.plannedStepCount} steps${result.plan.globalAnalyzePlanned ? ', plus global analyze' : ''}`,
+							);
+						} else {
+							printSuccess(
+								`Dry run complete: ${result.plan.plannedSourceCount} sources, ${result.plan.plannedStepCount} steps${result.plan.globalAnalyzePlanned ? ', plus global analyze' : ''}`,
+							);
+						}
+						return;
+					}
+
+					for (const error of result.errors) {
+						printError(`[${error.code}] ${error.message}`);
+					}
+
+					const summary = summarizeResult(result);
+					if (result.status === 'failed') {
+						printError(`Reprocess failed: ${summary}`);
+						process.exit(1);
+						return;
+					}
+					if (result.status === 'partial') {
+						process.stderr.write(`Reprocess partial: ${summary}\n`);
+						return;
+					}
+					printSuccess(`Reprocess complete: ${summary}`);
 				} finally {
 					await closeAllPools();
 				}

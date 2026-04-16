@@ -7,6 +7,8 @@ export { CONFIG_DEFAULTS } from './defaults.js';
 export type { ConfigIssue } from './errors.js';
 export { ConfigValidationError } from './errors.js';
 export { loadConfig } from './loader.js';
+export type { ReprocessHashStepName } from './reprocess-hash.js';
+export { computeReprocessConfigHash, getReprocessConfigSubset } from './reprocess-hash.js';
 export { mulderConfigSchema } from './schema.js';
 export type {
 	AnalysisConfig,

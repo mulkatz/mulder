@@ -72,6 +72,7 @@ describe('CLI Smoke: top-level', () => {
 		expect(stdout).toContain('config');
 		expect(stdout).toContain('ingest');
 		expect(stdout).toContain('extract');
+		expect(stdout).toContain('reprocess');
 		expect(stdout).toContain('db');
 		expect(stdout).toContain('cache');
 		expect(stdout).toContain('fixtures');
@@ -211,7 +212,27 @@ describe('CLI Smoke: reprocess', () => {
 });
 
 // ===========================================================================
-// 4. Extract Commands
+// 4. Reprocess Commands
+// ===========================================================================
+
+describe('CLI Smoke: reprocess', () => {
+	it.skipIf(!cliAvailable)('SMOKE-33: reprocess --help shows usage', () => {
+		const { stdout, exitCode } = runCli(['reprocess', '--help']);
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain('--dry-run');
+		expect(stdout).toContain('--step');
+		expect(stdout).toContain('--cost-estimate');
+	});
+
+	it.skipIf(!cliAvailable)('SMOKE-34: reprocess with invalid --step exits with error', () => {
+		const { exitCode, stderr } = runCli(['reprocess', '--step', 'bogus']);
+		expect(exitCode).not.toBe(0);
+		expect(stderr.toLowerCase()).toContain('unknown step');
+	});
+});
+
+// ===========================================================================
+// 5. Extract Commands
 // ===========================================================================
 
 describe('CLI Smoke: extract', () => {
@@ -244,7 +265,7 @@ describe('CLI Smoke: extract', () => {
 });
 
 // ===========================================================================
-// 5. DB Commands
+// 6. DB Commands
 // ===========================================================================
 
 describe('CLI Smoke: db', () => {
@@ -269,7 +290,7 @@ describe('CLI Smoke: db', () => {
 });
 
 // ===========================================================================
-// 6. Cache Commands
+// 7. Cache Commands
 // ===========================================================================
 
 describe('CLI Smoke: cache', () => {
@@ -293,7 +314,7 @@ describe('CLI Smoke: cache', () => {
 });
 
 // ===========================================================================
-// 7. Fixtures Commands
+// 8. Fixtures Commands
 // ===========================================================================
 
 describe('CLI Smoke: fixtures', () => {

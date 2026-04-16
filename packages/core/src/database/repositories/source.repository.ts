@@ -21,6 +21,8 @@ import type {
 	SourceStatus,
 	SourceStep,
 	SourceStepStatus,
+	SourceWithSteps,
+	SourceWithStepsFilter,
 	UpdateSourceInput,
 	UpsertSourceStepInput,
 } from './source.types.js';
@@ -59,6 +61,14 @@ interface SourceStepRow {
 	error_message: string | null;
 }
 
+interface SourceWithStepsRow extends SourceRow {
+	step_name: string | null;
+	step_status: SourceStepStatus | null;
+	step_config_hash: string | null;
+	step_completed_at: Date | null;
+	step_error_message: string | null;
+}
+
 function mapSourceRow(row: SourceRow): Source {
 	return {
 		id: row.id,
@@ -85,6 +95,24 @@ function mapSourceStepRow(row: SourceStepRow): SourceStep {
 		configHash: row.config_hash,
 		completedAt: row.completed_at,
 		errorMessage: row.error_message,
+	};
+}
+
+function mapSourceWithStepsRow(row: SourceWithStepsRow): SourceWithSteps {
+	return {
+		source: mapSourceRow(row),
+		steps: row.step_name
+			? [
+					{
+						sourceId: row.id,
+						stepName: row.step_name,
+						status: row.step_status ?? 'pending',
+						configHash: row.step_config_hash,
+						completedAt: row.step_completed_at,
+						errorMessage: row.step_error_message,
+					},
+				]
+			: [],
 	};
 }
 
@@ -466,7 +494,10 @@ export async function upsertSourceStep(pool: Queryable, input: UpsertSourceStepI
     VALUES ($1, $2, $3, $4, $5, ${completedAt})
     ON CONFLICT (source_id, step_name) DO UPDATE SET
       status = EXCLUDED.status,
-      config_hash = COALESCE(EXCLUDED.config_hash, source_steps.config_hash),
+      config_hash = CASE
+        WHEN EXCLUDED.status = 'completed' THEN COALESCE(EXCLUDED.config_hash, source_steps.config_hash)
+        ELSE EXCLUDED.config_hash
+      END,
       error_message = EXCLUDED.error_message,
       completed_at = CASE WHEN EXCLUDED.status = 'completed' THEN now() ELSE source_steps.completed_at END
     RETURNING *
@@ -501,6 +532,84 @@ export async function findSourceSteps(pool: pg.Pool, sourceId: string): Promise<
 		throw new DatabaseError('Failed to find source steps', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause: error,
 			context: { sourceId },
+		});
+	}
+}
+
+/**
+ * Finds all sources bundled with their source_steps rows for bulk planning.
+ *
+ * Optional filtering keeps the query efficient when a caller only needs
+ * sources that have already reached a given status.
+ */
+export async function findSourcesWithSteps(pool: pg.Pool, filter?: SourceWithStepsFilter): Promise<SourceWithSteps[]> {
+	const conditions: string[] = [];
+	const params: unknown[] = [];
+	let paramIndex = 1;
+
+	if (filter?.minimumStatus) {
+		conditions.push(
+			`array_position(ARRAY['ingested','extracted','segmented','enriched','embedded','graphed','analyzed'], s.status) >= array_position(ARRAY['ingested','extracted','segmented','enriched','embedded','graphed','analyzed'], $${paramIndex})`,
+		);
+		params.push(filter.minimumStatus);
+		paramIndex++;
+	}
+
+	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+	const sql = `
+    SELECT
+      s.id,
+      s.filename,
+      s.storage_path,
+      s.file_hash,
+      s.page_count,
+      s.has_native_text,
+      s.native_text_ratio,
+      s.status,
+      s.reliability_score,
+      s.tags,
+      s.metadata,
+      s.created_at,
+      s.updated_at,
+      ss.step_name,
+      ss.status AS step_status,
+      ss.config_hash AS step_config_hash,
+      ss.completed_at AS step_completed_at,
+      ss.error_message AS step_error_message
+    FROM sources s
+    LEFT JOIN source_steps ss ON ss.source_id = s.id
+    ${whereClause}
+    ORDER BY s.created_at DESC, s.id ASC, ss.step_name ASC
+  `;
+
+	try {
+		const result = await pool.query<SourceWithStepsRow>(sql, params);
+		const grouped = new Map<string, SourceWithSteps>();
+
+		for (const row of result.rows) {
+			const existing = grouped.get(row.id);
+			if (!existing) {
+				grouped.set(row.id, mapSourceWithStepsRow(row));
+				continue;
+			}
+
+			if (row.step_name) {
+				existing.steps.push({
+					sourceId: row.id,
+					stepName: row.step_name,
+					status: row.step_status ?? 'pending',
+					configHash: row.step_config_hash,
+					completedAt: row.step_completed_at,
+					errorMessage: row.step_error_message,
+				});
+			}
+		}
+
+		return [...grouped.values()];
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to find sources with steps', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { minimumStatus: filter?.minimumStatus ?? null },
 		});
 	}
 }

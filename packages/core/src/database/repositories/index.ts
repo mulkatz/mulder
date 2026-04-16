@@ -195,6 +195,7 @@ export {
 	findSourceStep,
 	findSourceSteps,
 	findSourcesWithFailedSteps,
+	findSourcesWithSteps,
 	updateSource,
 	updateSourceStatus,
 	upsertSourceStep,
@@ -207,6 +208,8 @@ export type {
 	SourceStatus,
 	SourceStep,
 	SourceStepStatus,
+	SourceWithSteps,
+	SourceWithStepsFilter,
 	UpdateSourceInput,
 	UpsertSourceStepInput,
 } from './source.types.js';

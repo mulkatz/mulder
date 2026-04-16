@@ -27,6 +27,7 @@ export type {
 	PipelineConfig,
 	ProjectConfig,
 	RelationshipConfig,
+	ReprocessHashStepName,
 	RetrievalConfig,
 	SafetyConfig,
 	StorageConfig,
@@ -39,6 +40,8 @@ export type {
 export {
 	CONFIG_DEFAULTS,
 	ConfigValidationError,
+	computeReprocessConfigHash,
+	getReprocessConfigSubset,
 	loadConfig,
 	mulderConfigSchema,
 } from './config/index.js';
@@ -103,6 +106,8 @@ export type {
 	SourceStatus,
 	SourceStep,
 	SourceStepStatus,
+	SourceWithSteps,
+	SourceWithStepsFilter,
 	SpatialEntityEventPair,
 	SpatioTemporalCluster,
 	SpatioTemporalClusterFilter,
@@ -221,6 +226,7 @@ export {
 	findSourceStep,
 	findSourceSteps,
 	findSourcesWithFailedSteps,
+	findSourcesWithSteps,
 	findSpatialEntityEventPairs,
 	findStoriesByEntityId,
 	findStoriesBySourceId,

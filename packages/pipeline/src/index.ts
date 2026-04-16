@@ -102,7 +102,16 @@ export type {
 	PipelineStepName,
 } from './pipeline/index.js';
 export { execute as executePipelineRun, STEP_ORDER, shouldRun } from './pipeline/index.js';
-export type { PlannedReprocessSource, ReprocessPlan } from './reprocess/index.js';
-export { buildReprocessPlan } from './reprocess/index.js';
+export type {
+	ReprocessInput,
+	ReprocessPlan,
+	ReprocessPlannedStep,
+	ReprocessPlanReason,
+	ReprocessResult,
+	ReprocessRunSummary,
+	ReprocessSourcePlan,
+	ReprocessStepName,
+} from './reprocess/index.js';
+export { executeReprocess, planReprocess } from './reprocess/index.js';
 export type { SegmentationData, SegmentedStory, SegmentInput, SegmentResult } from './segment/index.js';
 export { execute as executeSegment } from './segment/index.js';

@@ -89,6 +89,17 @@ export interface SourceStep {
 	errorMessage: string | null;
 }
 
+/** A source record bundled with its source_steps rows for planning. */
+export interface SourceWithSteps {
+	source: Source;
+	steps: SourceStep[];
+}
+
+/** Filters for source+step bulk planning queries. */
+export interface SourceWithStepsFilter {
+	minimumStatus?: SourceStatus;
+}
+
 /** Input for upserting a source step. */
 export interface UpsertSourceStepInput {
 	sourceId: string;

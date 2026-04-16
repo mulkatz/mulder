@@ -9,6 +9,9 @@
  * @see docs/specs/06_cli_scaffold.spec.md §4.4
  */
 
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { registerAnalyzeCommands } from './commands/analyze.js';
 import { registerCacheCommands } from './commands/cache.js';
@@ -34,6 +37,26 @@ import { registerStatusCommand } from './commands/status.js';
 import { registerTaxonomyCommands } from './commands/taxonomy.js';
 import { registerWorkerCommands } from './commands/worker.js';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function ensureDefaultConfigPath(): void {
+	if (process.env.MULDER_CONFIG) {
+		return;
+	}
+
+	const cwdConfig = resolve(process.cwd(), 'mulder.config.yaml');
+	if (existsSync(cwdConfig)) {
+		return;
+	}
+
+	const exampleConfig = resolve(__dirname, '..', '..', '..', 'mulder.config.example.yaml');
+	if (existsSync(exampleConfig)) {
+		process.env.MULDER_CONFIG = exampleConfig;
+	}
+}
+
+ensureDefaultConfigPath();
+
 const program = new Command()
 	.name('mulder')
 	.description('Config-driven Document Intelligence Platform')
@@ -55,8 +78,8 @@ registerGraphCommands(program);
 registerIngestCommands(program);
 registerPipelineCommands(program);
 registerRetryCommand(program);
-registerQueryCommands(program);
 registerReprocessCommands(program);
+registerQueryCommands(program);
 registerSegmentCommands(program);
 registerShowCommands(program);
 registerStatusCommand(program);
