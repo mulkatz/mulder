@@ -26,9 +26,16 @@ function parseBearerToken(headerValue: string | null): string | undefined {
 
 export function createAuthMiddleware(apiConfig: ApiConfig): MiddlewareHandler {
 	const apiKeys = new Set(apiConfig.auth.api_keys.map((entry) => entry.key));
+	const allowAnonymousPreview = apiKeys.size === 0 && process.env.NODE_ENV !== 'production';
 
 	return async (c, next) => {
 		if (isPublicRequest(c.req.method, c.req.path)) {
+			await next();
+			return;
+		}
+
+		if (allowAnonymousPreview) {
+			c.set(RATE_LIMIT_CLIENT_KEY, 'preview');
 			await next();
 			return;
 		}
