@@ -201,7 +201,28 @@ Move from CLI to HTTP. Job queue, async workers, a full REST API over the pipeli
 
 **Testable:** HTTP API for everything. Workers process jobs asynchronously. Deployable to Cloud Run. First demoable web UI (split-view PDF + derived Markdown) consuming the real API.
 
-**Note on H11 (Document Viewer):** An earlier attempt to ship the viewer as an off-roadmap demoability feature (reverted in commit 90bee3a, issue #127 closed) was deferred here because the clean path requires a real HTTP API to sit on — not a dev-only Vite filesystem plugin that would have bypassed the service abstraction. The viewer is a pure React client in `demo/` that fetches from H10's routes, works identically in dev and prod, and is NOT a separate off-roadmap spec.
+**Note on H11 (Document Viewer):** H11 is the minimum-viable viewer — the roadmap anchor. The full V1 web app — foundations, Case File, Desk, Archive, Ask, Board, Audit, polish — lives under milestone **M7.5** below. H11 closes when M7.5-V1 ships (they deliver the same artifact). An earlier off-roadmap attempt was reverted in commit 90bee3a (issue #127 closed) because the clean path requires a real HTTP API to sit on — not a dev-only Vite filesystem plugin that would have bypassed the service abstraction.
+
+---
+
+## M7.5: "V1 Web App" — Frontend Demo
+
+The browser experience. Parallel to M8; depends on M7 (H10 routes + Spec 77 auth) being green. This is the **fundable demo** — the artifact that communicates what Mulder is to non-engineers.
+
+| Status | Step | What | Spec |
+|--------|------|------|------|
+| 🟡 | V1 | Viewer foundations + Case File (PDF + stories + entities + Hero 1/2) — supersedes H11 | Spec 77, H10 |
+| ⚪ | V2 | Archive + Desk (document list, upload, overview ribbon, "worth following" leads) | H5, H10 |
+| ⚪ | V3 | Ask (search console with citations + retrieval trace) + Command Palette (⌘K) | H7 |
+| ⚪ | V4 | Board (knowledge graph with custom nodes/edges + timeline scrubber) | H7, H8 |
+| ⚪ | V5 | Audit Drawer (contradictions + source reliability + evidence chains) | H9 |
+| ⚪ | V6 | Polish, accessibility pass, hero screenshot, demo GIF, Cloudflare Pages deploy | CLAUDE.md "Open-Source-Projekt Finalisierung" |
+
+**Also read for all M7.5 steps:** [`docs/v1-web-app-design.md`](./v1-web-app-design.md) (UX/UI design doc — hero moments, visual language, screen specs), [`docs/v1-web-app-plan.md`](./v1-web-app-plan.md) (phase-by-phase implementation plan + API contract cheat sheet), [`docs/specs/77_browser_safe_email_password_auth.spec.md`](./specs/77_browser_safe_email_password_auth.spec.md) (browser auth prerequisite).
+
+**Verification guidance for M7.5:** `cd demo && npm run dev` — verify each step visually in a browser before flipping to 🟢. Type-check via `npm run build`. Lint via `npm run lint`. Playwright smoke tests land in V6 as the automated gate. Do not default to the repo-wide `pnpm test` — frontend work has no repository-level test impact.
+
+**Testable:** A browser-based V1 demo worth showing to funders. All five Hero moments land (see design doc §4). Accessibility score ≥ 95 on desktop. Live at `mulder.mulkatz.dev`.
 
 ---
 
@@ -377,6 +398,7 @@ M1 Foundation
                      ├→ M5 Curation
                      ├→ M6 Intelligence (v2.0)
                      ├→ M7 API+Workers
+                     │   └→ M7.5 V1 Web App ← FUNDABLE DEMO POINT
                      ├→ M8 Operations
                      ├→ M9 Multi-Format Ingestion
                      └→ M10 Provenance & Quality ← BEFORE FIRST REAL ARCHIVE INGEST
