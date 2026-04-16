@@ -193,7 +193,7 @@ Move from CLI to HTTP. Job queue, async workers, a full REST API over the pipeli
 | 🟢 | H8 | Entity API routes (sync) | §10.6 |
 | 🟢 | H9 | Evidence API routes (sync) | §10.6 |
 | 🟢 | H10 | Document retrieval routes — list/pdf/markdown sync routes | §10.6 |
-| ⚪ | H11 | Document Viewer UI — Vite+React split-view (PDF + layout.md) | §13 (demo/), consumes H10 |
+| 🟡 | H11 | Document Viewer UI — Vite+React split-view (PDF + layout.md) | §13 (demo/), consumes H10 |
 
 **Also read for all M7 steps:** [`docs/api-architecture.md`](./api-architecture.md) (framework choice, route structure, middleware stack, OpenAPI strategy, key trade-offs), §10 (full job queue section — especially §10.3 transaction discipline), §14 (design decisions — PostgreSQL queue, auto-commit dequeue, per-step job slicing)
 
@@ -211,12 +211,12 @@ Eval framework, cost gates, schema evolution, dead letter recovery. Safe to run 
 
 | Status | Step | What | Spec |
 |--------|------|------|------|
-| ⚪ | I1 | `mulder eval` CLI + reporter | §15, §1 (eval cmd) |
+| 🟢 | I1 | `mulder eval` CLI + reporter | §15, §1 (eval cmd) |
 | ⚪ | I2 | Cost estimator — `--cost-estimate` flag | §16.2, §1 (ingest/pipeline/reprocess cmds) |
 | 🟢 | I3 | Terraform budget alerts | §16.1 |
 | ⚪ | I4 | Schema evolution / reprocessing — `mulder reprocess` | §3.5, §4.3 (source_steps table) |
 | 🟢 | I5 | Dead letter queue — `mulder retry` | §10.5, §1 (retry cmd) |
-| ⚪ | I6 | Devlog system — conventions established | §17 |
+| 🟢 | I6 | Devlog system — conventions established | §17 |
 
 **Also read for all M8 steps:** §16 (full cost safety section)
 

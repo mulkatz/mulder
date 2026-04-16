@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { JobStatusSchema, PipelineRunSourceStatusSchema, PipelineRunStatusSchema } from './jobs.schemas.js';
 
 export const SOURCE_STATUS_VALUES = [
 	'ingested',
@@ -73,6 +74,91 @@ export const DocumentPageParamsSchema = z.object({
 	num: z.coerce.number().int().positive(),
 });
 
+export const DOCUMENT_OBSERVABILITY_STEP_STATUS_VALUES = ['pending', 'completed', 'failed', 'partial'] as const;
+export const DocumentObservabilityStepStatusSchema = z.enum(DOCUMENT_OBSERVABILITY_STEP_STATUS_VALUES);
+
+export const DocumentObservabilityStepSchema = z.object({
+	step: z.string().min(1),
+	status: DocumentObservabilityStepStatusSchema,
+	completed_at: z.string().nullable(),
+	error_message: z.string().nullable(),
+});
+
+export const DocumentObservabilitySourceProjectionSchema = z.object({
+	status: z.string().nullable(),
+	extracted_at: z.string().nullable(),
+	segmented_at: z.string().nullable(),
+	page_count: z.number().int().nullable(),
+	story_count: z.number().int().nullable(),
+	vision_fallback_count: z.number().int().nullable(),
+	vision_fallback_capped: z.boolean().nullable(),
+});
+
+export const DocumentObservabilityStoryProjectionSchema = z.object({
+	status: z.string().nullable(),
+	enriched_at: z.string().nullable(),
+	embedded_at: z.string().nullable(),
+	graphed_at: z.string().nullable(),
+	entities_extracted: z.number().int().nullable(),
+	chunks_created: z.number().int().nullable(),
+});
+
+export const DocumentObservabilityStorySchema = z.object({
+	id: z.string().uuid(),
+	title: z.string().min(1),
+	status: z.string(),
+	page_start: z.number().int().nullable(),
+	page_end: z.number().int().nullable(),
+	projection: DocumentObservabilityStoryProjectionSchema.nullable(),
+});
+
+export const DocumentObservabilityJobSchema = z.object({
+	job_id: z.string().uuid(),
+	status: JobStatusSchema,
+	attempts: z.number().int().nonnegative(),
+	max_attempts: z.number().int().positive(),
+	error_log: z.string().nullable(),
+	created_at: z.string(),
+	started_at: z.string().nullable(),
+	finished_at: z.string().nullable(),
+});
+
+export const DocumentObservabilityProgressSchema = z.object({
+	run_id: z.string().uuid(),
+	run_status: PipelineRunStatusSchema,
+	current_step: z.string().min(1),
+	source_status: PipelineRunSourceStatusSchema,
+	updated_at: z.string(),
+	error_message: z.string().nullable(),
+});
+
+export const DocumentObservabilityTimelineSchema = z.object({
+	scope: z.enum(['job', 'source', 'story']),
+	event: z.string().min(1),
+	status: z.string().min(1),
+	occurred_at: z.string(),
+	step: z.string().nullable(),
+	story_id: z.string().uuid().nullable(),
+	details: z.record(z.string(), z.unknown()),
+});
+
+export const DocumentObservabilityResponseSchema = z.object({
+	data: z.object({
+		source: z.object({
+			id: z.string().uuid(),
+			filename: z.string().min(1),
+			status: SourceStatusSchema,
+			page_count: z.number().int().nullable(),
+			steps: z.array(DocumentObservabilityStepSchema),
+			projection: DocumentObservabilitySourceProjectionSchema.nullable(),
+		}),
+		stories: z.array(DocumentObservabilityStorySchema),
+		job: DocumentObservabilityJobSchema.nullable(),
+		progress: DocumentObservabilityProgressSchema.nullable(),
+		timeline: z.array(DocumentObservabilityTimelineSchema),
+	}),
+});
+
 export const DocumentArtifactSchema = z.object({
 	kind: DocumentArtifactKindSchema,
 	source_id: z.string().uuid(),
@@ -90,3 +176,4 @@ export type DocumentPageItem = z.infer<typeof DocumentPageSchema>;
 export type DocumentArtifact = z.infer<typeof DocumentArtifactSchema>;
 export type DocumentParams = z.infer<typeof DocumentParamsSchema>;
 export type DocumentPageParams = z.infer<typeof DocumentPageParamsSchema>;
+export type DocumentObservabilityResponse = z.infer<typeof DocumentObservabilityResponseSchema>;

@@ -103,6 +103,7 @@ function insertSourceRow(sourceId: string): void {
 }
 
 function insertFailedPipelineStep(sourceId: string, step: string, tag = 'retry-seed'): void {
+	insertSourceRow(sourceId);
 	const runId = randomUUID();
 	db.runSql(
 		[

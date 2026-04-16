@@ -78,7 +78,15 @@ function buildMockServices(): Services {
 	return {
 		storage: {
 			upload: async () => {},
+			createUploadSession: async () => ({
+				url: '/api/uploads/documents/dev-upload?storage_path=raw/test/original.pdf',
+				method: 'PUT',
+				headers: {},
+				transport: 'dev_proxy',
+				expiresAt: null,
+			}),
 			download: async () => Buffer.alloc(0),
+			getMetadata: async () => null,
 			exists: async () => false,
 			list: async () => ({ paths: [] }),
 			delete: async () => {},

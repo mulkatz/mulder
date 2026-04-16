@@ -9,11 +9,12 @@
  * @see docs/functional-spec.md §4.5, §9.1
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { MulderConfig } from '../config/types.js';
 import type { Logger } from './logger.js';
 import type {
+	CreateStorageUploadSessionOptions,
 	DocumentAiResult,
 	DocumentAiService,
 	EmbeddingResult,
@@ -24,7 +25,9 @@ import type {
 	LlmService,
 	Services,
 	StorageListResult,
+	StorageObjectMetadata,
 	StorageService,
+	StorageUploadSession,
 	StructuredGenerateOptions,
 	TextGenerateOptions,
 } from './services.js';
@@ -145,10 +148,38 @@ class DevStorageService implements StorageService {
 		this.logger.debug({ bucketPath }, 'DevStorageService: uploaded');
 	}
 
+	async createUploadSession(
+		bucketPath: string,
+		_options: CreateStorageUploadSessionOptions,
+	): Promise<StorageUploadSession> {
+		this.logger.debug({ bucketPath }, 'DevStorageService: created upload session');
+		return {
+			url: `/api/uploads/documents/dev-upload?storage_path=${encodeURIComponent(bucketPath)}`,
+			method: 'PUT',
+			headers: {},
+			transport: 'dev_proxy',
+			expiresAt: null,
+		};
+	}
+
 	async download(bucketPath: string): Promise<Buffer> {
 		const fullPath = this.resolvePath(bucketPath);
 		this.logger.debug({ bucketPath, fullPath }, 'DevStorageService: downloading');
 		return readFileSync(fullPath);
+	}
+
+	async getMetadata(bucketPath: string): Promise<StorageObjectMetadata | null> {
+		const fullPath = this.resolvePath(bucketPath);
+		if (!existsSync(fullPath)) {
+			this.logger.debug({ bucketPath }, 'DevStorageService: metadata missing');
+			return null;
+		}
+
+		const stats = statSync(fullPath);
+		return {
+			sizeBytes: stats.size,
+			contentType: bucketPath.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
+		};
 	}
 
 	async exists(bucketPath: string): Promise<boolean> {

@@ -8,8 +8,21 @@
  * @see docs/functional-spec.md §10.2, §10.4
  */
 
+import { createHash } from 'node:crypto';
 import type { MulderConfig, Services } from '@mulder/core';
-import { createChildLogger } from '@mulder/core';
+import {
+	createChildLogger,
+	createPipelineRun,
+	createSource,
+	detectNativeText,
+	enqueueJob,
+	extractPdfMetadata,
+	findSourceByHash,
+	findSourceById,
+	INGEST_ERROR_CODES,
+	IngestError,
+	upsertSourceStep,
+} from '@mulder/core';
 import {
 	executeEmbed,
 	executeEnrich,
@@ -188,6 +201,50 @@ function parsePipelineRunPayload(job: WorkerJobEnvelope): {
 	return payload;
 }
 
+function parseDocumentUploadFinalizePayload(job: WorkerJobEnvelope): {
+	sourceId: string;
+	filename: string;
+	storagePath: string;
+	tags?: string[];
+	startPipeline?: boolean;
+} {
+	if (!isRecord(job.payload)) {
+		throw invalidPayload(job, `Job ${job.id} payload must be an object`, { field: 'payload' });
+	}
+
+	const sourceId = readStringField(job, 'sourceId', 'source_id');
+	const filename = readStringField(job, 'filename');
+	const storagePath = readStringField(job, 'storagePath', 'storage_path');
+	if (!sourceId || !filename || !storagePath) {
+		throw invalidPayload(job, 'document_upload_finalize jobs require sourceId, filename, and storagePath', {
+			field: 'payload',
+		});
+	}
+
+	const payload: {
+		sourceId: string;
+		filename: string;
+		storagePath: string;
+		tags?: string[];
+		startPipeline?: boolean;
+	} = {
+		sourceId,
+		filename,
+		storagePath,
+	};
+
+	if (Array.isArray(job.payload.tags)) {
+		payload.tags = job.payload.tags.filter((tag): tag is string => typeof tag === 'string');
+	}
+
+	const startPipeline = asBoolean(job.payload.startPipeline);
+	if (startPipeline !== undefined) {
+		payload.startPipeline = startPipeline;
+	}
+
+	return payload;
+}
+
 function assertStepSucceeded(job: WorkerJobEnvelope, stepName: string, status: string): void {
 	if (status === 'success') {
 		return;
@@ -212,6 +269,197 @@ function assertPipelineRunCompleted(job: WorkerJobEnvelope, status: string): voi
 			context: { jobId: job.id, jobType: job.type, status },
 		},
 	);
+}
+
+const PDF_MAGIC_BYTES = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d]);
+const BROWSER_UPLOAD_PIPELINE_TAG = 'browser-upload';
+
+function hasPdfMagicBytes(buffer: Buffer): boolean {
+	return buffer.length >= PDF_MAGIC_BYTES.length && buffer.subarray(0, PDF_MAGIC_BYTES.length).equals(PDF_MAGIC_BYTES);
+}
+
+function buildPdfMetadataJson(pdfMeta: Awaited<ReturnType<typeof extractPdfMetadata>>): Record<string, unknown> {
+	const pdfMetadataJson: Record<string, unknown> = {};
+	if (pdfMeta.pdfVersion) pdfMetadataJson.pdf_version = pdfMeta.pdfVersion;
+	if (pdfMeta.title) pdfMetadataJson.title = pdfMeta.title;
+	if (pdfMeta.author) pdfMetadataJson.author = pdfMeta.author;
+	if (pdfMeta.creator) pdfMetadataJson.creator = pdfMeta.creator;
+	if (pdfMeta.producer) pdfMetadataJson.producer = pdfMeta.producer;
+	if (pdfMeta.creationDate) pdfMetadataJson.creation_date = pdfMeta.creationDate.toISOString();
+	if (pdfMeta.modificationDate) pdfMetadataJson.modification_date = pdfMeta.modificationDate.toISOString();
+	if (pdfMeta.encrypted !== undefined) pdfMetadataJson.encrypted = pdfMeta.encrypted;
+	return pdfMetadataJson;
+}
+
+async function finalizeUploadedDocument(
+	context: {
+		config: MulderConfig;
+		services: Services;
+		pool: import('pg').Pool;
+		log: ReturnType<typeof createChildLogger>;
+	},
+	payload: ReturnType<typeof parseDocumentUploadFinalizePayload>,
+): Promise<Record<string, unknown>> {
+	const { config, services, pool, log } = context;
+
+	const existingSource = await findSourceById(pool, payload.sourceId);
+	if (existingSource) {
+		return {
+			result_status: 'created',
+			resolved_source_id: existingSource.id,
+		};
+	}
+
+	const metadata = await services.storage.getMetadata(payload.storagePath);
+	if (!metadata) {
+		throw new IngestError(
+			`Uploaded object not found: ${payload.storagePath}`,
+			INGEST_ERROR_CODES.INGEST_FILE_NOT_FOUND,
+			{
+				context: { storagePath: payload.storagePath, sourceId: payload.sourceId },
+			},
+		);
+	}
+
+	const maxSizeBytes = config.ingestion.max_file_size_mb * 1024 * 1024;
+	if (metadata.sizeBytes > maxSizeBytes) {
+		throw new IngestError(
+			`Uploaded file exceeds configured ingest limit: ${payload.filename}`,
+			INGEST_ERROR_CODES.INGEST_FILE_TOO_LARGE,
+			{
+				context: {
+					storagePath: payload.storagePath,
+					sourceId: payload.sourceId,
+					fileSizeBytes: metadata.sizeBytes,
+					maxBytes: maxSizeBytes,
+				},
+			},
+		);
+	}
+
+	const buffer = await services.storage.download(payload.storagePath);
+	if (!hasPdfMagicBytes(buffer)) {
+		throw new IngestError(`Not a valid PDF file: ${payload.filename}`, INGEST_ERROR_CODES.INGEST_NOT_PDF, {
+			context: { storagePath: payload.storagePath, sourceId: payload.sourceId },
+		});
+	}
+
+	const fileHash = createHash('sha256').update(buffer).digest('hex');
+	const duplicateSource = await findSourceByHash(pool, fileHash);
+	if (duplicateSource && duplicateSource.id !== payload.sourceId) {
+		await services.storage.delete(payload.storagePath);
+		return {
+			result_status: 'duplicate',
+			resolved_source_id: duplicateSource.id,
+			duplicate_of_source_id: duplicateSource.id,
+		};
+	}
+
+	const pdfMeta = await extractPdfMetadata(buffer);
+	if (pdfMeta.pageCount > config.ingestion.max_pages) {
+		throw new IngestError(
+			`Uploaded file exceeds configured page limit: ${payload.filename}`,
+			INGEST_ERROR_CODES.INGEST_TOO_MANY_PAGES,
+			{
+				context: {
+					storagePath: payload.storagePath,
+					sourceId: payload.sourceId,
+					pageCount: pdfMeta.pageCount,
+					maxPages: config.ingestion.max_pages,
+				},
+			},
+		);
+	}
+
+	const textResult = await detectNativeText(buffer);
+
+	const client = await pool.connect();
+	try {
+		await client.query('BEGIN');
+
+		const source = await createSource(client, {
+			id: payload.sourceId,
+			filename: payload.filename,
+			storagePath: payload.storagePath,
+			fileHash,
+			pageCount: textResult.pageCount,
+			hasNativeText: textResult.hasNativeText,
+			nativeTextRatio: textResult.nativeTextRatio,
+			tags: payload.tags,
+			metadata: buildPdfMetadataJson(pdfMeta),
+		});
+
+		if (source.id !== payload.sourceId) {
+			await client.query('ROLLBACK');
+			await services.storage.delete(payload.storagePath);
+			return {
+				result_status: 'duplicate',
+				resolved_source_id: source.id,
+				duplicate_of_source_id: source.id,
+			};
+		}
+
+		await upsertSourceStep(client, {
+			sourceId: source.id,
+			stepName: 'ingest',
+			status: 'completed',
+		});
+
+		const completionPayload: Record<string, unknown> = {
+			result_status: 'created',
+			resolved_source_id: source.id,
+		};
+
+		if (payload.startPipeline ?? true) {
+			const run = await createPipelineRun(client, {
+				tag: BROWSER_UPLOAD_PIPELINE_TAG,
+				options: {
+					source_id: source.id,
+					from: 'extract',
+					up_to: null,
+					force: false,
+				},
+			});
+			const pipelineJob = await enqueueJob(client, {
+				type: 'pipeline_run',
+				payload: {
+					sourceId: source.id,
+					runId: run.id,
+					from: 'extract',
+					force: false,
+					tag: BROWSER_UPLOAD_PIPELINE_TAG,
+				},
+				maxAttempts: 3,
+			});
+			completionPayload.pipeline_job_id = pipelineJob.id;
+			completionPayload.pipeline_run_id = run.id;
+		}
+
+		await client.query('COMMIT');
+
+		services.firestore
+			.setDocument('documents', source.id, {
+				filename: payload.filename,
+				uploadedAt: new Date().toISOString(),
+				fileHash,
+				status: 'ingested',
+			})
+			.catch(() => {
+				// Observability projection remains best-effort.
+			});
+
+		log.info({ sourceId: source.id, storagePath: payload.storagePath }, 'Browser upload finalized');
+		return completionPayload;
+	} catch (error) {
+		try {
+			await client.query('ROLLBACK');
+		} catch {
+			// Ignore rollback failures and surface the original error.
+		}
+		throw error;
+	} finally {
+		client.release();
+	}
 }
 
 export const dispatchJob: WorkerDispatchFn = async (job, context) => {
@@ -250,6 +498,10 @@ export const dispatchJob: WorkerDispatchFn = async (job, context) => {
 			const result = await executeGraph(payload, config, services, pool, log);
 			assertStepSucceeded(job, 'graph', result.status);
 			return;
+		}
+		case 'document_upload_finalize': {
+			const payload = parseDocumentUploadFinalizePayload(job);
+			return await finalizeUploadedDocument({ config, services, pool, log }, payload);
 		}
 		case 'pipeline_run': {
 			const payload = parsePipelineRunPayload(job);

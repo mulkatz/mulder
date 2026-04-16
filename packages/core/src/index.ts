@@ -229,6 +229,7 @@ export {
 	markJobDeadLetter,
 	markJobFailed,
 	mergeEntities,
+	mergeJobPayload,
 	persistEntityGroundingResult,
 	reapRunningJobs,
 	replaceSpatioTemporalClustersSnapshot,

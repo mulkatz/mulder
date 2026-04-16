@@ -87,12 +87,28 @@ function buildMockServices(state: StorageState) {
 			upload: async (path: string, content: Buffer | string) => {
 				putStorageObject(state, path, content);
 			},
+			createUploadSession: async (path: string) => ({
+				url: `/api/uploads/documents/dev-upload?storage_path=${encodeURIComponent(path)}`,
+				method: 'PUT',
+				headers: {},
+				transport: 'dev_proxy',
+				expiresAt: null,
+			}),
 			download: async (path: string) => {
 				const value = state.objects.get(path);
 				if (!value) {
 					throw new Error(`Storage object not found: ${path}`);
 				}
 				return value;
+			},
+			getMetadata: async (path: string) => {
+				const value = state.objects.get(path);
+				return value
+					? {
+							sizeBytes: value.byteLength,
+							contentType: path.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
+						}
+					: null;
 			},
 			exists: async (path: string) => state.objects.has(path),
 			list: async (prefix: string) => ({

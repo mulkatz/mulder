@@ -129,6 +129,7 @@ export {
 	markJobCompleted,
 	markJobDeadLetter,
 	markJobFailed,
+	mergeJobPayload,
 	reapRunningJobs,
 	resetDeadLetterJobs,
 } from './job.repository.js';
