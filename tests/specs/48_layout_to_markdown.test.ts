@@ -76,7 +76,7 @@ function runCli(
 }
 
 function cleanTestData(): void {
-	db.runSql('DELETE FROM source_steps; DELETE FROM sources;');
+	db.runSql('DELETE FROM stories; DELETE FROM source_steps; DELETE FROM sources;');
 }
 
 function cleanExtractedStorage(): void {

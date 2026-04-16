@@ -5,6 +5,10 @@ export const BUDGETABLE_PIPELINE_STEP_VALUES = ['extract', 'segment', 'enrich', 
 
 export type BudgetablePipelineStep = (typeof BUDGETABLE_PIPELINE_STEP_VALUES)[number];
 
+export function isBudgetablePipelineStep(value: string): value is BudgetablePipelineStep {
+	return BUDGETABLE_PIPELINE_STEP_VALUES.some((step) => step === value);
+}
+
 export interface BudgetEstimate {
 	totalUsd: number;
 	byStep: Record<BudgetablePipelineStep, number>;
@@ -127,11 +131,11 @@ export function completedStepsFromProgress(
 		return [...plannedSteps];
 	}
 
-	if (!BUDGETABLE_PIPELINE_STEP_VALUES.includes(currentStep as BudgetablePipelineStep)) {
+	if (!isBudgetablePipelineStep(currentStep)) {
 		return [];
 	}
 
-	const currentIndex = plannedSteps.indexOf(currentStep as BudgetablePipelineStep);
+	const currentIndex = plannedSteps.indexOf(currentStep);
 	if (currentIndex === -1) {
 		return [];
 	}

@@ -286,6 +286,7 @@ export {
 	completedStepsFromProgress,
 	estimateBudgetForSourceRun,
 	finalizeBudgetReservation,
+	isBudgetablePipelineStep,
 	secondsUntilNextBudgetMonth,
 } from './shared/budget.js';
 // ── Cache hash ───────────────────────────────────────────────

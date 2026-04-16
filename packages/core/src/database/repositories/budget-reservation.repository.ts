@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { isBudgetablePipelineStep } from '../../shared/budget.js';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
 import type {
@@ -52,14 +53,14 @@ function parseObject(value: Record<string, unknown> | string | null): Record<str
 	return value;
 }
 
-function parseSteps(value: string[] | string): string[] {
+function parseSteps(value: string[] | string): CreateMonthlyBudgetReservationInput['plannedSteps'] {
 	if (Array.isArray(value)) {
-		return value;
+		return value.filter(isBudgetablePipelineStep);
 	}
 
 	try {
 		const parsed: unknown = JSON.parse(value);
-		return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+		return Array.isArray(parsed) ? parsed.filter(isBudgetablePipelineStep) : [];
 	} catch {
 		return [];
 	}
@@ -86,7 +87,7 @@ function mapRow(row: MonthlyBudgetReservationRow): MonthlyBudgetReservation {
 		jobId: row.job_id,
 		retryOfReservationId: row.retry_of_reservation_id,
 		status: row.status,
-		plannedSteps: parseSteps(row.planned_steps) as MonthlyBudgetReservation['plannedSteps'],
+		plannedSteps: parseSteps(row.planned_steps),
 		reservedEstimatedUsd: parseNumeric(row.reserved_estimated_usd),
 		committedUsd: parseNumeric(row.committed_usd),
 		releasedUsd: parseNumeric(row.released_usd),

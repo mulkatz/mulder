@@ -125,7 +125,7 @@ function assertValidStep(step: string | undefined): asserts step is EvalStep | u
 		return;
 	}
 
-	if (!VALID_EVAL_STEPS.includes(step as EvalStep)) {
+	if (!VALID_EVAL_STEPS.some((validStep) => validStep === step)) {
 		throw new MulderEvalError(
 			`Invalid --step "${step}". Valid steps: ${VALID_EVAL_STEPS.join(', ')}`,
 			EVAL_ERROR_CODES.INVALID_ARGUMENT,
@@ -346,9 +346,7 @@ function buildComparison(
 				}
 
 				const currentByType = current.summary.byType;
-				const baselineByType = isPlainObject(baselineSummary.byType)
-					? (baselineSummary.byType as Record<string, unknown>)
-					: null;
+				const baselineByType = isPlainObject(baselineSummary.byType) ? baselineSummary.byType : null;
 
 				for (const [type, metrics] of Object.entries(currentByType)) {
 					const baselineType = baselineByType ? baselineByType[type] : undefined;

@@ -194,11 +194,11 @@ function buildPageArtifact(sourceId: string, pageNumber: number): DocumentArtifa
 	};
 }
 
-function getProjectionField<T>(projection: Record<string, unknown>, ...keys: string[]): T | null {
+function getProjectionField(projection: Record<string, unknown>, ...keys: string[]): unknown {
 	for (const key of keys) {
 		const value = projection[key];
 		if (value !== undefined && value !== null) {
-			return value as T;
+			return value;
 		}
 	}
 
@@ -206,17 +206,17 @@ function getProjectionField<T>(projection: Record<string, unknown>, ...keys: str
 }
 
 function readProjectionString(projection: Record<string, unknown>, ...keys: string[]): string | null {
-	const value = getProjectionField<unknown>(projection, ...keys);
+	const value = getProjectionField(projection, ...keys);
 	return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 function readProjectionNumber(projection: Record<string, unknown>, ...keys: string[]): number | null {
-	const value = getProjectionField<unknown>(projection, ...keys);
+	const value = getProjectionField(projection, ...keys);
 	return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function readProjectionBoolean(projection: Record<string, unknown>, ...keys: string[]): boolean | null {
-	const value = getProjectionField<unknown>(projection, ...keys);
+	const value = getProjectionField(projection, ...keys);
 	return typeof value === 'boolean' ? value : null;
 }
 

@@ -9,6 +9,7 @@ import {
 	findLatestPipelineRunSourceForSource,
 	findSourceById,
 	getWorkerPool,
+	isBudgetablePipelineStep,
 	loadConfig,
 	PIPELINE_ERROR_CODES,
 	PipelineError,
@@ -133,7 +134,7 @@ function derivePlannedSteps(from?: PipelineStep, upTo?: PipelineStep): Budgetabl
 	const fromIndex = from ? PIPELINE_STEP_VALUES.indexOf(from) : 0;
 	const upToIndex = upTo ? PIPELINE_STEP_VALUES.indexOf(upTo) : PIPELINE_STEP_VALUES.length - 1;
 
-	return PIPELINE_STEP_VALUES.slice(fromIndex, upToIndex + 1) as BudgetablePipelineStep[];
+	return PIPELINE_STEP_VALUES.slice(fromIndex, upToIndex + 1).filter(isBudgetablePipelineStep);
 }
 
 async function requireSource(pool: Queryable, sourceId: string): Promise<Source> {
