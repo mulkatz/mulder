@@ -83,7 +83,7 @@ const STEP_IMPACT: Record<ReprocessStepName, readonly ReprocessStepName[]> = {
 	embed: ['embed', 'graph'],
 	graph: ['graph'],
 };
-const TRACKED_STEP_SET = new Set<ReprocessStepName>(STEP_ORDER);
+const TRACKED_STEP_SET: ReadonlySet<string> = new Set(STEP_ORDER);
 
 interface SourceStepRecord {
 	stepName: string;
@@ -101,7 +101,7 @@ function sourceStatusIndex(status: SourceStatus): number {
 }
 
 function isTrackedStep(stepName: string): stepName is ReprocessStepName {
-	return TRACKED_STEP_SET.has(stepName as ReprocessStepName);
+	return TRACKED_STEP_SET.has(stepName);
 }
 
 function findStoredHash(steps: SourceStepRecord[], stepName: ReprocessStepName): string | null {

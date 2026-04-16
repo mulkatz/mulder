@@ -6,10 +6,18 @@
  * result for terminal use.
  */
 
-import { closeAllPools, createLogger, createServiceRegistry, getWorkerPool, loadConfig } from '@mulder/core';
+import {
+	closeAllPools,
+	createLogger,
+	createServiceRegistry,
+	findAllSources,
+	getWorkerPool,
+	loadConfig,
+} from '@mulder/core';
 import type { ReprocessResult, ReprocessStepName } from '@mulder/pipeline';
 import { executeReprocess } from '@mulder/pipeline';
 import type { Command } from 'commander';
+import { collectDbSourceProfiles, estimateForReprocessPlan, printCostEstimate } from '../lib/cost-estimate.js';
 import { withErrorHandler } from '../lib/errors.js';
 import { printError, printJson, printSuccess } from '../lib/output.js';
 
@@ -22,7 +30,12 @@ interface ReprocessOptions {
 const VALID_STEPS: readonly ReprocessStepName[] = ['extract', 'segment', 'enrich', 'embed', 'graph'] as const;
 
 function isReprocessStep(value: string): value is ReprocessStepName {
-	return VALID_STEPS.includes(value as ReprocessStepName);
+	for (const step of VALID_STEPS) {
+		if (step === value) {
+			return true;
+		}
+	}
+	return false;
 }
 
 function summarizeResult(result: ReprocessResult): string {
@@ -32,6 +45,24 @@ function summarizeResult(result: ReprocessResult): string {
 			? 'analysis not run'
 			: `analysis ${result.summary.globalAnalyzeStatus}`;
 	return `${result.summary.completedSources} completed, ${result.summary.failedSources} failed, ${result.summary.skippedSources} skipped, ${globalAnalyze}, run ${runId} (${result.metadata.duration_ms}ms)`;
+}
+
+function printReprocessPlan(result: ReprocessResult): void {
+	if (result.plan.plannedSourceCount === 0 && !result.plan.globalAnalyzePlanned) {
+		process.stdout.write('No sources require reprocessing.\n');
+		return;
+	}
+
+	process.stdout.write('Reprocess plan:\n');
+	for (const source of result.plan.sources) {
+		if (!source.planned) {
+			continue;
+		}
+		process.stdout.write(`- ${source.filename}: ${source.steps.map((step) => step.stepName).join(' -> ')}\n`);
+	}
+	if (result.plan.globalAnalyzePlanned) {
+		process.stdout.write('- [global]: analyze\n');
+	}
 }
 
 export function registerReprocessCommands(program: Command): void {
@@ -92,19 +123,25 @@ Examples:
 						logger,
 					);
 
-					if (options.dryRun || options.costEstimate) {
+					if (options.costEstimate) {
+						const sources = await findAllSources(pool);
+						const estimate = estimateForReprocessPlan({
+							sourceProfiles: collectDbSourceProfiles(sources),
+							plannedSources: result.plan.sources
+								.filter((source) => source.planned)
+								.map((source) => ({ sourceId: source.sourceId, steps: source.steps })),
+							groundingEnabled: false,
+						});
+						printCostEstimate('Cost estimate for reprocess plan', estimate);
+						printReprocessPlan(result);
+						return;
+					}
+
+					if (options.dryRun) {
 						printJson(result);
-						if (result.plan.plannedSourceCount === 0 && !result.plan.globalAnalyzePlanned) {
-							printSuccess('No sources require reprocessing');
-						} else if (options.costEstimate) {
-							printSuccess(
-								`Cost estimate placeholder: ${result.plan.plannedSourceCount} sources, ${result.plan.plannedStepCount} steps${result.plan.globalAnalyzePlanned ? ', plus global analyze' : ''}`,
-							);
-						} else {
-							printSuccess(
-								`Dry run complete: ${result.plan.plannedSourceCount} sources, ${result.plan.plannedStepCount} steps${result.plan.globalAnalyzePlanned ? ', plus global analyze' : ''}`,
-							);
-						}
+						printSuccess(
+							`Dry run complete: ${result.plan.plannedSourceCount} sources, ${result.plan.plannedStepCount} steps${result.plan.globalAnalyzePlanned ? ', plus global analyze' : ''}`,
+						);
 						return;
 					}
 

@@ -14,6 +14,13 @@ import {
 } from '@mulder/core';
 import type { PipelineStepName } from '@mulder/pipeline';
 
+interface ReprocessEstimateSourcePlan {
+	sourceId: string;
+	steps: readonly { stepName: ReprocessableStep }[];
+}
+
+const ESTIMATE_STEP_ORDER: readonly EstimatedStep[] = ['extract', 'segment', 'enrich', 'ground', 'embed', 'graph'];
+
 export async function resolvePdfFiles(inputPath: string): Promise<string[]> {
 	const resolved = resolve(inputPath);
 	const stats = await stat(resolved).catch(() => null);
@@ -132,6 +139,70 @@ export function estimateForSteps(args: {
 		plannedSteps: args.steps,
 		groundingEnabled: args.groundingEnabled,
 	});
+}
+
+export function estimateForReprocessPlan(args: {
+	sourceProfiles: EstimatedSourceProfile[];
+	plannedSources: readonly ReprocessEstimateSourcePlan[];
+	groundingEnabled: boolean;
+}): CostEstimate {
+	const profilesById = new Map<string, EstimatedSourceProfile>();
+	for (const profile of args.sourceProfiles) {
+		if (profile.sourceId) {
+			profilesById.set(profile.sourceId, profile);
+		}
+	}
+
+	const stepTotals = new Map<EstimatedStep, number>();
+	const stepSourceCounts = new Map<EstimatedStep, number>();
+	const warnings = new Set<string>();
+	let sourceCount = 0;
+	let totalPages = 0;
+	let estimatedUsd = 0;
+
+	for (const plannedSource of args.plannedSources) {
+		const profile = profilesById.get(plannedSource.sourceId);
+		if (!profile) {
+			warnings.add(`Skipped a planned source without stored profile metadata: ${plannedSource.sourceId}`);
+			continue;
+		}
+
+		sourceCount++;
+		totalPages += profile.pageCount;
+		const estimate = estimateForSteps({
+			mode: 'reprocess',
+			sourceProfiles: [profile],
+			steps: mapReprocessStepsToEstimateSteps(plannedSource.steps.map((step) => step.stepName)),
+			groundingEnabled: args.groundingEnabled,
+		});
+
+		estimatedUsd += estimate.estimatedUsd;
+		for (const warning of estimate.warnings) {
+			if (warning !== 'No eligible sources found for estimation.') {
+				warnings.add(warning);
+			}
+		}
+		for (const step of estimate.steps) {
+			stepTotals.set(step.step, (stepTotals.get(step.step) ?? 0) + step.estimatedUsd);
+			stepSourceCounts.set(step.step, (stepSourceCounts.get(step.step) ?? 0) + 1);
+		}
+	}
+
+	if (sourceCount === 0) {
+		warnings.add('No eligible sources found for estimation.');
+	}
+
+	return {
+		sourceCount,
+		totalPages,
+		estimatedUsd: Math.round(estimatedUsd * 10000) / 10000,
+		steps: ESTIMATE_STEP_ORDER.filter((step) => stepTotals.has(step)).map((step) => ({
+			step,
+			estimatedUsd: Math.round((stepTotals.get(step) ?? 0) * 10000) / 10000,
+			basis: `planned across ${stepSourceCounts.get(step) ?? 0} source(s)`,
+		})),
+		warnings: [...warnings],
+	};
 }
 
 export function mapPipelineStepsToEstimateSteps(plannedSteps: readonly PipelineStepName[]): EstimatedStep[] {
