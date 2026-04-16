@@ -12,6 +12,14 @@
 import { closeAllPools, createLogger, createServiceRegistry, getWorkerPool, loadConfig } from '@mulder/core';
 import { executeIngest } from '@mulder/pipeline';
 import type { Command } from 'commander';
+import {
+	collectPdfSourceProfiles,
+	estimateForSteps,
+	printCostEstimate,
+	promptYesNo,
+	requiresConfirmation,
+	shouldShowEstimate,
+} from '../lib/cost-estimate.js';
 import { withErrorHandler } from '../lib/errors.js';
 import { printError, printSuccess } from '../lib/output.js';
 
@@ -29,7 +37,7 @@ interface IngestOptions {
  * mulder ingest <path>
  *   --dry-run         Validate without uploading
  *   --tag <tag>       Tag ingested sources (repeatable)
- *   --cost-estimate   Planned for M8-I2; currently prints a placeholder message
+ *   --cost-estimate   Show an estimated downstream pipeline cost before executing
  * ```
  */
 export function registerIngestCommands(program: Command): void {
@@ -39,7 +47,7 @@ export function registerIngestCommands(program: Command): void {
 		.argument('<path>', 'path to a PDF file or directory containing PDFs')
 		.option('--dry-run', 'validate without uploading or creating DB records')
 		.option('--tag <tag>', 'tag ingested sources (repeatable)', collect, [])
-		.option('--cost-estimate', 'planned for M8-I2; currently prints a placeholder message')
+		.option('--cost-estimate', 'show an estimated downstream pipeline cost before executing')
 		.addHelpText(
 			'after',
 			`
@@ -50,12 +58,46 @@ Examples:
 		)
 		.action(
 			withErrorHandler(async (inputPath: string, options: IngestOptions) => {
-				if (options.costEstimate) {
-					process.stderr.write('Cost estimation is planned for M8-I2 and is not implemented yet.\n');
+				const config = loadConfig();
+				const sourceProfiles = await collectPdfSourceProfiles(inputPath);
+				const estimate = estimateForSteps({
+					mode: 'ingest',
+					sourceProfiles,
+					steps: ['extract', 'segment', 'enrich', 'embed'],
+					groundingEnabled: false,
+				});
+				const showEstimate = shouldShowEstimate({
+					explicit: options.costEstimate ?? false,
+					estimate,
+					maxPagesWithoutConfirm: config.safety.max_pages_without_confirm,
+					maxCostWithoutConfirmUsd: config.safety.max_cost_without_confirm_usd,
+				});
+
+				if (showEstimate) {
+					printCostEstimate('Cost estimate for ingest-triggered pipeline', estimate);
+				}
+
+				if (options.dryRun && showEstimate) {
 					return;
 				}
 
-				const config = loadConfig();
+				if (
+					requiresConfirmation({
+						explicit: options.costEstimate ?? false,
+						dryRun: options.dryRun ?? false,
+						estimate,
+						maxPagesWithoutConfirm: config.safety.max_pages_without_confirm,
+						maxCostWithoutConfirmUsd: config.safety.max_cost_without_confirm_usd,
+					})
+				) {
+					const confirmed = await promptYesNo('Proceed? [y/N]');
+					if (!confirmed) {
+						printError('Operation cancelled');
+						process.exit(1);
+						return;
+					}
+				}
+
 				const logger = createLogger();
 				const services = createServiceRegistry(config, logger);
 

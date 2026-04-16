@@ -292,6 +292,21 @@ export {
 // ── Cache hash ───────────────────────────────────────────────
 export type { CacheKeyParams } from './shared/cache-hash.js';
 export { computeCacheKey } from './shared/cache-hash.js';
+export type { ReprocessableStep } from './shared/config-fingerprint.js';
+export {
+	getAllStepConfigHashes,
+	getForcedReprocessSteps,
+	getReprocessPlanForHashes,
+	getStepConfigHash,
+} from './shared/config-fingerprint.js';
+export type {
+	CostEstimate,
+	CostEstimateInput,
+	CostEstimateStepLine,
+	EstimatedSourceProfile,
+	EstimatedStep,
+} from './shared/cost-estimator.js';
+export { estimatePipelineCost } from './shared/cost-estimator.js';
 export type {
 	AnalyzeErrorCode,
 	ConfigErrorCode,

@@ -20,6 +20,7 @@ import {
 	ENRICH_ERROR_CODES,
 	EnrichError,
 	findStoryById,
+	getStepConfigHash,
 	linkStoryEntity,
 	renderPrompt,
 	resetPipelineStep,
@@ -222,6 +223,7 @@ export async function execute(
 ): Promise<EnrichResult> {
 	const log = createChildLogger(logger, { step: STEP_NAME, storyId: input.storyId });
 	const startTime = performance.now();
+	const stepConfigHash = getStepConfigHash(config, STEP_NAME);
 
 	log.info({ force: input.force ?? false }, 'Enrich step started');
 
@@ -362,6 +364,7 @@ export async function execute(
 			sourceId: story.sourceId,
 			stepName: STEP_NAME,
 			status: 'failed',
+			configHash: stepConfigHash,
 		});
 
 		return {
@@ -535,12 +538,14 @@ export async function execute(
 			sourceId: story.sourceId,
 			stepName: STEP_NAME,
 			status: 'completed',
+			configHash: stepConfigHash,
 		});
 	} else {
 		await upsertSourceStep(pool, {
 			sourceId: story.sourceId,
 			stepName: STEP_NAME,
 			status: 'failed',
+			configHash: stepConfigHash,
 		});
 	}
 

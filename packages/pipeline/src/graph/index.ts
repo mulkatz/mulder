@@ -18,6 +18,7 @@ import {
 	findStoryById,
 	GRAPH_ERROR_CODES,
 	GraphError,
+	getStepConfigHash,
 	resetPipelineStep,
 	updateStoryStatus,
 	upsertEdge,
@@ -98,6 +99,7 @@ export async function execute(
 ): Promise<GraphResult> {
 	const log = createChildLogger(logger, { step: STEP_NAME, storyId: input.storyId });
 	const startTime = performance.now();
+	const stepConfigHash = getStepConfigHash(config, STEP_NAME);
 
 	log.info({ force: input.force ?? false }, 'Graph step started');
 
@@ -346,12 +348,14 @@ export async function execute(
 			sourceId: story.sourceId,
 			stepName: STEP_NAME,
 			status: 'completed',
+			configHash: stepConfigHash,
 		});
 	} else {
 		await upsertSourceStep(pool, {
 			sourceId: story.sourceId,
 			stepName: STEP_NAME,
 			status: 'failed',
+			configHash: stepConfigHash,
 		});
 	}
 

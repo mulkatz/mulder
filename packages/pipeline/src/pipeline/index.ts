@@ -42,7 +42,7 @@ import { execute as executeEmbed } from '../embed/index.js';
 import { execute as executeEnrich } from '../enrich/index.js';
 import { execute as executeExtract } from '../extract/index.js';
 import { execute as executeGraph } from '../graph/index.js';
-import { execute as executeIngest } from '../ingest/index.js';
+import { execute as executeIngest, resolvePdfFiles } from '../ingest/index.js';
 import { execute as executeSegment } from '../segment/index.js';
 import type {
 	PipelineGlobalAnalysisOutcome,
@@ -610,6 +610,8 @@ export async function execute(
 		let dryRunSourceCount = 0;
 		if (options.sourceIds && options.sourceIds.length > 0) {
 			dryRunSourceCount = options.sourceIds.length;
+		} else if (input.path && plannedSteps.includes('ingest')) {
+			dryRunSourceCount = (await resolvePdfFiles(input.path)).length;
 		} else if (pool && !plannedSteps.includes('ingest')) {
 			// Resume path: estimate by listing.
 			const firstStep = plannedSteps[0];

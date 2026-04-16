@@ -47,7 +47,7 @@ const STEP_NAME = 'ingest';
  * If the path is a directory, recursively finds all `.pdf` files.
  * If the path is a single file, returns it as-is.
  */
-async function resolvePdfFiles(inputPath: string): Promise<string[]> {
+export async function resolvePdfFiles(inputPath: string): Promise<string[]> {
 	const resolved = resolve(inputPath);
 	const stats = await stat(resolved).catch(() => null);
 

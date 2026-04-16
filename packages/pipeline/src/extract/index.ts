@@ -19,6 +19,7 @@ import {
 	EXTRACT_ERROR_CODES,
 	ExtractError,
 	findSourceById,
+	getStepConfigHash,
 	renderPrompt,
 	resetPipelineStep,
 	updateSourceStatus,
@@ -440,6 +441,7 @@ export async function execute(
 ): Promise<ExtractResult> {
 	const log = createChildLogger(logger, { step: STEP_NAME, sourceId: input.sourceId });
 	const startTime = performance.now();
+	const stepConfigHash = getStepConfigHash(config, STEP_NAME);
 
 	log.info({ force: input.force ?? false, fallbackOnly: input.fallbackOnly ?? false }, 'Extract step started');
 
@@ -697,6 +699,7 @@ export async function execute(
 			sourceId: input.sourceId,
 			stepName: STEP_NAME,
 			status: 'completed',
+			configHash: stepConfigHash,
 		});
 	}
 

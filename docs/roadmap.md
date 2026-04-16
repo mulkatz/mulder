@@ -212,7 +212,7 @@ Eval framework, cost gates, schema evolution, dead letter recovery. Safe to run 
 | Status | Step | What | Spec |
 |--------|------|------|------|
 | 🟢 | I1 | `mulder eval` CLI + reporter | §15, §1 (eval cmd) |
-| ⚪ | I2 | Cost estimator — `--cost-estimate` flag | §16.2, §1 (ingest/pipeline/reprocess cmds) |
+| 🟡 | I2 | Cost estimator — `--cost-estimate` flag | §16.2, §1 (ingest/pipeline/reprocess cmds) |
 | 🟢 | I3 | Terraform budget alerts | §16.1 |
 | ⚪ | I4 | Schema evolution / reprocessing — `mulder reprocess` | §3.5, §4.3 (source_steps table) |
 | 🟢 | I5 | Dead letter queue — `mulder retry` | §10.5, §1 (retry cmd) |
