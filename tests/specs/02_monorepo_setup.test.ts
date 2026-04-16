@@ -52,6 +52,7 @@ describe('Spec 02: Monorepo Setup', () => {
 		'packages/evidence': ['@mulder/pipeline'],
 		'apps/cli': [
 			'@mulder/core',
+			'@mulder/eval',
 			'@mulder/pipeline',
 			'@mulder/retrieval',
 			'@mulder/taxonomy',

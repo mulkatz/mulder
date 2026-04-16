@@ -18,6 +18,15 @@ const apiDefaults: ApiConfig = {
 	explorer: {
 		enabled: true,
 	},
+	budget: {
+		enabled: true,
+		monthly_limit_usd: 50,
+		extract_per_page_usd: 0.006,
+		segment_per_page_usd: 0.002,
+		enrich_per_source_usd: 0.015,
+		embed_per_source_usd: 0.004,
+		graph_per_source_usd: 0.001,
+	},
 };
 
 export const CONFIG_DEFAULTS = {

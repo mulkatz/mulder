@@ -6,6 +6,7 @@
 import type { z } from 'zod';
 import type {
 	analysisSchema,
+	apiBudgetSchema,
 	apiSchema,
 	cloudSqlSchema,
 	deduplicationSchema,
@@ -41,6 +42,7 @@ export type ApiAuthKeyConfig = ApiConfig['auth']['api_keys'][number];
 export type ApiAuthConfig = ApiConfig['auth'];
 export type ApiRateLimitingConfig = ApiConfig['rate_limiting'];
 export type ApiExplorerConfig = ApiConfig['explorer'];
+export type ApiBudgetConfig = z.infer<typeof apiBudgetSchema>;
 export type GcpConfig = z.infer<typeof gcpSchema>;
 export type CloudSqlConfig = z.infer<typeof cloudSqlSchema>;
 export type StorageConfig = z.infer<typeof storageSchema>;

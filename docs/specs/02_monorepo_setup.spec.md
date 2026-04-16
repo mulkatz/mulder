@@ -178,7 +178,7 @@ Each package follows the same pattern:
 | `packages/taxonomy` | `@mulder/taxonomy` | `@mulder/core` |
 | `packages/worker` | `@mulder/worker` | `@mulder/core`, `@mulder/pipeline` |
 | `packages/evidence` | `@mulder/evidence` | `@mulder/pipeline` |
-| `apps/cli` | `@mulder/cli` | `@mulder/core`, `@mulder/pipeline`, `@mulder/retrieval`, `@mulder/taxonomy` |
+| `apps/cli` | `@mulder/cli` | `@mulder/core`, `@mulder/eval`, `@mulder/pipeline`, `@mulder/retrieval`, `@mulder/taxonomy`, `@mulder/worker` |
 | `apps/api` | `@mulder/api` | `@mulder/core`, `@mulder/retrieval`, `@mulder/taxonomy`, `@mulder/evidence`, `@mulder/worker` |
 
 Per §13 package dependency graph.

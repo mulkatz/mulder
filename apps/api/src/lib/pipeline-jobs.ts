@@ -1,14 +1,21 @@
-import type { Job, PipelineRun, PipelineRunSource, Source } from '@mulder/core';
+import type { BudgetablePipelineStep, Job, MulderConfig, PipelineRun, PipelineRunSource, Source } from '@mulder/core';
 import {
+	budgetMonthStart,
+	createMonthlyBudgetReservation,
 	createPipelineRun,
 	enqueueJob,
+	estimateBudgetForSourceRun,
+	findLatestMonthlyBudgetReservationForSource,
 	findLatestPipelineRunSourceForSource,
 	findSourceById,
 	getWorkerPool,
+	isBudgetablePipelineStep,
 	loadConfig,
 	PIPELINE_ERROR_CODES,
 	PipelineError,
 	type PipelineStep,
+	secondsUntilNextBudgetMonth,
+	summarizeMonthlyBudgetReservations,
 } from '@mulder/core';
 import type { Pool, PoolClient } from 'pg';
 import type { PipelineRetryRequest, PipelineRunRequest } from '../routes/pipeline.schemas.js';
@@ -26,6 +33,7 @@ type PipelineJobPayload = {
 };
 
 interface PipelineJobContext {
+	config: MulderConfig;
 	pool: Pool;
 }
 
@@ -57,6 +65,7 @@ function resolveContext(): PipelineJobContext {
 	}
 
 	return {
+		config,
 		pool: getWorkerPool(config.gcp.cloud_sql),
 	};
 }
@@ -119,6 +128,13 @@ function buildRunOptions(input: {
 				up_to: input.upTo ?? null,
 				force: input.force,
 			};
+}
+
+function derivePlannedSteps(from?: PipelineStep, upTo?: PipelineStep): BudgetablePipelineStep[] {
+	const fromIndex = from ? PIPELINE_STEP_VALUES.indexOf(from) : 0;
+	const upToIndex = upTo ? PIPELINE_STEP_VALUES.indexOf(upTo) : PIPELINE_STEP_VALUES.length - 1;
+
+	return PIPELINE_STEP_VALUES.slice(fromIndex, upToIndex + 1).filter(isBudgetablePipelineStep);
 }
 
 async function requireSource(pool: Queryable, sourceId: string): Promise<Source> {
@@ -193,6 +209,76 @@ async function assertNoInFlightPipelineJob(pool: Queryable, sourceId: string): P
 	}
 }
 
+async function lockBudgetMonth(pool: Queryable, budgetMonth: string): Promise<void> {
+	await pool.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`monthly-budget:${budgetMonth}`]);
+}
+
+async function reserveBudgetForAcceptedRun(
+	pool: Queryable,
+	context: PipelineJobContext,
+	input: {
+		source: Source;
+		run: PipelineRun;
+		job: Job;
+		plannedSteps: BudgetablePipelineStep[];
+		force: boolean;
+		kind: 'run' | 'retry';
+		retryOfReservationId?: string | null;
+	},
+): Promise<void> {
+	if (!context.config.api.budget.enabled) {
+		return;
+	}
+
+	const budgetMonth = budgetMonthStart(new Date());
+	await lockBudgetMonth(pool, budgetMonth);
+
+	const estimate = estimateBudgetForSourceRun({
+		source: input.source,
+		plannedSteps: input.plannedSteps,
+		budget: context.config.api.budget,
+		extraction: context.config.extraction,
+		force: input.force,
+	});
+	const summary = await summarizeMonthlyBudgetReservations(pool, budgetMonth);
+	const neededUsd = estimate.totalUsd;
+	const usedUsd = summary.reservedUsd + summary.committedUsd;
+	const nextUsedUsd = Number((usedUsd + neededUsd).toFixed(4));
+
+	if (nextUsedUsd > context.config.api.budget.monthly_limit_usd) {
+		throw new PipelineError(
+			`Monthly API budget exceeded for ${budgetMonth}`,
+			PIPELINE_ERROR_CODES.PIPELINE_BUDGET_EXCEEDED,
+			{
+				context: {
+					budget_month: budgetMonth,
+					limit_usd: context.config.api.budget.monthly_limit_usd,
+					reserved_usd: summary.reservedUsd,
+					committed_usd: summary.committedUsd,
+					remaining_usd: Number((context.config.api.budget.monthly_limit_usd - usedUsd).toFixed(4)),
+					needed_usd: neededUsd,
+					retry_after_seconds: secondsUntilNextBudgetMonth(new Date()),
+				},
+			},
+		);
+	}
+
+	await createMonthlyBudgetReservation(pool, {
+		budgetMonth,
+		sourceId: input.source.id,
+		runId: input.run.id,
+		jobId: input.job.id,
+		retryOfReservationId: input.retryOfReservationId ?? null,
+		plannedSteps: input.plannedSteps,
+		reservedEstimatedUsd: neededUsd,
+		metadata: {
+			kind: input.kind,
+			force: input.force,
+			breakdown: estimate.byStep,
+		},
+	});
+}
+
 async function enqueuePipelineJob(
 	pool: Queryable,
 	input: {
@@ -212,9 +298,10 @@ async function enqueuePipelineJob(
 }
 
 export async function createPipelineRunJob(input: PipelineRunRequest): Promise<PipelineRunAcceptance> {
-	const { pool } = resolveContext();
-	return await runInTransaction(pool, async (client) => {
+	const context = resolveContext();
+	return await runInTransaction(context.pool, async (client) => {
 		const source = await requireSource(client, input.source_id);
+		await assertNoInFlightPipelineJob(client, source.id);
 		const run = await createPipelineRun(client, {
 			tag: input.tag ?? null,
 			options: buildRunOptions({
@@ -232,18 +319,27 @@ export async function createPipelineRunJob(input: PipelineRunRequest): Promise<P
 			tag: input.tag,
 			force: input.force ?? false,
 		});
+		await reserveBudgetForAcceptedRun(client, context, {
+			source,
+			run,
+			job,
+			plannedSteps: derivePlannedSteps(input.from, input.up_to),
+			force: input.force ?? false,
+			kind: 'run',
+		});
 
 		return { run, job };
 	});
 }
 
 export async function createPipelineRetryJob(input: PipelineRetryRequest): Promise<PipelineRunAcceptance> {
-	const { pool } = resolveContext();
-	return await runInTransaction(pool, async (client) => {
+	const context = resolveContext();
+	return await runInTransaction(context.pool, async (client) => {
 		const source = await requireSource(client, input.source_id);
 		await assertNoInFlightPipelineJob(client, source.id);
 		const latest = await findLatestPipelineRunSourceForSource(client, source.id);
 		const step = deriveRetryStep(assertRetryableSource(source, latest), input.step);
+		const previousReservation = await findLatestMonthlyBudgetReservationForSource(client, source.id);
 		const run = await createPipelineRun(client, {
 			tag: input.tag ?? null,
 			options: buildRunOptions({
@@ -260,6 +356,15 @@ export async function createPipelineRetryJob(input: PipelineRetryRequest): Promi
 			upTo: step,
 			tag: input.tag,
 			force: true,
+		});
+		await reserveBudgetForAcceptedRun(client, context, {
+			source,
+			run,
+			job,
+			plannedSteps: [step],
+			force: true,
+			kind: 'retry',
+			retryOfReservationId: previousReservation?.id ?? null,
 		});
 
 		return { run, job };

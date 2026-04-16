@@ -76,7 +76,16 @@ function runCli(
 }
 
 function cleanTestData(): void {
-	db.runSql('DELETE FROM source_steps; DELETE FROM sources;');
+	db.runSql(
+		[
+			'DELETE FROM jobs',
+			'DELETE FROM pipeline_run_sources',
+			'DELETE FROM pipeline_runs',
+			'DELETE FROM stories',
+			'DELETE FROM source_steps',
+			'DELETE FROM sources',
+		].join('; '),
+	);
 }
 
 function cleanExtractedStorage(): void {

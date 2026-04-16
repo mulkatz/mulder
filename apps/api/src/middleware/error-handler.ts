@@ -27,6 +27,10 @@ export function mapErrorToStatus(error: MulderError): ApiErrorStatus {
 		return 429;
 	}
 
+	if (code.includes('BUDGET_EXCEEDED')) {
+		return 429;
+	}
+
 	if (code.includes('UNAUTHORIZED') || code.startsWith('AUTH_')) {
 		return 401;
 	}

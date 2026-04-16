@@ -12,10 +12,16 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Job, Logger, MulderConfig, Services } from '@mulder/core';
 import {
+	completedStepsFromProgress,
 	countJobs,
 	createChildLogger,
 	dequeueJob,
+	finalizeBudgetReservation,
+	finalizeMonthlyBudgetReservation,
 	findJobs,
+	findMonthlyBudgetReservationByRunId,
+	findPipelineRunSourcesByRunId,
+	findSourceById,
 	markJobCompleted,
 	markJobFailed,
 	reapRunningJobs,
@@ -285,6 +291,63 @@ function getWorkerDispatchContext(base: WorkerRuntimeContext, workerId: string):
 	};
 }
 
+async function reconcileBudgetReservationAfterJobFailure(
+	context: WorkerRuntimeContext,
+	job: WorkerJobEnvelope | null,
+): Promise<void> {
+	if (job?.type !== 'pipeline_run') {
+		return;
+	}
+
+	const runId = 'runId' in job.payload && typeof job.payload.runId === 'string' ? job.payload.runId : undefined;
+	if (!runId) {
+		return;
+	}
+
+	const reservation = await findMonthlyBudgetReservationByRunId(context.pool, runId);
+	if (!reservation) {
+		return;
+	}
+
+	const source = await findSourceById(context.pool, reservation.sourceId);
+	if (!source) {
+		await finalizeMonthlyBudgetReservation(context.pool, {
+			runId,
+			status: 'released',
+			committedUsd: 0,
+			releasedUsd: reservation.reservedEstimatedUsd,
+			metadata: { reason: 'source_missing_after_job_failure' },
+		});
+		return;
+	}
+
+	const progressRows = await findPipelineRunSourcesByRunId(context.pool, runId);
+	const progress = progressRows.find((row) => row.sourceId === reservation.sourceId);
+	const completedSteps = progress
+		? completedStepsFromProgress(reservation.plannedSteps, progress.currentStep, progress.status)
+		: [];
+	const finalization = finalizeBudgetReservation({
+		source,
+		plannedSteps: reservation.plannedSteps,
+		completedSteps,
+		budget: context.config.api.budget,
+		extraction: context.config.extraction,
+		force: reservation.metadata.force === true,
+	});
+
+	await finalizeMonthlyBudgetReservation(context.pool, {
+		runId,
+		status: finalization.status,
+		committedUsd: finalization.committedUsd,
+		releasedUsd: finalization.releasedUsd,
+		metadata: {
+			progress_status: progress?.status ?? null,
+			current_step: progress?.currentStep ?? null,
+			reason: 'worker_job_failed',
+		},
+	});
+}
+
 async function waitForPollInterval(ms: number, signal?: AbortSignal): Promise<boolean> {
 	try {
 		await delay(ms, undefined, signal ? { signal } : undefined);
@@ -330,6 +393,7 @@ export async function processNextJob(context: WorkerRuntimeContext, workerId: st
 			jobLog.error({ err: markError, originalErr: error }, 'Job failure could not be persisted');
 			throw error;
 		}
+		await reconcileBudgetReservationAfterJobFailure(context, typedJob).catch(() => undefined);
 		jobLog.warn({ status: updated.status, err: error }, 'Job failed');
 		return {
 			state: updated.status === 'dead_letter' ? 'dead_letter' : 'failed',

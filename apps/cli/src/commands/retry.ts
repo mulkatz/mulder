@@ -10,7 +10,7 @@
  * @see docs/functional-spec.md §1 (retry cmd), §10.5, §16
  */
 
-import { closeAllPools, getWorkerPool, loadConfig, type PipelineStep, resetDeadLetterJobs } from '@mulder/core';
+import { closeAllPools, getWorkerPool, loadConfig, resetDeadLetterJobs } from '@mulder/core';
 import chalk from 'chalk';
 import type { Command } from 'commander';
 import { withErrorHandler } from '../lib/errors.js';
@@ -36,7 +36,7 @@ interface RetryCommandJson {
 }
 
 function isRetryableStep(value: string): value is RetryableStep {
-	return RETRYABLE_STEPS.includes(value as RetryableStep);
+	return RETRYABLE_STEPS.some((step) => step === value);
 }
 
 function loadRetryPool() {
@@ -118,7 +118,7 @@ Examples:
 				try {
 					const result = await resetDeadLetterJobs(pool, {
 						documentId: options.document,
-						step: step as PipelineStep | undefined,
+						step,
 					});
 
 					if (options.json) {

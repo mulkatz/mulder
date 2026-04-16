@@ -12,6 +12,7 @@ export type {
 	AnalysisConfig,
 	ApiAuthConfig,
 	ApiAuthKeyConfig,
+	ApiBudgetConfig,
 	ApiConfig,
 	ApiExplorerConfig,
 	ApiRateLimitingConfig,

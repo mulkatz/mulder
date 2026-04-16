@@ -5,6 +5,7 @@ export type {
 	AnalysisConfig,
 	ApiAuthConfig,
 	ApiAuthKeyConfig,
+	ApiBudgetConfig,
 	ApiConfig,
 	ApiExplorerConfig,
 	ApiRateLimitingConfig,
@@ -53,6 +54,7 @@ export type {
 	CreateEntityAliasInput,
 	CreateEntityInput,
 	CreateEvidenceChainInput,
+	CreateMonthlyBudgetReservationInput,
 	CreatePipelineRunInput,
 	CreateSourceInput,
 	CreateSpatioTemporalClusterInput,
@@ -85,6 +87,9 @@ export type {
 	MergeEntitiesResult,
 	MigrationResult,
 	MigrationStatus,
+	MonthlyBudgetReservation,
+	MonthlyBudgetReservationStatus,
+	MonthlyBudgetSummary,
 	NormalizationResult,
 	PipelineRun,
 	PipelineRunSource,
@@ -148,6 +153,7 @@ export {
 	createEntity,
 	createEntityAlias,
 	createEvidenceChains,
+	createMonthlyBudgetReservation,
 	createPipelineRun,
 	createSource,
 	createSpatioTemporalClusters,
@@ -172,6 +178,7 @@ export {
 	deleteTaxonomyEntry,
 	dequeueJob,
 	enqueueJob,
+	finalizeMonthlyBudgetReservation,
 	finalizePipelineRun,
 	findAliasesByEntityId,
 	findAllEdges,
@@ -201,8 +208,10 @@ export {
 	findEvidenceChainsByThesis,
 	findJobById,
 	findJobs,
+	findLatestMonthlyBudgetReservationForSource,
 	findLatestPipelineRun,
 	findLatestPipelineRunSourceForSource,
+	findMonthlyBudgetReservationByRunId,
 	findPipelineRunById,
 	findPipelineRunSourceById,
 	findPipelineRunSourcesByRunId,
@@ -240,6 +249,7 @@ export {
 	searchByVector,
 	searchByVectorWithEfSearch,
 	searchTaxonomyBySimilarity,
+	summarizeMonthlyBudgetReservations,
 	traverseGraph,
 	unlinkStoryEntity,
 	updateChunkEmbedding,
@@ -265,6 +275,20 @@ export type { NativeTextDetectOptions, NativeTextResult, PdfMetadata } from './p
 export { detectNativeText, extractPdfMetadata } from './pipeline/index.js';
 // ── Prompt template engine ─────────────────────────────────
 export { clearPromptCaches, listTemplates, renderPrompt } from './prompts/index.js';
+export type {
+	BudgetablePipelineStep,
+	BudgetEstimate,
+	BudgetReservationFinalization,
+} from './shared/budget.js';
+export {
+	BUDGETABLE_PIPELINE_STEP_VALUES,
+	budgetMonthStart,
+	completedStepsFromProgress,
+	estimateBudgetForSourceRun,
+	finalizeBudgetReservation,
+	isBudgetablePipelineStep,
+	secondsUntilNextBudgetMonth,
+} from './shared/budget.js';
 // ── Cache hash ───────────────────────────────────────────────
 export type { CacheKeyParams } from './shared/cache-hash.js';
 export { computeCacheKey } from './shared/cache-hash.js';

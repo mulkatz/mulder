@@ -136,7 +136,7 @@ async function apiPost(app: ApiApp, path: string, body: unknown): Promise<Respon
 async function apiPut(
 	app: ApiApp,
 	path: string,
-	body: BodyInit,
+	body: Buffer,
 	contentType = 'application/octet-stream',
 ): Promise<Response> {
 	return await app.request(`http://localhost${path}`, {
@@ -191,10 +191,14 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 
 		const config = coreModule.loadConfig(EXAMPLE_CONFIG);
 		const logger = coreModule.createLogger({ level: 'silent' });
+		const cloudSqlConfig = config.gcp?.cloud_sql;
+		if (!cloudSqlConfig) {
+			throw new Error('Expected example config to include gcp.cloud_sql');
+		}
 		workerContext = {
 			config,
 			services: coreModule.createServiceRegistry(config, logger),
-			pool: coreModule.getWorkerPool(config.gcp.cloud_sql),
+			pool: coreModule.getWorkerPool(cloudSqlConfig),
 			logger,
 		};
 	}, 600000);
