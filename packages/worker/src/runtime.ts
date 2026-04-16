@@ -271,8 +271,7 @@ async function reconcileBudgetReservationAfterJobFailure(
 		return;
 	}
 
-	const runId =
-		'runId' in job.payload && typeof job.payload.runId === 'string' ? job.payload.runId : undefined;
+	const runId = 'runId' in job.payload && typeof job.payload.runId === 'string' ? job.payload.runId : undefined;
 	if (!runId) {
 		return;
 	}

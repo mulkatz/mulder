@@ -22,12 +22,12 @@ import type { Logger, MulderConfig, Services, Source, SourceStatus, StepError, S
 import {
 	completedStepsFromProgress,
 	createChildLogger,
+	createPipelineRun,
 	finalizeBudgetReservation,
 	finalizeMonthlyBudgetReservation,
-	createPipelineRun,
 	finalizePipelineRun,
-	findMonthlyBudgetReservationByRunId,
 	findAllSources,
+	findMonthlyBudgetReservationByRunId,
 	findPipelineRunById,
 	findPipelineRunSourcesByRunId,
 	findSourceById,
@@ -267,11 +267,7 @@ function createSkippedGlobalAnalysis(summary: string): PipelineGlobalAnalysisOut
 	};
 }
 
-async function reconcileRunBudgetReservation(
-	pool: pg.Pool,
-	config: MulderConfig,
-	runId: string,
-): Promise<void> {
+async function reconcileRunBudgetReservation(pool: pg.Pool, config: MulderConfig, runId: string): Promise<void> {
 	const reservation = await findMonthlyBudgetReservationByRunId(pool, runId);
 	if (!reservation) {
 		return;

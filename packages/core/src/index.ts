@@ -42,19 +42,6 @@ export {
 	loadConfig,
 	mulderConfigSchema,
 } from './config/index.js';
-export {
-	BUDGETABLE_PIPELINE_STEP_VALUES,
-	budgetMonthStart,
-	completedStepsFromProgress,
-	estimateBudgetForSourceRun,
-	finalizeBudgetReservation,
-	secondsUntilNextBudgetMonth,
-} from './shared/budget.js';
-export type {
-	BudgetEstimate,
-	BudgetReservationFinalization,
-	BudgetablePipelineStep,
-} from './shared/budget.js';
 export type {
 	ApplyTaxonomyChangesInput,
 	AttributeCandidate,
@@ -257,6 +244,7 @@ export {
 	searchByVector,
 	searchByVectorWithEfSearch,
 	searchTaxonomyBySimilarity,
+	summarizeMonthlyBudgetReservations,
 	traverseGraph,
 	unlinkStoryEntity,
 	updateChunkEmbedding,
@@ -273,7 +261,6 @@ export {
 	upsertEntityGrounding,
 	upsertPipelineRunSource,
 	upsertSourceStep,
-	summarizeMonthlyBudgetReservations,
 } from './database/index.js';
 // ── LLM cache ────────────────────────────────────────────────
 export type { CacheEntry, CacheStats, LlmCache } from './llm-cache.js';
@@ -283,6 +270,19 @@ export type { NativeTextDetectOptions, NativeTextResult, PdfMetadata } from './p
 export { detectNativeText, extractPdfMetadata } from './pipeline/index.js';
 // ── Prompt template engine ─────────────────────────────────
 export { clearPromptCaches, listTemplates, renderPrompt } from './prompts/index.js';
+export type {
+	BudgetablePipelineStep,
+	BudgetEstimate,
+	BudgetReservationFinalization,
+} from './shared/budget.js';
+export {
+	BUDGETABLE_PIPELINE_STEP_VALUES,
+	budgetMonthStart,
+	completedStepsFromProgress,
+	estimateBudgetForSourceRun,
+	finalizeBudgetReservation,
+	secondsUntilNextBudgetMonth,
+} from './shared/budget.js';
 // ── Cache hash ───────────────────────────────────────────────
 export type { CacheKeyParams } from './shared/cache-hash.js';
 export { computeCacheKey } from './shared/cache-hash.js';

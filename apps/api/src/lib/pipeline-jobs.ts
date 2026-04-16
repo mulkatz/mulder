@@ -1,10 +1,10 @@
-import type { BudgetablePipelineStep, Job, PipelineRun, PipelineRunSource, Source } from '@mulder/core';
+import type { BudgetablePipelineStep, Job, MulderConfig, PipelineRun, PipelineRunSource, Source } from '@mulder/core';
 import {
 	budgetMonthStart,
 	createMonthlyBudgetReservation,
-	estimateBudgetForSourceRun,
 	createPipelineRun,
 	enqueueJob,
+	estimateBudgetForSourceRun,
 	findLatestMonthlyBudgetReservationForSource,
 	findLatestPipelineRunSourceForSource,
 	findSourceById,
@@ -12,11 +12,10 @@ import {
 	loadConfig,
 	PIPELINE_ERROR_CODES,
 	PipelineError,
+	type PipelineStep,
 	secondsUntilNextBudgetMonth,
 	summarizeMonthlyBudgetReservations,
-	type PipelineStep,
 } from '@mulder/core';
-import type { MulderConfig } from '@mulder/core';
 import type { Pool, PoolClient } from 'pg';
 import type { PipelineRetryRequest, PipelineRunRequest } from '../routes/pipeline.schemas.js';
 import { PIPELINE_STEP_VALUES } from '../routes/pipeline.schemas.js';
@@ -255,9 +254,7 @@ async function reserveBudgetForAcceptedRun(
 					limit_usd: context.config.api.budget.monthly_limit_usd,
 					reserved_usd: summary.reservedUsd,
 					committed_usd: summary.committedUsd,
-					remaining_usd: Number(
-						(context.config.api.budget.monthly_limit_usd - usedUsd).toFixed(4),
-					),
+					remaining_usd: Number((context.config.api.budget.monthly_limit_usd - usedUsd).toFixed(4)),
 					needed_usd: neededUsd,
 					retry_after_seconds: secondsUntilNextBudgetMonth(new Date()),
 				},

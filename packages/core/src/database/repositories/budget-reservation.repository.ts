@@ -150,10 +150,14 @@ export async function findMonthlyBudgetReservationByRunId(
 		}
 		return mapRow(result.rows[0]);
 	} catch (error: unknown) {
-		throw new DatabaseError('Failed to find monthly budget reservation by run ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
-			cause: error,
-			context: { runId },
-		});
+		throw new DatabaseError(
+			'Failed to find monthly budget reservation by run ID',
+			DATABASE_ERROR_CODES.DB_QUERY_FAILED,
+			{
+				cause: error,
+				context: { runId },
+			},
+		);
 	}
 }
 

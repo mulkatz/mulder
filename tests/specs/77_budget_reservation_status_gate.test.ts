@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { Services } from '@mulder/core';
+import type { Services, Source } from '@mulder/core';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
 
@@ -294,7 +294,12 @@ describe('Spec 77 — Budget reservation status gate', () => {
 		insertSourceRow(sourceId, { pageCount: 10, hasNativeText: false, status: 'ingested' });
 		insertSourceRow(occupiedSourceId, { pageCount: 1, hasNativeText: false, status: 'ingested' });
 		insertRun(occupiedRunId, 'running');
-		insertJob({ id: occupiedJobId, type: 'pipeline_run', status: 'pending', payload: { sourceId: occupiedSourceId, runId: occupiedRunId } });
+		insertJob({
+			id: occupiedJobId,
+			type: 'pipeline_run',
+			status: 'pending',
+			payload: { sourceId: occupiedSourceId, runId: occupiedRunId },
+		});
 		insertReservation({
 			budgetMonth: currentBudgetMonth,
 			sourceId: occupiedSourceId,
@@ -338,7 +343,11 @@ describe('Spec 77 — Budget reservation status gate', () => {
 		};
 
 		const config = coreModule.loadConfig(EXAMPLE_CONFIG);
-		const pool = coreModule.getWorkerPool(config.gcp!.cloud_sql);
+		const cloudSqlConfig = config.gcp?.cloud_sql;
+		if (!cloudSqlConfig) {
+			throw new Error('Expected example config to include gcp.cloud_sql');
+		}
+		const pool = coreModule.getWorkerPool(cloudSqlConfig);
 
 		await workerModule.processNextJob(
 			{
@@ -347,8 +356,13 @@ describe('Spec 77 — Budget reservation status gate', () => {
 				pool,
 				logger: coreModule.createLogger(),
 				dispatch: async (job, ctx) => {
+					const runId = 'runId' in job.payload && typeof job.payload.runId === 'string' ? job.payload.runId : undefined;
+					if (job.type !== 'pipeline_run' || !runId) {
+						throw new Error('Expected pipeline_run job with runId');
+					}
+
 					await coreModule.upsertPipelineRunSource(ctx.pool, {
-						runId: job.payload.runId!,
+						runId,
 						sourceId,
 						currentStep: 'segment',
 						status: 'failed',
@@ -374,7 +388,7 @@ describe('Spec 77 — Budget reservation status gate', () => {
 	});
 
 	it('QA-04: partial run helper returns a reconciled split', () => {
-		const source = {
+		const source: Source = {
 			id: randomUUID(),
 			filename: 'partial.pdf',
 			storagePath: '/tmp/partial.pdf',
