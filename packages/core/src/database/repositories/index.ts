@@ -123,14 +123,18 @@ export {
 	countJobs,
 	dequeueJob,
 	enqueueJob,
+	findDeadLetterJobs,
 	findJobById,
 	findJobs,
 	markJobCompleted,
 	markJobDeadLetter,
 	markJobFailed,
 	reapRunningJobs,
+	resetDeadLetterJobs,
 } from './job.repository.js';
 export type {
+	DeadLetterRetryFilter,
+	DeadLetterRetryResult,
 	DequeueJobResult,
 	EnqueueJobInput,
 	Job,
