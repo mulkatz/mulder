@@ -6,6 +6,7 @@
  * SQL and the dequeue claim stays a single auto-commit statement.
  *
  * @see docs/specs/67_job_queue_repository.spec.md §4.1
+ * @see docs/specs/78_dead_letter_queue_retry.spec.md §4.1
  * @see docs/functional-spec.md §4.3, §10.2, §10.3
  */
 
@@ -13,6 +14,8 @@ import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
 import type {
+	DeadLetterRetryFilter,
+	DeadLetterRetryResult,
 	DequeueJobResult,
 	EnqueueJobInput,
 	Job,
@@ -101,6 +104,47 @@ function buildJobFilter(filter?: JobFilter): { whereClause: string; params: unkn
 		whereClause: conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
 		params,
 	};
+}
+
+function readPayloadString(payload: JobPayload, ...keys: string[]): string | null {
+	for (const key of keys) {
+		const value = payload[key];
+		if (typeof value === 'string' && value.trim().length > 0) {
+			return value.trim();
+		}
+	}
+
+	return null;
+}
+
+function resolveDeadLetterDocumentId(job: Job): string | null {
+	return readPayloadString(job.payload, 'sourceId', 'source_id');
+}
+
+function resolveDeadLetterStep(job: Job): string | null {
+	if (job.type === 'pipeline_run') {
+		const from = readPayloadString(job.payload, 'from');
+		const upTo = readPayloadString(job.payload, 'upTo', 'up_to');
+		return from && upTo && from === upTo ? from : null;
+	}
+
+	return job.type;
+}
+
+function matchesDeadLetterRetryFilter(job: Job, filter?: DeadLetterRetryFilter): boolean {
+	if (!filter) {
+		return true;
+	}
+
+	if (filter.documentId && resolveDeadLetterDocumentId(job) !== filter.documentId) {
+		return false;
+	}
+
+	if (filter.step && resolveDeadLetterStep(job) !== filter.step) {
+		return false;
+	}
+
+	return true;
 }
 
 export async function enqueueJob(pool: Queryable, input: EnqueueJobInput): Promise<Job> {
@@ -202,6 +246,72 @@ export async function countJobs(pool: pg.Pool, filter?: JobFilter): Promise<numb
 		return Number.parseInt(result.rows[0].count, 10);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to count jobs', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { filter },
+		});
+	}
+}
+
+export async function findDeadLetterJobs(pool: Queryable, filter?: DeadLetterRetryFilter): Promise<Job[]> {
+	const sql = `
+    SELECT *
+    FROM jobs
+    WHERE status = 'dead_letter'
+    ORDER BY created_at ASC, id ASC
+  `;
+
+	try {
+		const result = await pool.query<JobRow>(sql);
+		return result.rows.map(mapJobRow).filter((job) => matchesDeadLetterRetryFilter(job, filter));
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to find dead-letter jobs', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { filter },
+		});
+	}
+}
+
+export async function resetDeadLetterJobs(
+	pool: Queryable,
+	filter?: DeadLetterRetryFilter,
+): Promise<DeadLetterRetryResult> {
+	const matchedJobs = await findDeadLetterJobs(pool, filter);
+
+	if (matchedJobs.length === 0) {
+		repoLogger.debug({ count: 0, filter }, 'Dead-letter jobs reset');
+		return {
+			count: 0,
+			jobIds: [],
+		};
+	}
+
+	const matchedIds = matchedJobs.map((job) => job.id);
+	const matchedIndex = new Map(matchedIds.map((id, index) => [id, index]));
+	const sql = `
+    UPDATE jobs
+    SET status = 'pending',
+        attempts = 0,
+        worker_id = NULL,
+        started_at = NULL,
+        finished_at = NULL,
+        error_log = NULL
+    WHERE id = ANY($1::uuid[])
+      AND status = 'dead_letter'
+    RETURNING id
+  `;
+
+	try {
+		const result = await pool.query<{ id: string }>(sql, [matchedIds]);
+		const jobIds = result.rows
+			.map((row) => row.id)
+			.sort((left, right) => (matchedIndex.get(left) ?? 0) - (matchedIndex.get(right) ?? 0));
+		repoLogger.debug({ count: jobIds.length, filter }, 'Dead-letter jobs reset');
+		return {
+			count: jobIds.length,
+			jobIds,
+		};
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to reset dead-letter jobs', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause: error,
 			context: { filter },
 		});
