@@ -27,6 +27,15 @@ import {
 import type { PipelineRunOptions, PipelineStepName } from '@mulder/pipeline';
 import { executePipelineRun, STEP_ORDER } from '@mulder/pipeline';
 import type { Command } from 'commander';
+import {
+	collectPdfSourceProfiles,
+	estimateForSteps,
+	mapPipelineStepsToEstimateSteps,
+	printCostEstimate,
+	promptYesNo,
+	requiresConfirmation,
+	shouldShowEstimate,
+} from '../lib/cost-estimate.js';
 import { withErrorHandler } from '../lib/errors.js';
 import { printError, printJson, printSuccess } from '../lib/output.js';
 
@@ -35,6 +44,7 @@ interface PipelineRunCliOptions {
 	from?: string;
 	dryRun?: boolean;
 	tag?: string;
+	costEstimate?: boolean;
 }
 
 interface PipelineStatusCliOptions {
@@ -62,6 +72,15 @@ function shortId(id: string): string {
 	return id.length > 8 ? `${id.slice(0, 8)}` : id;
 }
 
+function computePlannedStepsForEstimate(
+	fromStep: PipelineStepName | undefined,
+	upToStep: PipelineStepName | undefined,
+): PipelineStepName[] {
+	const startIndex = fromStep ? STEP_ORDER.indexOf(fromStep) : 0;
+	const endIndex = upToStep ? STEP_ORDER.indexOf(upToStep) : STEP_ORDER.length - 1;
+	return STEP_ORDER.slice(startIndex, endIndex + 1);
+}
+
 // ────────────────────────────────────────────────────────────
 // `pipeline run`
 // ────────────────────────────────────────────────────────────
@@ -74,6 +93,7 @@ function registerRunSubcommand(parent: Command): void {
 		.option('--up-to <step>', `Stop after this step (one of: ${RUN_FLAG_STEPS.join('|')})`)
 		.option('--from <step>', `Resume from this step (one of: ${RUN_FLAG_STEPS.join('|')})`)
 		.option('--dry-run', 'Print the planned steps and source count without executing')
+		.option('--cost-estimate', 'show an estimated pipeline cost before executing')
 		.option('--tag <tag>', 'Tag this run for later lookup')
 		.addHelpText(
 			'after',
@@ -127,6 +147,41 @@ Examples:
 				}
 
 				const config = loadConfig();
+				const estimatedSourceProfiles = await collectPdfSourceProfiles(path);
+				const estimate = estimateForSteps({
+					mode: 'pipeline',
+					sourceProfiles: estimatedSourceProfiles,
+					steps: mapPipelineStepsToEstimateSteps(computePlannedStepsForEstimate(fromStep, upToStep)),
+					groundingEnabled: false,
+				});
+				const showEstimate = shouldShowEstimate({
+					explicit: options.costEstimate ?? false,
+					estimate,
+					maxPagesWithoutConfirm: config.safety.max_pages_without_confirm,
+					maxCostWithoutConfirmUsd: config.safety.max_cost_without_confirm_usd,
+				});
+
+				if (showEstimate) {
+					printCostEstimate('Cost estimate for pipeline run', estimate);
+				}
+
+				if (
+					requiresConfirmation({
+						explicit: options.costEstimate ?? false,
+						dryRun: options.dryRun ?? false,
+						estimate,
+						maxPagesWithoutConfirm: config.safety.max_pages_without_confirm,
+						maxCostWithoutConfirmUsd: config.safety.max_cost_without_confirm_usd,
+					})
+				) {
+					const confirmed = await promptYesNo('Proceed? [y/N]');
+					if (!confirmed) {
+						printError('Operation cancelled');
+						process.exit(1);
+						return;
+					}
+				}
+
 				const logger = createLogger();
 				const services = createServiceRegistry(config, logger);
 

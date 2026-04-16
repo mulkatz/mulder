@@ -16,6 +16,7 @@ import {
 	createChildLogger,
 	createStory,
 	findSourceById,
+	getStepConfigHash,
 	renderPrompt,
 	resetPipelineStep,
 	SEGMENT_ERROR_CODES,
@@ -176,6 +177,7 @@ export async function execute(
 ): Promise<SegmentResult> {
 	const log = createChildLogger(logger, { step: STEP_NAME, sourceId: input.sourceId });
 	const startTime = performance.now();
+	const stepConfigHash = getStepConfigHash(config, STEP_NAME);
 
 	log.info({ force: input.force ?? false }, 'Segment step started');
 
@@ -424,6 +426,7 @@ export async function execute(
 			sourceId: input.sourceId,
 			stepName: STEP_NAME,
 			status: 'completed',
+			configHash: stepConfigHash,
 		});
 	} else {
 		// All stories failed GCS upload — leave source at 'extracted', mark step as failed
@@ -431,6 +434,7 @@ export async function execute(
 			sourceId: input.sourceId,
 			stepName: STEP_NAME,
 			status: 'failed',
+			configHash: stepConfigHash,
 		});
 	}
 

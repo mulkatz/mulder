@@ -19,6 +19,7 @@ import {
 	EMBED_ERROR_CODES,
 	EmbedError,
 	findStoryById,
+	getStepConfigHash,
 	resetPipelineStep,
 	updateChunkEmbedding,
 	updateStoryStatus,
@@ -104,6 +105,7 @@ export async function execute(
 ): Promise<EmbedResult> {
 	const log = createChildLogger(logger, { step: STEP_NAME, storyId: input.storyId });
 	const startTime = performance.now();
+	const stepConfigHash = getStepConfigHash(config, STEP_NAME);
 
 	log.info({ force: input.force ?? false }, 'Embed step started');
 
@@ -196,6 +198,7 @@ export async function execute(
 			sourceId: story.sourceId,
 			stepName: STEP_NAME,
 			status: 'completed',
+			configHash: stepConfigHash,
 		});
 
 		await updateStoryStatus(pool, input.storyId, 'embedded');
@@ -342,12 +345,14 @@ export async function execute(
 			sourceId: story.sourceId,
 			stepName: STEP_NAME,
 			status: 'completed',
+			configHash: stepConfigHash,
 		});
 	} else {
 		await upsertSourceStep(pool, {
 			sourceId: story.sourceId,
 			stepName: STEP_NAME,
 			status: 'failed',
+			configHash: stepConfigHash,
 		});
 	}
 

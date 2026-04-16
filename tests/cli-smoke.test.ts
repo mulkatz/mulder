@@ -32,7 +32,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 15000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, NODE_ENV: 'test', PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -154,27 +154,22 @@ describe('CLI Smoke: ingest', () => {
 	});
 
 	it.skipIf(!cliAvailable)('SMOKE-13: ingest --dry-run does not crash', () => {
-		const { exitCode } = runCli(['ingest', '--dry-run', NATIVE_TEXT_PDF]);
+		const { exitCode } = runCli(['ingest', '--dry-run', NATIVE_TEXT_PDF], { env: { MULDER_CONFIG: EXAMPLE_CONFIG } });
 		expect(exitCode).toBe(0);
 	});
 
 	it.skipIf(!cliAvailable)('SMOKE-14: ingest --dry-run --tag combo works', () => {
-		const { exitCode } = runCli(['ingest', '--dry-run', '--tag', 'smoke-test', NATIVE_TEXT_PDF]);
+		const { exitCode } = runCli(['ingest', '--dry-run', '--tag', 'smoke-test', NATIVE_TEXT_PDF], {
+			env: { MULDER_CONFIG: EXAMPLE_CONFIG },
+		});
 		expect(exitCode).toBe(0);
 	});
 
 	it.skipIf(!cliAvailable)('SMOKE-15: ingest --dry-run with multiple --tag values', () => {
-		const { exitCode } = runCli([
-			'ingest',
-			'--dry-run',
-			'--tag',
-			'tag-a',
-			'--tag',
-			'tag-b',
-			'--tag',
-			'tag-c',
-			NATIVE_TEXT_PDF,
-		]);
+		const { exitCode } = runCli(
+			['ingest', '--dry-run', '--tag', 'tag-a', '--tag', 'tag-b', '--tag', 'tag-c', NATIVE_TEXT_PDF],
+			{ env: { MULDER_CONFIG: EXAMPLE_CONFIG } },
+		);
 		expect(exitCode).toBe(0);
 	});
 
@@ -185,13 +180,33 @@ describe('CLI Smoke: ingest', () => {
 	});
 
 	it.skipIf(!cliAvailable)('SMOKE-17: ingest --dry-run --cost-estimate combo', () => {
-		const { exitCode } = runCli(['ingest', '--dry-run', '--cost-estimate', NATIVE_TEXT_PDF]);
-		expect([0, 1]).toContain(exitCode);
+		const { exitCode } = runCli(['ingest', '--dry-run', '--cost-estimate', NATIVE_TEXT_PDF], {
+			env: { MULDER_CONFIG: EXAMPLE_CONFIG },
+		});
+		expect(exitCode).toBe(0);
 	});
 
 	it.skipIf(!cliAvailable)('SMOKE-18: ingest non-PDF file exits with error', () => {
 		const { exitCode } = runCli(['ingest', '--dry-run', EXAMPLE_CONFIG]);
 		expect(exitCode).not.toBe(0);
+	});
+});
+
+describe('CLI Smoke: pipeline run cost estimate', () => {
+	it.skipIf(!cliAvailable)('SMOKE-18b: pipeline run --help shows --cost-estimate', () => {
+		const { stdout, exitCode } = runCli(['pipeline', 'run', '--help']);
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain('--cost-estimate');
+	});
+});
+
+describe('CLI Smoke: reprocess', () => {
+	it.skipIf(!cliAvailable)('SMOKE-18c: reprocess --help shows estimate flags', () => {
+		const { stdout, exitCode } = runCli(['reprocess', '--help']);
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain('--dry-run');
+		expect(stdout).toContain('--cost-estimate');
+		expect(stdout).toContain('--step');
 	});
 });
 
