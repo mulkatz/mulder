@@ -5,8 +5,11 @@
  * async API producer and worker consumer.
  *
  * @see docs/specs/67_job_queue_repository.spec.md §4.1
+ * @see docs/specs/78_dead_letter_queue_retry.spec.md §4.1
  * @see docs/functional-spec.md §4.3, §10.2, §10.3
  */
+
+import type { PipelineStep } from './pipeline-reset.js';
 
 // ────────────────────────────────────────────────────────────
 // Status enum
@@ -65,6 +68,18 @@ export interface JobClaim {
 
 /** Summary returned by stale-job reaping. */
 export interface ReapJobsResult {
+	count: number;
+	jobIds: string[];
+}
+
+/** Filters applied when recovering dead-letter jobs. */
+export interface DeadLetterRetryFilter {
+	documentId?: string;
+	step?: PipelineStep;
+}
+
+/** Summary returned after resetting dead-letter jobs back to pending. */
+export interface DeadLetterRetryResult {
 	count: number;
 	jobIds: string[];
 }

@@ -325,7 +325,7 @@ export async function findLatestPipelineRunSourceForSource(
     FROM pipeline_run_sources prs
     JOIN pipeline_runs pr ON pr.id = prs.run_id
     WHERE prs.source_id = $1
-    ORDER BY pr.created_at DESC, prs.updated_at DESC
+    ORDER BY prs.updated_at DESC, pr.created_at DESC, prs.run_id DESC
     LIMIT 1
   `;
 

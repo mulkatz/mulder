@@ -6,6 +6,7 @@
  * SQL and the dequeue claim stays a single auto-commit statement.
  *
  * @see docs/specs/67_job_queue_repository.spec.md §4.1
+ * @see docs/specs/78_dead_letter_queue_retry.spec.md §4.1
  * @see docs/functional-spec.md §4.3, §10.2, §10.3
  */
 
@@ -13,6 +14,8 @@ import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
 import type {
+	DeadLetterRetryFilter,
+	DeadLetterRetryResult,
 	DequeueJobResult,
 	EnqueueJobInput,
 	Job,
@@ -103,6 +106,47 @@ function buildJobFilter(filter?: JobFilter): { whereClause: string; params: unkn
 	};
 }
 
+function readPayloadString(payload: JobPayload, ...keys: string[]): string | null {
+	for (const key of keys) {
+		const value = payload[key];
+		if (typeof value === 'string' && value.trim().length > 0) {
+			return value.trim();
+		}
+	}
+
+	return null;
+}
+
+function resolveDeadLetterDocumentId(job: Job): string | null {
+	return readPayloadString(job.payload, 'sourceId', 'source_id');
+}
+
+function resolveDeadLetterStep(job: Job): string | null {
+	if (job.type === 'pipeline_run') {
+		const from = readPayloadString(job.payload, 'from');
+		const upTo = readPayloadString(job.payload, 'upTo', 'up_to');
+		return from && upTo && from === upTo ? from : null;
+	}
+
+	return job.type;
+}
+
+function matchesDeadLetterRetryFilter(job: Job, filter?: DeadLetterRetryFilter): boolean {
+	if (!filter) {
+		return true;
+	}
+
+	if (filter.documentId && resolveDeadLetterDocumentId(job) !== filter.documentId) {
+		return false;
+	}
+
+	if (filter.step && resolveDeadLetterStep(job) !== filter.step) {
+		return false;
+	}
+
+	return true;
+}
+
 export async function enqueueJob(pool: Queryable, input: EnqueueJobInput): Promise<Job> {
 	const sql = `
     INSERT INTO jobs (type, payload, max_attempts)
@@ -120,6 +164,34 @@ export async function enqueueJob(pool: Queryable, input: EnqueueJobInput): Promi
 		throw new DatabaseError('Failed to enqueue job', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause: error,
 			context: { type: input.type },
+		});
+	}
+}
+
+export async function mergeJobPayload(pool: Queryable, id: string, patch: JobPayload): Promise<Job> {
+	const sql = `
+    UPDATE jobs
+    SET payload = COALESCE(payload, '{}'::jsonb) || $2::jsonb
+    WHERE id = $1
+    RETURNING *
+  `;
+
+	try {
+		const result = await pool.query<JobRow>(sql, [id, JSON.stringify(patch)]);
+		if (result.rows.length === 0) {
+			throw new DatabaseError(`Job not found: ${id}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+				context: { id },
+			});
+		}
+		repoLogger.debug({ jobId: id }, 'Job payload merged');
+		return mapJobRow(result.rows[0]);
+	} catch (error: unknown) {
+		if (error instanceof DatabaseError) {
+			throw error;
+		}
+		throw new DatabaseError('Failed to merge job payload', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { id },
 		});
 	}
 }
@@ -180,6 +252,72 @@ export async function countJobs(pool: pg.Pool, filter?: JobFilter): Promise<numb
 	}
 }
 
+export async function findDeadLetterJobs(pool: Queryable, filter?: DeadLetterRetryFilter): Promise<Job[]> {
+	const sql = `
+    SELECT *
+    FROM jobs
+    WHERE status = 'dead_letter'
+    ORDER BY created_at ASC, id ASC
+  `;
+
+	try {
+		const result = await pool.query<JobRow>(sql);
+		return result.rows.map(mapJobRow).filter((job) => matchesDeadLetterRetryFilter(job, filter));
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to find dead-letter jobs', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { filter },
+		});
+	}
+}
+
+export async function resetDeadLetterJobs(
+	pool: Queryable,
+	filter?: DeadLetterRetryFilter,
+): Promise<DeadLetterRetryResult> {
+	const matchedJobs = await findDeadLetterJobs(pool, filter);
+
+	if (matchedJobs.length === 0) {
+		repoLogger.debug({ count: 0, filter }, 'Dead-letter jobs reset');
+		return {
+			count: 0,
+			jobIds: [],
+		};
+	}
+
+	const matchedIds = matchedJobs.map((job) => job.id);
+	const matchedIndex = new Map(matchedIds.map((id, index) => [id, index]));
+	const sql = `
+    UPDATE jobs
+    SET status = 'pending',
+        attempts = 0,
+        worker_id = NULL,
+        started_at = NULL,
+        finished_at = NULL,
+        error_log = NULL
+    WHERE id = ANY($1::uuid[])
+      AND status = 'dead_letter'
+    RETURNING id
+  `;
+
+	try {
+		const result = await pool.query<{ id: string }>(sql, [matchedIds]);
+		const jobIds = result.rows
+			.map((row) => row.id)
+			.sort((left, right) => (matchedIndex.get(left) ?? 0) - (matchedIndex.get(right) ?? 0));
+		repoLogger.debug({ count: jobIds.length, filter }, 'Dead-letter jobs reset');
+		return {
+			count: jobIds.length,
+			jobIds,
+		};
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to reset dead-letter jobs', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { filter },
+		});
+	}
+}
+
 export async function dequeueJob(pool: pg.Pool, workerId: string): Promise<DequeueJobResult> {
 	const sql = `
     UPDATE jobs
@@ -214,9 +352,21 @@ export async function dequeueJob(pool: pg.Pool, workerId: string): Promise<Deque
 	}
 }
 
-export async function markJobCompleted(pool: pg.Pool, claim: JobClaim): Promise<Job> {
+export async function markJobCompleted(pool: pg.Pool, claim: JobClaim, payloadPatch?: JobPayload): Promise<Job> {
 	const id = claim.jobId;
-	const sql = `
+	const sql = payloadPatch
+		? `
+    UPDATE jobs
+    SET status = 'completed',
+        finished_at = now(),
+        payload = COALESCE(payload, '{}'::jsonb) || $4::jsonb
+    WHERE id = $1
+      AND status = 'running'
+      AND worker_id = $2
+      AND attempts = $3
+    RETURNING *
+  `
+		: `
     UPDATE jobs
     SET status = 'completed',
         finished_at = now()
@@ -228,7 +378,12 @@ export async function markJobCompleted(pool: pg.Pool, claim: JobClaim): Promise<
   `;
 
 	try {
-		const result = await pool.query<JobRow>(sql, [id, claim.workerId, claim.attempts]);
+		const result = await pool.query<JobRow>(
+			sql,
+			payloadPatch
+				? [id, claim.workerId, claim.attempts, JSON.stringify(payloadPatch)]
+				: [id, claim.workerId, claim.attempts],
+		);
 		if (result.rows.length === 0) {
 			throw new DatabaseError(`Active job claim not found: ${id}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
 				context: { id, claim },

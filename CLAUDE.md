@@ -297,12 +297,13 @@ mulder/
 
 ## Devlog
 
-- Directory: `devlog/`, files: `{YYYY-MM-DD}-{slug}.md`
+- Directory: `devlog/`, files: `YYYY-MM-DD-slug.md`
+- Public build log: short, technical entries about significant project progress
 - Frontmatter: `date`, `type`, `title`, `tags`
-- Types: architecture | implementation | breakthrough | decision | refactor | integration | milestone
-- Write entry when: new capability works, architecture decision made/revised, non-obvious problem solved, GCP service first integrated, significant refactor, milestone reached
-- Skip when: routine refactoring, bug fixes, dependency updates, formatting, repeated iterations
-- Style: English, direct, technical, max 5 sentences, no filler
+- Types: `architecture`, `implementation`, `breakthrough`, `decision`, `refactor`, `integration`, `milestone`
+- Write entry when: new capability works, architecture decision is made or revised, a non-obvious technical problem is solved, a GCP service is integrated for the first time, a significant refactor changes the structure, or a milestone is reached
+- Skip entry when: the change is routine refactoring, a bug fix, a dependency update, formatting or typo cleanup, or a repeated iteration on the same feature
+- Style: English, direct, technical, filler-free, 2-5 sentences
 
 ## Testing
 

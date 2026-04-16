@@ -4,6 +4,7 @@ import type { MiddlewareHandler } from 'hono';
 export const MAX_API_BODY_BYTES = 10 * 1024 * 1024;
 
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const BODY_LIMIT_EXEMPT_ROUTES = new Set(['/api/uploads/documents/dev-upload']);
 
 function parseContentLength(headerValue: string | null): number | undefined {
 	if (headerValue === null) {
@@ -47,6 +48,12 @@ async function measureRequestBodyBytes(request: Request, maxBodyBytes: number): 
 export function createBodyLimitMiddleware(maxBodyBytes = MAX_API_BODY_BYTES): MiddlewareHandler {
 	return async (c, next) => {
 		if (!BODY_METHODS.has(c.req.method.toUpperCase())) {
+			await next();
+			return;
+		}
+
+		const pathname = new URL(c.req.url).pathname;
+		if (BODY_LIMIT_EXEMPT_ROUTES.has(pathname)) {
 			await next();
 			return;
 		}

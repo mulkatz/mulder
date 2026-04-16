@@ -22,6 +22,7 @@ import { closeGcpClients, getDocumentAIClient, getFirestoreClient, getGenAI, get
 import type { Logger } from './logger.js';
 import { withRetry } from './retry.js';
 import type {
+	CreateStorageUploadSessionOptions,
 	DocumentAiResult,
 	DocumentAiService,
 	EmbeddingResult,
@@ -32,7 +33,9 @@ import type {
 	LlmService,
 	Services,
 	StorageListResult,
+	StorageObjectMetadata,
 	StorageService,
+	StorageUploadSession,
 	StructuredGenerateOptions,
 	TextGenerateOptions,
 } from './services.js';
@@ -93,6 +96,40 @@ class GcpStorageService implements StorageService {
 		});
 	}
 
+	async createUploadSession(
+		bucketPath: string,
+		options: CreateStorageUploadSessionOptions,
+	): Promise<StorageUploadSession> {
+		return withRetry(
+			async () => {
+				const file = this.storage.bucket(this.bucketName).file(bucketPath);
+				const [url] = await file.createResumableUpload({
+					metadata: {
+						contentType: options.contentType,
+					},
+					preconditionOpts: {
+						ifGenerationMatch: 0,
+					},
+				});
+				this.logger.debug({ bucketPath }, 'GcpStorageService: created upload session');
+				return {
+					url,
+					method: 'PUT' as const,
+					headers: {},
+					transport: 'gcs_resumable' as const,
+					expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+				};
+			},
+			{
+				onRetry: (err, attempt, delayMs) => {
+					this.logger.warn({ err, attempt, delayMs, bucketPath }, 'GcpStorageService: retrying createUploadSession');
+				},
+			},
+		).catch((cause: unknown) => {
+			throw wrapGcpError('EXT_STORAGE_FAILED', `Failed to create upload session for ${bucketPath}`, cause);
+		});
+	}
+
 	async download(bucketPath: string): Promise<Buffer> {
 		return withRetry(
 			async () => {
@@ -108,6 +145,32 @@ class GcpStorageService implements StorageService {
 			},
 		).catch((cause: unknown) => {
 			throw wrapGcpError('EXT_STORAGE_FAILED', `Failed to download from ${bucketPath}`, cause);
+		});
+	}
+
+	async getMetadata(bucketPath: string): Promise<StorageObjectMetadata | null> {
+		return withRetry(
+			async () => {
+				const file = this.storage.bucket(this.bucketName).file(bucketPath);
+				const [exists] = await file.exists();
+				if (!exists) {
+					this.logger.debug({ bucketPath }, 'GcpStorageService: metadata missing');
+					return null;
+				}
+
+				const [metadata] = await file.getMetadata();
+				return {
+					sizeBytes: Number.parseInt(String(metadata.size ?? '0'), 10) || 0,
+					contentType: metadata.contentType ?? null,
+				};
+			},
+			{
+				onRetry: (err, attempt, delayMs) => {
+					this.logger.warn({ err, attempt, delayMs, bucketPath }, 'GcpStorageService: retrying getMetadata');
+				},
+			},
+		).catch((cause: unknown) => {
+			throw wrapGcpError('EXT_STORAGE_FAILED', `Failed to read metadata for ${bucketPath}`, cause);
 		});
 	}
 

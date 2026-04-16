@@ -21,8 +21,9 @@ import type pg from 'pg';
 
 export type SourceStepJobType = 'extract' | 'segment';
 export type StoryStepJobType = 'enrich' | 'embed' | 'graph';
+export type UploadFinalizeJobType = 'document_upload_finalize';
 export type LegacyWorkerJobType = 'pipeline_run';
-export type SupportedJobType = SourceStepJobType | StoryStepJobType;
+export type SupportedJobType = SourceStepJobType | StoryStepJobType | UploadFinalizeJobType;
 export type WorkerJobType = SupportedJobType | LegacyWorkerJobType;
 
 export interface SourceStepJobPayload {
@@ -46,6 +47,14 @@ export interface PipelineRunJobPayload {
 	fallbackOnly?: boolean;
 }
 
+export interface DocumentUploadFinalizeJobPayload {
+	sourceId: string;
+	filename: string;
+	storagePath: string;
+	tags?: string[];
+	startPipeline?: boolean;
+}
+
 export type LegacyPipelineRunJobPayload = PipelineRunJobPayload;
 
 export type WorkerJobPayloadMap = {
@@ -54,6 +63,7 @@ export type WorkerJobPayloadMap = {
 	enrich: StoryStepJobPayload;
 	embed: StoryStepJobPayload;
 	graph: StoryStepJobPayload;
+	document_upload_finalize: DocumentUploadFinalizeJobPayload;
 	pipeline_run: LegacyPipelineRunJobPayload;
 };
 
@@ -136,7 +146,10 @@ export interface WorkerDispatchContext {
 	logger: Logger;
 }
 
-export type WorkerDispatchFn = (job: WorkerJobEnvelope, context: WorkerDispatchContext) => Promise<void>;
+export type WorkerDispatchFn = (
+	job: WorkerJobEnvelope,
+	context: WorkerDispatchContext,
+) => Promise<Record<string, unknown> | undefined>;
 
 export const WORKER_ERROR_CODES = {
 	WORKER_UNKNOWN_JOB_TYPE: 'WORKER_UNKNOWN_JOB_TYPE',
@@ -178,7 +191,14 @@ export function describeWorkerError(error: unknown): string {
 }
 
 export function isSupportedJobType(type: string): type is SupportedJobType {
-	return type === 'extract' || type === 'segment' || type === 'enrich' || type === 'embed' || type === 'graph';
+	return (
+		type === 'extract' ||
+		type === 'segment' ||
+		type === 'enrich' ||
+		type === 'embed' ||
+		type === 'graph' ||
+		type === 'document_upload_finalize'
+	);
 }
 
 export function createWorkerId(slot = 0): string {
