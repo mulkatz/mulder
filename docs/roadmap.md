@@ -212,7 +212,7 @@ The browser experience. Parallel to M8; depends on M7 (H10 routes + Spec 77 auth
 | Status | Step | What | Spec |
 |--------|------|------|------|
 | 🟢 | V1 | Viewer foundations + Case File (PDF + stories + entities + Hero 1/2) — supersedes H11 | Spec 77, H10 |
-| ⚪ | V2 | Archive + Desk (document list, upload, overview ribbon, "worth following" leads) | H5, H10 |
+| 🟢 | V2 | Archive + Desk (document list, upload, overview ribbon, "worth following" leads) | H5, H10 |
 | ⚪ | V3 | Ask (search console with citations + retrieval trace) + Command Palette (⌘K) | H7 |
 | ⚪ | V4 | Board (knowledge graph with custom nodes/edges + timeline scrubber) | H7, H8 |
 | ⚪ | V5 | Audit Drawer (contradictions + source reliability + evidence chains) | H9 |

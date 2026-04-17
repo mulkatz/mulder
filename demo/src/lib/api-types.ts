@@ -66,6 +66,92 @@ export interface DocumentObservabilityResponse {
   };
 }
 
+export interface UploadTarget {
+  url: string;
+  method: 'PUT';
+  headers: Record<string, string>;
+  transport: 'gcs_resumable' | 'dev_proxy';
+  expires_at: string | null;
+}
+
+export interface UploadInitiateResponse {
+  data: {
+    source_id: string;
+    storage_path: string;
+    upload: UploadTarget;
+    limits: {
+      max_bytes: number;
+    };
+  };
+}
+
+export interface UploadCompleteResponse {
+  data: {
+    job_id: string;
+    status: 'pending';
+    source_id: string;
+  };
+  links: {
+    status: string;
+  };
+}
+
+export interface JobDetailResponse {
+  data: {
+    job: {
+      id: string;
+      type: string;
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'dead_letter';
+      attempts: number;
+      max_attempts: number;
+      worker_id: string | null;
+      created_at: string;
+      started_at: string | null;
+      finished_at: string | null;
+      error_log: string | null;
+      payload: Record<string, unknown>;
+    };
+    progress: {
+      run_id: string;
+      run_status: 'running' | 'completed' | 'partial' | 'failed';
+      source_counts: {
+        pending: number;
+        processing: number;
+        completed: number;
+        failed: number;
+      };
+      sources: {
+        source_id: string;
+        current_step: string;
+        status: 'pending' | 'processing' | 'completed' | 'failed';
+        error_message: string | null;
+        updated_at: string;
+      }[];
+    } | null;
+  };
+}
+
+export interface JobListResponse {
+  data: {
+    id: string;
+    type: string;
+    status: 'pending' | 'running' | 'completed' | 'failed' | 'dead_letter';
+    attempts: number;
+    max_attempts: number;
+    worker_id: string | null;
+    created_at: string;
+    started_at: string | null;
+    finished_at: string | null;
+    links: {
+      self: string;
+    };
+  }[];
+  meta: {
+    count: number;
+    limit: number;
+  };
+}
+
 export interface EntityRecord {
   id: string;
   canonical_id: string | null;
