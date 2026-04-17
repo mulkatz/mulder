@@ -1,7 +1,7 @@
 import { useQueryClient, useQueries } from '@tanstack/react-query';
 import { ChevronDown, ChevronUp, Filter, UploadCloud } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/primitives/Button';
 import { Dialog, DialogContent } from '@/components/primitives/Dialog';
@@ -210,6 +210,8 @@ function ArchiveUploadDialog({
 }
 
 export function ArchivePage() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const upload = useUploadDocument();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -325,6 +327,15 @@ export function ArchivePage() {
   function handleFilePicker() {
     fileInputRef.current?.click();
   }
+
+  useEffect(() => {
+    if (!location.state || typeof location.state !== 'object' || !('openUpload' in location.state) || !location.state.openUpload) {
+      return;
+    }
+
+    handleFilePicker();
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate]);
 
   function handleUploadDialogChange(nextOpen: boolean) {
     if (!nextOpen && uploadStage !== 'extracted' && uploadStage !== 'failed') {

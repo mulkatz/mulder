@@ -241,6 +241,58 @@ export interface ContradictionsResponse {
   data: ContradictionRecord[];
 }
 
+export interface SearchResultContribution {
+  strategy: 'vector' | 'fulltext' | 'graph';
+  rank: number;
+  score: number;
+}
+
+export interface SearchResult {
+  chunk_id: string;
+  story_id: string;
+  content: string;
+  score: number;
+  rerank_score: number;
+  rank: number;
+  contributions: SearchResultContribution[];
+  metadata: Record<string, unknown>;
+}
+
+export interface SearchConfidence {
+  corpus_size: number;
+  taxonomy_status: 'not_started' | 'bootstrapping' | 'active' | 'mature';
+  corroboration_reliability: 'insufficient' | 'low' | 'moderate' | 'high';
+  graph_density: number;
+  degraded: boolean;
+  message: string | null;
+}
+
+export interface SearchExplainContribution {
+  chunk_id: string;
+  rerank_score: number;
+  rrf_score: number;
+  strategies: SearchResultContribution[];
+}
+
+export interface SearchExplain {
+  counts: Record<string, number>;
+  skipped: string[];
+  failures: Record<string, string>;
+  seed_entity_ids: string[];
+  contributions: SearchExplainContribution[];
+}
+
+export interface SearchResponse {
+  data: {
+    query: string;
+    strategy: 'vector' | 'fulltext' | 'graph' | 'hybrid';
+    top_k: number;
+    results: SearchResult[];
+    confidence: SearchConfidence;
+    explain: SearchExplain;
+  };
+}
+
 export interface StoryRecord {
   id: string;
   title: string;

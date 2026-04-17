@@ -8,6 +8,7 @@ interface UseEntitiesOptions {
   taxonomyStatus?: 'auto' | 'curated' | 'merged';
   limit?: number;
   offset?: number;
+  enabled?: boolean;
 }
 
 function buildEntitiesQuery(options: UseEntitiesOptions, limit: number, offset: number) {
@@ -81,5 +82,6 @@ export function useEntities(options: UseEntitiesOptions = {}) {
     ],
     queryFn,
     staleTime: 300_000,
+    enabled: options.enabled ?? true,
   });
 }

@@ -1,6 +1,6 @@
 import { ExternalLink, FileDown, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/primitives/Button';
 import { PageThumbnails } from '@/components/PDFPane/PageThumbnails';
 import { PDFPane, type PDFPaneHandle } from '@/components/PDFPane/PDFPane';
@@ -27,10 +27,20 @@ function buildContradictionCounts(storyIds: string[]) {
 
 export function CaseFilePage() {
   const { id = '' } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
+  const [landing] = useState(() => {
+    const searchParams = new URLSearchParams(location.search);
+
+    return {
+      page: Number(searchParams.get('page') ?? '') || null,
+      storyId: searchParams.get('story'),
+    };
+  });
   const pdfPaneRef = useRef<PDFPaneHandle | null>(null);
-  const [activePage, setActivePage] = useState(1);
-  const [selectedStoryId, setSelectedStoryId] = useState<string | null>(null);
+  const hasScrolledToLandingPage = useRef(false);
+  const [activePage, setActivePage] = useState(landing.page ?? 1);
+  const [selectedStoryId, setSelectedStoryId] = useState<string | null>(landing.storyId);
   const [storyRailOpen, setStoryRailOpen] = useState(true);
   const [reveal, setReveal] = useState(() => {
     if (typeof window === 'undefined' || !id) {
@@ -100,6 +110,18 @@ export function CaseFilePage() {
       .filter((storyId): storyId is string => Boolean(storyId));
     return buildContradictionCounts(storyIds);
   }, [contradictions.data]);
+
+  useEffect(() => {
+    if (!landing.page || hasScrolledToLandingPage.current || !pages.data) {
+      return;
+    }
+
+    const page = landing.page;
+    hasScrolledToLandingPage.current = true;
+    window.requestAnimationFrame(() => {
+      pdfPaneRef.current?.scrollToPage(page);
+    });
+  }, [landing.page, pages.data]);
 
   if (document.isError) {
     return <ErrorState body={copy.errors.documentNotFound} title="Document not found" />;

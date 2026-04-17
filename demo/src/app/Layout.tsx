@@ -3,6 +3,8 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/primitives/Button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/primitives/Tooltip';
+import { CommandPalette } from '@/components/CommandPalette/CommandPalette';
+import { KeyboardShortcuts } from '@/components/CommandPalette/KeyboardShortcuts';
 import { EntityProfileDrawer } from '@/components/Entity/EntityProfileDrawer';
 import { useAuth } from '@/features/auth/useAuth';
 import { useLogout } from '@/features/auth/useLogout';
@@ -90,6 +92,8 @@ export function Layout() {
       <main className="mx-auto max-w-[1600px] px-4 pb-10 pt-6 lg:px-8">
         <Outlet />
       </main>
+      <KeyboardShortcuts />
+      <CommandPalette />
       <EntityProfileDrawer />
     </div>
   );
