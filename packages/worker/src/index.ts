@@ -38,6 +38,10 @@ export {
 	createWorkerId,
 	describeWorkerError,
 	isSupportedJobType,
+	isWorkerJobType,
+	isWorkerPipelineStep,
+	parseWorkerJobEnvelope,
+	parseWorkerJobPayload,
 	WORKER_ERROR_CODES,
 	WorkerError,
 } from './worker.types.js';

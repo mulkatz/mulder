@@ -19,8 +19,10 @@ import {
 	extractPdfMetadata,
 	findSourceByHash,
 	findSourceById,
+	findStoriesBySourceId,
 	INGEST_ERROR_CODES,
 	IngestError,
+	upsertPipelineRunSource,
 	upsertSourceStep,
 } from '@mulder/core';
 import {
@@ -31,9 +33,10 @@ import {
 	executePipelineRun,
 	executeSegment,
 	type PipelineRunOptions,
-	type PipelineStepName,
 } from '@mulder/pipeline';
 import {
+	type DocumentUploadFinalizeJobPayload,
+	type StoryStepJobPayload,
 	type SupportedJobType,
 	WORKER_ERROR_CODES,
 	type WorkerDispatchFn,
@@ -46,204 +49,6 @@ export interface DispatchResult {
 }
 
 export type DispatchResultKind = DispatchResult['jobType'];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function asString(value: unknown): string | null {
-	return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
-}
-
-function asBoolean(value: unknown): boolean | undefined {
-	return typeof value === 'boolean' ? value : undefined;
-}
-
-function readStringField(job: WorkerJobEnvelope, primaryKey: string, fallbackKey?: string): string | null {
-	if (isRecord(job.payload)) {
-		const primary = asString(job.payload[primaryKey]);
-		if (primary) {
-			return primary;
-		}
-		if (fallbackKey) {
-			return asString(job.payload[fallbackKey]);
-		}
-	}
-	return null;
-}
-
-function invalidPayload(job: WorkerJobEnvelope, reason: string, context?: Record<string, unknown>): WorkerError {
-	return new WorkerError(reason, WORKER_ERROR_CODES.WORKER_INVALID_JOB_PAYLOAD, {
-		context: { jobId: job.id, jobType: job.type, ...(context ?? {}) },
-	});
-}
-
-function parseSourceStepPayload(job: WorkerJobEnvelope): {
-	sourceId: string;
-	force?: boolean;
-	fallbackOnly?: boolean;
-} {
-	if (!isRecord(job.payload)) {
-		throw invalidPayload(job, `Job ${job.id} payload must be an object`, { field: 'payload' });
-	}
-
-	const sourceId = readStringField(job, 'sourceId', 'source_id');
-	if (!sourceId) {
-		throw invalidPayload(job, `${job.type} jobs require a non-empty sourceId`, { field: 'sourceId' });
-	}
-
-	const payload: {
-		sourceId: string;
-		force?: boolean;
-		fallbackOnly?: boolean;
-	} = { sourceId };
-
-	const force = asBoolean(job.payload.force);
-	if (force !== undefined) {
-		payload.force = force;
-	}
-
-	const fallbackOnly = asBoolean(job.payload.fallbackOnly);
-	if (fallbackOnly !== undefined) {
-		payload.fallbackOnly = fallbackOnly;
-	}
-
-	return payload;
-}
-
-function parseStoryStepPayload(job: WorkerJobEnvelope): {
-	storyId: string;
-	force?: boolean;
-} {
-	if (!isRecord(job.payload)) {
-		throw invalidPayload(job, `Job ${job.id} payload must be an object`, { field: 'payload' });
-	}
-
-	const storyId = readStringField(job, 'storyId', 'story_id');
-	if (!storyId) {
-		throw invalidPayload(job, `${job.type} jobs require a non-empty storyId`, { field: 'storyId' });
-	}
-
-	const payload: {
-		storyId: string;
-		force?: boolean;
-	} = { storyId };
-
-	const force = asBoolean(job.payload.force);
-	if (force !== undefined) {
-		payload.force = force;
-	}
-
-	return payload;
-}
-
-function isPipelineStep(value: string): value is PipelineStepName {
-	return value === 'extract' || value === 'segment' || value === 'enrich' || value === 'embed' || value === 'graph';
-}
-
-function parsePipelineRunPayload(job: WorkerJobEnvelope): {
-	sourceId: string;
-	runId?: string;
-	from?: PipelineStepName;
-	upTo?: PipelineStepName;
-	tag?: string;
-	force?: boolean;
-} {
-	if (!isRecord(job.payload)) {
-		throw invalidPayload(job, `Job ${job.id} payload must be an object`, { field: 'payload' });
-	}
-
-	const sourceId = readStringField(job, 'sourceId', 'source_id');
-	if (!sourceId) {
-		throw invalidPayload(job, `pipeline_run jobs require a non-empty sourceId`, { field: 'sourceId' });
-	}
-
-	const payload: {
-		sourceId: string;
-		runId?: string;
-		from?: PipelineStepName;
-		upTo?: PipelineStepName;
-		tag?: string;
-		force?: boolean;
-	} = { sourceId };
-
-	const runId = readStringField(job, 'runId', 'run_id');
-	if (runId) {
-		payload.runId = runId;
-	}
-
-	const from = readStringField(job, 'from');
-	if (from) {
-		if (!isPipelineStep(from)) {
-			throw invalidPayload(job, `pipeline_run jobs require a valid from step`, { field: 'from', value: from });
-		}
-		payload.from = from;
-	}
-
-	const upTo = readStringField(job, 'upTo', 'up_to');
-	if (upTo) {
-		if (!isPipelineStep(upTo)) {
-			throw invalidPayload(job, `pipeline_run jobs require a valid upTo step`, { field: 'upTo', value: upTo });
-		}
-		payload.upTo = upTo;
-	}
-
-	const tag = readStringField(job, 'tag');
-	if (tag) {
-		payload.tag = tag;
-	}
-
-	const force = asBoolean(job.payload.force);
-	if (force !== undefined) {
-		payload.force = force;
-	}
-
-	return payload;
-}
-
-function parseDocumentUploadFinalizePayload(job: WorkerJobEnvelope): {
-	sourceId: string;
-	filename: string;
-	storagePath: string;
-	tags?: string[];
-	startPipeline?: boolean;
-} {
-	if (!isRecord(job.payload)) {
-		throw invalidPayload(job, `Job ${job.id} payload must be an object`, { field: 'payload' });
-	}
-
-	const sourceId = readStringField(job, 'sourceId', 'source_id');
-	const filename = readStringField(job, 'filename');
-	const storagePath = readStringField(job, 'storagePath', 'storage_path');
-	if (!sourceId || !filename || !storagePath) {
-		throw invalidPayload(job, 'document_upload_finalize jobs require sourceId, filename, and storagePath', {
-			field: 'payload',
-		});
-	}
-
-	const payload: {
-		sourceId: string;
-		filename: string;
-		storagePath: string;
-		tags?: string[];
-		startPipeline?: boolean;
-	} = {
-		sourceId,
-		filename,
-		storagePath,
-	};
-
-	if (Array.isArray(job.payload.tags)) {
-		payload.tags = job.payload.tags.filter((tag): tag is string => typeof tag === 'string');
-	}
-
-	const startPipeline = asBoolean(job.payload.startPipeline);
-	if (startPipeline !== undefined) {
-		payload.startPipeline = startPipeline;
-	}
-
-	return payload;
-}
 
 function assertStepSucceeded(job: WorkerJobEnvelope, stepName: string, status: string): void {
 	if (status === 'success') {
@@ -291,6 +96,53 @@ function buildPdfMetadataJson(pdfMeta: Awaited<ReturnType<typeof extractPdfMetad
 	return pdfMetadataJson;
 }
 
+async function runStoryStepForPayload(
+	jobType: 'enrich' | 'embed' | 'graph',
+	payload: StoryStepJobPayload,
+	context: {
+		config: MulderConfig;
+		services: Services;
+		pool: import('pg').Pool;
+		log: ReturnType<typeof createChildLogger>;
+	},
+): Promise<{ status: 'success'; story_count: number }> {
+	const { config, services, pool, log } = context;
+	const force = payload.force ?? false;
+
+	if (payload.storyId) {
+		if (jobType === 'enrich') {
+			await executeEnrich({ storyId: payload.storyId, force }, config, services, pool, log);
+		} else if (jobType === 'embed') {
+			await executeEmbed({ storyId: payload.storyId, force }, config, services, pool, log);
+		} else {
+			await executeGraph({ storyId: payload.storyId, force }, config, services, pool, log);
+		}
+		return { status: 'success', story_count: 1 };
+	}
+
+	if (!payload.sourceId) {
+		throw new WorkerError(
+			`${jobType} jobs require a storyId or sourceId after validation`,
+			WORKER_ERROR_CODES.WORKER_INVALID_JOB_PAYLOAD,
+		);
+	}
+
+	const stories = await findStoriesBySourceId(pool, payload.sourceId);
+	let processed = 0;
+	for (const story of stories) {
+		if (jobType === 'enrich') {
+			await executeEnrich({ storyId: story.id, force }, config, services, pool, log);
+		} else if (jobType === 'embed') {
+			await executeEmbed({ storyId: story.id, force }, config, services, pool, log);
+		} else {
+			await executeGraph({ storyId: story.id, force }, config, services, pool, log);
+		}
+		processed++;
+	}
+
+	return { status: 'success', story_count: processed };
+}
+
 async function finalizeUploadedDocument(
 	context: {
 		config: MulderConfig;
@@ -298,7 +150,7 @@ async function finalizeUploadedDocument(
 		pool: import('pg').Pool;
 		log: ReturnType<typeof createChildLogger>;
 	},
-	payload: ReturnType<typeof parseDocumentUploadFinalizePayload>,
+	payload: DocumentUploadFinalizeJobPayload,
 ): Promise<Record<string, unknown>> {
 	const { config, services, pool, log } = context;
 
@@ -421,15 +273,21 @@ async function finalizeUploadedDocument(
 				},
 			});
 			const pipelineJob = await enqueueJob(client, {
-				type: 'pipeline_run',
+				type: 'extract',
 				payload: {
 					sourceId: source.id,
 					runId: run.id,
-					from: 'extract',
+					upTo: 'graph',
 					force: false,
 					tag: BROWSER_UPLOAD_PIPELINE_TAG,
 				},
 				maxAttempts: 3,
+			});
+			await upsertPipelineRunSource(client, {
+				runId: run.id,
+				sourceId: source.id,
+				currentStep: 'ingest',
+				status: 'pending',
 			});
 			completionPayload.pipeline_job_id = pipelineJob.id;
 			completionPayload.pipeline_run_id = run.id;
@@ -470,64 +328,53 @@ export const dispatchJob: WorkerDispatchFn = async (job, context) => {
 
 	switch (job.type) {
 		case 'extract': {
-			const payload = parseSourceStepPayload(job);
-			const result = await executeExtract(payload, config, services, pool, log);
+			const result = await executeExtract(job.payload, config, services, pool, log);
 			assertStepSucceeded(job, 'extract', result.status);
 			return;
 		}
 		case 'segment': {
-			const payload = parseSourceStepPayload(job);
-			const result = await executeSegment(payload, config, services, pool, log);
+			const result = await executeSegment(job.payload, config, services, pool, log);
 			assertStepSucceeded(job, 'segment', result.status);
 			return;
 		}
 		case 'enrich': {
-			const payload = parseStoryStepPayload(job);
-			const result = await executeEnrich(payload, config, services, pool, log);
+			const result = await runStoryStepForPayload('enrich', job.payload, { config, services, pool, log });
 			assertStepSucceeded(job, 'enrich', result.status);
 			return;
 		}
 		case 'embed': {
-			const payload = parseStoryStepPayload(job);
-			const result = await executeEmbed(payload, config, services, pool, log);
+			const result = await runStoryStepForPayload('embed', job.payload, { config, services, pool, log });
 			assertStepSucceeded(job, 'embed', result.status);
 			return;
 		}
 		case 'graph': {
-			const payload = parseStoryStepPayload(job);
-			const result = await executeGraph(payload, config, services, pool, log);
+			const result = await runStoryStepForPayload('graph', job.payload, { config, services, pool, log });
 			assertStepSucceeded(job, 'graph', result.status);
 			return;
 		}
 		case 'document_upload_finalize': {
-			const payload = parseDocumentUploadFinalizePayload(job);
-			return await finalizeUploadedDocument({ config, services, pool, log }, payload);
+			return await finalizeUploadedDocument({ config, services, pool, log }, job.payload);
 		}
 		case 'pipeline_run': {
-			const payload = parsePipelineRunPayload(job);
 			const runOptions: PipelineRunOptions = {
-				sourceIds: [payload.sourceId],
-				force: payload.force ?? false,
+				sourceIds: [job.payload.sourceId],
+				force: job.payload.force ?? false,
 			};
-			if (payload.runId) {
-				runOptions.runId = payload.runId;
+			if (job.payload.runId) {
+				runOptions.runId = job.payload.runId;
 			}
-			if (payload.from) {
-				runOptions.from = payload.from;
+			if (job.payload.from) {
+				runOptions.from = job.payload.from;
 			}
-			if (payload.upTo) {
-				runOptions.upTo = payload.upTo;
+			if (job.payload.upTo) {
+				runOptions.upTo = job.payload.upTo;
 			}
-			if (payload.tag) {
-				runOptions.tag = payload.tag;
+			if (job.payload.tag) {
+				runOptions.tag = job.payload.tag;
 			}
 			const result = await executePipelineRun({ options: runOptions }, config, services, pool, log);
 			assertPipelineRunCompleted(job, result.status);
 			return;
 		}
-		default:
-			throw new WorkerError(`Unsupported job type "${job.type}"`, WORKER_ERROR_CODES.WORKER_UNKNOWN_JOB_TYPE, {
-				context: { jobId: job.id, jobType: job.type },
-			});
 	}
 };

@@ -16,6 +16,7 @@ import {
 	type PipelineStep,
 	secondsUntilNextBudgetMonth,
 	summarizeMonthlyBudgetReservations,
+	upsertPipelineRunSource,
 } from '@mulder/core';
 import type { Pool, PoolClient } from 'pg';
 import type { PipelineRetryRequest, PipelineRunRequest } from '../routes/pipeline.schemas.js';
@@ -23,10 +24,9 @@ import { PIPELINE_STEP_VALUES } from '../routes/pipeline.schemas.js';
 
 type Queryable = Pool | PoolClient;
 
-type PipelineJobPayload = {
+type StepJobPayload = {
 	sourceId: string;
 	runId: string;
-	from?: PipelineStep;
 	upTo?: PipelineStep;
 	tag?: string;
 	force: boolean;
@@ -93,15 +93,13 @@ async function runInTransaction<T>(pool: Pool, fn: (client: Queryable) => Promis
 function buildJobPayload(input: {
 	sourceId: string;
 	runId: string;
-	from?: PipelineStep;
 	upTo?: PipelineStep;
 	tag?: string;
 	force: boolean;
-}): PipelineJobPayload {
+}): StepJobPayload {
 	return {
 		sourceId: input.sourceId,
 		runId: input.runId,
-		from: input.from,
 		upTo: input.upTo,
 		tag: input.tag,
 		force: input.force,
@@ -191,11 +189,11 @@ async function assertNoInFlightPipelineJob(pool: Queryable, sourceId: string): P
 		`
 			SELECT COUNT(*) AS count
 			FROM jobs
-			WHERE type = 'pipeline_run'
+			WHERE type = ANY($2::text[])
 				AND status IN ('pending', 'running')
 				AND COALESCE(payload->>'sourceId', payload->>'source_id') = $1
 		`,
-		[sourceId],
+		[sourceId, ['pipeline_run', ...PIPELINE_STEP_VALUES]],
 	);
 
 	if ((Number.parseInt(result.rows[0]?.count ?? '0', 10) || 0) > 0) {
@@ -284,14 +282,14 @@ async function enqueuePipelineJob(
 	input: {
 		sourceId: string;
 		runId: string;
-		from?: PipelineStep;
+		step: PipelineStep;
 		upTo?: PipelineStep;
 		tag?: string;
 		force: boolean;
 	},
 ): Promise<Job> {
 	return await enqueueJob(pool, {
-		type: 'pipeline_run',
+		type: input.step,
 		payload: buildJobPayload(input),
 		maxAttempts: 3,
 	});
@@ -314,10 +312,16 @@ export async function createPipelineRunJob(input: PipelineRunRequest): Promise<P
 		const job = await enqueuePipelineJob(client, {
 			sourceId: source.id,
 			runId: run.id,
-			from: input.from,
+			step: input.from ?? 'extract',
 			upTo: input.up_to,
 			tag: input.tag,
 			force: input.force ?? false,
+		});
+		await upsertPipelineRunSource(client, {
+			runId: run.id,
+			sourceId: source.id,
+			currentStep: 'ingest',
+			status: 'pending',
 		});
 		await reserveBudgetForAcceptedRun(client, context, {
 			source,
@@ -352,10 +356,16 @@ export async function createPipelineRetryJob(input: PipelineRetryRequest): Promi
 		const job = await enqueuePipelineJob(client, {
 			sourceId: source.id,
 			runId: run.id,
-			from: step,
+			step,
 			upTo: step,
 			tag: input.tag,
 			force: true,
+		});
+		await upsertPipelineRunSource(client, {
+			runId: run.id,
+			sourceId: source.id,
+			currentStep: step,
+			status: 'pending',
 		});
 		await reserveBudgetForAcceptedRun(client, context, {
 			source,

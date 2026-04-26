@@ -362,9 +362,9 @@ describe('Spec 67: Job Queue Repository', () => {
 		const combined = stdout + stderr;
 		expect(exitCode).toBe(0);
 		expect(combined).not.toContain('SCRIPT_ERROR:');
-		expect(combined).toContain('RETRYABLE_STATUS:failed');
+		expect(combined).toContain('RETRYABLE_STATUS:pending');
 		expect(combined).toContain('RETRYABLE_LOG:retryable failure');
-		expect(combined).toContain('RETRYABLE_FINISHED:true');
+		expect(combined).toContain('RETRYABLE_FINISHED:false');
 		expect(combined).toContain('EXHAUSTED_STATUS:dead_letter');
 		expect(combined).toContain('EXHAUSTED_LOG:exhausted failure');
 		expect(combined).toContain('EXHAUSTED_FINISHED:true');

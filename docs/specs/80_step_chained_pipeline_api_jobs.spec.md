@@ -48,6 +48,7 @@ This spec depends on Spec 79’s worker/runtime contract. Its job is to move the
 - creates a `pipeline_runs` row
 - records source progress metadata
 - enqueues exactly one initial step job for the requested source/run
+- uses source-scoped step payloads for API-created jobs, including `enrich`, `embed`, and `graph`
 - returns `202` plus the first `job_id`
 
 #### `POST /api/pipeline/retry`

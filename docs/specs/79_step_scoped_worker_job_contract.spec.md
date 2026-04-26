@@ -41,7 +41,7 @@ The goal of this spec is to make the worker capable of executing explicit `extra
 
 ### 4.2 Queue Contract
 
-Each async job row for pipeline execution should represent exactly one step for one source (or story where the step contract already requires it). The runtime contract must support:
+Each async job row for pipeline execution should represent exactly one pipeline step. Source steps (`extract`, `segment`) require `sourceId`. Downstream story steps (`enrich`, `embed`, `graph`) support both direct story-scoped payloads with `storyId` and API-chained source-scoped payloads with `sourceId`, so the API can enqueue one first job per source without losing direct worker observability. The runtime contract must support:
 
 - `extract`
 - `segment`
@@ -49,7 +49,7 @@ Each async job row for pipeline execution should represent exactly one step for 
 - `embed`
 - `graph`
 
-The payloads should be explicit enough that a worker can execute the step without reconstructing the entire pipeline intent from a monolithic `pipeline_run` job.
+The payloads should be explicit enough that a worker can execute the step without reconstructing the entire pipeline intent from a monolithic `pipeline_run` job. Step payloads may also carry chaining metadata such as `runId`, `upTo`, `tag`, and `force`.
 
 ### 4.3 Compatibility Rule
 

@@ -93,10 +93,6 @@ function mapJobDetail(job: Job): JobDetailResponse['data']['job'] {
 }
 
 async function resolveProgress(pool: Pool, job: Job): Promise<JobProgress | null> {
-	if (job.type !== 'pipeline_run') {
-		return null;
-	}
-
 	const runId = resolveRunId(job.payload);
 	if (!runId) {
 		return null;

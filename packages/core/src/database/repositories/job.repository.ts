@@ -196,7 +196,7 @@ export async function mergeJobPayload(pool: Queryable, id: string, patch: JobPay
 	}
 }
 
-export async function findJobById(pool: pg.Pool, id: string): Promise<Job | null> {
+export async function findJobById(pool: Queryable, id: string): Promise<Job | null> {
 	const sql = 'SELECT * FROM jobs WHERE id = $1';
 
 	try {
@@ -352,7 +352,7 @@ export async function dequeueJob(pool: pg.Pool, workerId: string): Promise<Deque
 	}
 }
 
-export async function markJobCompleted(pool: pg.Pool, claim: JobClaim, payloadPatch?: JobPayload): Promise<Job> {
+export async function markJobCompleted(pool: Queryable, claim: JobClaim, payloadPatch?: JobPayload): Promise<Job> {
 	const id = claim.jobId;
 	const sql = payloadPatch
 		? `
@@ -402,16 +402,27 @@ export async function markJobCompleted(pool: pg.Pool, claim: JobClaim, payloadPa
 	}
 }
 
-export async function markJobFailed(pool: pg.Pool, claim: JobClaim, errorLog: string): Promise<Job> {
+export async function markJobFailed(pool: Queryable, claim: JobClaim, errorLog: string): Promise<Job> {
 	const id = claim.jobId;
 	const sql = `
     UPDATE jobs
     SET status = CASE
       WHEN attempts >= max_attempts THEN 'dead_letter'::job_status
-      ELSE 'failed'::job_status
+      ELSE 'pending'::job_status
     END,
         error_log = $2,
-        finished_at = now()
+        worker_id = CASE
+          WHEN attempts >= max_attempts THEN worker_id
+          ELSE NULL
+        END,
+        started_at = CASE
+          WHEN attempts >= max_attempts THEN started_at
+          ELSE NULL
+        END,
+        finished_at = CASE
+          WHEN attempts >= max_attempts THEN now()
+          ELSE NULL
+        END
     WHERE id = $1
       AND status = 'running'
       AND worker_id = $3

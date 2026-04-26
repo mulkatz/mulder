@@ -135,7 +135,7 @@ export async function createPipelineRun(pool: Queryable, input: CreatePipelineRu
  *
  * @throws {DatabaseError} with `DB_NOT_FOUND` if no run row exists.
  */
-export async function finalizePipelineRun(pool: pg.Pool, id: string, status: PipelineRunStatus): Promise<PipelineRun> {
+export async function finalizePipelineRun(pool: Queryable, id: string, status: PipelineRunStatus): Promise<PipelineRun> {
 	const sql = `
     UPDATE pipeline_runs
     SET status = $1, finished_at = now()
@@ -168,7 +168,7 @@ export async function finalizePipelineRun(pool: pg.Pool, id: string, status: Pip
  *
  * @returns The run, or `null` if not found.
  */
-export async function findPipelineRunById(pool: pg.Pool, id: string): Promise<PipelineRun | null> {
+export async function findPipelineRunById(pool: Queryable, id: string): Promise<PipelineRun | null> {
 	const sql = 'SELECT * FROM pipeline_runs WHERE id = $1';
 
 	try {
@@ -224,7 +224,7 @@ export async function findLatestPipelineRun(pool: pg.Pool, tag?: string | null):
  * refreshed via `now()`.
  */
 export async function upsertPipelineRunSource(
-	pool: pg.Pool,
+	pool: Queryable,
 	input: UpsertPipelineRunSourceInput,
 ): Promise<PipelineRunSource> {
 	const sql = `
@@ -267,7 +267,7 @@ export async function upsertPipelineRunSource(
 /**
  * Returns all pipeline_run_sources rows for a run, in insertion order.
  */
-export async function findPipelineRunSourcesByRunId(pool: pg.Pool, runId: string): Promise<PipelineRunSource[]> {
+export async function findPipelineRunSourcesByRunId(pool: Queryable, runId: string): Promise<PipelineRunSource[]> {
 	const sql = `
     SELECT * FROM pipeline_run_sources
     WHERE run_id = $1
@@ -291,7 +291,7 @@ export async function findPipelineRunSourcesByRunId(pool: pg.Pool, runId: string
  * @returns The row, or `null` if not found.
  */
 export async function findPipelineRunSourceById(
-	pool: pg.Pool,
+	pool: Queryable,
 	runId: string,
 	sourceId: string,
 ): Promise<PipelineRunSource | null> {
@@ -348,7 +348,7 @@ export async function findLatestPipelineRunSourceForSource(
  * given run. The orchestrator uses this to derive the final `pipeline_runs.status`.
  */
 export async function countPipelineRunSourcesByStatus(
-	pool: pg.Pool,
+	pool: Queryable,
 	runId: string,
 ): Promise<Record<PipelineRunSourceStatus, number>> {
 	const sql = `

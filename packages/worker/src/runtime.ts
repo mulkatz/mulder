@@ -10,14 +10,16 @@
  */
 
 import { setTimeout as delay } from 'node:timers/promises';
-import type { Job, Logger, MulderConfig, Services } from '@mulder/core';
+import type { Logger, MulderConfig, Services } from '@mulder/core';
 import {
 	completedStepsFromProgress,
 	countJobs,
 	createChildLogger,
 	dequeueJob,
+	enqueueJob,
 	finalizeBudgetReservation,
 	finalizeMonthlyBudgetReservation,
+	finalizePipelineRun,
 	findJobs,
 	findMonthlyBudgetReservationByRunId,
 	findPipelineRunSourcesByRunId,
@@ -25,19 +27,20 @@ import {
 	markJobCompleted,
 	markJobFailed,
 	reapRunningJobs,
+	upsertPipelineRunSource,
 } from '@mulder/core';
 import type pg from 'pg';
 import { dispatchJob } from './dispatch.js';
 import {
 	createWorkerId,
-	type DocumentUploadFinalizeJobPayload,
 	describeWorkerError,
-	type PipelineRunJobPayload,
+	parseWorkerJobEnvelope,
 	type WorkerActiveJobSnapshot,
 	type WorkerDispatchContext,
 	type WorkerDispatchFn,
 	type WorkerJobEnvelope,
 	type WorkerJobStatusSnapshot,
+	type WorkerPipelineStepName,
 	type WorkerQueueCounts,
 	type WorkerReapOptions,
 	type WorkerRuntimeOptions,
@@ -47,6 +50,7 @@ import {
 
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_STALE_JOB_AGE_MS = 2 * 60 * 60 * 1000;
+const STEP_ORDER = ['extract', 'segment', 'enrich', 'embed', 'graph'] as const satisfies readonly WorkerPipelineStepName[];
 
 export interface WorkerRuntimeContext {
 	config: MulderConfig;
@@ -99,163 +103,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function isWorkerJobEnvelopeType(type: string): type is WorkerJobEnvelope['type'] {
-	return (
-		type === 'extract' ||
-		type === 'segment' ||
-		type === 'enrich' ||
-		type === 'embed' ||
-		type === 'graph' ||
-		type === 'document_upload_finalize' ||
-		type === 'pipeline_run'
-	);
-}
-
-function readOptionalBoolean(payload: Record<string, unknown>, key: string): boolean | undefined {
-	return typeof payload[key] === 'boolean' ? payload[key] : undefined;
-}
-
-function readOptionalString(
-	payload: Record<string, unknown>,
-	primaryKey: string,
-	fallbackKey?: string,
-): string | undefined {
-	if (typeof payload[primaryKey] === 'string' && payload[primaryKey].trim().length > 0) {
-		return payload[primaryKey].trim();
-	}
-	if (fallbackKey && typeof payload[fallbackKey] === 'string' && payload[fallbackKey].trim().length > 0) {
-		return payload[fallbackKey].trim();
-	}
-	return undefined;
-}
-
-function toWorkerJobPayload(job: Job): WorkerJobEnvelope['payload'] {
-	if (!isRecord(job.payload)) {
-		throw new Error(`Job ${job.id} payload must be an object`);
-	}
-
-	if (job.type === 'extract' || job.type === 'segment') {
-		const sourceId = readOptionalString(job.payload, 'sourceId', 'source_id');
-		if (!sourceId) {
-			throw new Error(`Job ${job.id} is missing sourceId`);
-		}
-
-		const payload: WorkerJobEnvelope['payload'] = {
-			sourceId,
-		};
-
-		const force = readOptionalBoolean(job.payload, 'force');
-		if (force !== undefined) {
-			payload.force = force;
-		}
-
-		const fallbackOnly = readOptionalBoolean(job.payload, 'fallbackOnly');
-		if (fallbackOnly !== undefined) {
-			payload.fallbackOnly = fallbackOnly;
-		}
-
-		return payload;
-	}
-
-	if (job.type === 'pipeline_run') {
-		const sourceId = readOptionalString(job.payload, 'sourceId', 'source_id');
-		if (!sourceId) {
-			throw new Error(`Job ${job.id} is missing sourceId`);
-		}
-
-		const payload: PipelineRunJobPayload = { sourceId };
-
-		const force = readOptionalBoolean(job.payload, 'force');
-		if (force !== undefined) {
-			payload.force = force;
-		}
-
-		const fallbackOnly = readOptionalBoolean(job.payload, 'fallbackOnly');
-		if (fallbackOnly !== undefined) {
-			payload.fallbackOnly = fallbackOnly;
-		}
-
-		const runId = readOptionalString(job.payload, 'runId', 'run_id');
-		if (runId) {
-			payload.runId = runId;
-		}
-
-		const from = readOptionalString(job.payload, 'from');
-		if (from) {
-			payload.from = from;
-		}
-
-		const upTo = readOptionalString(job.payload, 'upTo', 'up_to');
-		if (upTo) {
-			payload.upTo = upTo;
-		}
-
-		const tag = readOptionalString(job.payload, 'tag');
-		if (tag) {
-			payload.tag = tag;
-		}
-
-		return payload;
-	}
-
-	if (job.type === 'document_upload_finalize') {
-		const sourceId = readOptionalString(job.payload, 'sourceId', 'source_id');
-		const filename = readOptionalString(job.payload, 'filename');
-		const storagePath = readOptionalString(job.payload, 'storagePath', 'storage_path');
-		if (!sourceId || !filename || !storagePath) {
-			throw new Error(`Job ${job.id} is missing document upload finalize fields`);
-		}
-
-		const tags = Array.isArray(job.payload.tags)
-			? job.payload.tags.filter((tag): tag is string => typeof tag === 'string')
-			: undefined;
-
-		const payload: DocumentUploadFinalizeJobPayload = {
-			sourceId,
-			filename,
-			storagePath,
-			startPipeline: readOptionalBoolean(job.payload, 'startPipeline'),
-		};
-
-		if (tags && tags.length > 0) {
-			payload.tags = tags;
-		}
-
-		return payload;
-	}
-
-	if (job.type === 'enrich' || job.type === 'embed' || job.type === 'graph') {
-		const storyId =
-			typeof job.payload.storyId === 'string'
-				? job.payload.storyId
-				: typeof job.payload.story_id === 'string'
-					? job.payload.story_id
-					: null;
-		if (!storyId) {
-			throw new Error(`Job ${job.id} is missing storyId`);
-		}
-
-		return {
-			storyId,
-			force: readOptionalBoolean(job.payload, 'force'),
-		};
-	}
-
-	throw new Error(`Unsupported job type "${job.type}"`);
-}
-
-function toWorkerJobEnvelope(job: Job): WorkerJobEnvelope {
-	if (!isWorkerJobEnvelopeType(job.type)) {
-		throw new Error(`Unsupported job type "${job.type}"`);
-	}
-
-	return {
-		...job,
-		type: job.type,
-		payload: toWorkerJobPayload(job),
-	};
-}
-
 function groupActiveWorkers(runningJobs: WorkerJobStatusSnapshot[]): WorkerActiveJobSnapshot[] {
 	const groups = new Map<string, WorkerJobStatusSnapshot[]>();
 	for (const job of runningJobs) {
@@ -291,6 +138,61 @@ function getWorkerDispatchContext(base: WorkerRuntimeContext, workerId: string):
 	};
 }
 
+async function runInTransaction<T>(pool: pg.Pool, fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+	const client = await pool.connect();
+	try {
+		await client.query('BEGIN');
+		const result = await fn(client);
+		await client.query('COMMIT');
+		return result;
+	} catch (error) {
+		try {
+			await client.query('ROLLBACK');
+		} catch {
+			// Preserve the original failure if rollback itself fails.
+		}
+		throw error;
+	} finally {
+		client.release();
+	}
+}
+
+function isStepJob(job: WorkerJobEnvelope | null): job is WorkerJobEnvelope<WorkerPipelineStepName> {
+	return Boolean(job && STEP_ORDER.includes(job.type as WorkerPipelineStepName));
+}
+
+function nextStepAfter(step: WorkerPipelineStepName, upTo?: WorkerPipelineStepName): WorkerPipelineStepName | null {
+	const currentIndex = STEP_ORDER.indexOf(step);
+	const terminalIndex = upTo ? STEP_ORDER.indexOf(upTo) : STEP_ORDER.length - 1;
+	if (currentIndex < 0 || terminalIndex < 0 || currentIndex >= terminalIndex) {
+		return null;
+	}
+	return STEP_ORDER[currentIndex + 1] ?? null;
+}
+
+function getSourceScopedRunPayload(job: WorkerJobEnvelope<WorkerPipelineStepName>): {
+	sourceId: string;
+	runId: string;
+	upTo?: WorkerPipelineStepName;
+	tag?: string;
+	force: boolean;
+	fallbackOnly?: boolean;
+} | null {
+	const { payload } = job;
+	if (!('sourceId' in payload) || !payload.sourceId || !payload.runId) {
+		return null;
+	}
+
+	return {
+		sourceId: payload.sourceId,
+		runId: payload.runId,
+		upTo: payload.upTo,
+		tag: payload.tag,
+		force: payload.force ?? false,
+		...('fallbackOnly' in payload && payload.fallbackOnly !== undefined ? { fallbackOnly: payload.fallbackOnly } : {}),
+	};
+}
+
 async function reconcileBudgetReservationAfterJobFailure(
 	context: WorkerRuntimeContext,
 	job: WorkerJobEnvelope | null,
@@ -299,7 +201,7 @@ async function reconcileBudgetReservationAfterJobFailure(
 		return;
 	}
 
-	const runId = 'runId' in job.payload && typeof job.payload.runId === 'string' ? job.payload.runId : undefined;
+	const runId = job.payload.runId;
 	if (!runId) {
 		return;
 	}
@@ -348,6 +250,123 @@ async function reconcileBudgetReservationAfterJobFailure(
 	});
 }
 
+async function reconcileBudgetReservationForRun(
+	context: WorkerRuntimeContext,
+	pool: pg.Pool | pg.PoolClient,
+	runId: string,
+	reason: string,
+): Promise<void> {
+	const reservation = await findMonthlyBudgetReservationByRunId(pool, runId);
+	if (!reservation) {
+		return;
+	}
+
+	const source = await findSourceById(pool, reservation.sourceId);
+	if (!source) {
+		await finalizeMonthlyBudgetReservation(pool, {
+			runId,
+			status: 'released',
+			committedUsd: 0,
+			releasedUsd: reservation.reservedEstimatedUsd,
+			metadata: { reason: 'source_missing_after_step_job' },
+		});
+		return;
+	}
+
+	const progressRows = await findPipelineRunSourcesByRunId(pool, runId);
+	const progress = progressRows.find((row) => row.sourceId === reservation.sourceId);
+	const completedSteps = progress
+		? completedStepsFromProgress(reservation.plannedSteps, progress.currentStep, progress.status)
+		: [];
+	const finalization = finalizeBudgetReservation({
+		source,
+		plannedSteps: reservation.plannedSteps,
+		completedSteps,
+		budget: context.config.api.budget,
+		extraction: context.config.extraction,
+		force: reservation.metadata.force === true,
+	});
+
+	await finalizeMonthlyBudgetReservation(pool, {
+		runId,
+		status: finalization.status,
+		committedUsd: finalization.committedUsd,
+		releasedUsd: finalization.releasedUsd,
+		metadata: {
+			progress_status: progress?.status ?? null,
+			current_step: progress?.currentStep ?? null,
+			reason,
+		},
+	});
+}
+
+async function chainStepJobAfterSuccess(
+	pool: pg.PoolClient,
+	context: WorkerRuntimeContext,
+	job: WorkerJobEnvelope | null,
+): Promise<void> {
+	if (!isStepJob(job)) {
+		return;
+	}
+
+	const sourceRunPayload = getSourceScopedRunPayload(job);
+	if (!sourceRunPayload) {
+		return;
+	}
+
+	const nextStep = nextStepAfter(job.type, sourceRunPayload.upTo);
+	await upsertPipelineRunSource(pool, {
+		runId: sourceRunPayload.runId,
+		sourceId: sourceRunPayload.sourceId,
+		currentStep: job.type,
+		status: nextStep ? 'processing' : 'completed',
+	});
+
+	if (nextStep) {
+		await enqueueJob(pool, {
+			type: nextStep,
+			payload: {
+				sourceId: sourceRunPayload.sourceId,
+				runId: sourceRunPayload.runId,
+				upTo: sourceRunPayload.upTo,
+				tag: sourceRunPayload.tag,
+				force: sourceRunPayload.force,
+			},
+			maxAttempts: job.maxAttempts,
+		});
+		return;
+	}
+
+	await finalizePipelineRun(pool, sourceRunPayload.runId, 'completed');
+	await reconcileBudgetReservationForRun(context, pool, sourceRunPayload.runId, 'step_chain_completed');
+}
+
+async function markStepRunFailedIfTerminal(
+	pool: pg.PoolClient,
+	context: WorkerRuntimeContext,
+	job: WorkerJobEnvelope | null,
+	errorLog: string,
+): Promise<void> {
+	if (!isStepJob(job)) {
+		return;
+	}
+
+	const sourceRunPayload = getSourceScopedRunPayload(job);
+	if (!sourceRunPayload) {
+		return;
+	}
+
+	await upsertPipelineRunSource(pool, {
+		runId: sourceRunPayload.runId,
+		sourceId: sourceRunPayload.sourceId,
+		currentStep: job.type,
+		status: 'failed',
+		errorMessage: errorLog,
+	});
+	await finalizePipelineRun(pool, sourceRunPayload.runId, 'failed');
+	await reconcileBudgetReservationForRun(context, pool, sourceRunPayload.runId, 'step_job_dead_letter');
+}
+
 async function waitForPollInterval(ms: number, signal?: AbortSignal): Promise<boolean> {
 	try {
 		await delay(ms, undefined, signal ? { signal } : undefined);
@@ -379,21 +398,32 @@ export async function processNextJob(context: WorkerRuntimeContext, workerId: st
 
 	let typedJob: WorkerJobEnvelope | null = null;
 	try {
-		typedJob = toWorkerJobEnvelope(job);
+		typedJob = parseWorkerJobEnvelope(job);
 		const completionPayload = await dispatch(typedJob, getWorkerDispatchContext(context, workerId));
-		await markJobCompleted(context.pool, claim, isRecord(completionPayload) ? completionPayload : undefined);
+		await runInTransaction(context.pool, async (client) => {
+			await markJobCompleted(client, claim, isRecord(completionPayload) ? completionPayload : undefined);
+			await chainStepJobAfterSuccess(client, context, typedJob);
+		});
 		jobLog.info('Job completed');
 		return { state: 'completed', job: typedJob, error: null };
 	} catch (error: unknown) {
 		const errorLog = describeWorkerError(error);
 		let updated: Awaited<ReturnType<typeof markJobFailed>> | null = null;
 		try {
-			updated = await markJobFailed(context.pool, claim, errorLog);
+			updated = await runInTransaction(context.pool, async (client) => {
+				const failedJob = await markJobFailed(client, claim, errorLog);
+				if (failedJob.status === 'dead_letter') {
+					await markStepRunFailedIfTerminal(client, context, typedJob, errorLog);
+				}
+				return failedJob;
+			});
 		} catch (markError) {
 			jobLog.error({ err: markError, originalErr: error }, 'Job failure could not be persisted');
 			throw error;
 		}
-		await reconcileBudgetReservationAfterJobFailure(context, typedJob).catch(() => undefined);
+		if (updated.status === 'dead_letter') {
+			await reconcileBudgetReservationAfterJobFailure(context, typedJob).catch(() => undefined);
+		}
 		jobLog.warn({ status: updated.status, err: error }, 'Job failed');
 		return {
 			state: updated.status === 'dead_letter' ? 'dead_letter' : 'failed',

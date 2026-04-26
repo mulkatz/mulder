@@ -271,7 +271,7 @@ describe('Spec 68: Worker Loop', () => {
 		}
 	}, 180_000);
 
-	it('QA-02: failed handlers mark the job failed or dead-letter according to retry state', async () => {
+	it('QA-02: failed handlers retry automatically and eventually dead-letter exhausted work', async () => {
 		async function runFailureCase(maxAttempts: number): Promise<JobRecord> {
 			cleanTables();
 
@@ -288,7 +288,7 @@ describe('Spec 68: Worker Loop', () => {
 			const worker = startWorker(['--poll-interval', '100']);
 
 			try {
-				await waitForJob(worker.child, jobId, ['failed', 'dead_letter'], 60_000);
+				await waitForJob(worker.child, jobId, ['dead_letter'], 60_000);
 				return readJob(jobId);
 			} finally {
 				await stopWorker(worker);
@@ -296,7 +296,8 @@ describe('Spec 68: Worker Loop', () => {
 		}
 
 		const retryable = await runFailureCase(3);
-		expect(retryable.status).toBe('failed');
+		expect(retryable.status).toBe('dead_letter');
+		expect(retryable.attempts).toBe(3);
 		expect(retryable.error_log).not.toBe('');
 		expect(retryable.has_finished_at).toBe(true);
 
