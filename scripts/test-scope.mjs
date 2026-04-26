@@ -9,6 +9,10 @@ const SPECS_DIR = resolve(ROOT, 'docs/specs');
 const TESTS_DIR = resolve(ROOT, 'tests/specs');
 const VITEST = resolve(ROOT, 'node_modules/vitest/vitest.mjs');
 
+const SPEC_TEST_OVERRIDES = new Map([
+	['77_document_observability_aggregation', ['77_document_observability_route']],
+]);
+
 function walkFiles(root, predicate) {
 	const files = [];
 	const queue = [root];
@@ -70,6 +74,10 @@ function loadSpecIndex() {
 
 			return {
 				spec: String(Number.parseInt(spec, 10)).padStart(2, '0'),
+				key: filePath
+					.slice(SPECS_DIR.length + 1)
+					.replace(/\.spec\.md$/, '')
+					.replaceAll('\\', '/'),
 				roadmapStep,
 				filePath,
 			};
@@ -83,7 +91,7 @@ function loadTestsBySpec() {
 	}
 
 	const testFiles = walkFiles(TESTS_DIR, (name) => name.endsWith('.test.ts'));
-	const testsBySpec = new Map();
+	const tests = [];
 
 	for (const filePath of testFiles) {
 		const relativePath = filePath.slice(ROOT.length + 1);
@@ -93,17 +101,55 @@ function loadTestsBySpec() {
 		}
 
 		const spec = String(Number.parseInt(match[1], 10)).padStart(2, '0');
-		const tests = testsBySpec.get(spec) ?? [];
-		tests.push(relativePath);
-		testsBySpec.set(spec, tests);
+		tests.push({
+			spec,
+			key: relativePath.replace(/^tests\/specs\//, '').replace(/\.test\.ts$/, ''),
+			relativePath,
+		});
 	}
 
-	return testsBySpec;
+	return tests;
+}
+
+function resolveTestsForSpecs(matchingSpecs, specIndex, tests) {
+	const specCounts = new Map();
+	for (const entry of specIndex) {
+		specCounts.set(entry.spec, (specCounts.get(entry.spec) ?? 0) + 1);
+	}
+
+	const files = new Set();
+	for (const entry of matchingSpecs) {
+		const overrideKeys = SPEC_TEST_OVERRIDES.get(entry.key);
+		if (overrideKeys) {
+			for (const key of overrideKeys) {
+				for (const test of tests.filter((candidate) => candidate.key === key)) {
+					files.add(test.relativePath);
+				}
+			}
+			continue;
+		}
+
+		const exactMatches = tests.filter((test) => test.key === entry.key);
+		if (exactMatches.length > 0) {
+			for (const test of exactMatches) {
+				files.add(test.relativePath);
+			}
+			continue;
+		}
+
+		if ((specCounts.get(entry.spec) ?? 0) === 1) {
+			for (const test of tests.filter((candidate) => candidate.spec === entry.spec)) {
+				files.add(test.relativePath);
+			}
+		}
+	}
+
+	return [...files].sort((a, b) => a.localeCompare(b));
 }
 
 function resolveScope(scopeType, scopeValue) {
 	const specIndex = loadSpecIndex();
-	const testsBySpec = loadTestsBySpec();
+	const tests = loadTestsBySpec();
 
 	const matchingSpecs = specIndex.filter((entry) => {
 		if (scopeType === 'step') {
@@ -119,7 +165,7 @@ function resolveScope(scopeType, scopeValue) {
 		throw new Error(`No specs found for ${scopeType} ${scopeValue}.`);
 	}
 
-	const files = matchingSpecs.flatMap((entry) => testsBySpec.get(entry.spec) ?? []);
+	const files = resolveTestsForSpecs(matchingSpecs, specIndex, tests);
 
 	if (files.length === 0) {
 		throw new Error(`No tests found for ${scopeType} ${scopeValue}.`);
@@ -128,8 +174,8 @@ function resolveScope(scopeType, scopeValue) {
 	return {
 		scopeType,
 		scopeValue,
-		specs: matchingSpecs.map((entry) => `${entry.spec} (${entry.roadmapStep})`),
-		files: files.sort((a, b) => a.localeCompare(b)),
+		specs: matchingSpecs.map((entry) => `${entry.key} (${entry.roadmapStep})`),
+		files,
 	};
 }
 

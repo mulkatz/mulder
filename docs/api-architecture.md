@@ -1,6 +1,6 @@
 # M7 API Architecture — Design Decisions
 
-Companion to `roadmap.md` M7 (H1–H11). Covers framework choice, API structure, OpenAPI strategy, middleware stack, and key trade-offs.
+Companion to `roadmap.md` M7 (H1–H11). Covers framework choice, API structure, the shipped middleware stack, and key trade-offs.
 
 ---
 
@@ -9,89 +9,49 @@ Companion to `roadmap.md` M7 (H1–H11). Covers framework choice, API structure,
 **Decision:** Hono with `@hono/node-server` for Cloud Run.
 
 **Why Hono over Express/Fastify:**
-- Native Zod integration (`@hono/zod-validator`) — project already uses Zod everywhere
-- `@hono/zod-openapi` generates OpenAPI spec from the same Zod schemas that validate requests — single source of truth
+- Small typed routing surface that works well with the repository's Zod request/response schemas
 - Hono RPC (`hono/client`) gives free end-to-end type safety for the CLI → API path — zero codegen, types flow through TypeScript
 - 140M downloads/month, production-grade, v4.12 stable
 - Tiny cold start on Cloud Run (~20ms init vs ~200ms Express)
-- Built-in middleware covers all needs (CORS, auth, compression, rate limiting, logging)
+- Built-in middleware patterns cover auth, security headers, rate limiting, and error handling without adding a heavier framework
 
 **Why not Express:** No native TypeScript type inference across middleware chain. Zod-OpenAPI integration requires third-party glue. Cold start heavier.
 
-**Why not Fastify:** Good option technically, but Hono's Zod-OpenAPI story is tighter and the RPC client has no Fastify equivalent.
+**Why not Fastify:** Good option technically, but Hono keeps the Cloud Run/serverless surface smaller and the RPC client has no Fastify equivalent.
 
 **Packages:**
 ```
 hono                        # Core framework
 @hono/node-server           # Node.js adapter (Cloud Run)
-@hono/zod-openapi           # OpenAPI spec generation from Zod schemas
-@hono/zod-validator         # Request validation (used internally by zod-openapi)
-@scalar/hono-api-reference  # API explorer UI
 ```
 
 ---
 
-## 2. OpenAPI: Schema-First via Zod
+## 2. Runtime Schemas
 
-**Decision:** `@hono/zod-openapi` — routes defined with Zod schemas that double as OpenAPI documentation.
+**Decision:** M7 ships runtime Zod validation, not a published OpenAPI document.
 
 **How it works:**
 ```typescript
-// 1. Define route with Zod schemas
-const searchRoute = createRoute({
-  method: 'post',
-  path: '/api/search',
-  tags: ['Search'],
-  request: {
-    body: { content: { 'application/json': { schema: SearchRequestSchema } } }
-  },
-  responses: {
-    200: { content: { 'application/json': { schema: SearchResponseSchema } } },
-    400: { content: { 'application/json': { schema: ErrorResponseSchema } } },
-    429: { description: 'Rate limit exceeded' }
-  }
-})
-
-// 2. Implement handler — fully typed from schemas
-app.openapi(searchRoute, async (c) => {
-  const body = c.req.valid('json') // typed as SearchRequest
+app.post('/api/search', async (c) => {
+  const body = SearchRequestSchema.parse(await c.req.json())
   const result = await hybridRetrieve(body, config, services, pool)
-  return c.json(result, 200)       // typed as SearchResponse
+  SearchResponseSchema.parse(result)
+  return c.json(result, 200)
 })
-
-// 3. OpenAPI spec served automatically at /doc
-app.doc('/doc', { openapi: '3.1.0', info: { title: 'Mulder API', version: '1.0.0' } })
 ```
 
-**Why not `hono-openapi` (rhinobase):** Higher download count, but decorator-style `describeRoute()` separates schema from route — two sources of truth. For a greenfield API, the `createRoute()` pattern is cleaner.
-
-**Why not hand-written OpenAPI:** Mulder already has 40+ Zod types across pipeline, retrieval, and config. Duplicating them as YAML/JSON schemas is a maintenance burden that violates DRY.
+**Future work:** If external consumers need a generated contract, add OpenAPI/Scalar as an explicit feature. M7 does not mount `/doc` or `/reference`.
 
 **Shared schemas:** Route schemas import from `@mulder/core` types and extend them for HTTP context (pagination, error envelopes). Core domain types stay in `packages/core/`, API-specific wrappers live in `apps/api/src/schemas/`.
 
 ---
 
-## 3. API Explorer: Scalar
+## 3. API Explorer
 
-**Decision:** Scalar (`@scalar/hono-api-reference`) over Swagger UI.
+**Decision:** No API explorer is mounted in the M7 runtime.
 
-**Why:**
-- Modern UI, dark mode, built-in API client for testing endpoints directly
-- Code generation in multiple languages (curl, Python, JS, Go)
-- First-class Hono middleware — one-liner setup
-- Microsoft adopted Scalar as .NET 9+ default (replacing Swagger UI)
-
-**Setup:**
-```typescript
-import { apiReference } from '@scalar/hono-api-reference'
-
-app.get('/reference', apiReference({
-  spec: { url: '/doc' },
-  theme: 'default',
-}))
-```
-
-Accessible at `/reference` in development. Can be disabled in production via config flag.
+Scalar remains a good future option, but it is not represented as a shipped config key or public unauthenticated route today.
 
 ---
 
@@ -188,18 +148,17 @@ Applied in order. Each middleware is a single responsibility.
 
 ```
 1. request-id          # X-Request-Id header (generated if missing)
-2. logger              # Structured JSON request/response logging (pino)
-3. cors                # Configurable origins (dev: *, prod: domain whitelist)
-4. secure-headers      # Security headers (X-Content-Type-Options, etc.)
-5. body-limit          # Max request body: 10MB (prevents abuse)
-6. rate-limiter        # Token bucket per IP (tiered, see §10.7)
-7. auth                # API key validation (Bearer token → config)
-8. error-handler       # Global: MulderError → HTTP response, Zod errors → 400
+2. request-context     # Request-scoped logger/context
+3. secure-headers      # Security headers (X-Content-Type-Options, etc.)
+4. body-limit          # Max request body: 10MB, with upload dev-proxy exemption
+5. auth                # Bearer API key or browser session cookie
+6. rate-limiter        # Token bucket per authenticated principal/IP tier
+7. error-handler       # Global: MulderError → HTTP response, Zod errors → 400
 ```
 
 ### Auth Strategy
 
-**Phase 1 (M7):** API key in `Authorization: Bearer <key>`. Key configured in `mulder.config.yaml` under `api.auth.api_keys[]`. Simple, sufficient for single-user/team deployments.
+**M7 runtime:** server/CLI callers use API keys in `Authorization: Bearer <key>`, and browser callers use HTTP-only session cookies created by `/api/auth/*`.
 
 ```yaml
 # mulder.config.yaml
@@ -209,19 +168,21 @@ api:
     api_keys:
       - name: "cli"
         key: "${MULDER_API_KEY}"    # env var reference
-      - name: "viewer"
-        key: "${MULDER_VIEWER_KEY}"
-  cors:
-    origins: ["http://localhost:5173"]  # Document Viewer dev
+    browser:
+      enabled: true
+      cookie_name: "mulder_session"
+      session_secret: "${MULDER_SESSION_SECRET}"
+      session_ttl_hours: 168
+      invitation_ttl_hours: 168
+      cookie_secure: false
+      same_site: "Lax"
   rate_limiting:
     enabled: true
-  explorer:
-    enabled: true  # Scalar UI at /reference
 ```
 
-**Phase 2 (future):** `@hono/firebase-auth` or `@hono/oidc-auth` for multi-user. Auth middleware is pluggable — swap implementation without changing routes.
+**Future:** OAuth/OIDC can be added behind the same route/middleware boundary if needed.
 
-**Unauthenticated endpoints:** `/api/health` (liveness probe), `/doc` (OpenAPI spec), `/reference` (Scalar UI) — all read-only, no data exposure.
+**Unauthenticated endpoints:** `/api/health`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/session`, and `/api/auth/invitations/accept`.
 
 ### Rate Limiting (§10.7)
 
@@ -248,7 +209,7 @@ app.onError((err, c) => {
     const status = mapErrorToStatus(err) // CONFIG_INVALID → 400, NOT_FOUND → 404, etc.
     return c.json({ error: { code: err.code, message: err.message, details: err.context } }, status)
   }
-  // Zod validation errors (from @hono/zod-openapi defaultHook)
+  // Zod validation errors from route-level schema parsing
   if (err instanceof ZodError) {
     return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid request', details: err.flatten() } }, 400)
   }
@@ -294,7 +255,7 @@ const data = await res.json() // fully typed
 
 **When used:** CLI commands check if `api.url` is configured in `mulder.config.yaml`. If set, route commands through the API client instead of calling pipeline functions directly. This enables remote execution without changing the CLI interface.
 
-**External consumers:** Use the OpenAPI spec at `/doc`. The RPC client is a convenience for same-monorepo TypeScript consumers, not a public contract.
+**External consumers:** Use the documented JSON routes directly. A generated OpenAPI contract is future work, not part of the M7 runtime.
 
 ---
 
@@ -379,7 +340,7 @@ app.openapi(searchRoute, async (c) => {
 
 **Why:** Mulder is a single-tenant tool, not a multi-consumer platform. The CLI and Document Viewer are the only consumers, both in the same monorepo, both updated together. Premature versioning adds routing complexity and cognitive overhead.
 
-**When to add versioning:** If/when external consumers appear, introduce `/api/v2/*` alongside `/api/*` (which becomes v1). Migration via OpenAPI spec diffing.
+**When to add versioning:** If/when external consumers appear, introduce `/api/v2/*` alongside `/api/*` (which becomes v1). Use contract tests and, if added later, generated schema diffs to guide migration.
 
 ---
 
@@ -387,10 +348,10 @@ app.openapi(searchRoute, async (c) => {
 
 | Decision | Chose | Over | Why |
 |----------|-------|------|-----|
-| Framework | Hono | Express, Fastify | Zod-OpenAPI native, RPC client, cold start |
-| OpenAPI | `@hono/zod-openapi` | `hono-openapi`, hand-written | Single source of truth with validation |
-| API Explorer | Scalar | Swagger UI, Redoc | Modern UX, built-in client, active development |
-| Auth | API key | OAuth2, Firebase Auth | Sufficient for single-tenant; auth middleware is swappable |
+| Framework | Hono | Express, Fastify | Small runtime, RPC client option, cold start |
+| OpenAPI | Future explicit feature | Silent runtime claim | Avoid promising unmounted `/doc` routes |
+| API Explorer | Future explicit feature | Silent Scalar config | Avoid promising unmounted `/reference` routes |
+| Auth | API key + browser session cookie | Browser-shipped API key | Keeps CLI/server access and browser access safe |
 | Rate limiting | In-memory token bucket | Redis, external service | Single-instance per Cloud Run; no infrastructure overhead |
 | Pagination | Cursor-based | Offset | Stable under concurrent writes, cheaper on PostgreSQL |
 | Versioning | None (yet) | `/api/v1/*` | Single consumer, co-deployed, premature abstraction |
@@ -428,5 +389,3 @@ H9 moves before H4–H8 because every route needs the middleware stack.
 - §13 (Source Layout) — `docs/functional-spec.md`
 - §D1–D5 (Domain-Agnostic Core) — `docs/architecture-core-vs-domain.md`
 - Hono docs — https://hono.dev
-- `@hono/zod-openapi` — https://hono.dev/examples/zod-openapi
-- Scalar — https://scalar.com

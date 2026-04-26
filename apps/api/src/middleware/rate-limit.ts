@@ -25,12 +25,7 @@ const RATE_LIMIT_TIERS: Record<RateLimitTier, RateLimitTierConfig> = {
 	},
 };
 
-const NON_RATE_LIMITED_PATHS = new Set(['/doc', '/reference']);
 const ANONYMOUS_CLIENT_KEY = 'anonymous';
-
-function isPublicDocsPath(path: string): boolean {
-	return NON_RATE_LIMITED_PATHS.has(path);
-}
 
 function isHealthPath(path: string): boolean {
 	return path === '/api/health';
@@ -39,7 +34,7 @@ function isHealthPath(path: string): boolean {
 function resolveRateLimitTier(method: string, path: string, query: URLSearchParams): RateLimitTier | undefined {
 	const normalizedMethod = method.toUpperCase();
 
-	if (normalizedMethod === 'OPTIONS' || isPublicDocsPath(path)) {
+	if (normalizedMethod === 'OPTIONS') {
 		return undefined;
 	}
 
