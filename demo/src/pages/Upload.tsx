@@ -35,7 +35,6 @@ interface JobDetailResponse {
 }
 
 const apiBase = import.meta.env.VITE_MULDER_API_BASE_URL ?? '';
-const apiKey = import.meta.env.VITE_MULDER_API_KEY ?? '';
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) {
@@ -53,7 +52,6 @@ function apiUrl(path: string): string {
 
 function buildApiHeaders(contentType = 'application/json'): HeadersInit {
   return {
-    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
     'Content-Type': contentType,
   };
 }
@@ -82,6 +80,7 @@ export default function UploadPage() {
       try {
         const response = await fetch(apiUrl(`/api/jobs/${jobState.jobId}`), {
           headers: buildApiHeaders(),
+          credentials: 'include',
         });
         if (!response.ok) {
           throw new Error(`Status polling failed (${response.status})`);
@@ -167,6 +166,7 @@ export default function UploadPage() {
       const initiateResponse = await fetch(apiUrl('/api/uploads/documents/initiate'), {
         method: 'POST',
         headers: buildApiHeaders(),
+        credentials: 'include',
         body: JSON.stringify({
           filename: file.name,
           size_bytes: file.size,
@@ -190,12 +190,12 @@ export default function UploadPage() {
       const uploadHeaders: HeadersInit = {
         ...initiateBody.data.upload.headers,
         'Content-Type': file.type || 'application/pdf',
-        ...(initiateBody.data.upload.transport === 'dev_proxy' && apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       };
 
       const uploadResponse = await fetch(apiUrl(initiateBody.data.upload.url), {
         method: initiateBody.data.upload.method,
         headers: uploadHeaders,
+        credentials: initiateBody.data.upload.transport === 'dev_proxy' ? 'include' : 'omit',
         body: file,
       });
 
@@ -208,6 +208,7 @@ export default function UploadPage() {
       const completeResponse = await fetch(apiUrl('/api/uploads/documents/complete'), {
         method: 'POST',
         headers: buildApiHeaders(),
+        credentials: 'include',
         body: JSON.stringify({
           source_id: initiateBody.data.source_id,
           filename: file.name,

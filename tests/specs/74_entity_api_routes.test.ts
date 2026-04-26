@@ -314,12 +314,18 @@ async function loadApiApp(): Promise<ApiApp> {
 			port: 8080,
 			auth: {
 				api_keys: [{ name: 'cli', key: 'test-api-key' }],
+				browser: {
+					enabled: true,
+					cookie_name: 'mulder_session',
+					session_secret: 'test-session-secret',
+					session_ttl_hours: 168,
+					invitation_ttl_hours: 168,
+					cookie_secure: false,
+					same_site: 'Lax',
+				},
 			},
 			rate_limiting: {
 				enabled: true,
-			},
-			explorer: {
-				enabled: false,
 			},
 		},
 	});

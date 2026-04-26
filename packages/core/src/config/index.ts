@@ -16,7 +16,6 @@ export type {
 	ApiAuthKeyConfig,
 	ApiBudgetConfig,
 	ApiConfig,
-	ApiExplorerConfig,
 	ApiRateLimitingConfig,
 	CloudSqlConfig,
 	DeduplicationConfig,

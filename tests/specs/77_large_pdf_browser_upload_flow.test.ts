@@ -108,12 +108,18 @@ async function loadApiApp(): Promise<{ request: (input: string | Request, init?:
 			port: 8080,
 			auth: {
 				api_keys: [{ name: 'cli', key: 'test-api-key' }],
+				browser: {
+					enabled: true,
+					cookie_name: 'mulder_session',
+					session_secret: 'test-session-secret',
+					session_ttl_hours: 168,
+					invitation_ttl_hours: 168,
+					cookie_secure: false,
+					same_site: 'Lax',
+				},
 			},
 			rate_limiting: {
 				enabled: true,
-			},
-			explorer: {
-				enabled: false,
 			},
 		},
 	});
@@ -326,7 +332,8 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 		expect(db.runSql(`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'ingest';`)).toBe(
 			'completed',
 		);
-		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'pipeline_run' AND status = 'pending';"))).toBe(1);
+		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending';"))).toBe(1);
+		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'pipeline_run';"))).toBe(0);
 
 		const finalizePayload = readJsonCell(`SELECT payload::text FROM jobs WHERE id = '${jobId}';`);
 		expect(finalizePayload).toMatchObject({
@@ -337,6 +344,16 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 			resolved_source_id: sourceId,
 			pipeline_job_id: expect.any(String),
 			pipeline_run_id: expect.any(String),
+		});
+		const pipelineJobPayload = readJsonCell(
+			`SELECT payload::text FROM jobs WHERE id = '${String(finalizePayload.pipeline_job_id)}';`,
+		);
+		expect(pipelineJobPayload).toMatchObject({
+			sourceId,
+			runId: finalizePayload.pipeline_run_id,
+			upTo: 'graph',
+			force: false,
+			tag: 'browser-upload',
 		});
 	});
 

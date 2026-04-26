@@ -13,27 +13,30 @@ import Evidence from './pages/Evidence';
 import Board from './pages/Board';
 import Upload from './pages/Upload';
 import Settings from './pages/Settings';
+import AuthGate from './features/auth/AuthGate';
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/upload" element={<Upload />} />
-          <Route path="/sources" element={<SourceLibrary />} />
-          <Route path="/sources/:id" element={<SourceDetail />} />
-          <Route path="/sources/:id/review/:storyId" element={<Review />} />
-          <Route path="/stories" element={<Stories />} />
-          <Route path="/stories/:id" element={<StoryDetail />} />
-          <Route path="/entities" element={<EntityList />} />
-          <Route path="/entities/:id" element={<EntityDetail />} />
-          <Route path="/graph" element={<Graph />} />
-          <Route path="/evidence" element={<Evidence />} />
-          <Route path="/boards/:id" element={<Board />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
-      </Layout>
+      <AuthGate>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/upload" element={<Upload />} />
+            <Route path="/sources" element={<SourceLibrary />} />
+            <Route path="/sources/:id" element={<SourceDetail />} />
+            <Route path="/sources/:id/review/:storyId" element={<Review />} />
+            <Route path="/stories" element={<Stories />} />
+            <Route path="/stories/:id" element={<StoryDetail />} />
+            <Route path="/entities" element={<EntityList />} />
+            <Route path="/entities/:id" element={<EntityDetail />} />
+            <Route path="/graph" element={<Graph />} />
+            <Route path="/evidence" element={<Evidence />} />
+            <Route path="/boards/:id" element={<Board />} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
+        </Layout>
+      </AuthGate>
     </BrowserRouter>
   );
 }

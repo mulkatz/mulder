@@ -31,12 +31,12 @@ export function mapErrorToStatus(error: MulderError): ApiErrorStatus {
 		return 429;
 	}
 
-	if (code.includes('UNAUTHORIZED') || code.startsWith('AUTH_')) {
-		return 401;
-	}
-
 	if (code.includes('FORBIDDEN')) {
 		return 403;
+	}
+
+	if (code.includes('UNAUTHORIZED') || code.startsWith('AUTH_')) {
+		return 401;
 	}
 
 	if (code.includes('TOO_LARGE')) {

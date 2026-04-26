@@ -140,12 +140,18 @@ async function loadApiApp(): Promise<{ request: (input: string | Request, init?:
 			port: 8080,
 			auth: {
 				api_keys: [{ name: 'cli', key: 'test-api-key' }],
+				browser: {
+					enabled: true,
+					cookie_name: 'mulder_session',
+					session_secret: 'test-session-secret',
+					session_ttl_hours: 168,
+					invitation_ttl_hours: 168,
+					cookie_secure: false,
+					same_site: 'Lax',
+				},
 			},
 			rate_limiting: {
 				enabled: true,
-			},
-			explorer: {
-				enabled: false,
 			},
 		},
 	});
@@ -271,11 +277,12 @@ describe('Spec 71 — Async Pipeline API Routes', () => {
 		expect((runRow.options as Record<string, unknown>).from).toBe('extract');
 		expect((runRow.options as Record<string, unknown>).up_to).toBe('extract');
 
+		const jobType = db.runSql(`SELECT type FROM jobs WHERE id = '${body.data.job_id}';`);
+		expect(jobType).toBe('extract');
 		const jobRow = readJsonCell(`SELECT payload::text FROM jobs WHERE id = '${body.data.job_id}';`);
 		expect(jobRow).toMatchObject({
 			sourceId,
 			runId: body.data.run_id,
-			from: 'extract',
 			upTo: 'extract',
 			tag: 'api-run',
 			force: false,
@@ -359,10 +366,11 @@ describe('Spec 71 — Async Pipeline API Routes', () => {
 		expect(body.data.status).toBe('pending');
 		expect(body.links.status).toMatch(/^\/api\/jobs\/[0-9a-f-]+$/i);
 
+		const jobType = db.runSql(`SELECT type FROM jobs WHERE id = '${body.data.job_id}';`);
+		expect(jobType).toBe('segment');
 		const jobRow = readJsonCell(`SELECT payload::text FROM jobs WHERE id = '${body.data.job_id}';`);
 		expect(jobRow).toMatchObject({
 			sourceId,
-			from: 'segment',
 			upTo: 'segment',
 			tag: 'retry-api',
 			force: true,

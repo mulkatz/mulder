@@ -81,11 +81,17 @@ describe('Spec 70: API Middleware Stack', () => {
 				port: 8080,
 				auth: {
 					api_keys: [{ name: 'cli', key: 'test-api-key' }],
+					browser: {
+						enabled: true,
+						cookie_name: 'mulder_session',
+						session_secret: 'test-session-secret',
+						session_ttl_hours: 168,
+						invitation_ttl_hours: 168,
+						cookie_secure: false,
+						same_site: 'Lax',
+					},
 				},
 				rate_limiting: {
-					enabled: true,
-				},
-				explorer: {
 					enabled: true,
 				},
 			},
@@ -116,11 +122,17 @@ describe('Spec 70: API Middleware Stack', () => {
 				port: 8080,
 				auth: {
 					api_keys: [{ name: 'cli', key: 'test-api-key' }],
+					browser: {
+						enabled: true,
+						cookie_name: 'mulder_session',
+						session_secret: 'test-session-secret',
+						session_ttl_hours: 168,
+						invitation_ttl_hours: 168,
+						cookie_secure: false,
+						same_site: 'Lax',
+					},
 				},
 				rate_limiting: {
-					enabled: true,
-				},
-				explorer: {
 					enabled: true,
 				},
 			},
@@ -168,11 +180,17 @@ describe('Spec 70: API Middleware Stack', () => {
 				port: 8080,
 				auth: {
 					api_keys: [{ name: 'cli', key: 'test-api-key' }],
+					browser: {
+						enabled: true,
+						cookie_name: 'mulder_session',
+						session_secret: 'test-session-secret',
+						session_ttl_hours: 168,
+						invitation_ttl_hours: 168,
+						cookie_secure: false,
+						same_site: 'Lax',
+					},
 				},
 				rate_limiting: {
-					enabled: true,
-				},
-				explorer: {
 					enabled: true,
 				},
 			},
@@ -221,11 +239,17 @@ describe('Spec 70: API Middleware Stack', () => {
 				port: 8080,
 				auth: {
 					api_keys: [{ name: 'cli', key: 'test-api-key' }],
+					browser: {
+						enabled: true,
+						cookie_name: 'mulder_session',
+						session_secret: 'test-session-secret',
+						session_ttl_hours: 168,
+						invitation_ttl_hours: 168,
+						cookie_secure: false,
+						same_site: 'Lax',
+					},
 				},
 				rate_limiting: {
-					enabled: true,
-				},
-				explorer: {
 					enabled: true,
 				},
 			},
@@ -349,15 +373,18 @@ ontology:
 			const config = loadConfig(configPath) as {
 				api: {
 					port: number;
-					auth: { api_keys: Array<{ name: string; key: string }> };
+					auth: {
+						api_keys: Array<{ name: string; key: string }>;
+						browser: { enabled: boolean; cookie_name: string };
+					};
 					rate_limiting: { enabled: boolean };
-					explorer: { enabled: boolean };
 				};
 			};
 			expect(config.api.port).toBe(8080);
 			expect(config.api.auth.api_keys).toEqual([]);
+			expect(config.api.auth.browser.enabled).toBe(true);
+			expect(config.api.auth.browser.cookie_name).toBe('mulder_session');
 			expect(config.api.rate_limiting.enabled).toBe(true);
-			expect(config.api.explorer.enabled).toBe(true);
 		} finally {
 			rmSync(configDir, { recursive: true, force: true });
 		}

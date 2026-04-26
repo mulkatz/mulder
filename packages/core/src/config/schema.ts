@@ -58,15 +58,22 @@ const apiAuthKeySchema = z.object({
 	key: z.string().min(1),
 });
 
+const apiBrowserAuthSchema = z.object({
+	enabled: z.boolean().default(true),
+	cookie_name: z.string().min(1).default('mulder_session'),
+	session_secret: z.string().min(1).default('dev-insecure-change-me'),
+	session_ttl_hours: z.number().positive().int().default(168),
+	invitation_ttl_hours: z.number().positive().int().default(168),
+	cookie_secure: z.boolean().default(false),
+	same_site: z.enum(['Strict', 'Lax', 'None']).default('Lax'),
+});
+
 const apiAuthSchema = z.object({
 	api_keys: z.array(apiAuthKeySchema).default([]),
+	browser: apiBrowserAuthSchema.default(defaults(apiBrowserAuthSchema)),
 });
 
 const apiRateLimitingSchema = z.object({
-	enabled: z.boolean().default(true),
-});
-
-const apiExplorerSchema = z.object({
 	enabled: z.boolean().default(true),
 });
 
@@ -84,7 +91,6 @@ const apiObj = z.object({
 	port: z.number().int().positive().default(8080),
 	auth: apiAuthSchema.default(defaults(apiAuthSchema)),
 	rate_limiting: apiRateLimitingSchema.default(defaults(apiRateLimitingSchema)),
-	explorer: apiExplorerSchema.default(defaults(apiExplorerSchema)),
 	budget: apiBudgetSchema.default(defaults(apiBudgetSchema)),
 });
 const apiSchema = apiObj.default(defaults(apiObj));

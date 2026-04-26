@@ -15,10 +15,16 @@ api:
     api_keys:
       - name: "cli"
         key: "${MULDER_API_KEY}"      # Bearer token accepted by protected routes
+    browser:
+      enabled: true
+      cookie_name: "mulder_session"
+      session_secret: "${MULDER_SESSION_SECRET}"
+      session_ttl_hours: 168
+      invitation_ttl_hours: 168
+      cookie_secure: false            # Set true behind HTTPS in production
+      same_site: "Lax"
   rate_limiting:
     enabled: true                     # In-memory token buckets per Cloud Run instance
-  explorer:
-    enabled: true                     # Scalar /reference UI
   budget:
     enabled: true
     monthly_limit_usd: 50             # Hard gate for accepted API work in the current month

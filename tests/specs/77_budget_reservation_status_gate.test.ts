@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { Services, Source } from '@mulder/core';
+import type { Source } from '@mulder/core';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
 
@@ -170,12 +170,18 @@ async function loadApiApp(): Promise<{ request: (input: string | Request, init?:
 			port: 8080,
 			auth: {
 				api_keys: [{ name: 'cli', key: 'test-api-key' }],
+				browser: {
+					enabled: true,
+					cookie_name: 'mulder_session',
+					session_secret: 'test-session-secret',
+					session_ttl_hours: 168,
+					invitation_ttl_hours: 168,
+					cookie_secure: false,
+					same_site: 'Lax',
+				},
 			},
 			rate_limiting: {
 				enabled: true,
-			},
-			explorer: {
-				enabled: false,
 			},
 			budget: {
 				enabled: true,
@@ -339,8 +345,9 @@ describe('Spec 77 — Budget reservation status gate', () => {
 		});
 		expect(accepted.status).toBe(202);
 		const acceptedBody = (await accepted.json()) as {
-			data: { run_id: string };
+			data: { run_id: string; job_id: string };
 		};
+		db.runSql(`UPDATE jobs SET max_attempts = 1 WHERE id = '${acceptedBody.data.job_id}';`);
 
 		const config = coreModule.loadConfig(EXAMPLE_CONFIG);
 		const cloudSqlConfig = config.gcp?.cloud_sql;
@@ -355,19 +362,10 @@ describe('Spec 77 — Budget reservation status gate', () => {
 				services: {} as Services,
 				pool,
 				logger: coreModule.createLogger(),
-				dispatch: async (job, ctx) => {
-					const runId = 'runId' in job.payload && typeof job.payload.runId === 'string' ? job.payload.runId : undefined;
-					if (job.type !== 'pipeline_run' || !runId) {
-						throw new Error('Expected pipeline_run job with runId');
+				dispatch: async (job) => {
+					if (job.type !== 'extract') {
+						throw new Error('Expected extract step job');
 					}
-
-					await coreModule.upsertPipelineRunSource(ctx.pool, {
-						runId,
-						sourceId,
-						currentStep: 'segment',
-						status: 'failed',
-						errorMessage: 'simulated failure',
-					});
 					throw new Error('simulated failure');
 				},
 			},
@@ -383,8 +381,8 @@ describe('Spec 77 — Budget reservation status gate', () => {
 		);
 
 		expect(reservation.status).toBe('reconciled');
-		expect(Number(reservation.committed_usd)).toBeCloseTo(0.08, 5);
-		expect(Number(reservation.released_usd)).toBeCloseTo(0.02, 5);
+		expect(Number(reservation.committed_usd)).toBeCloseTo(0.06, 5);
+		expect(Number(reservation.released_usd)).toBeCloseTo(0.04, 5);
 	});
 
 	it('QA-04: partial run helper returns a reconciled split', () => {
