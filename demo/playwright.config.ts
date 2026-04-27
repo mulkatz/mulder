@@ -1,23 +1,55 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const isCi = Boolean(process.env.CI);
+
 export default defineConfig({
-  testDir: './tests',
-  timeout: 60_000,
-  retries: 0,
-  use: {
-    baseURL: 'http://localhost:5173',
-    trace: 'on-first-retry',
+  testDir: './tests/e2e',
+  fullyParallel: false,
+  forbidOnly: isCi,
+  retries: isCi ? 1 : 0,
+  reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
+  timeout: 45_000,
+  expect: {
+    timeout: 10_000,
   },
-  projects: [
+  use: {
+    baseURL: 'http://127.0.0.1:5173',
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+  },
+  webServer: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      command: 'npm run e2e:api',
+      url: 'http://127.0.0.1:8080/api/health',
+      reuseExistingServer: false,
+      timeout: 600_000,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+    {
+      command: 'VITE_PREVIEW_AUTH_BYPASS=false VITE_API_PROXY_TARGET=http://127.0.0.1:8080 npm run dev -- --host 127.0.0.1',
+      url: 'http://127.0.0.1:5173',
+      reuseExistingServer: false,
+      timeout: 120_000,
+      stdout: 'pipe',
+      stderr: 'pipe',
     },
   ],
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:5173',
-    reuseExistingServer: true,
-    timeout: 30_000,
-  },
+  projects: [
+    {
+      name: 'setup',
+      testMatch: /.*\.setup\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'chromium',
+      dependencies: ['setup'],
+      testIgnore: /.*\.setup\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: './tests/.auth/owner.json',
+      },
+    },
+  ],
 });

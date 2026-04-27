@@ -1,0 +1,73 @@
+project:
+  name: "mulder-demo-e2e"
+  description: "Local browser E2E fixture configuration"
+  supported_locales: ["en"]
+
+api:
+  port: 8080
+  auth:
+    api_keys:
+      - name: "e2e-operator"
+        key: "mulder-e2e-api-key"
+    browser:
+      enabled: true
+      cookie_name: "mulder_session"
+      session_secret: "mulder-e2e-session-secret"
+      session_ttl_hours: 168
+      invitation_ttl_hours: 168
+      cookie_secure: false
+      same_site: "Lax"
+  rate_limiting:
+    enabled: false
+  budget:
+    enabled: false
+    monthly_limit_usd: 50
+    extract_per_page_usd: 0.006
+    segment_per_page_usd: 0.002
+    enrich_per_source_usd: 0.015
+    embed_per_source_usd: 0.004
+    graph_per_source_usd: 0.001
+
+dev_mode: true
+
+gcp:
+  project_id: "mulder-demo-e2e"
+  region: "europe-west1"
+  cloud_sql:
+    instance_name: "mulder-e2e-db"
+    database: "mulder"
+    host: "localhost"
+    port: 5432
+    user: "mulder"
+    password: "mulder"
+    tier: "db-custom-2-8192"
+  storage:
+    bucket: "mulder-demo-e2e"
+  document_ai:
+    processor_id: "demo-e2e"
+    location: "eu"
+
+ontology:
+  entity_types:
+    - name: "person"
+      description: "A named individual"
+      attributes:
+        - name: "role"
+          type: "string"
+    - name: "location"
+      description: "A named location"
+      attributes:
+        - name: "region"
+          type: "string"
+    - name: "organization"
+      description: "A named organization"
+      attributes:
+        - name: "type"
+          type: "string"
+  relationships:
+    - name: "INVESTIGATED_AT"
+      source: "person"
+      target: "location"
+    - name: "WITNESSED"
+      source: "person"
+      target: "person"
