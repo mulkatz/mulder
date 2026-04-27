@@ -2,12 +2,13 @@ import { useSession } from './useSession';
 
 export function useAuth() {
   const session = useSession();
-  const role = session.data?.user.role;
+  const user = session.data?.data.user ?? null;
+  const role = user?.role ?? null;
 
   return {
     ...session,
-    user: session.data?.user ?? null,
-    role: role ?? null,
+    user,
+    role,
     isAdmin: role === 'owner' || role === 'admin',
   };
 }

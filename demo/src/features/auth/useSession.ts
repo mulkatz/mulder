@@ -5,12 +5,14 @@ import type { SessionResponse } from '@/lib/api-types';
 export const sessionQueryKey = ['auth', 'session'] as const;
 
 const PREVIEW_SESSION: SessionResponse = {
-  user: {
-    id: 'preview-user',
-    email: 'preview@mulder.local',
-    role: 'owner',
+  data: {
+    user: {
+      id: 'preview-user',
+      email: 'preview@mulder.local',
+      role: 'owner',
+    },
+    expires_at: '2099-01-01T00:00:00.000Z',
   },
-  expires_at: '2099-01-01T00:00:00.000Z',
 };
 
 function shouldBypassAuthSession() {
@@ -18,7 +20,7 @@ function shouldBypassAuthSession() {
     return false;
   }
 
-  return import.meta.env.VITE_PREVIEW_AUTH_BYPASS !== 'false';
+  return import.meta.env.VITE_PREVIEW_AUTH_BYPASS === 'true';
 }
 
 export function useSession() {

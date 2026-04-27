@@ -6,9 +6,13 @@ export interface UserSummary {
   role: UserRole;
 }
 
-export interface SessionResponse {
+export interface SessionPayload {
   user: UserSummary;
   expires_at: string;
+}
+
+export interface SessionResponse {
+  data: SessionPayload;
 }
 
 export interface DocumentRecord {
@@ -74,6 +78,7 @@ export interface EntityRecord {
   taxonomy_status: 'auto' | 'curated' | 'merged';
   taxonomy_id: string | null;
   corroboration_score: number | null;
+  corroboration_status: 'scored' | 'not_scored' | 'insufficient_data';
   source_count: number;
   attributes: Record<string, unknown>;
   created_at: string;
@@ -125,7 +130,12 @@ export interface EntityEdgesResponse {
 
 export interface EvidenceSummary {
   data: {
-    entities: { total: number; scored: number; avg_corroboration: number };
+    entities: {
+      total: number;
+      scored: number;
+      avg_corroboration: number | null;
+      corroboration_status: 'scored' | 'not_scored' | 'insufficient_data';
+    };
     contradictions: { potential: number; confirmed: number; dismissed: number };
     duplicates: { count: number };
     sources: { total: number; scored: number; data_reliability: 'insufficient' | 'low' | 'moderate' | 'high' };
