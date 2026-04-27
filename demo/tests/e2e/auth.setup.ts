@@ -13,7 +13,7 @@ test('authenticates the seeded owner through the browser login form', async ({ p
   await page.getByLabel('Password').fill(E2E_OWNER_PASSWORD);
   await page.getByRole('button', { name: 'Enter' }).click();
 
-  await expect(page.getByRole('heading', { name: 'The archive is awake.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'A live briefing from the archive.' })).toBeVisible();
   mkdirSync(dirname(authStatePath), { recursive: true });
   await page.context().storageState({ path: authStatePath });
 });

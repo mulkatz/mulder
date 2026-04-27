@@ -18,13 +18,20 @@ function isAllowedConsoleError(message: string) {
   return message === 'Failed to load resource: the server responded with a status of 401 (Unauthorized)';
 }
 
-function isAllowedRequestFailure(url: string, failureText: string) {
+function isAllowedRequestFailure(url: string, failureText: string, method: string) {
   const hostname = new URL(url).hostname;
   if (hostname === 'fonts.gstatic.com' || hostname === 'fonts.googleapis.com') {
     return true;
   }
 
-  return new URL(url).pathname === '/api/auth/logout' && failureText === 'net::ERR_ABORTED';
+  const pathname = new URL(url).pathname;
+  if (pathname === '/api/auth/logout' && failureText === 'net::ERR_ABORTED') {
+    return true;
+  }
+
+  // Vite's local proxy can close the no-body dev-upload PUT after the API has
+  // accepted the bytes; the UI still verifies completion through the job API.
+  return method === 'PUT' && pathname === '/api/uploads/documents/dev-upload' && failureText === 'net::ERR_ABORTED';
 }
 
 async function attachDiagnostics(testInfo: TestInfo, issues: BrowserIssue[]) {
@@ -61,7 +68,7 @@ async function guardPage(page: Page, runTest: (page: Page) => Promise<void>, tes
 
   page.on('requestfailed', (request) => {
     const failureText = request.failure()?.errorText ?? 'failed';
-    if (isAllowedRequestFailure(request.url(), failureText)) {
+    if (isAllowedRequestFailure(request.url(), failureText, request.method())) {
       return;
     }
 

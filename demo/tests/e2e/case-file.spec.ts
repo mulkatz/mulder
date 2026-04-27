@@ -3,7 +3,7 @@ import { E2E_FIRST_STORY_ID, E2E_SECOND_STORY_ID, E2E_SOURCE_ID } from './consta
 
 async function openCaseFile(page: import('@playwright/test').Page) {
   await page.goto('/archive');
-  await expect(page.getByRole('heading', { name: 'Open a case file.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Browse the document stack.' })).toBeVisible();
   await page.getByRole('link', { name: /mulder-demo-case-file\.pdf/ }).click();
   await expect(page).toHaveURL(`/archive/${E2E_SOURCE_ID}`);
   await expect(page.getByRole('heading', { name: 'mulder-demo-case-file.pdf' })).toBeVisible();
@@ -15,6 +15,7 @@ test('theme toggle persists across reloads', async ({ page }) => {
   await page.getByRole('button', { name: 'Toggle theme' }).click();
   await expect(page.locator('html')).toHaveClass(/dark/);
 
+  await page.waitForLoadState('networkidle');
   await page.reload();
   await expect(page.locator('html')).toHaveClass(/dark/);
 });
@@ -67,10 +68,11 @@ test('case file supports story expansion, entity hover, drawer, thumbnails, and 
   await expect(page).toHaveURL(`/archive/${E2E_SOURCE_ID}`);
 });
 
-test('future demo pages render their current placeholder states without claiming completion', async ({ page }) => {
+test('ask and board render real V1 surfaces without placeholder copy', async ({ page }) => {
   await page.goto('/board');
-  await expect(page.getByRole('heading', { name: 'The graph arrives in the next phase.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'The entity graph, capped and honest.' })).toBeVisible();
+  await expect(page.getByText('Josef Allen Hynek')).toBeVisible();
 
   await page.goto('/ask');
-  await expect(page.getByRole('heading', { name: 'The archive can answer, soon.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ask the archive. Demand citations.' })).toBeVisible();
 });

@@ -16,13 +16,14 @@ test('login and logout use the cookie-backed browser session', async ({ page }) 
   await page.getByLabel('Password').fill(E2E_OWNER_PASSWORD);
   await page.getByRole('button', { name: 'Enter' }).click();
 
-  await expect(page.getByRole('heading', { name: 'The archive is awake.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'A live briefing from the archive.' })).toBeVisible();
   await expect(page.getByText(E2E_OWNER_EMAIL)).toBeVisible();
 
   const logoutResponse = page.waitForResponse((response) =>
     response.url().includes('/api/auth/logout') && response.status() === 204,
   );
-  await page.getByRole('button', { name: 'Log out' }).click();
+  await page.getByRole('button', { name: new RegExp(E2E_OWNER_EMAIL) }).click();
+  await page.getByRole('menuitem', { name: 'Log out' }).click();
   await logoutResponse;
   await expect(page).toHaveURL('/auth/login');
   await expect(page.getByRole('heading', { name: 'Enter the archive' })).toBeVisible();
@@ -38,6 +39,6 @@ test('invitation acceptance creates a browser session without exposing the raw t
   await page.getByLabel('Confirm password').fill('member password for e2e');
   await page.getByRole('button', { name: 'Enter' }).click();
 
-  await expect(page.getByRole('heading', { name: 'The archive is awake.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'A live briefing from the archive.' })).toBeVisible();
   await expect(page.getByText(E2E_INVITE_TOKEN)).toHaveCount(0);
 });
