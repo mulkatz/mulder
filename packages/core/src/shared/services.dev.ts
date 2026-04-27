@@ -10,7 +10,7 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import type { MulderConfig } from '../config/types.js';
 import type { Logger } from './logger.js';
 import type {
@@ -199,9 +199,8 @@ class DevStorageService implements StorageService {
 			const entries = readdirSync(fullPath, { recursive: true, withFileTypes: true });
 			for (const entry of entries) {
 				if (!entry.isFile()) continue;
-				const entryDir = entry.parentPath;
-				const relativePath = entryDir.replace(basePath, '').replace(/^\//, '');
-				allPaths.add(`${relativePath}/${entry.name}`);
+				const relativePath = relative(basePath, entry.parentPath).replaceAll('\\', '/');
+				allPaths.add(relativePath ? `${relativePath}/${entry.name}` : entry.name);
 			}
 		}
 		const paths = [...allPaths].sort();
