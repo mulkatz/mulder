@@ -1,9 +1,19 @@
-import { Archive, BookOpenText, LogOut, Moon, Search, Sun, Workflow } from 'lucide-react';
+import { Archive, BookOpenText, Command, LogOut, Moon, Search, ShieldCheck, Sun, UploadCloud, UserPlus, Workflow } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { useAuditDrawer } from '@/app/stores/AuditDrawerStore';
+import { useCommandPalette } from '@/app/stores/CommandPaletteStore';
+import { RouteErrorBoundary } from '@/app/RouteErrorBoundary';
 import { Button } from '@/components/primitives/Button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/primitives/DropdownMenu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/primitives/Tooltip';
+import { AuditDrawer } from '@/components/Audit/AuditDrawer';
+import { InviteDialog } from '@/components/Auth/InviteDialog';
+import { CommandPalette } from '@/components/CommandPalette/CommandPalette';
 import { EntityProfileDrawer } from '@/components/Entity/EntityProfileDrawer';
+import { ShortcutsDialog } from '@/components/Shortcuts/ShortcutsDialog';
+import { UploadDialog } from '@/components/Upload/UploadDialog';
 import { useAuth } from '@/features/auth/useAuth';
 import { useLogout } from '@/features/auth/useLogout';
 import { useTheme } from '@/app/theme';
@@ -24,6 +34,63 @@ export function Layout() {
   const auth = useAuth();
   const logout = useLogout();
   const theme = useTheme();
+  const audit = useAuditDrawer();
+  const palette = useCommandPalette();
+  const chordRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    function isTypingTarget(target: EventTarget | null) {
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+      const tag = target.tagName.toLowerCase();
+      return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (isTypingTarget(event.target)) {
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        palette.openPalette();
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key === '.') {
+        event.preventDefault();
+        audit.openAudit('summary');
+        return;
+      }
+
+      if (event.key === '?') {
+        event.preventDefault();
+        window.dispatchEvent(new Event('mulder:open-shortcuts'));
+        return;
+      }
+
+      if (event.key.toLowerCase() === 'g') {
+        chordRef.current = 'g';
+        window.setTimeout(() => {
+          chordRef.current = null;
+        }, 1_200);
+        return;
+      }
+
+      if (chordRef.current === 'g') {
+        const key = event.key.toLowerCase();
+        chordRef.current = null;
+        if (key === 'd') navigate(routes.desk());
+        if (key === 'a') navigate(routes.archive());
+        if (key === 'b') navigate(routes.board());
+        if (key === 's') navigate(routes.ask());
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [audit, navigate, palette]);
 
   async function handleLogout() {
     try {
@@ -66,30 +133,74 @@ export function Layout() {
           <div className="flex items-center gap-3">
             <Tooltip>
               <TooltipTrigger asChild>
+                <Button aria-label="Open command palette" onClick={palette.openPalette} variant="ghost">
+                  <Command className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Command palette</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button aria-label="Upload document" onClick={() => window.dispatchEvent(new Event('mulder:open-upload'))} variant="ghost">
+                  <UploadCloud className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Upload document</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button aria-label="Open Audit drawer" onClick={() => audit.openAudit('summary')} variant="ghost">
+                  <ShieldCheck className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Audit drawer</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <Button aria-label="Toggle theme" onClick={theme.toggleTheme} variant="ghost">
                   {theme.theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{theme.theme === 'dark' ? 'Switch to light' : 'Switch to dark'}</TooltipContent>
             </Tooltip>
-            <div className="flex items-center gap-3 rounded-full border border-thread bg-surface px-3 py-2">
-              <div className="flex size-9 items-center justify-center rounded-full bg-amber-soft font-mono text-xs uppercase tracking-[0.16em] text-amber">
-                {auth.user ? initials(auth.user.email) : '??'}
-              </div>
-              <div className="hidden sm:block">
-                <p className="text-sm text-ink">{auth.user?.email}</p>
-                <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-subtle">{auth.role ?? 'member'}</p>
-              </div>
-              <Button aria-label="Log out" className="rounded-full px-3 py-2" onClick={handleLogout} variant="ghost">
-                <LogOut className="size-4" />
-              </Button>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex items-center gap-3 rounded-full border border-thread bg-surface px-3 py-2 text-left">
+                  <div className="flex size-9 items-center justify-center rounded-full bg-amber-soft font-mono text-xs uppercase tracking-[0.16em] text-amber">
+                    {auth.user ? initials(auth.user.email) : '??'}
+                  </div>
+                  <div className="hidden sm:block">
+                    <p className="text-sm text-ink">{auth.user?.email}</p>
+                    <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-subtle">{auth.role ?? 'member'}</p>
+                  </div>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {auth.isAdmin ? (
+                  <DropdownMenuItem onSelect={() => window.dispatchEvent(new Event('mulder:open-invite'))}>
+                    <UserPlus className="size-4" />
+                    Create invitation
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem onSelect={() => void handleLogout()}>
+                  <LogOut className="size-4" />
+                  Log out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>
       <main className="mx-auto max-w-[1600px] px-4 pb-10 pt-6 lg:px-8">
-        <Outlet />
+        <RouteErrorBoundary>
+          <Outlet />
+        </RouteErrorBoundary>
       </main>
+      <UploadDialog />
+      <InviteDialog />
+      <CommandPalette />
+      <AuditDrawer />
+      <ShortcutsDialog />
       <EntityProfileDrawer />
     </div>
   );
