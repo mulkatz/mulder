@@ -2324,34 +2324,34 @@ All arrows point downward (dependencies flow top to bottom). §A16 (Agent) depen
 
 ## Appendix C — Schema Migration Index
 
-All new migrations extend the existing sequence (current highest: 017).
+All new migrations extend the existing sequence (current highest: 020).
 
 | Migration | What | §A Ref |
 |-----------|------|--------|
-| 018 | Add `sensitivity_level`, `sensitivity_metadata` columns to sources, stories, entities, chunks, entity_edges | §A5 |
-| 019 | Add `provenance` JSONB column to entities, entity_edges, chunks, story_entities | §A6.1 |
-| 020 | Add `deleted_at`, `deletion_status` columns to sources | §A6.2 |
-| 021 | Create `document_blobs` table | §A2.3 |
-| 022 | Create `acquisition_contexts` table | §A2.3 |
-| 023 | Create `original_sources`, `custody_steps` tables | §A2.3 |
-| 024 | Create `archive_locations`, `archives` tables | §A2.3 |
-| 025 | Create `collections` table | §A2.3 |
-| 026 | Create `blob_version_links` table | §A2.3 |
-| 027 | Create `document_quality_assessments` table | §A4 |
-| 028 | Create `knowledge_assertions` table | §A3 |
-| 029 | Create `users`, `roles` tables | §A5.3 |
-| 030 | Create `source_deletions`, `audit_log` tables | §A6.2 |
-| 031 | Create `translated_documents` table | §A7 |
-| 032 | Create `source_credibility_profiles`, `credibility_dimensions` tables | §A8 |
-| 033 | Create `conflict_nodes`, `conflict_assertions`, `conflict_resolutions` tables | §A9 |
-| 034 | Create `review_events`, `review_queues` tables | §A13 |
-| 035 | Create `classification_taxonomies`, `classification_categories`, `taxonomy_mappings` tables | §A11 |
-| 036 | Create `similarity_cache` table + SIMILAR_TO edge type | §A10 |
-| 037 | Create `temporal_anomaly_clusters`, `spatiotemporal_clusters`, `external_correlations` tables | §A12 |
-| 038 | Create `graph_change_events`, `graph_snapshots` tables | §A14 |
-| 039 | Create `export_audit`, `import_adapters`, `entity_external_ids` tables | §A15 |
-| 040 | Create `journal_entries`, `research_sessions` tables | §A16 |
-| 041 | Create `web_evidence` table | §A16.6 |
-| 042 | Add `review_status` column to entities, entity_edges, knowledge_assertions, taxonomy_mappings, credibility_dimensions | §A13 |
-| 043 | Indexes for all new tables (sensitivity, provenance, review_status, quality, temporal) | All |
-| 044 | PL/pgSQL functions for cascading purge (§A6), quality routing, review auto-approve | §A6, §A4, §A13 |
+| 021 | Add `sensitivity_level`, `sensitivity_metadata` columns to sources, stories, entities, chunks, entity_edges | §A5 |
+| 022 | Add `provenance` JSONB column to entities, entity_edges, chunks, story_entities | §A6.1 |
+| 023 | Add `deleted_at`, `deletion_status` columns to sources | §A6.2 |
+| 024 | Create `document_blobs` table | §A2.3 |
+| 025 | Create `acquisition_contexts` table | §A2.3 |
+| 026 | Create `original_sources`, `custody_steps` tables | §A2.3 |
+| 027 | Create `archive_locations`, `archives` tables | §A2.3 |
+| 028 | Create `collections` table | §A2.3 |
+| 029 | Create `blob_version_links` table | §A2.3 |
+| 030 | Create `document_quality_assessments` table | §A4 |
+| 031 | Create `knowledge_assertions` table | §A3 |
+| 032 | Create `users`, `roles` tables | §A5.3 |
+| 033 | Create `source_deletions`, `audit_log` tables | §A6.2 |
+| 034 | Create `translated_documents` table | §A7 |
+| 035 | Create `source_credibility_profiles`, `credibility_dimensions` tables | §A8 |
+| 036 | Create `conflict_nodes`, `conflict_assertions`, `conflict_resolutions` tables | §A9 |
+| 037 | Create `review_events`, `review_queues` tables | §A13 |
+| 038 | Create `classification_taxonomies`, `classification_categories`, `taxonomy_mappings` tables | §A11 |
+| 039 | Create `similarity_cache` table + SIMILAR_TO edge type | §A10 |
+| 040 | Create `temporal_anomaly_clusters`, `spatiotemporal_clusters`, `external_correlations` tables | §A12 |
+| 041 | Create `graph_change_events`, `graph_snapshots` tables | §A14 |
+| 042 | Create `export_audit`, `import_adapters`, `entity_external_ids` tables | §A15 |
+| 043 | Create `journal_entries`, `research_sessions` tables | §A16 |
+| 044 | Create `web_evidence` table | §A16.6 |
+| 045 | Add `review_status` column to entities, entity_edges, knowledge_assertions, taxonomy_mappings, credibility_dimensions | §A13 |
+| 046 | Indexes for all new tables (sensitivity, provenance, review_status, quality, temporal) | All |
+| 047 | PL/pgSQL functions for cascading purge (§A6), quality routing, review auto-approve | §A6, §A4, §A13 |

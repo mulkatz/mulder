@@ -71,7 +71,7 @@ mulder
 │   └── --full             # Run all analysis (default)
 │
 ├── pipeline
-│   ├── run <path>        # Full pipeline: ingest → extract → segment → enrich → [ground] → embed → graph → [analyze]
+│   ├── run <path>        # Full pipeline: ingest → extract → segment → enrich → embed → graph → [global analyze]
 │   │   ├── --up-to <step>  # Run pipeline up to a specific step (e.g., --up-to enrich)
 │   │   ├── --from <step>   # Resume pipeline from a specific step
 │   │   ├── --dry-run       # Show what would happen without executing
@@ -380,7 +380,7 @@ interface StepResult<T> {
 - Config: which types to enrich, cache TTL
 
 **Process:**
-1. Filter entities by configured `enrich_types` (skip `skip_types`)
+1. Filter entities by configured `enrich_types`
 2. Check cache: skip entities with valid cached grounding (within TTL)
 3. For each entity, call Gemini with `google_search_retrieval` tool:
    - Location → coordinates (lat/lng), place type, region
@@ -522,11 +522,9 @@ interface StepResult<T> {
 ### 3.1 Step Dependencies
 
 ```
-ingest ──→ extract ──→ segment ──→ enrich ──→ ground* ──→ embed ──→ graph ──→ analyze*
-                                                │                      │
-                                                └── (optional) ────────┘
+ingest ──→ extract ──→ segment ──→ enrich ──→ embed ──→ graph ──→ analyze*
 
-* = v2.0 steps, skipped if disabled in config
+* = optional global v2.0 analysis, skipped if disabled in config or when the run is intentionally bounded
 ```
 
 Each step transitions the source/story through a status lifecycle:
@@ -534,8 +532,10 @@ Each step transitions the source/story through a status lifecycle:
 ```
 Source:  ingested → extracted → segmented → [all stories enriched] → [all stories embedded] → [all stories graphed]
 Story:  segmented → enriched → embedded → graphed
-Entity: created → [grounded] → [analyzed]
+Entity: created → [grounded by standalone/batch Ground]
 ```
+
+Ground is a standalone/batch v2.0 operation in the current architecture. It can enrich entities before later analysis, but it is not part of the M7 API/worker step chain and is not a source-scoped pipeline stage yet.
 
 ### 3.2 Full Pipeline Orchestrator
 
@@ -610,14 +610,6 @@ async function runPipeline(path: string, options: PipelineOptions): Promise<Pipe
         await updateProgress(runId, source.id, 'enriched')
       }
 
-      if (config.enrichment.enabled && config.enrichment.mode === 'pipeline') {
-        if (shouldRun('ground', currentStep, options)) {
-          const entities = await getEntitiesForSource(source.id)
-          await ground(entities)
-          await updateProgress(runId, source.id, 'grounded')
-        }
-      }
-
       if (shouldRun('embed', currentStep, options)) {
         for (const story of stories) await embed(story.id)
         await updateProgress(runId, source.id, 'embedded')
@@ -637,7 +629,7 @@ async function runPipeline(path: string, options: PipelineOptions): Promise<Pipe
   }
 
   // Phase 3: Global analysis (runs against full graph, not per-source)
-  if (config.analysis.enabled && shouldRun('analyze', null, options)) {
+  if (config.analysis.enabled && options.upTo === undefined) {
     await analyze({ full: true })
   }
 
@@ -1515,8 +1507,8 @@ All entities (after ~25 docs) → Gemini clustering prompt → Taxonomy tree
 
 1. Load all entities from database
 2. Group by type
-3. Send to Gemini: "Group these entities into canonical categories. Identify duplicates and variants."
-4. Gemini returns: `{ categories: [{ name, type, members: [{ canonical, aliases }] }] }`
+3. For each type, send to Gemini: "Group these entity names into canonical clusters. Identify duplicates and variants."
+4. Gemini returns a per-type response: `{ clusters: [{ canonical, aliases }] }`
 5. Write to `taxonomy` table with status `auto`
 
 ### 6.2 Normalization (inline in Enrich)
@@ -1536,29 +1528,23 @@ mulder taxonomy export > taxonomy.curated.yaml   # Export current state
 mulder taxonomy merge                             # Apply curated changes
 ```
 
-`taxonomy.curated.yaml` format (language-agnostic — canonical entries have no language, only variants):
+`taxonomy.curated.yaml` format (language-agnostic — top-level keys are entity types):
 ```yaml
-categories:
-  person:
-    - canonical: "Josef Allen Hynek"
-      status: confirmed
-      aliases: ["J. Allen Hynek", "Dr. Hynek", "Hynek"]
-    - canonical: "Jacques Vallée"
-      status: confirmed
-      aliases: ["Vallee", "J. Vallée"]
-  location:
-    - canonical: "Munich"
-      id: "loc:munich"
-      wikidata: "Q1726"
-      status: confirmed
-      variants:
-        de: ["München"]
-        en: ["Munich"]
-        it: ["Monaco di Baviera"]
-      aliases: ["Roswell", "Roswell NM"]
-    - canonical: "Roswell, New Mexico"
-      status: confirmed
-      aliases: ["Roswell", "Roswell NM"]
+person:
+  - canonical: "Josef Allen Hynek"
+    status: confirmed
+    aliases: ["J. Allen Hynek", "Dr. Hynek", "Hynek"]
+  - canonical: "Jacques Vallée"
+    status: confirmed
+    aliases: ["Vallee", "J. Vallée"]
+location:
+  - canonical: "Munich"
+    status: confirmed
+    category: "city"
+    aliases: ["München", "Monaco di Baviera"]
+  - canonical: "Roswell, New Mexico"
+    status: confirmed
+    aliases: ["Roswell", "Roswell NM"]
 ```
 
 ---
@@ -1937,7 +1923,7 @@ The API never calls pipeline functions directly. It's a pure job producer.
 | `/api/entities/:id` | GET | Synchronous — entity detail |
 | `/api/evidence/*` | GET | Synchronous — pre-computed evidence data |
 
-**Rule:** Only long-running operations (pipeline steps, batch grounding, analysis) go through the job queue. Read-only queries (search, entity lookup, evidence) are synchronous — they hit the database directly and return in milliseconds.
+**Rule:** Only long-running API operations go through the job queue. In M7 that means source-scoped pipeline step jobs (`extract` → `segment` → `enrich` → `embed` → `graph`) and upload finalization. Read-only queries (search, entity lookup, evidence) are synchronous — they hit the database directly and return in milliseconds. Batch Ground and global Analyze remain CLI/standalone operations until a later API orchestration milestone explicitly adds them.
 
 #### Rate Limiting (critical for LLM-calling endpoints)
 
