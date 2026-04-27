@@ -461,7 +461,7 @@ Use these everywhere instead of hardcoded strings. Makes refactors safe.
 
 ### 5.9 Env vars + dev proxy (cookie-critical)
 
-**The cookie problem.** Session cookies are `HttpOnly` + `SameSite=Strict` (per Spec 77 §4.5). In dev, if the frontend runs on `:5173` and the API on `:8787`, the browser treats them as cross-origin and the session cookie won't be sent on fetch. The fix is a Vite dev proxy so both appear same-origin to the browser.
+**The cookie problem.** Session cookies are `HttpOnly` + `SameSite=Strict` (per Spec 77 §4.5). In dev, if the frontend runs on `:5173` and the API on `:8080`, the browser treats them as cross-origin and the session cookie won't be sent on fetch. The fix is a Vite dev proxy so both appear same-origin to the browser.
 
 `demo/vite.config.ts`:
 
@@ -473,7 +473,7 @@ import path from 'node:path';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const apiTarget = env.VITE_API_PROXY_TARGET ?? 'http://localhost:8787';
+  const apiTarget = env.VITE_API_PROXY_TARGET ?? 'http://localhost:8080';
   return {
     plugins: [react(), tailwindcss()],
     resolve: { alias: { '@': path.resolve(__dirname, './src') } },
@@ -494,7 +494,7 @@ With the proxy in place, `VITE_API_BASE_URL` becomes empty string in dev — the
 ```
 # Same-origin via Vite proxy in dev. Set to full URL in production (Cloudflare Pages).
 VITE_API_BASE_URL=
-VITE_API_PROXY_TARGET=http://localhost:8787
+VITE_API_PROXY_TARGET=http://localhost:8080
 ```
 
 `demo/.env.local` (gitignored) for per-developer overrides.
@@ -1256,7 +1256,7 @@ These are settled. Don't revisit mid-implementation.
 
 ## 8. Gotchas (common traps, addressed)
 
-- **Cross-origin cookie trap (Spec 77).** Session cookies are `HttpOnly` + `SameSite=Strict`. If the frontend fetches `http://localhost:8787/api/*` directly from `http://localhost:5173`, the browser will **not** send the cookie — the endpoint returns 401 on what looks like a valid session. Fix: always go through the Vite dev proxy (§5.9). In production, frontend and API must be on the same registrable domain (e.g. `mulder.mulkatz.dev` + `api.mulder.mulkatz.dev`), API sets `SameSite=None; Secure` when on HTTPS, and `Access-Control-Allow-Origin` is explicit (not `*`) with `Access-Control-Allow-Credentials: true`.
+- **Cross-origin cookie trap (Spec 77).** Session cookies are `HttpOnly` + `SameSite=Strict`. If the frontend fetches `http://localhost:8080/api/*` directly from `http://localhost:5173`, the browser will **not** send the cookie — the endpoint returns 401 on what looks like a valid session. Fix: always go through the Vite dev proxy (§5.9). In production, frontend and API must be on the same registrable domain (e.g. `mulder.mulkatz.dev` + `api.mulder.mulkatz.dev`), API sets `SameSite=None; Secure` when on HTTPS, and `Access-Control-Allow-Origin` is explicit (not `*`) with `Access-Control-Allow-Credentials: true`.
 - **403 handling.** A `member` session calling an admin route returns 403. React Query already skips retry on 403 (§5.7). Surface as a sonner toast with copy *"You don't have permission to do that."* — not a redirect. If you see a 403 on a route you rendered, that's a bug in gating the trigger — fix the caller, not the handler.
 - **pdf.js worker path.** Vite handles `pdfjs-dist/build/pdf.worker.min.mjs?url` correctly only with the right import. If you see a worker error, that's the fix.
 - **`credentials: 'include'`** must be set on every fetch, including `pdfjs.getDocument`. If the PDF pane mysteriously returns 401, check this.
@@ -1644,8 +1644,8 @@ When resuming this plan in a new Claude session, first run through:
    cd /Users/franz/Workspace/mulder
    pnpm --filter @mulder/api dev
    # then in a third terminal:
-   curl -i http://localhost:8787/api/health          # must return 200
-   curl -i http://localhost:8787/api/auth/session    # must return 401 (no session yet), NOT connection refused
+   curl -i http://localhost:8080/api/health          # must return 200
+   curl -i http://localhost:8080/api/auth/session    # must return 401 (no session yet), NOT connection refused
    ```
    If the API doesn't boot, fix that first. Frontend phases beyond Phase 0.3 (primitives) assume a running API.
 8. **Identify current phase** — by inspecting the repo, not memory:

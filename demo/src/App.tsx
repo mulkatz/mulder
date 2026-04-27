@@ -1,42 +1,43 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import Layout from './components/Layout';
-import Dashboard from './pages/Dashboard';
-import SourceLibrary from './pages/SourceLibrary';
-import SourceDetail from './pages/SourceDetail';
-import Review from './pages/Review';
-import Stories from './pages/Stories';
-import StoryDetail from './pages/StoryDetail';
-import EntityList from './pages/EntityList';
-import EntityDetail from './pages/EntityDetail';
-import Graph from './pages/Graph';
-import Evidence from './pages/Evidence';
-import Board from './pages/Board';
-import Upload from './pages/Upload';
-import Settings from './pages/Settings';
-import AuthGate from './features/auth/AuthGate';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { AuthGate } from '@/app/AuthGate';
+import { Layout } from '@/app/Layout';
+import { Providers } from '@/app/providers';
+import { routes } from '@/lib/routes';
+import { ArchivePage } from '@/pages/Archive';
+import { AskPage } from '@/pages/Ask';
+import { BoardPage } from '@/pages/Board';
+import { CaseFilePage } from '@/pages/CaseFile';
+import { CaseFileReadingPage } from '@/pages/CaseFileReading';
+import { DeskPage } from '@/pages/Desk';
+import { AcceptInvitePage } from '@/pages/auth/AcceptInvite';
+import { LoginPage } from '@/pages/auth/Login';
 
-export default function App() {
+function ProtectedApp() {
   return (
-    <BrowserRouter>
-      <AuthGate>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/upload" element={<Upload />} />
-            <Route path="/sources" element={<SourceLibrary />} />
-            <Route path="/sources/:id" element={<SourceDetail />} />
-            <Route path="/sources/:id/review/:storyId" element={<Review />} />
-            <Route path="/stories" element={<Stories />} />
-            <Route path="/stories/:id" element={<StoryDetail />} />
-            <Route path="/entities" element={<EntityList />} />
-            <Route path="/entities/:id" element={<EntityDetail />} />
-            <Route path="/graph" element={<Graph />} />
-            <Route path="/evidence" element={<Evidence />} />
-            <Route path="/boards/:id" element={<Board />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
-        </Layout>
-      </AuthGate>
-    </BrowserRouter>
+    <AuthGate>
+      <Layout />
+    </AuthGate>
+  );
+}
+
+export function App() {
+  return (
+    <Providers>
+      <BrowserRouter>
+        <Routes>
+          <Route path={routes.login()} element={<LoginPage />} />
+          <Route path={routes.acceptInvite(':token')} element={<AcceptInvitePage />} />
+          <Route element={<ProtectedApp />}>
+            <Route path={routes.desk()} element={<DeskPage />} />
+            <Route path={routes.archive()} element={<ArchivePage />} />
+            <Route path={routes.caseFile(':id')} element={<CaseFilePage />} />
+            <Route path={routes.reading(':id', ':storyId')} element={<CaseFileReadingPage />} />
+            <Route path={routes.board()} element={<BoardPage />} />
+            <Route path={routes.ask()} element={<AskPage />} />
+          </Route>
+          <Route path="*" element={<Navigate to={routes.desk()} replace />} />
+        </Routes>
+      </BrowserRouter>
+    </Providers>
   );
 }
