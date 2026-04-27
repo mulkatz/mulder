@@ -9,6 +9,7 @@ export default defineConfig({
   retries: isCi ? 1 : 0,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
   timeout: 45_000,
+  workers: 1,
   expect: {
     timeout: 10_000,
   },

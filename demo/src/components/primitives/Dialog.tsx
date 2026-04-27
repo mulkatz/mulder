@@ -28,7 +28,10 @@ export function DialogContent({
         {...props}
       >
         {!hideClose ? (
-          <RadixDialog.Close className="absolute right-4 top-4 rounded-full p-1 text-ink-subtle hover:bg-surface hover:text-ink">
+          <RadixDialog.Close
+            aria-label="Close dialog"
+            className="absolute right-4 top-4 rounded-full p-1 text-ink-subtle hover:bg-surface hover:text-ink"
+          >
             <X className="size-4" />
           </RadixDialog.Close>
         ) : null}

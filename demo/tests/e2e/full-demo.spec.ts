@@ -36,7 +36,11 @@ test('ask returns citations and opens the cited Case File', async ({ page }) => 
 
   await expect(page.getByText('Top cited passage')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Citations', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: /Project Blue Book notes/ }).click();
+  const projectBlueBookCitation = page.getByRole('button', {
+    name: /Project Blue Book notes.*mulder-demo-case-file\.pdf/s,
+  });
+  await expect(projectBlueBookCitation).toBeVisible();
+  await projectBlueBookCitation.click();
   await expect(page).toHaveURL(`/archive/${E2E_SOURCE_ID}`);
 });
 
@@ -45,6 +49,10 @@ test('command palette navigates and triggers actions', async ({ page }) => {
 
   await page.keyboard.press('Control+K');
   await expect(page.getByPlaceholder('Search documents, entities, and actions...')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByPlaceholder('Search documents, entities, and actions...')).not.toBeVisible();
+
+  await page.keyboard.press('Control+K');
   await page.getByTestId('command-item-board').click();
   await expect(page).toHaveURL('/board');
 

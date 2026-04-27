@@ -104,21 +104,22 @@ export function Layout() {
   return (
     <div className="min-h-screen bg-paper text-ink">
       <header className="sticky top-0 z-40 border-b border-thread bg-paper/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1600px] items-center gap-6 px-6 py-4 lg:px-10">
-          <div className="min-w-0">
+        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-4 gap-y-3 px-6 py-4 lg:flex-nowrap lg:px-10">
+          <div className="min-w-[220px] flex-1">
             <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-amber">Mulder</p>
             <h1 className="font-serif text-2xl text-ink">The truth is in the documents.</h1>
           </div>
-          <nav className="ml-4 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+          <nav className="order-3 flex w-full min-w-0 items-center gap-1 overflow-x-auto lg:order-none lg:ml-2 lg:w-auto lg:flex-1">
             {navItems.map((item) => {
               const Icon = item.icon;
 
               return (
                 <NavLink
                   key={item.to}
+                  data-testid={`nav-${item.label.toLowerCase().replaceAll(/\s+/g, '-')}`}
                   className={({ isActive }) =>
                     cn(
-                      'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition-colors',
+                      'inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm transition-colors',
                       isActive ? 'bg-surface text-ink shadow-xs' : 'text-ink-muted hover:bg-surface hover:text-ink',
                     )
                   }
@@ -130,7 +131,7 @@ export function Layout() {
               );
             })}
           </nav>
-          <div className="flex items-center gap-3">
+          <div className="ml-auto flex shrink-0 items-center gap-3">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button aria-label="Open command palette" onClick={palette.openPalette} variant="ghost">

@@ -41,6 +41,12 @@ export function CommandPalette() {
           <Command.Input
             className="w-full border-b border-thread bg-transparent px-5 py-4 text-lg outline-none placeholder:text-ink-faint"
             placeholder="Search documents, entities, and actions..."
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                palette.close();
+              }
+            }}
           />
           <Command.List className="max-h-[26rem] overflow-y-auto p-2">
             <Command.Empty className="px-3 py-8 text-center text-sm text-ink-muted">No command found.</Command.Empty>

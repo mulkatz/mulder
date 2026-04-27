@@ -3,6 +3,7 @@ import { createHash, scryptSync } from 'node:crypto';
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { deflateSync } from 'node:zlib';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const DEMO_DIR = resolve(SCRIPT_DIR, '../..');
@@ -12,13 +13,24 @@ const MIGRATIONS_DIR = resolve(ROOT, 'packages/core/src/database/migrations');
 const CORE_DIST = resolve(ROOT, 'packages/core/dist/index.js');
 const STORAGE_DIR = resolve(ROOT, '.local/storage');
 const FIXTURE_PDF = resolve(ROOT, 'fixtures/raw/native-text-sample.pdf');
+const REAL_UPLOAD_FIXTURES = [
+	resolve(ROOT, 'tests/data/pdf/1950-01-9613320-Corona-NewMexico.pdf'),
+	resolve(ROOT, 'tests/data/pdf/CIQ_Issues_#13-24.pdf'),
+	resolve(ROOT, 'tests/data/pdf/Frontiers_of_Science_1980_v02-5-6.pdf'),
+];
 const SESSION_SECRET = 'mulder-e2e-session-secret';
 const OWNER_EMAIL = 'owner.e2e@mulder.local';
 const OWNER_PASSWORD = 'correct horse battery staple';
 const INVITE_EMAIL = 'invite.e2e@mulder.local';
 const INVITE_TOKEN = 'mulder-e2e-invite-token';
-const PAGE_PNG_BASE64 =
-	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mO8efMmAwAIAgK1Z9hQJwAAAABJRU5ErkJggg==';
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const PAGE_PALETTE = [
+	[190, 111, 24],
+	[48, 92, 108],
+	[118, 83, 150],
+	[74, 121, 73],
+	[155, 70, 61],
+];
 
 const ENTITY_IDS = {
 	hynek: '33333333-3333-4333-8333-333333333331',
@@ -234,8 +246,12 @@ const packagesToBuild = [
 	'@mulder/cli',
 ];
 
+function fileHashForPath(path) {
+	return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
 function fileHashForFixture() {
-	return createHash('sha256').update(readFileSync(FIXTURE_PDF)).digest('hex');
+	return fileHashForPath(FIXTURE_PDF);
 }
 
 function run(command, args, options = {}) {
@@ -270,6 +286,103 @@ function hashToken(token) {
 	return createHash('sha256').update(`${SESSION_SECRET}:${token}`).digest('hex');
 }
 
+function crc32(buffer) {
+	let crc = 0xffffffff;
+
+	for (const byte of buffer) {
+		crc ^= byte;
+		for (let bit = 0; bit < 8; bit += 1) {
+			crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+		}
+	}
+
+	return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+	const typeBuffer = Buffer.from(type, 'ascii');
+	const lengthBuffer = Buffer.alloc(4);
+	const crcBuffer = Buffer.alloc(4);
+
+	lengthBuffer.writeUInt32BE(data.length, 0);
+	crcBuffer.writeUInt32BE(crc32(Buffer.concat([typeBuffer, data])), 0);
+
+	return Buffer.concat([lengthBuffer, typeBuffer, data, crcBuffer]);
+}
+
+function createPagePng(sourceIndex, pageNumber) {
+	const width = 360;
+	const height = 480;
+	const [accentR, accentG, accentB] = PAGE_PALETTE[sourceIndex % PAGE_PALETTE.length];
+	const raw = Buffer.alloc((width * 3 + 1) * height);
+
+	for (let y = 0; y < height; y += 1) {
+		const rowOffset = y * (width * 3 + 1);
+		raw[rowOffset] = 0;
+
+		for (let x = 0; x < width; x += 1) {
+			const pixelOffset = rowOffset + 1 + x * 3;
+			const isMargin = x < 38 || x > width - 26 || y < 34 || y > height - 36;
+			const isHeader = y >= 58 && y <= 86 && x >= 58 && x <= width - 58;
+			const textBand =
+				y >= 125 &&
+				y <= 330 &&
+				Math.floor((y - 125) / 22) % 2 === 0 &&
+				x >= 62 &&
+				x <= width - 62 - ((y + pageNumber * 17) % 70);
+			const footerRule = y >= 405 && y <= 409 && x >= 70 && x <= width - 70;
+
+			let r = 248;
+			let g = 239;
+			let b = 222;
+
+			if (isMargin) {
+				r = 255;
+				g = 252;
+				b = 245;
+			}
+
+			if (isHeader) {
+				r = accentR;
+				g = accentG;
+				b = accentB;
+			}
+
+			if (textBand) {
+				r = 76;
+				g = 68;
+				b = 58;
+			}
+
+			if (footerRule) {
+				r = Math.round(accentR * 0.82);
+				g = Math.round(accentG * 0.82);
+				b = Math.round(accentB * 0.82);
+			}
+
+			raw[pixelOffset] = r;
+			raw[pixelOffset + 1] = g;
+			raw[pixelOffset + 2] = b;
+		}
+	}
+
+	const ihdr = Buffer.alloc(13);
+	ihdr.writeUInt32BE(width, 0);
+	ihdr.writeUInt32BE(height, 4);
+	ihdr[8] = 8;
+	ihdr[9] = 2;
+	ihdr[10] = 0;
+	ihdr[11] = 0;
+	ihdr[12] = 0;
+
+	return Buffer.concat([
+		PNG_SIGNATURE,
+		pngChunk('IHDR', ihdr),
+		pngChunk('IDAT', deflateSync(raw)),
+		pngChunk('IEND', Buffer.alloc(0)),
+	]);
+}
+
 function sourceIds() {
 	return DEMO_SOURCES.map((source) => source.id);
 }
@@ -279,9 +392,7 @@ function storyIds() {
 }
 
 function writeStorageArtifacts() {
-	const pagePng = Buffer.from(PAGE_PNG_BASE64, 'base64');
-
-	for (const source of DEMO_SOURCES) {
+	for (const [sourceIndex, source] of DEMO_SOURCES.entries()) {
 		const rawDir = resolve(STORAGE_DIR, `raw/${source.id}`);
 		const extractedDir = resolve(STORAGE_DIR, `extracted/${source.id}`);
 		const pagesDir = resolve(extractedDir, 'pages');
@@ -303,16 +414,28 @@ function writeStorageArtifacts() {
 		);
 
 		for (let page = 1; page <= 3; page += 1) {
-			writeFileSync(resolve(pagesDir, `page-${String(page).padStart(3, '0')}.png`), pagePng);
+			writeFileSync(resolve(pagesDir, `page-${String(page).padStart(3, '0')}.png`), createPagePng(sourceIndex, page));
 		}
 	}
 }
 
 async function deleteFixtureRows(client) {
-	const sources = sourceIds();
 	const stories = storyIds();
 	const entities = Object.values(ENTITY_IDS);
-	const fileHashes = DEMO_SOURCES.map((source) => source.fileHash).concat('mulder-demo-e2e-native-text-sample');
+	const fileHashes = DEMO_SOURCES.map((source) => source.fileHash).concat(
+		'mulder-demo-e2e-native-text-sample',
+		...REAL_UPLOAD_FIXTURES.map(fileHashForPath),
+	);
+	const previousSources = await client.query(
+		'SELECT id FROM sources WHERE id = ANY($1::uuid[]) OR file_hash = ANY($2::text[])',
+		[sourceIds(), fileHashes],
+	);
+	const sources = Array.from(new Set([...sourceIds(), ...previousSources.rows.map((row) => row.id)]));
+	const uploadFilenames = [
+		'native-text-sample.pdf',
+		'mulder-demo-upload.pdf',
+		...REAL_UPLOAD_FIXTURES.map((path) => path.split('/').at(-1)).filter(Boolean),
+	];
 
 	await client.query(
 		`
@@ -321,7 +444,7 @@ async function deleteFixtureRows(client) {
 				OR COALESCE(payload->>'sourceId', payload->>'source_id') = ANY($2::text[])
 				OR (type = 'document_upload_finalize' AND payload->>'filename' = ANY($3::text[]))
 		`,
-		[JOB_IDS, sources, ['native-text-sample.pdf', 'mulder-demo-upload.pdf']],
+		[JOB_IDS, sources, uploadFilenames],
 	);
 	await client.query('DELETE FROM evidence_chains WHERE id = ANY($1::uuid[])', [CHAIN_IDS]);
 	await client.query('DELETE FROM spatio_temporal_clusters WHERE id = ANY($1::uuid[])', [CLUSTER_IDS]);
@@ -353,6 +476,7 @@ async function deleteFixtureRows(client) {
 		sources,
 	]);
 	await client.query('DELETE FROM source_steps WHERE source_id = ANY($1::uuid[])', [sources]);
+	await client.query('DELETE FROM pipeline_run_sources WHERE source_id = ANY($1::uuid[])', [sources]);
 	await client.query('DELETE FROM sources WHERE id = ANY($1::uuid[]) OR file_hash = ANY($2::text[])', [
 		sources,
 		fileHashes,

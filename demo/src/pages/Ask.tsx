@@ -11,6 +11,12 @@ import { apiFetch } from '@/lib/api-client';
 import type { DocumentObservabilityResponse, SearchResult } from '@/lib/api-types';
 import { routes } from '@/lib/routes';
 
+interface StoryCitationContext {
+  sourceId: string;
+  sourceFilename: string;
+  storyTitle: string;
+}
+
 export function AskPage() {
   const navigate = useNavigate();
   const search = useSearch();
@@ -23,15 +29,20 @@ export function AskPage() {
     })),
   });
   const [query, setQuery] = useState('What connects Hynek to Area 51?');
-  const sourceByStoryId = useMemo(() => {
-    const next = new Map<string, string>();
+  const storyContextById = useMemo(() => {
+    const next = new Map<string, StoryCitationContext>();
     for (const observability of observabilityQueries) {
-      const sourceId = observability.data?.data.source.id;
+      const source = observability.data?.data.source;
+      const sourceId = source?.id;
       if (!sourceId) {
         continue;
       }
       for (const story of observability.data?.data.stories ?? []) {
-        next.set(story.id, sourceId);
+        next.set(story.id, {
+          sourceId,
+          sourceFilename: source.filename,
+          storyTitle: story.title,
+        });
       }
     }
     return next;
@@ -46,6 +57,7 @@ export function AskPage() {
 
   const response = search.data?.data;
   const top = response?.results[0] ?? null;
+  const topContext = top ? storyContextById.get(top.story_id) : undefined;
 
   return (
     <section className="space-y-6">
@@ -90,7 +102,9 @@ export function AskPage() {
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
           <article className="rounded-2xl border border-thread bg-raised p-6">
             <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink-subtle">Top cited passage</p>
-            <h2 className="mt-2 font-serif text-3xl text-ink">{top.metadata.story_title ?? 'Retrieved story'}</h2>
+            <h2 className="mt-2 font-serif text-3xl text-ink">
+              {top.metadata.story_title ?? topContext?.storyTitle ?? 'Retrieved story'}
+            </h2>
             <p className="mt-4 text-lg leading-8 text-ink">{top.content}</p>
             <div className="mt-5 flex flex-wrap gap-2 text-xs text-ink-muted">
               {top.contributions.map((contribution) => (
@@ -133,8 +147,9 @@ export function AskPage() {
             {response.results.map((result) => (
               <CitationCard
                 key={result.chunk_id}
+                context={storyContextById.get(result.story_id)}
                 result={result}
-                onOpen={() => openCitation(result, navigate, sourceByStoryId.get(result.story_id))}
+                onOpen={() => openCitation(result, navigate, storyContextById.get(result.story_id))}
               />
             ))}
             {response.results.length === 0 ? (
@@ -149,14 +164,22 @@ export function AskPage() {
   );
 }
 
-function openCitation(result: SearchResult, navigate: ReturnType<typeof useNavigate>, sourceId?: string) {
-  const resolvedSourceId = sourceId ?? (typeof result.metadata.source_id === 'string' ? result.metadata.source_id : undefined);
+function openCitation(result: SearchResult, navigate: ReturnType<typeof useNavigate>, context?: StoryCitationContext) {
+  const resolvedSourceId = context?.sourceId ?? (typeof result.metadata.source_id === 'string' ? result.metadata.source_id : undefined);
   if (resolvedSourceId) {
     navigate(routes.caseFile(resolvedSourceId));
   }
 }
 
-function CitationCard({ result, onOpen }: { result: SearchResult; onOpen: () => void }) {
+function CitationCard({
+  context,
+  result,
+  onOpen,
+}: {
+  context?: StoryCitationContext;
+  result: SearchResult;
+  onOpen: () => void;
+}) {
   return (
     <button
       className="w-full rounded-xl border border-thread bg-surface p-4 text-left transition-colors hover:bg-raised"
@@ -164,9 +187,9 @@ function CitationCard({ result, onOpen }: { result: SearchResult; onOpen: () => 
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="font-serif text-xl text-ink">{result.metadata.story_title ?? result.story_id}</p>
+          <p className="font-serif text-xl text-ink">{result.metadata.story_title ?? context?.storyTitle ?? result.story_id}</p>
           <p className="mt-1 text-sm text-ink-muted">
-            {result.metadata.source_filename ?? 'Source unknown'} · score {result.rerank_score.toFixed(3)}
+            {result.metadata.source_filename ?? context?.sourceFilename ?? 'Source unknown'} · score {result.rerank_score.toFixed(3)}
           </p>
         </div>
         <ExternalLink className="size-4 text-ink-subtle" />

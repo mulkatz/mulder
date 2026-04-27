@@ -10,6 +10,7 @@ import { Timestamp } from '@/components/shared/Timestamp';
 import { useDocuments } from '@/features/documents/useDocuments';
 import { buildApiUrl } from '@/lib/api-client';
 import type { DocumentRecord } from '@/lib/api-types';
+import { cn } from '@/lib/cn';
 import { copy } from '@/lib/copy';
 import { routes } from '@/lib/routes';
 
@@ -113,11 +114,7 @@ export function ArchivePage() {
         <aside className="rounded-2xl border border-thread bg-raised p-5">
           {selected ? (
             <div>
-              <img
-                alt={`First page thumbnail for ${selected.filename}`}
-                className="aspect-[3/4] w-full rounded-xl border border-thread bg-surface object-cover"
-                src={buildApiUrl(`/api/documents/${selected.id}/pages/1`)}
-              />
+              <DocumentThumbnail document={selected} size="large" />
               <h2 className="mt-4 font-serif text-3xl text-ink">{selected.filename}</h2>
               <p className="mt-2 text-sm text-ink-muted">
                 {selected.page_count ?? 'Unknown'} pages · {selected.layout_available ? 'layout ready' : 'layout pending'}
@@ -148,11 +145,7 @@ function DocumentRow({ document }: { document: DocumentRecord }) {
       className="grid gap-4 px-5 py-4 no-underline transition-colors hover:bg-raised md:grid-cols-[4.5rem_minmax(0,1fr)_8rem_8rem]"
       to={routes.caseFile(document.id)}
     >
-      <img
-        alt=""
-        className="aspect-[3/4] w-16 rounded-lg border border-thread bg-raised object-cover"
-        src={buildApiUrl(`/api/documents/${document.id}/pages/1`)}
-      />
+      <DocumentThumbnail document={document} />
       <div className="min-w-0">
         <p className="truncate font-serif text-2xl text-ink">{document.filename}</p>
         <p className="mt-1 text-sm text-ink-muted">{document.layout_available ? 'Layout ready for reading' : 'Awaiting story extraction'}</p>
@@ -170,5 +163,35 @@ function DocumentRow({ document }: { document: DocumentRecord }) {
         <ChevronRight className="size-4 text-ink-subtle" />
       </div>
     </Link>
+  );
+}
+
+function DocumentThumbnail({ document, size = 'small' }: { document: DocumentRecord; size?: 'small' | 'large' }) {
+  const className =
+    size === 'large'
+      ? 'aspect-[3/4] w-full rounded-xl border border-thread bg-surface object-cover'
+      : 'aspect-[3/4] w-16 rounded-lg border border-thread bg-raised object-cover';
+
+  if (document.page_image_count > 0) {
+    return (
+      <img
+        alt={size === 'large' ? `First page thumbnail for ${document.filename}` : ''}
+        className={className}
+        src={buildApiUrl(`/api/documents/${document.id}/pages/1`)}
+      />
+    );
+  }
+
+  return (
+    <div
+      aria-label={`No page preview available for ${document.filename}`}
+      className={cn(
+        className,
+        'flex items-center justify-center bg-paper text-center font-mono text-[10px] uppercase tracking-[0.16em] text-ink-subtle',
+      )}
+      role="img"
+    >
+      <span className={size === 'large' ? 'px-6' : 'sr-only'}>No preview yet</span>
+    </div>
   );
 }

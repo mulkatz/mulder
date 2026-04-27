@@ -52,7 +52,7 @@ test('case file supports story expansion, entity hover, drawer, thumbnails, and 
   await expect(page.getByRole('heading', { name: 'Josef Allen Hynek' })).toBeVisible();
   await expect(page.getByText('Dr. Hynek')).toBeVisible();
   await expect(page.getByText('INVESTIGATED_AT')).toBeVisible();
-  await page.getByRole('button', { name: 'Close' }).click();
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.getByTestId('entity-profile-drawer')).toBeHidden();
 
   const secondPageThumbnail = page.locator('[data-testid="page-thumbnail"][data-page="2"]');
