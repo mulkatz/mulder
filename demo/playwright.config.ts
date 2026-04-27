@@ -18,24 +18,14 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
-  webServer: [
-    {
-      command: 'npm run e2e:api',
-      url: 'http://127.0.0.1:8080/api/health',
-      reuseExistingServer: false,
-      timeout: 600_000,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-    {
-      command: 'VITE_PREVIEW_AUTH_BYPASS=false VITE_API_PROXY_TARGET=http://127.0.0.1:8080 npm run dev -- --host 127.0.0.1',
-      url: 'http://127.0.0.1:5173',
-      reuseExistingServer: false,
-      timeout: 120_000,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-  ],
+  webServer: {
+    command: 'npm run demo:stack',
+    url: 'http://127.0.0.1:5173',
+    reuseExistingServer: false,
+    timeout: 600_000,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  },
   projects: [
     {
       name: 'setup',
