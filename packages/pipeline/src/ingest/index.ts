@@ -248,6 +248,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 	if (pdfMeta.encrypted !== undefined) pdfMetadataJson.encrypted = pdfMeta.encrypted;
 
 	const source = await createSource(ctx.pool, {
+		id: sourceId,
 		filename,
 		storagePath,
 		fileHash,
@@ -257,6 +258,34 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		tags: ctx.tags,
 		metadata: pdfMetadataJson,
 	});
+
+	if (source.id !== sourceId) {
+		if (source.storagePath !== storagePath) {
+			try {
+				await ctx.services.storage.delete(storagePath);
+				log.info(
+					{ sourceId: source.id, duplicateUploadPath: storagePath },
+					'Duplicate file race detected, removed unused uploaded object',
+				);
+			} catch (cause: unknown) {
+				log.warn(
+					{ err: cause, sourceId: source.id, duplicateUploadPath: storagePath },
+					'Duplicate file race detected, but unused uploaded object cleanup failed',
+				);
+			}
+		}
+		return {
+			sourceId: source.id,
+			filename,
+			storagePath: source.storagePath,
+			fileHash,
+			pageCount: source.pageCount ?? 0,
+			hasNativeText: source.hasNativeText,
+			nativeTextRatio: source.nativeTextRatio,
+			duplicate: true,
+			pdfMetadata: pdfMeta,
+		};
+	}
 
 	// l. Upsert source step
 	await upsertSourceStep(ctx.pool, {

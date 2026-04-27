@@ -497,11 +497,14 @@ describe('Spec 16 — Ingest Step', () => {
 		const { exitCode } = runCli(['ingest', NATIVE_TEXT_PDF]);
 		expect(exitCode).toBe(0);
 
-		const storagePath = db.runSql("SELECT storage_path FROM sources WHERE filename = 'native-text-sample.pdf';");
+		const row = db.runSql("SELECT id, storage_path FROM sources WHERE filename = 'native-text-sample.pdf';");
+		const [sourceId, storagePath] = row.split('|');
+		expect(sourceId).not.toBe('');
 		expect(storagePath).not.toBe('');
 
 		// Verify pattern: raw/{uuid}/original.pdf
 		const pattern = /^raw\/[a-f0-9-]{36}\/original\.pdf$/;
 		expect(storagePath).toMatch(pattern);
+		expect(storagePath).toBe(`raw/${sourceId}/original.pdf`);
 	});
 });
