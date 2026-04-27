@@ -14,11 +14,12 @@
  * @see docs/functional-spec.md §1 (export cmd), §5.3 (sparse graph degradation)
  */
 
-import type { EdgeType, EntityEdge, StoryFilter, StoryStatus } from '@mulder/core';
+import type { CorroborationPresentationContext, EdgeType, EntityEdge, StoryFilter, StoryStatus } from '@mulder/core';
 import {
 	closeAllPools,
 	countChunks,
 	countEntities,
+	countProcessedSources,
 	countSources,
 	findAliasesByEntityId,
 	findAllEdges,
@@ -27,6 +28,7 @@ import {
 	findEntitiesByStoryId,
 	getWorkerPool,
 	loadConfig,
+	presentCorroborationScore,
 } from '@mulder/core';
 import chalk from 'chalk';
 import type { Command } from 'commander';
@@ -172,17 +174,21 @@ function toEvidenceEdge(edge: EntityEdge): EvidenceEdge {
 }
 
 /**
- * Computes data reliability level from entity count vs threshold.
+ * Computes data reliability level from processed source count vs threshold.
  *
  * Based on §5.3 sparse graph degradation — corroboration_meaningful
  * threshold determines when scores are reliable.
  */
-function computeDataReliability(entityCount: number, threshold: number): DataReliability {
-	const ratio = entityCount / threshold;
+function computeDataReliability(sourceCount: number, threshold: number): DataReliability {
+	const ratio = sourceCount / threshold;
 	if (ratio < 0.25) return 'insufficient';
 	if (ratio < 0.5) return 'low';
 	if (ratio < 1.0) return 'moderate';
 	return 'high';
+}
+
+function buildCorroborationContext(corpusSize: number, threshold: number): CorroborationPresentationContext {
+	return { corpusSize, threshold };
 }
 
 // ────────────────────────────────────────────────────────────
@@ -235,8 +241,15 @@ export function registerExportCommands(program: Command): void {
 						type: filters.type,
 						limit: 100000,
 					};
-					const allEntities = await findAllEntities(pool, entityFilter);
+					const [allEntities, processedSourceCount] = await Promise.all([
+						findAllEntities(pool, entityFilter),
+						countProcessedSources(pool),
+					]);
 					const entities = allEntities.filter((e) => e.taxonomyStatus !== 'merged');
+					const corroborationContext = buildCorroborationContext(
+						processedSourceCount,
+						config.thresholds.corroboration_meaningful,
+					);
 
 					// Build a set of entity IDs for edge filtering
 					const entityIds = new Set(entities.map((e) => e.id));
@@ -273,17 +286,21 @@ export function registerExportCommands(program: Command): void {
 					}
 
 					// Build export nodes
-					const nodes: GraphExportNode[] = entities.map((entity) => ({
-						id: entity.id,
-						name: entity.name,
-						type: entity.type,
-						canonicalId: entity.canonicalId,
-						corroborationScore: entity.corroborationScore,
-						sourceCount: entity.sourceCount,
-						taxonomyStatus: entity.taxonomyStatus,
-						aliases: aliasMap.get(entity.id) ?? [],
-						attributes: entity.attributes,
-					}));
+					const nodes: GraphExportNode[] = entities.map((entity) => {
+						const corroboration = presentCorroborationScore(entity.corroborationScore, corroborationContext);
+						return {
+							id: entity.id,
+							name: entity.name,
+							type: entity.type,
+							canonicalId: entity.canonicalId,
+							corroborationScore: corroboration.score,
+							corroborationStatus: corroboration.status,
+							sourceCount: entity.sourceCount,
+							taxonomyStatus: entity.taxonomyStatus,
+							aliases: aliasMap.get(entity.id) ?? [],
+							attributes: entity.attributes,
+						};
+					});
 
 					// Build export edges
 					const edges: GraphExportEdge[] = filteredEdges.map((edge) => ({
@@ -444,21 +461,25 @@ export function registerExportCommands(program: Command): void {
 				try {
 					// Fetch all entities to compute totals
 					const totalEntityCount = await countEntities(pool);
-					const totalSourceCount = await countSources(pool);
+					const [totalSourceCount, processedSourceCount] = await Promise.all([countSources(pool), countProcessedSources(pool)]);
 
 					// Fetch entities with corroboration scores
 					const allEntities = await findAllEntities(pool, { limit: 100000 });
-					const scoredEntities = allEntities.filter(
-						(e) => e.corroborationScore !== null && e.taxonomyStatus !== 'merged',
-					);
+					const scoredEntities = allEntities.filter((e) => e.corroborationScore !== null && e.taxonomyStatus !== 'merged');
+					const corroborationThreshold = config.thresholds?.corroboration_meaningful ?? 50;
+					const corroborationContext = buildCorroborationContext(processedSourceCount, corroborationThreshold);
 
-					const evidenceEntities: EvidenceEntity[] = scoredEntities.map((e) => ({
-						id: e.id,
-						name: e.name,
-						type: e.type,
-						corroborationScore: e.corroborationScore ?? 0,
-						sourceCount: e.sourceCount,
-					}));
+					const evidenceEntities: EvidenceEntity[] = scoredEntities.map((e) => {
+						const corroboration = presentCorroborationScore(e.corroborationScore, corroborationContext);
+						return {
+							id: e.id,
+							name: e.name,
+							type: e.type,
+							corroborationScore: corroboration.score,
+							corroborationStatus: corroboration.status,
+							sourceCount: e.sourceCount,
+						};
+					});
 
 					// Fetch contradiction edges (all types) and duplicates
 					const [potentialContradictions, confirmedContradictions, dismissedContradictions, duplicates] =
@@ -475,14 +496,12 @@ export function registerExportCommands(program: Command): void {
 						...dismissedContradictions,
 					];
 
-					// Compute summary
-					const avgCorroboration =
-						evidenceEntities.length > 0
-							? evidenceEntities.reduce((sum, e) => sum + e.corroborationScore, 0) / evidenceEntities.length
-							: 0;
-
-					const corroborationThreshold = config.thresholds?.corroboration_meaningful ?? 50;
-					const dataReliability = computeDataReliability(totalSourceCount, corroborationThreshold);
+					const dataReliability = computeDataReliability(processedSourceCount, corroborationThreshold);
+					const rawAvgCorroboration =
+						scoredEntities.length > 0
+							? scoredEntities.reduce((sum, entity) => sum + (entity.corroborationScore ?? 0), 0) / scoredEntities.length
+							: null;
+					const summaryCorroboration = presentCorroborationScore(rawAvgCorroboration, corroborationContext);
 
 					const exportData: EvidenceExportData = {
 						entities: evidenceEntities,
@@ -490,8 +509,9 @@ export function registerExportCommands(program: Command): void {
 						duplicates: duplicates.map(toEvidenceEdge),
 						summary: {
 							totalEntities: totalEntityCount,
-							scoredEntities: evidenceEntities.length,
-							avgCorroboration,
+							scoredEntities: summaryCorroboration.score !== null ? scoredEntities.length : 0,
+							avgCorroboration: summaryCorroboration.score,
+							corroborationStatus: summaryCorroboration.status,
 							contradictionCount: allContradictions.length,
 							duplicateCount: duplicates.length,
 							dataReliability,
@@ -504,7 +524,7 @@ export function registerExportCommands(program: Command): void {
 
 					if (dataReliability === 'insufficient' || dataReliability === 'low') {
 						process.stderr.write(
-							`${chalk.yellow('!')} Data reliability: ${dataReliability} (${totalSourceCount} sources, threshold: ${corroborationThreshold})\n`,
+							`${chalk.yellow('!')} Data reliability: ${dataReliability} (${processedSourceCount}/${totalSourceCount} processed sources, threshold: ${corroborationThreshold})\n`,
 						);
 					}
 

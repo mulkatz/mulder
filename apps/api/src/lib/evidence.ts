@@ -5,6 +5,7 @@ import {
 	countEntities,
 	countEvidenceChains,
 	countEvidenceTheses,
+	countProcessedSources,
 	countScoredSources,
 	countSources,
 	countSpatioTemporalClusters,
@@ -27,6 +28,7 @@ import {
 	type Logger,
 	loadConfig,
 	type MulderConfig,
+	presentCorroborationScore,
 } from '@mulder/core';
 import type pg from 'pg';
 import type {
@@ -243,6 +245,7 @@ export async function getEvidenceSummary(loggerOverride?: Logger): Promise<Evide
 		totalEntities,
 		entityStats,
 		totalSources,
+		processedSources,
 		scoredSources,
 		potentialCount,
 		confirmedCount,
@@ -255,6 +258,7 @@ export async function getEvidenceSummary(loggerOverride?: Logger): Promise<Evide
 		countEntities(pool),
 		getEntityCorroborationStats(pool),
 		countSources(pool),
+		countProcessedSources(pool),
 		countScoredSources(pool),
 		countEdges(pool, { edgeType: 'POTENTIAL_CONTRADICTION' }),
 		countEdges(pool, { edgeType: 'CONFIRMED_CONTRADICTION' }),
@@ -264,14 +268,20 @@ export async function getEvidenceSummary(loggerOverride?: Logger): Promise<Evide
 		countEvidenceChains(pool),
 		countSpatioTemporalClusters(pool),
 	]);
-	const dataReliability = computeDataReliability(totalSources, config.thresholds?.corroboration_meaningful ?? 50);
+	const corroborationThreshold = config.thresholds?.corroboration_meaningful ?? 50;
+	const dataReliability = computeDataReliability(processedSources, corroborationThreshold);
+	const presentedCorroboration = presentCorroborationScore(
+		entityStats.scoredCount > 0 ? entityStats.avgCorroboration : null,
+		{ corpusSize: processedSources, threshold: corroborationThreshold },
+	);
 
 	const response: EvidenceSummaryResponse = {
 		data: {
 			entities: {
 				total: totalEntities,
-				scored: entityStats.scoredCount,
-				avg_corroboration: entityStats.avgCorroboration,
+				scored: presentedCorroboration.score !== null ? entityStats.scoredCount : 0,
+				avg_corroboration: presentedCorroboration.score,
+				corroboration_status: presentedCorroboration.status,
 			},
 			contradictions: {
 				potential: potentialCount,

@@ -305,6 +305,12 @@ export {
 	getStepConfigHash,
 } from './shared/config-fingerprint.js';
 export type {
+	CorroborationPresentationContext,
+	CorroborationPresentationStatus,
+	PresentedCorroborationScore,
+} from './shared/corroboration.js';
+export { isCorroborationMeaningful, presentCorroborationScore } from './shared/corroboration.js';
+export type {
 	CostEstimate,
 	CostEstimateInput,
 	CostEstimateStepLine,

@@ -1,10 +1,12 @@
 import { performance } from 'node:perf_hooks';
 import {
 	countEntities,
+	countProcessedSources,
 	createChildLogger,
 	createLogger,
 	DATABASE_ERROR_CODES,
 	DatabaseError,
+	type CorroborationPresentationContext,
 	type Entity,
 	type EntityAlias,
 	type EntityEdge,
@@ -19,8 +21,10 @@ import {
 	type Logger,
 	loadConfig,
 	type MergeEntitiesResult,
+	type MulderConfig,
 	MulderError,
 	mergeEntities as mergeEntitiesRepository,
+	presentCorroborationScore,
 } from '@mulder/core';
 import type pg from 'pg';
 import type {
@@ -40,6 +44,7 @@ type CoreEntityAlias = EntityAlias;
 type CoreEntityEdge = EntityEdge;
 
 interface EntityContext {
+	config: MulderConfig;
 	pool: pg.Pool;
 }
 
@@ -70,6 +75,7 @@ function resolveContext(): EntityContext {
 	}
 
 	cachedContext = {
+		config,
 		pool: getQueryPool(config.gcp.cloud_sql),
 	};
 	cachedConfigPath = configPath;
@@ -77,7 +83,8 @@ function resolveContext(): EntityContext {
 	return cachedContext;
 }
 
-function mapEntity(entity: CoreEntity): EntityResponse {
+function mapEntity(entity: CoreEntity, corroborationContext: CorroborationPresentationContext): EntityResponse {
+	const corroboration = presentCorroborationScore(entity.corroborationScore, corroborationContext);
 	return {
 		id: entity.id,
 		canonical_id: entity.canonicalId,
@@ -85,11 +92,22 @@ function mapEntity(entity: CoreEntity): EntityResponse {
 		type: entity.type,
 		taxonomy_status: entity.taxonomyStatus,
 		taxonomy_id: entity.taxonomyId,
-		corroboration_score: entity.corroborationScore,
+		corroboration_score: corroboration.score,
+		corroboration_status: corroboration.status,
 		source_count: entity.sourceCount,
 		attributes: entity.attributes ?? {},
 		created_at: entity.createdAt.toISOString(),
 		updated_at: entity.updatedAt.toISOString(),
+	};
+}
+
+async function loadCorroborationContext(
+	pool: pg.Pool,
+	config: MulderConfig,
+): Promise<CorroborationPresentationContext> {
+	return {
+		corpusSize: await countProcessedSources(pool),
+		threshold: config.thresholds.corroboration_meaningful,
 	};
 }
 
@@ -147,7 +165,7 @@ function createRouteLogger(rootLogger: Logger, metadata: Record<string, string |
 
 export async function listEntities(input: EntityListQuery, logger?: Logger): Promise<EntityListResponse> {
 	const rootLogger = logger ?? createLogger();
-	const { pool } = resolveContext();
+	const { config, pool } = resolveContext();
 	const requestLogger = createRouteLogger(rootLogger, {
 		action: 'list',
 		type: input.type ?? null,
@@ -166,9 +184,13 @@ export async function listEntities(input: EntityListQuery, logger?: Logger): Pro
 		offset: input.offset,
 	};
 
-	const [count, entities] = await Promise.all([countEntities(pool, filter), findAllEntities(pool, filter)]);
+	const [count, entities, corroborationContext] = await Promise.all([
+		countEntities(pool, filter),
+		findAllEntities(pool, filter),
+		loadCorroborationContext(pool, config),
+	]);
 	const response: EntityListResponse = {
-		data: entities.map(mapEntity),
+		data: entities.map((entity) => mapEntity(entity, corroborationContext)),
 		meta: {
 			count,
 			limit: input.limit,
@@ -190,7 +212,7 @@ export async function listEntities(input: EntityListQuery, logger?: Logger): Pro
 
 export async function getEntityDetail(id: string, logger?: Logger): Promise<EntityDetailResponse> {
 	const rootLogger = logger ?? createLogger();
-	const { pool } = resolveContext();
+	const { config, pool } = resolveContext();
 	const requestLogger = createRouteLogger(rootLogger, {
 		action: 'detail',
 		entity_id: id,
@@ -198,18 +220,19 @@ export async function getEntityDetail(id: string, logger?: Logger): Promise<Enti
 	const startedAt = performance.now();
 
 	const entity = await requireEntityById(pool, id);
-	const [aliases, stories, mergedEntities] = await Promise.all([
+	const [aliases, stories, mergedEntities, corroborationContext] = await Promise.all([
 		findAliasesByEntityId(pool, id),
 		findStoriesByEntityId(pool, id),
 		findEntitiesByCanonicalId(pool, id),
+		loadCorroborationContext(pool, config),
 	]);
 
 	const response: EntityDetailResponse = {
 		data: {
-			entity: mapEntity(entity),
+			entity: mapEntity(entity, corroborationContext),
 			aliases: aliases.map(mapAlias),
 			stories: stories.map(mapStory),
-			merged_entities: mergedEntities.map(mapEntity),
+			merged_entities: mergedEntities.map((merged) => mapEntity(merged, corroborationContext)),
 		},
 	};
 

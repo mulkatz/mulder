@@ -449,6 +449,8 @@ describe('Spec 74 — Entity API Routes', () => {
 		expect(body.data[0]).toMatchObject({
 			id: fixtures.detailEntityId,
 			name: 'Josef Allen Hynek',
+			corroboration_score: null,
+			corroboration_status: 'insufficient_data',
 		});
 		expect(Number(db.runSql('SELECT COUNT(*) FROM entities;'))).toBe(beforeCount);
 	});

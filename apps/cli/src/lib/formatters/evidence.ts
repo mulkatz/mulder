@@ -11,12 +11,14 @@
 // ────────────────────────────────────────────────────────────
 
 export type DataReliability = 'insufficient' | 'low' | 'moderate' | 'high';
+export type CorroborationStatus = 'scored' | 'not_scored' | 'insufficient_data';
 
 export interface EvidenceEntity {
 	id: string;
 	name: string;
 	type: string;
-	corroborationScore: number;
+	corroborationScore: number | null;
+	corroborationStatus: CorroborationStatus;
 	sourceCount: number;
 }
 
@@ -34,7 +36,8 @@ export interface EvidenceEdge {
 export interface EvidenceSummary {
 	totalEntities: number;
 	scoredEntities: number;
-	avgCorroboration: number;
+	avgCorroboration: number | null;
+	corroborationStatus: CorroborationStatus;
 	contradictionCount: number;
 	duplicateCount: number;
 	dataReliability: DataReliability;
@@ -78,14 +81,15 @@ export function formatEvidenceCsv(data: EvidenceExportData): string {
 
 	// Entities section
 	lines.push('## Entities with Corroboration Scores');
-	lines.push('id,name,type,corroborationScore,sourceCount');
+	lines.push('id,name,type,corroborationScore,corroborationStatus,sourceCount');
 	for (const entity of data.entities) {
 		lines.push(
 			[
 				escapeCsv(entity.id),
 				escapeCsv(entity.name),
 				escapeCsv(entity.type),
-				String(entity.corroborationScore),
+				entity.corroborationScore !== null ? String(entity.corroborationScore) : '',
+				entity.corroborationStatus,
 				String(entity.sourceCount),
 			].join(','),
 		);
@@ -134,7 +138,8 @@ export function formatEvidenceCsv(data: EvidenceExportData): string {
 	lines.push('metric,value');
 	lines.push(`totalEntities,${data.summary.totalEntities}`);
 	lines.push(`scoredEntities,${data.summary.scoredEntities}`);
-	lines.push(`avgCorroboration,${data.summary.avgCorroboration}`);
+	lines.push(`avgCorroboration,${data.summary.avgCorroboration ?? ''}`);
+	lines.push(`corroborationStatus,${data.summary.corroborationStatus}`);
 	lines.push(`contradictionCount,${data.summary.contradictionCount}`);
 	lines.push(`duplicateCount,${data.summary.duplicateCount}`);
 	lines.push(`dataReliability,${data.summary.dataReliability}`);
@@ -161,7 +166,12 @@ export function formatEvidenceMarkdown(data: EvidenceExportData): string {
 	lines.push(`|--------|-------|`);
 	lines.push(`| Total Entities | ${data.summary.totalEntities} |`);
 	lines.push(`| Scored Entities | ${data.summary.scoredEntities} |`);
-	lines.push(`| Avg. Corroboration | ${data.summary.avgCorroboration.toFixed(2)} |`);
+	lines.push(
+		`| Avg. Corroboration | ${
+			data.summary.avgCorroboration !== null ? data.summary.avgCorroboration.toFixed(2) : data.summary.corroborationStatus
+		} |`,
+	);
+	lines.push(`| Corroboration Status | ${data.summary.corroborationStatus} |`);
 	lines.push(`| Contradictions | ${data.summary.contradictionCount} |`);
 	lines.push(`| Duplicates | ${data.summary.duplicateCount} |`);
 	lines.push(`| Data Reliability | ${data.summary.dataReliability} |`);
@@ -180,11 +190,14 @@ export function formatEvidenceMarkdown(data: EvidenceExportData): string {
 		lines.push('');
 		lines.push('| Name | Type | Score | Sources |');
 		lines.push('|------|------|-------|---------|');
-		const sorted = [...data.entities].sort((a, b) => b.corroborationScore - a.corroborationScore);
+		const sorted = [...data.entities].sort(
+			(a, b) => (b.corroborationScore ?? Number.NEGATIVE_INFINITY) - (a.corroborationScore ?? Number.NEGATIVE_INFINITY),
+		);
 		const topEntities = sorted.slice(0, 20);
 		for (const entity of topEntities) {
+			const score = entity.corroborationScore !== null ? entity.corroborationScore.toFixed(2) : entity.corroborationStatus;
 			lines.push(
-				`| ${entity.name} | ${entity.type} | ${entity.corroborationScore.toFixed(2)} | ${entity.sourceCount} |`,
+				`| ${entity.name} | ${entity.type} | ${score} | ${entity.sourceCount} |`,
 			);
 		}
 		lines.push('');

@@ -305,6 +305,11 @@ describe('QA Contract: Entity Management CLI', () => {
 		expect(entity).toHaveProperty('id');
 		expect(entity).toHaveProperty('name');
 		expect(entity).toHaveProperty('type');
+		const hynek = parsed.find((item: { name: string }) => item.name === 'Josef Allen Hynek');
+		expect(hynek).toMatchObject({
+			corroborationScore: null,
+			corroborationStatus: 'insufficient_data',
+		});
 	});
 
 	it('QA-05: entity show — valid ID', () => {

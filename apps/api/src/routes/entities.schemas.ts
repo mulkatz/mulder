@@ -13,6 +13,7 @@ export const STORY_STATUS_VALUES = ['segmented', 'enriched', 'embedded', 'graphe
 export const EntityTaxonomyStatusSchema = z.enum(ENTITY_TAXONOMY_STATUS_VALUES);
 export const EntityEdgeTypeSchema = z.enum(ENTITY_EDGE_TYPE_VALUES);
 export const StoryStatusSchema = z.enum(STORY_STATUS_VALUES);
+export const EntityCorroborationStatusSchema = z.enum(['scored', 'not_scored', 'insufficient_data']);
 
 export const EntityListQuerySchema = z.object({
 	type: z.string().trim().min(1).max(128).optional(),
@@ -30,6 +31,7 @@ export const EntitySchema = z.object({
 	taxonomy_status: EntityTaxonomyStatusSchema,
 	taxonomy_id: z.string().uuid().nullable(),
 	corroboration_score: z.number().nullable(),
+	corroboration_status: EntityCorroborationStatusSchema,
 	source_count: z.number().int().nonnegative(),
 	attributes: z.record(z.string(), z.unknown()),
 	created_at: z.string(),

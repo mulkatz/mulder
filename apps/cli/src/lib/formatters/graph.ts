@@ -18,6 +18,7 @@ export interface GraphExportNode {
 	type: string;
 	canonicalId: string | null;
 	corroborationScore: number | null;
+	corroborationStatus: 'scored' | 'not_scored' | 'insufficient_data';
 	sourceCount: number;
 	taxonomyStatus: string;
 	aliases: string[];
@@ -69,7 +70,7 @@ export function formatGraphCsv(nodes: GraphExportNode[], edges: GraphExportEdge[
 
 	// Nodes section
 	lines.push('## Nodes');
-	lines.push('id,name,type,canonicalId,corroborationScore,sourceCount,taxonomyStatus,aliases');
+	lines.push('id,name,type,canonicalId,corroborationScore,corroborationStatus,sourceCount,taxonomyStatus,aliases');
 	for (const node of nodes) {
 		lines.push(
 			[
@@ -78,6 +79,7 @@ export function formatGraphCsv(nodes: GraphExportNode[], edges: GraphExportEdge[
 				escapeCsv(node.type),
 				escapeCsv(node.canonicalId ?? ''),
 				node.corroborationScore !== null ? String(node.corroborationScore) : '',
+				node.corroborationStatus,
 				String(node.sourceCount),
 				escapeCsv(node.taxonomyStatus),
 				escapeCsv(node.aliases.join(';')),
@@ -136,6 +138,7 @@ export function formatGraphMl(nodes: GraphExportNode[], edges: GraphExportEdge[]
 	lines.push('  <key id="type" for="node" attr.name="type" attr.type="string"/>');
 	lines.push('  <key id="canonicalId" for="node" attr.name="canonicalId" attr.type="string"/>');
 	lines.push('  <key id="corroborationScore" for="node" attr.name="corroborationScore" attr.type="double"/>');
+	lines.push('  <key id="corroborationStatus" for="node" attr.name="corroborationStatus" attr.type="string"/>');
 	lines.push('  <key id="sourceCount" for="node" attr.name="sourceCount" attr.type="int"/>');
 	lines.push('  <key id="taxonomyStatus" for="node" attr.name="taxonomyStatus" attr.type="string"/>');
 	lines.push('  <key id="aliases" for="node" attr.name="aliases" attr.type="string"/>');
@@ -158,6 +161,7 @@ export function formatGraphMl(nodes: GraphExportNode[], edges: GraphExportEdge[]
 		if (node.corroborationScore !== null) {
 			lines.push(`      <data key="corroborationScore">${node.corroborationScore}</data>`);
 		}
+		lines.push(`      <data key="corroborationStatus">${escapeXml(node.corroborationStatus)}</data>`);
 		lines.push(`      <data key="sourceCount">${node.sourceCount}</data>`);
 		lines.push(`      <data key="taxonomyStatus">${escapeXml(node.taxonomyStatus)}</data>`);
 		if (node.aliases.length > 0) {
@@ -208,6 +212,7 @@ export function formatGraphCypher(nodes: GraphExportNode[], edges: GraphExportEd
 		if (node.corroborationScore !== null) {
 			props.push(`corroborationScore: ${node.corroborationScore}`);
 		}
+		props.push(`corroborationStatus: '${escapeCypher(node.corroborationStatus)}'`);
 		if (node.canonicalId !== null) {
 			props.push(`canonicalId: '${escapeCypher(node.canonicalId)}'`);
 		}

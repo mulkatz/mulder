@@ -3,10 +3,12 @@ import { z } from 'zod';
 export const EVIDENCE_CONTRADICTION_STATUS_VALUES = ['potential', 'confirmed', 'dismissed', 'all'] as const;
 export const EVIDENCE_CLUSTER_TYPE_VALUES = ['temporal', 'spatial', 'spatio-temporal'] as const;
 export const EVIDENCE_DATA_RELIABILITY_VALUES = ['insufficient', 'low', 'moderate', 'high'] as const;
+export const EVIDENCE_CORROBORATION_STATUS_VALUES = ['scored', 'not_scored', 'insufficient_data'] as const;
 
 export const EvidenceContradictionStatusSchema = z.enum(EVIDENCE_CONTRADICTION_STATUS_VALUES);
 export const EvidenceClusterTypeSchema = z.enum(EVIDENCE_CLUSTER_TYPE_VALUES);
 export const EvidenceDataReliabilitySchema = z.enum(EVIDENCE_DATA_RELIABILITY_VALUES);
+export const EvidenceCorroborationStatusSchema = z.enum(EVIDENCE_CORROBORATION_STATUS_VALUES);
 
 export const EvidenceContradictionsQuerySchema = z.object({
 	status: EvidenceContradictionStatusSchema.optional().default('all'),
@@ -140,7 +142,8 @@ export const EvidenceSummarySchema = z.object({
 	entities: z.object({
 		total: z.number().int().nonnegative(),
 		scored: z.number().int().nonnegative(),
-		avg_corroboration: z.number().min(0).max(1),
+		avg_corroboration: z.number().min(0).max(1).nullable(),
+		corroboration_status: EvidenceCorroborationStatusSchema,
 	}),
 	contradictions: z.object({
 		potential: z.number().int().nonnegative(),

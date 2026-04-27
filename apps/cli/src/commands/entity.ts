@@ -14,10 +14,18 @@
  * @see docs/functional-spec.md §1 (entity cmd)
  */
 
-import type { Entity, EntityAlias, EntityEdge, MergeEntitiesResult } from '@mulder/core';
+import type {
+	CorroborationPresentationContext,
+	CorroborationPresentationStatus,
+	Entity,
+	EntityAlias,
+	EntityEdge,
+	MergeEntitiesResult,
+} from '@mulder/core';
 import {
 	closeAllPools,
 	countEntities,
+	countProcessedSources,
 	createEntityAlias,
 	deleteEntityAlias,
 	findAliasesByEntityId,
@@ -29,6 +37,7 @@ import {
 	getWorkerPool,
 	loadConfig,
 	mergeEntities,
+	presentCorroborationScore,
 } from '@mulder/core';
 import chalk from 'chalk';
 import type { Command } from 'commander';
@@ -59,6 +68,11 @@ interface AliasCommandOptions {
 	json?: boolean;
 }
 
+type PresentedEntity = Entity & {
+	corroborationScore: number | null;
+	corroborationStatus: CorroborationPresentationStatus;
+};
+
 // ────────────────────────────────────────────────────────────
 // Output formatters
 // ────────────────────────────────────────────────────────────
@@ -68,7 +82,23 @@ function shortId(id: string): string {
 	return id.slice(0, 8);
 }
 
-function printEntityTable(entities: Entity[], total: number): void {
+function presentEntity(entity: Entity, context: CorroborationPresentationContext): PresentedEntity {
+	const corroboration = presentCorroborationScore(entity.corroborationScore, context);
+	return {
+		...entity,
+		corroborationScore: corroboration.score,
+		corroborationStatus: corroboration.status,
+	};
+}
+
+function formatCorroboration(entity: PresentedEntity): string {
+	if (entity.corroborationStatus === 'insufficient_data') {
+		return 'insufficient_data';
+	}
+	return entity.corroborationScore !== null ? String(entity.corroborationScore) : '-';
+}
+
+function printEntityTable(entities: PresentedEntity[], total: number): void {
 	const header = [
 		'ID'.padEnd(10),
 		'Name'.padEnd(30),
@@ -88,7 +118,7 @@ function printEntityTable(entities: Entity[], total: number): void {
 			entity.type.padEnd(15),
 			entity.taxonomyStatus.padEnd(10),
 			String(entity.sourceCount).padEnd(8),
-			entity.corroborationScore !== null ? String(entity.corroborationScore) : '-',
+			formatCorroboration(entity),
 		].join('  ');
 		process.stdout.write(`${line}\n`);
 	}
@@ -97,7 +127,7 @@ function printEntityTable(entities: Entity[], total: number): void {
 }
 
 function printEntityDetails(
-	entity: Entity,
+	entity: PresentedEntity,
 	aliases: EntityAlias[],
 	edges: EntityEdge[],
 	stories: Array<{ id: string; title: string | null }>,
@@ -112,7 +142,7 @@ function printEntityDetails(
 	process.stdout.write(`  Canonical ID:   ${entity.canonicalId ?? '-'}\n`);
 	process.stdout.write(`  Taxonomy ID:    ${entity.taxonomyId ?? '-'}\n`);
 	process.stdout.write(`  Source Count:    ${entity.sourceCount}\n`);
-	process.stdout.write(`  Corroboration:  ${entity.corroborationScore ?? '-'}\n`);
+	process.stdout.write(`  Corroboration:  ${formatCorroboration(entity)}\n`);
 	process.stdout.write(`  Created:        ${entity.createdAt.toISOString()}\n`);
 	process.stdout.write(`  Updated:        ${entity.updatedAt.toISOString()}\n`);
 
@@ -228,17 +258,23 @@ export function registerEntityCommands(program: Command): void {
 						limit: 100,
 					};
 
-					const [entities, total] = await Promise.all([
+					const [entities, total, processedSourceCount] = await Promise.all([
 						findAllEntities(pool, filter),
 						countEntities(pool, { type: options.type, search: options.search }),
+						countProcessedSources(pool),
 					]);
+					const corroborationContext = {
+						corpusSize: processedSourceCount,
+						threshold: config.thresholds.corroboration_meaningful,
+					};
+					const presentedEntities = entities.map((entity) => presentEntity(entity, corroborationContext));
 
 					if (options.json) {
-						printJson(entities);
+						printJson(presentedEntities);
 						return;
 					}
 
-					printEntityTable(entities, total);
+					printEntityTable(presentedEntities, total);
 				} finally {
 					await closeAllPools();
 				}
@@ -272,30 +308,37 @@ export function registerEntityCommands(program: Command): void {
 						return;
 					}
 
-					const [aliases, edges, stories, mergedEntities] = await Promise.all([
+					const [aliases, edges, stories, mergedEntities, processedSourceCount] = await Promise.all([
 						findAliasesByEntityId(pool, entityId),
 						findEdgesByEntityId(pool, entityId),
 						findStoriesByEntityId(pool, entityId),
 						findEntitiesByCanonicalId(pool, entityId),
+						countProcessedSources(pool),
 					]);
+					const corroborationContext = {
+						corpusSize: processedSourceCount,
+						threshold: config.thresholds.corroboration_meaningful,
+					};
+					const presentedEntity = presentEntity(entityResult, corroborationContext);
+					const presentedMergedEntities = mergedEntities.map((merged) => presentEntity(merged, corroborationContext));
 
 					if (options.json) {
 						printJson({
-							entity: entityResult,
+							entity: presentedEntity,
 							aliases,
 							edges,
 							stories,
-							mergedEntities,
+							mergedEntities: presentedMergedEntities,
 						});
 						return;
 					}
 
 					printEntityDetails(
-						entityResult,
+						presentedEntity,
 						aliases,
 						edges,
 						stories.map((s) => ({ id: s.id, title: s.title })),
-						mergedEntities,
+						presentedMergedEntities,
 					);
 				} finally {
 					await closeAllPools();

@@ -463,6 +463,14 @@ describe('QA Contract: Export Commands', () => {
 		expect(typeof parsed.summary).toBe('object');
 		expect(parsed.metadata).toBeDefined();
 		expect(parsed.metadata).toHaveProperty('exportedAt');
+		expect(parsed.entities.length).toBeGreaterThan(0);
+		for (const entity of parsed.entities) {
+			expect(entity.corroborationScore).toBeNull();
+			expect(entity.corroborationStatus).toBe('insufficient_data');
+		}
+		expect(parsed.summary.scoredEntities).toBe(0);
+		expect(parsed.summary.avgCorroboration).toBeNull();
+		expect(parsed.summary.corroborationStatus).toBe('insufficient_data');
 	});
 
 	it('QA-12: Evidence Markdown export — structured Markdown report', () => {
@@ -732,6 +740,7 @@ describe('CLI Smoke Tests: export', () => {
 		expect(summary).toHaveProperty('totalEntities');
 		expect(summary).toHaveProperty('scoredEntities');
 		expect(summary).toHaveProperty('avgCorroboration');
+		expect(summary).toHaveProperty('corroborationStatus');
 		expect(summary).toHaveProperty('contradictionCount');
 		expect(summary).toHaveProperty('duplicateCount');
 		expect(summary).toHaveProperty('dataReliability');

@@ -448,7 +448,12 @@ describe('Spec 75 — Evidence API Routes', () => {
 
 		const body = (await response.json()) as {
 			data: {
-				entities: { total: number; scored: number; avg_corroboration: number };
+				entities: {
+					total: number;
+					scored: number;
+					avg_corroboration: number | null;
+					corroboration_status: string;
+				};
 				contradictions: { potential: number; confirmed: number; dismissed: number };
 				duplicates: { count: number };
 				sources: { total: number; scored: number; data_reliability: string };
@@ -460,8 +465,9 @@ describe('Spec 75 — Evidence API Routes', () => {
 		expect(body.data).toMatchObject({
 			entities: {
 				total: 4,
-				scored: 2,
-				avg_corroboration: 0.75,
+				scored: 0,
+				avg_corroboration: null,
+				corroboration_status: 'insufficient_data',
 			},
 			contradictions: {
 				potential: 1,
@@ -696,7 +702,8 @@ describe('Spec 75 — Evidence API Routes', () => {
 				entities: {
 					total: 0,
 					scored: 0,
-					avg_corroboration: 0,
+					avg_corroboration: null,
+					corroboration_status: 'insufficient_data',
 				},
 				contradictions: {
 					potential: 0,
