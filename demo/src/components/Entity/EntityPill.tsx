@@ -20,6 +20,9 @@ export function EntityPill({ entity, size = 'sm', interactive = true }: EntityPi
         size === 'sm' ? 'px-2 py-1 text-[11px]' : 'px-2.5 py-1.5 text-xs',
         entity.canonical_id ? 'shadow-[0_0_0_2px_var(--thread-strong)]' : '',
       )}
+      data-entity-id={entity.id}
+      data-entity-name={entity.name}
+      data-testid="entity-pill"
       onClick={() => drawer.openEntity(entity.id)}
       type="button"
     >

@@ -37,7 +37,7 @@ export function EntityHoverCard({
   return (
     <HoverCard closeDelay={80} openDelay={120} onOpenChange={setOpen} open={open}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
-      <HoverCardContent>
+      <HoverCardContent data-testid="entity-hover-card">
         {detail.isLoading ? (
           <div className="space-y-3">
             <Skeleton className="h-7 w-40" />

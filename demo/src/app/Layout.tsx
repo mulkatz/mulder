@@ -80,7 +80,7 @@ export function Layout() {
                 <p className="text-sm text-ink">{auth.user?.email}</p>
                 <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-subtle">{auth.role ?? 'member'}</p>
               </div>
-              <Button className="rounded-full px-3 py-2" onClick={handleLogout} variant="ghost">
+              <Button aria-label="Log out" className="rounded-full px-3 py-2" onClick={handleLogout} variant="ghost">
                 <LogOut className="size-4" />
               </Button>
             </div>

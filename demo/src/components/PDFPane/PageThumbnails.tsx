@@ -30,6 +30,9 @@ export function PageThumbnails({
                 'group relative flex w-full flex-col gap-2 rounded-lg border p-2 text-left transition-colors',
                 isActive ? 'border-amber bg-amber-faint' : 'border-thread bg-paper hover:border-thread-strong hover:bg-raised',
               )}
+              data-active={isActive ? 'true' : 'false'}
+              data-page={page.page_number}
+              data-testid="page-thumbnail"
               onClick={() => onSelectPage(page.page_number)}
               type="button"
             >

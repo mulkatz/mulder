@@ -14,9 +14,11 @@ export interface PDFPaneHandle {
 function PdfCanvas({
   page,
   shouldRender,
+  pageNumber,
 }: {
   page: PDFPageProxy | null;
   shouldRender: boolean;
+  pageNumber: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -50,7 +52,12 @@ function PdfCanvas({
 
   return (
     <div className="relative">
-      <canvas className="block max-w-full" ref={canvasRef} />
+      <canvas
+        aria-label={`Rendered PDF page ${pageNumber}`}
+        className="block max-w-full"
+        data-testid="pdf-canvas"
+        ref={canvasRef}
+      />
     </div>
   );
 }
@@ -179,6 +186,7 @@ export const PDFPane = forwardRef<PDFPaneHandle, {
               key={pageNumber}
               className="relative overflow-hidden rounded-2xl border border-thread bg-white shadow-md"
               data-page={pageNumber}
+              data-testid="pdf-page"
               ref={(node) => {
                 if (node) {
                   pageRefs.current.set(pageNumber, node);
@@ -191,7 +199,7 @@ export const PDFPane = forwardRef<PDFPaneHandle, {
                   {copy.loading.document(pageNumber, numPages)}
                 </span>
               </div>
-              <PdfCanvas page={page} shouldRender={shouldRender} />
+              <PdfCanvas page={page} pageNumber={pageNumber} shouldRender={shouldRender} />
               <StoryFrames activeStoryId={activeStoryId} pageNumber={pageNumber} reveal={reveal} stories={stories} />
             </div>
           );

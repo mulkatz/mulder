@@ -25,7 +25,7 @@ export function StoryReader({
   }, [mentionIndex, story.id]);
 
   return (
-    <div className="rounded-2xl border border-thread bg-paper px-8 py-10 shadow-xl">
+    <div className="rounded-2xl border border-thread bg-paper px-8 py-10 shadow-xl" data-testid="story-reader">
       <Button className="mb-8" onClick={onBack} variant="ghost">
         ← Back to PDF
       </Button>
