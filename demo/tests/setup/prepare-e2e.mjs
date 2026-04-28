@@ -14,9 +14,7 @@ const CORE_DIST = resolve(ROOT, 'packages/core/dist/index.js');
 const STORAGE_DIR = resolve(ROOT, '.local/storage');
 const FIXTURE_PDF = resolve(ROOT, 'fixtures/raw/native-text-sample.pdf');
 const REAL_UPLOAD_FIXTURES = [
-	resolve(ROOT, 'tests/data/pdf/1950-01-9613320-Corona-NewMexico.pdf'),
-	resolve(ROOT, 'tests/data/pdf/CIQ_Issues_#13-24.pdf'),
-	resolve(ROOT, 'tests/data/pdf/Frontiers_of_Science_1980_v02-5-6.pdf'),
+	resolve(ROOT, 'fixtures/raw/scanned-sample.pdf'),
 ];
 const SESSION_SECRET = 'mulder-e2e-session-secret';
 const OWNER_EMAIL = 'owner.e2e@mulder.local';
