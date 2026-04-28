@@ -1,6 +1,6 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -16,6 +16,7 @@ const CORE_MIGRATIONS_DIR = resolve(ROOT, 'packages/core/src/database/migrations
 const SESSION_SECRET = 'spec-77-browser-auth-secret';
 
 type ApiApp = { request: (input: string | Request, init?: RequestInit) => Promise<Response> };
+type TestHeaders = Record<string, string>;
 
 function buildPackage(packageDir: string): void {
 	const result = spawnSync('pnpm', ['build'], {
@@ -87,7 +88,7 @@ async function loadApiApp(): Promise<ApiApp> {
 	});
 }
 
-async function postJson(app: ApiApp, path: string, body: unknown, headers?: HeadersInit): Promise<Response> {
+async function postJson(app: ApiApp, path: string, body: unknown, headers?: TestHeaders): Promise<Response> {
 	return await app.request(`http://localhost${path}`, {
 		method: 'POST',
 		headers: {
@@ -215,9 +216,9 @@ describe('Spec 77: Browser-safe email/password auth', () => {
 	});
 
 	it('QA-06: the demo bundle source does not reference VITE_MULDER_API_KEY', () => {
-		const uploadPage = readFileSync(resolve(ROOT, 'demo/src/pages/Upload.tsx'), 'utf8');
-		const authGate = readFileSync(resolve(ROOT, 'demo/src/features/auth/AuthGate.tsx'), 'utf8');
-		expect(uploadPage).not.toContain('VITE_MULDER_API_KEY');
+		const apiClient = readFileSync(resolve(ROOT, 'demo/src/lib/api-client.ts'), 'utf8');
+		const authGate = readFileSync(resolve(ROOT, 'demo/src/app/AuthGate.tsx'), 'utf8');
+		expect(apiClient).not.toContain('VITE_MULDER_API_KEY');
 		expect(authGate).not.toContain('VITE_MULDER_API_KEY');
 	});
 });

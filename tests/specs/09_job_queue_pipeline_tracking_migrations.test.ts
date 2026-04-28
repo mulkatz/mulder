@@ -221,12 +221,14 @@ describe('Spec 09: Job Queue & Pipeline Tracking Migrations (012-014)', () => {
 			if (skipIfUnavailable()) return;
 
 			// Check enum exists in pg_type
-			const enumExists = db.runSql("SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'job_status');");
+			const enumExists = db.runSql(
+				"SELECT EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE t.typname = 'job_status' AND n.nspname = 'public');",
+			);
 			expect(enumExists).toBe('t');
 
 			// Check enum values
 			const enumValues = db.runSql(
-				"SELECT enumlabel FROM pg_enum WHERE enumtypid = (SELECT oid FROM pg_type WHERE typname = 'job_status') ORDER BY enumsortorder;",
+				"SELECT e.enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid JOIN pg_namespace n ON n.oid = t.typnamespace WHERE t.typname = 'job_status' AND n.nspname = 'public' ORDER BY e.enumsortorder;",
 			);
 			const values = enumValues.split('\n').filter(Boolean);
 

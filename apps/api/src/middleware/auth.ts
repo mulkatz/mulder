@@ -1,8 +1,8 @@
 import type { ApiConfig } from '@mulder/core';
 import { MulderError } from '@mulder/core';
-import { getCookie } from 'hono/cookie';
 import type { MiddlewareHandler } from 'hono';
-import { validateSessionToken, type BrowserUserRole } from '../lib/auth.js';
+import { getCookie } from 'hono/cookie';
+import { type BrowserUserRole, validateSessionToken } from '../lib/auth.js';
 
 const PUBLIC_PATHS = new Set([
 	'/api/health',

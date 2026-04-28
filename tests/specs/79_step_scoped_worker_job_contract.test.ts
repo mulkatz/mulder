@@ -359,12 +359,12 @@ describe('Spec 79: Step-Scoped Worker Job Contract', () => {
 		const jobId = randomUUID();
 		insertJob({ id: jobId, type: 'extract', payload: { sourceId } });
 
-		let observedWhileDispatch: JobState | null = null;
+		const observedWhileDispatch: { current: JobState | null } = { current: null };
 		const result = await workerModule.processNextJob(
 			{
 				...workerContext,
 				dispatch: async () => {
-					observedWhileDispatch = readJob(jobId);
+					observedWhileDispatch.current = readJob(jobId);
 					await delay(100);
 					return { observed: true };
 				},
@@ -373,11 +373,14 @@ describe('Spec 79: Step-Scoped Worker Job Contract', () => {
 		);
 
 		expect(result.state).toBe('completed');
-		expect(observedWhileDispatch).not.toBeNull();
-		expect(observedWhileDispatch?.status).toBe('running');
-		expect(observedWhileDispatch?.workerId).toBe('spec-79-transaction-worker');
-		expect(observedWhileDispatch?.startedAtVisible).toBe(true);
-		expect(observedWhileDispatch?.finishedAtVisible).toBe(false);
+		const observed = observedWhileDispatch.current;
+		if (observed === null) {
+			throw new Error('Expected dispatch to observe the running job state');
+		}
+		expect(observed.status).toBe('running');
+		expect(observed.workerId).toBe('spec-79-transaction-worker');
+		expect(observed.startedAtVisible).toBe(true);
+		expect(observed.finishedAtVisible).toBe(false);
 
 		const finalJob = readJob(jobId);
 		expect(finalJob.status).toBe('completed');

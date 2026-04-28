@@ -223,6 +223,9 @@ importers:
 
   tests:
     devDependencies:
+      '@mulder/api':
+        specifier: workspace:*
+        version: link:../apps/api
       '@mulder/core':
         specifier: workspace:*
         version: link:../packages/core

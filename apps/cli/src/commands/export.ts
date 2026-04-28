@@ -461,11 +461,16 @@ export function registerExportCommands(program: Command): void {
 				try {
 					// Fetch all entities to compute totals
 					const totalEntityCount = await countEntities(pool);
-					const [totalSourceCount, processedSourceCount] = await Promise.all([countSources(pool), countProcessedSources(pool)]);
+					const [totalSourceCount, processedSourceCount] = await Promise.all([
+						countSources(pool),
+						countProcessedSources(pool),
+					]);
 
 					// Fetch entities with corroboration scores
 					const allEntities = await findAllEntities(pool, { limit: 100000 });
-					const scoredEntities = allEntities.filter((e) => e.corroborationScore !== null && e.taxonomyStatus !== 'merged');
+					const scoredEntities = allEntities.filter(
+						(e) => e.corroborationScore !== null && e.taxonomyStatus !== 'merged',
+					);
 					const corroborationThreshold = config.thresholds?.corroboration_meaningful ?? 50;
 					const corroborationContext = buildCorroborationContext(processedSourceCount, corroborationThreshold);
 
@@ -499,7 +504,8 @@ export function registerExportCommands(program: Command): void {
 					const dataReliability = computeDataReliability(processedSourceCount, corroborationThreshold);
 					const rawAvgCorroboration =
 						scoredEntities.length > 0
-							? scoredEntities.reduce((sum, entity) => sum + (entity.corroborationScore ?? 0), 0) / scoredEntities.length
+							? scoredEntities.reduce((sum, entity) => sum + (entity.corroborationScore ?? 0), 0) /
+								scoredEntities.length
 							: null;
 					const summaryCorroboration = presentCorroborationScore(rawAvgCorroboration, corroborationContext);
 

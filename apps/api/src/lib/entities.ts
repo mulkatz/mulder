@@ -1,12 +1,12 @@
 import { performance } from 'node:perf_hooks';
 import {
+	type CorroborationPresentationContext,
 	countEntities,
 	countProcessedSources,
 	createChildLogger,
 	createLogger,
 	DATABASE_ERROR_CODES,
 	DatabaseError,
-	type CorroborationPresentationContext,
 	type Entity,
 	type EntityAlias,
 	type EntityEdge,

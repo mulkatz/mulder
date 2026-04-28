@@ -9,9 +9,7 @@ const SPECS_DIR = resolve(ROOT, 'docs/specs');
 const TESTS_DIR = resolve(ROOT, 'tests/specs');
 const VITEST = resolve(ROOT, 'node_modules/vitest/vitest.mjs');
 
-const SPEC_TEST_OVERRIDES = new Map([
-	['77_document_observability_aggregation', ['77_document_observability_route']],
-]);
+const SPEC_TEST_OVERRIDES = new Map([['77_document_observability_aggregation', ['77_document_observability_route']]]);
 
 function walkFiles(root, predicate) {
 	const files = [];

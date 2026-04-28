@@ -50,7 +50,13 @@ import {
 
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_STALE_JOB_AGE_MS = 2 * 60 * 60 * 1000;
-const STEP_ORDER = ['extract', 'segment', 'enrich', 'embed', 'graph'] as const satisfies readonly WorkerPipelineStepName[];
+const STEP_ORDER = [
+	'extract',
+	'segment',
+	'enrich',
+	'embed',
+	'graph',
+] as const satisfies readonly WorkerPipelineStepName[];
 
 export interface WorkerRuntimeContext {
 	config: MulderConfig;
@@ -158,7 +164,7 @@ async function runInTransaction<T>(pool: pg.Pool, fn: (client: pg.PoolClient) =>
 }
 
 function isStepJob(job: WorkerJobEnvelope | null): job is WorkerJobEnvelope<WorkerPipelineStepName> {
-	return Boolean(job && STEP_ORDER.includes(job.type as WorkerPipelineStepName));
+	return Boolean(job && STEP_ORDER.some((step) => step === job.type));
 }
 
 function nextStepAfter(step: WorkerPipelineStepName, upTo?: WorkerPipelineStepName): WorkerPipelineStepName | null {

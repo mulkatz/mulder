@@ -135,7 +135,11 @@ export async function createPipelineRun(pool: Queryable, input: CreatePipelineRu
  *
  * @throws {DatabaseError} with `DB_NOT_FOUND` if no run row exists.
  */
-export async function finalizePipelineRun(pool: Queryable, id: string, status: PipelineRunStatus): Promise<PipelineRun> {
+export async function finalizePipelineRun(
+	pool: Queryable,
+	id: string,
+	status: PipelineRunStatus,
+): Promise<PipelineRun> {
 	const sql = `
     UPDATE pipeline_runs
     SET status = $1, finished_at = now()

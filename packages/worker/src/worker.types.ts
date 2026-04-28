@@ -443,24 +443,40 @@ function parseDocumentUploadFinalizePayload(jobId: string, payload: unknown): Do
 	return parsed;
 }
 
-export function parseWorkerJobPayload<TType extends WorkerJobType>(
+export function parseWorkerJobPayload(
 	jobId: string,
-	jobType: TType,
+	jobType: SourceStepJobType,
 	payload: unknown,
-): WorkerJobPayloadMap[TType] {
+): SourceStepJobPayload;
+export function parseWorkerJobPayload(jobId: string, jobType: StoryStepJobType, payload: unknown): StoryStepJobPayload;
+export function parseWorkerJobPayload(
+	jobId: string,
+	jobType: UploadFinalizeJobType,
+	payload: unknown,
+): DocumentUploadFinalizeJobPayload;
+export function parseWorkerJobPayload(
+	jobId: string,
+	jobType: LegacyWorkerJobType,
+	payload: unknown,
+): LegacyPipelineRunJobPayload;
+export function parseWorkerJobPayload(
+	jobId: string,
+	jobType: WorkerJobType,
+	payload: unknown,
+): WorkerJobPayloadMap[WorkerJobType] {
 	if (jobType === 'extract' || jobType === 'segment') {
-		return parseSourceStepPayload(jobId, jobType, payload) as WorkerJobPayloadMap[TType];
+		return parseSourceStepPayload(jobId, jobType, payload);
 	}
 
 	if (jobType === 'enrich' || jobType === 'embed' || jobType === 'graph') {
-		return parseStoryStepPayload(jobId, jobType, payload) as WorkerJobPayloadMap[TType];
+		return parseStoryStepPayload(jobId, jobType, payload);
 	}
 
 	if (jobType === 'document_upload_finalize') {
-		return parseDocumentUploadFinalizePayload(jobId, payload) as WorkerJobPayloadMap[TType];
+		return parseDocumentUploadFinalizePayload(jobId, payload);
 	}
 
-	return parsePipelineRunPayload(jobId, payload) as WorkerJobPayloadMap[TType];
+	return parsePipelineRunPayload(jobId, payload);
 }
 
 export function parseWorkerJobEnvelope(job: Job): WorkerJobEnvelope {

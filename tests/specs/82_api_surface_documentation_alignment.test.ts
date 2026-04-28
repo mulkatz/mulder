@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createApp } from '@mulder/api';
 import { describe, expect, it } from 'vitest';
-import { createApp } from '../../apps/api/src/app.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 

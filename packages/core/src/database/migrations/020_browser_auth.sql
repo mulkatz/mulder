@@ -2,7 +2,7 @@
 -- Password hashes use application-level scrypt. Session and invitation tokens
 -- are stored as irreversible hashes; raw tokens are never persisted.
 
-CREATE TABLE api_users (
+CREATE TABLE IF NOT EXISTS api_users (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email           TEXT NOT NULL,
   password_hash   TEXT NOT NULL,
@@ -12,11 +12,11 @@ CREATE TABLE api_users (
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX idx_api_users_email_active
+CREATE UNIQUE INDEX IF NOT EXISTS idx_api_users_email_active
   ON api_users (lower(email))
   WHERE disabled_at IS NULL;
 
-CREATE TABLE api_sessions (
+CREATE TABLE IF NOT EXISTS api_sessions (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id         UUID NOT NULL REFERENCES api_users(id) ON DELETE CASCADE,
   token_hash      TEXT NOT NULL UNIQUE,
@@ -25,12 +25,12 @@ CREATE TABLE api_sessions (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_api_sessions_user_id ON api_sessions(user_id);
-CREATE INDEX idx_api_sessions_token_hash_active
+CREATE INDEX IF NOT EXISTS idx_api_sessions_user_id ON api_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_api_sessions_token_hash_active
   ON api_sessions(token_hash)
   WHERE revoked_at IS NULL;
 
-CREATE TABLE api_invitations (
+CREATE TABLE IF NOT EXISTS api_invitations (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email           TEXT NOT NULL,
   role            TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member')),
@@ -41,6 +41,6 @@ CREATE TABLE api_invitations (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_api_invitations_token_hash_open
+CREATE INDEX IF NOT EXISTS idx_api_invitations_token_hash_open
   ON api_invitations(token_hash)
   WHERE accepted_at IS NULL;

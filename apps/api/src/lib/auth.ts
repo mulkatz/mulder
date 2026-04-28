@@ -1,16 +1,25 @@
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
-import { promisify } from 'node:util';
 import {
+	type ApiConfig,
 	getWorkerPool,
 	loadConfig,
 	MulderError,
 	PIPELINE_ERROR_CODES,
 	PipelineError,
-	type ApiConfig,
 } from '@mulder/core';
 import type pg from 'pg';
 
-const scryptAsync = promisify(scryptCallback);
+function scryptAsync(password: string, salt: string, keylen: number): Promise<Buffer> {
+	return new Promise((resolve, reject) => {
+		scryptCallback(password, salt, keylen, (error, derivedKey) => {
+			if (error) {
+				reject(error);
+				return;
+			}
+			resolve(derivedKey);
+		});
+	});
+}
 
 export type BrowserUserRole = 'owner' | 'admin' | 'member';
 
@@ -83,7 +92,7 @@ function tokenHash(token: string, apiConfig?: ApiConfig): string {
 
 async function hashPassword(password: string): Promise<string> {
 	const salt = randomBytes(16).toString('base64url');
-	const derived = (await scryptAsync(password, salt, 64)) as Buffer;
+	const derived = await scryptAsync(password, salt, 64);
 	return `scrypt:${salt}:${derived.toString('base64url')}`;
 }
 
@@ -94,7 +103,7 @@ async function verifyPassword(password: string, passwordHash: string): Promise<b
 	}
 
 	const expected = Buffer.from(expectedHash, 'base64url');
-	const actual = (await scryptAsync(password, salt, expected.length)) as Buffer;
+	const actual = await scryptAsync(password, salt, expected.length);
 	return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
@@ -254,7 +263,13 @@ export async function createInvitation(input: {
 			VALUES ($1, $2, $3, $4, $5)
 			RETURNING id, email, role, expires_at
 		`,
-		[normalizeEmail(input.email), input.role, tokenHash(token, input.apiConfig), input.invitedByUserId ?? null, expiresAt],
+		[
+			normalizeEmail(input.email),
+			input.role,
+			tokenHash(token, input.apiConfig),
+			input.invitedByUserId ?? null,
+			expiresAt,
+		],
 	);
 
 	const row = result.rows[0];

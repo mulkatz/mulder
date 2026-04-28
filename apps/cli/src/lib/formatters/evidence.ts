@@ -168,7 +168,9 @@ export function formatEvidenceMarkdown(data: EvidenceExportData): string {
 	lines.push(`| Scored Entities | ${data.summary.scoredEntities} |`);
 	lines.push(
 		`| Avg. Corroboration | ${
-			data.summary.avgCorroboration !== null ? data.summary.avgCorroboration.toFixed(2) : data.summary.corroborationStatus
+			data.summary.avgCorroboration !== null
+				? data.summary.avgCorroboration.toFixed(2)
+				: data.summary.corroborationStatus
 		} |`,
 	);
 	lines.push(`| Corroboration Status | ${data.summary.corroborationStatus} |`);
@@ -195,10 +197,9 @@ export function formatEvidenceMarkdown(data: EvidenceExportData): string {
 		);
 		const topEntities = sorted.slice(0, 20);
 		for (const entity of topEntities) {
-			const score = entity.corroborationScore !== null ? entity.corroborationScore.toFixed(2) : entity.corroborationStatus;
-			lines.push(
-				`| ${entity.name} | ${entity.type} | ${score} | ${entity.sourceCount} |`,
-			);
+			const score =
+				entity.corroborationScore !== null ? entity.corroborationScore.toFixed(2) : entity.corroborationStatus;
+			lines.push(`| ${entity.name} | ${entity.type} | ${score} | ${entity.sourceCount} |`);
 		}
 		lines.push('');
 	}

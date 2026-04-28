@@ -86,6 +86,7 @@ describe('Spec 22: Story Repository', () => {
 		DatabaseError = coreMod.DatabaseError;
 
 		// Clean up stories and create a parent source for FK reference
+		await pool.query('DELETE FROM pipeline_run_sources');
 		await pool.query('DELETE FROM stories');
 		await pool.query('DELETE FROM source_steps');
 		await pool.query('DELETE FROM sources');

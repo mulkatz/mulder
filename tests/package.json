@@ -6,6 +6,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
+		"@mulder/api": "workspace:*",
 		"@mulder/core": "workspace:*",
 		"@mulder/eval": "workspace:*",
 		"@mulder/pipeline": "workspace:*",

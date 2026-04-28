@@ -44,8 +44,8 @@ function insertStepJob(input: { id: string; maxAttempts: number }): void {
 function readJobState(jobId: string): string {
 	return db.runSql(
 		[
-			'SELECT status || \'|\' || attempts::text || \'|\' || COALESCE(worker_id, \'\') || \'|\' ||',
-			'(started_at IS NULL)::text || \'|\' || (finished_at IS NULL)::text || \'|\' || COALESCE(error_log, \'\')',
+			"SELECT status || '|' || attempts::text || '|' || COALESCE(worker_id, '') || '|' ||",
+			"(started_at IS NULL)::text || '|' || (finished_at IS NULL)::text || '|' || COALESCE(error_log, '')",
 			'FROM jobs',
 			`WHERE id = '${jobId}';`,
 		].join(' '),
