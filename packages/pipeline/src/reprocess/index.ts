@@ -8,6 +8,7 @@ import type {
 	MulderConfig,
 	Services,
 	SourceStatus,
+	SourceStep,
 	SourceStepStatus,
 	SourceWithSteps,
 	StepError,
@@ -16,10 +17,15 @@ import {
 	computeReprocessConfigHash,
 	createChildLogger,
 	createPipelineRun,
+	deleteGraphDerivedEdgesBySourceId,
+	deleteSourceStep,
 	finalizePipelineRun,
+	findSourceStep,
 	findSourcesWithSteps,
 	findStoriesBySourceId,
 	getAllStepConfigHashes,
+	updateSourceStatus,
+	updateStoryStatus,
 	upsertPipelineRunSource,
 	upsertSourceStep,
 } from '@mulder/core';
@@ -28,7 +34,7 @@ import { execute as executeAnalyze } from '../analyze/index.js';
 import { execute as executeEmbed, forceCleanupSource as forceCleanupEmbedSource } from '../embed/index.js';
 import { execute as executeEnrich, forceCleanupSource as forceCleanupEnrichSource } from '../enrich/index.js';
 import { execute as executeExtract } from '../extract/index.js';
-import { execute as executeGraph, forceCleanupSource as forceCleanupGraphSource } from '../graph/index.js';
+import { execute as executeGraph } from '../graph/index.js';
 import { execute as executeSegment } from '../segment/index.js';
 import type {
 	ReprocessInput,
@@ -62,20 +68,6 @@ const SOURCE_STATUS_ORDER: readonly SourceStatus[] = [
 	'graphed',
 	'analyzed',
 ] as const;
-const STEP_PREREQUISITES: Record<ReprocessStepName, SourceStatus> = {
-	extract: 'ingested',
-	segment: 'extracted',
-	enrich: 'segmented',
-	embed: 'enriched',
-	graph: 'embedded',
-};
-const REQUESTED_STEP_MIN_STATUS: Record<ReprocessStepName, SourceStatus> = {
-	extract: 'ingested',
-	segment: 'extracted',
-	enrich: 'segmented',
-	embed: 'enriched',
-	graph: 'embedded',
-};
 const STEP_IMPACT: Record<ReprocessStepName, readonly ReprocessStepName[]> = {
 	extract: ['extract', 'segment', 'enrich', 'embed', 'graph'],
 	segment: ['segment', 'enrich', 'embed', 'graph'],
@@ -100,6 +92,21 @@ function sourceStatusIndex(status: SourceStatus): number {
 	return SOURCE_STATUS_ORDER.indexOf(status);
 }
 
+function targetSourceStatusForStep(stepName: ReprocessStepName): SourceStatus {
+	switch (stepName) {
+		case 'extract':
+			return 'extracted';
+		case 'segment':
+			return 'segmented';
+		case 'enrich':
+			return 'enriched';
+		case 'embed':
+			return 'embedded';
+		case 'graph':
+			return 'graphed';
+	}
+}
+
 function isTrackedStep(stepName: string): stepName is ReprocessStepName {
 	return TRACKED_STEP_SET.has(stepName);
 }
@@ -111,6 +118,30 @@ function findStoredHash(steps: SourceStepRecord[], stepName: ReprocessStepName):
 
 function findStoredStep(steps: SourceStepRecord[], stepName: ReprocessStepName | 'analyze'): SourceStepRecord | null {
 	return steps.find((step) => step.stepName === stepName) ?? null;
+}
+
+function hasCompletedStep(steps: SourceStepRecord[], stepName: ReprocessStepName): boolean {
+	return findStoredStep(steps, stepName)?.status === 'completed';
+}
+
+function hasReachedStepPrerequisite(
+	sourceStatus: SourceStatus,
+	sourceSteps: SourceStepRecord[],
+	stepName: ReprocessStepName,
+): boolean {
+	const statusIndex = sourceStatusIndex(sourceStatus);
+	switch (stepName) {
+		case 'extract':
+			return statusIndex >= sourceStatusIndex('ingested');
+		case 'segment':
+			return statusIndex >= sourceStatusIndex('extracted') || hasCompletedStep(sourceSteps, 'extract');
+		case 'enrich':
+			return statusIndex >= sourceStatusIndex('segmented') || hasCompletedStep(sourceSteps, 'segment');
+		case 'embed':
+			return statusIndex >= sourceStatusIndex('enriched') || hasCompletedStep(sourceSteps, 'enrich');
+		case 'graph':
+			return statusIndex >= sourceStatusIndex('embedded') || hasCompletedStep(sourceSteps, 'embed');
+	}
 }
 
 function hasReachedAnalyzePrerequisite(source: SourceWithSteps): boolean {
@@ -137,15 +168,16 @@ function buildCurrentAnalyzeHash(config: MulderConfig): string {
 	return computeReprocessConfigHash(config, 'analyze');
 }
 
-function hasDirtyTrackedStep(steps: SourceStepRecord[], stepName: ReprocessStepName, currentHash: string): boolean {
+function getDirtyTrackedStepReason(
+	steps: SourceStepRecord[],
+	stepName: ReprocessStepName,
+	currentHash: string,
+): ReprocessPlanReason | null {
 	const storedStep = findStoredStep(steps, stepName);
-	if (!storedStep) {
-		return true;
+	if (!storedStep || storedStep.status !== 'completed' || !storedStep.configHash) {
+		return 'missing-history';
 	}
-	if (storedStep.status !== 'completed') {
-		return true;
-	}
-	return storedStep.configHash !== currentHash;
+	return storedStep.configHash === currentHash ? null : 'hash-mismatch';
 }
 
 function hasDirtyAnalyzeStep(steps: SourceStepRecord[], currentAnalyzeHash: string): boolean {
@@ -169,7 +201,7 @@ function buildImpactPlan(
 	const plannedSteps: ReprocessPlannedStep[] = [];
 	const forceGraphCleanup = requestedStep === 'enrich';
 
-	for (const [index, stepName] of STEP_IMPACT[requestedStep].entries()) {
+	for (const [index, stepName] of impactForStep(requestedStep, sourceSteps).entries()) {
 		plannedSteps.push({
 			stepName,
 			force: index === 0 || (forceGraphCleanup && stepName === 'graph'),
@@ -192,6 +224,20 @@ function buildImpactPlan(
 	};
 }
 
+function impactForStep(stepName: ReprocessStepName, sourceSteps: SourceStepRecord[]): readonly ReprocessStepName[] {
+	if (stepName === 'enrich' && !hasCompletedStep(sourceSteps, 'embed')) {
+		return ['enrich', 'embed', 'graph'];
+	}
+	return STEP_IMPACT[stepName];
+}
+
+function shouldForcePlannedStep(stepName: ReprocessStepName, dirtySteps: ReadonlySet<ReprocessStepName>): boolean {
+	if (dirtySteps.has(stepName)) {
+		return true;
+	}
+	return stepName === 'graph' && (dirtySteps.has('enrich') || dirtySteps.has('embed'));
+}
+
 function buildSelectivePlan(
 	sourceId: string,
 	filename: string,
@@ -199,17 +245,45 @@ function buildSelectivePlan(
 	sourceSteps: SourceStepRecord[],
 	currentHashes: Record<ReprocessStepName, string>,
 ): PlannedSourceResult {
-	const statusIndex = sourceStatusIndex(status);
+	const dirtySteps = new Map<ReprocessStepName, ReprocessPlanReason>();
+	const plannedStepNames = new Set<ReprocessStepName>();
+
 	for (const stepName of STEP_ORDER) {
-		if (statusIndex < sourceStatusIndex(STEP_PREREQUISITES[stepName])) {
+		if (!hasReachedStepPrerequisite(status, sourceSteps, stepName)) {
 			continue;
 		}
-		if (hasDirtyTrackedStep(sourceSteps, stepName, currentHashes[stepName])) {
-			const result = buildImpactPlan(stepName, currentHashes, sourceSteps, status, 'missing-history');
-			result.plan.sourceId = sourceId;
-			result.plan.filename = filename;
-			return result;
+		const dirtyReason = getDirtyTrackedStepReason(sourceSteps, stepName, currentHashes[stepName]);
+		if (dirtyReason) {
+			dirtySteps.set(stepName, dirtyReason);
+			for (const impactedStep of impactForStep(stepName, sourceSteps)) {
+				plannedStepNames.add(impactedStep);
+			}
 		}
+	}
+
+	if (plannedStepNames.size > 0) {
+		const dirtyStepNames = new Set(dirtySteps.keys());
+		const plannedSteps: ReprocessPlannedStep[] = STEP_ORDER.filter((stepName) => plannedStepNames.has(stepName)).map(
+			(stepName) => ({
+				stepName,
+				force: shouldForcePlannedStep(stepName, dirtyStepNames),
+				reason: dirtySteps.get(stepName) ?? 'downstream',
+				currentHash: currentHashes[stepName],
+				storedHash: findStoredHash(sourceSteps, stepName),
+			}),
+		);
+
+		return {
+			plan: {
+				sourceId,
+				filename,
+				status,
+				planned: true,
+				skipReason: null,
+				steps: plannedSteps,
+			},
+			forceFirstStep: true,
+		};
 	}
 
 	return {
@@ -235,7 +309,7 @@ function planSource(
 		.map((step) => ({ stepName: step.stepName, status: step.status, configHash: step.configHash }));
 
 	if (requestedStep) {
-		if (sourceStatusIndex(source.source.status) < sourceStatusIndex(REQUESTED_STEP_MIN_STATUS[requestedStep])) {
+		if (!hasReachedStepPrerequisite(source.source.status, sourceSteps, requestedStep)) {
 			return {
 				plan: {
 					sourceId: source.source.id,
@@ -248,7 +322,13 @@ function planSource(
 				forceFirstStep: false,
 			};
 		}
+		const plannedSteps = impactForStep(requestedStep, sourceSteps);
 		const result = buildImpactPlan(requestedStep, currentHashes, sourceSteps, source.source.status, 'forced-step');
+		result.plan.steps = result.plan.steps.filter((step) => plannedSteps.includes(step.stepName));
+		const forcedSteps = new Set<ReprocessStepName>([requestedStep]);
+		for (const step of result.plan.steps) {
+			step.force = shouldForcePlannedStep(step.stepName, forcedSteps);
+		}
 		result.plan.sourceId = source.source.id;
 		result.plan.filename = source.source.filename;
 		return result;
@@ -374,7 +454,7 @@ async function executeStep(
 				return { status: 'success', errors: [] };
 			}
 			if (force) {
-				await forceCleanupGraphSource(sourceId, pool, logger);
+				await prepareGraphReprocessSource(sourceId, pool, logger);
 			}
 			const stepErrors: StepError[] = [];
 			let hasFailure = false;
@@ -425,6 +505,20 @@ async function runGlobalAnalyzeIfNeeded(
 	return 'success';
 }
 
+async function prepareGraphReprocessSource(sourceId: string, pool: pg.Pool, logger: Logger): Promise<void> {
+	const deletedEdges = await deleteGraphDerivedEdgesBySourceId(pool, sourceId);
+	await deleteSourceStep(pool, sourceId, 'graph');
+
+	const stories = await findStoriesBySourceId(pool, sourceId);
+	for (const story of stories) {
+		if (story.status !== 'embedded') {
+			await updateStoryStatus(pool, story.id, 'embedded');
+		}
+	}
+
+	logger.info({ sourceId, deletedEdges, stories: stories.length }, 'Graph reprocess cleanup complete');
+}
+
 async function persistAnalyzeStepState(
 	pool: pg.Pool,
 	config: MulderConfig,
@@ -459,10 +553,7 @@ export async function planReprocess(
 ): Promise<ReprocessPlan> {
 	const currentHashes = buildCurrentHashes(config);
 	const currentAnalyzeHash = buildCurrentAnalyzeHash(config);
-	const sources = await findSourcesWithSteps(
-		pool,
-		input.step ? { minimumStatus: REQUESTED_STEP_MIN_STATUS[input.step] } : undefined,
-	);
+	const sources = await findSourcesWithSteps(pool);
 	const plans: ReprocessSourcePlan[] = [];
 	let plannedSourceCount = 0;
 	let skippedSourceCount = 0;
@@ -491,6 +582,24 @@ export async function planReprocess(
 			shouldPlanGlobalAnalyze(sources, config, currentAnalyzeHash, input.step),
 		sources: plans,
 	};
+}
+
+function shouldPreserveEmbedStep(sourcePlan: ReprocessSourcePlan): boolean {
+	const plannedSteps = new Set(sourcePlan.steps.map((step) => step.stepName));
+	return plannedSteps.has('enrich') && !plannedSteps.has('embed');
+}
+
+async function restorePreservedEmbedStep(pool: pg.Pool, preservedStep: SourceStep | null): Promise<void> {
+	if (!preservedStep || preservedStep.status !== 'completed') {
+		return;
+	}
+	await upsertSourceStep(pool, {
+		sourceId: preservedStep.sourceId,
+		stepName: preservedStep.stepName,
+		status: preservedStep.status,
+		configHash: preservedStep.configHash ?? undefined,
+		errorMessage: preservedStep.errorMessage ?? undefined,
+	});
 }
 
 /**
@@ -574,6 +683,10 @@ export async function executeReprocess(
 		let failedStep: ReprocessStepName | null = null;
 		let sourceHadPartial = false;
 		let sourceErrors: StepError[] = [];
+		const preservedEmbedStep = shouldPreserveEmbedStep(sourcePlan)
+			? await findSourceStep(pool, sourcePlan.sourceId, 'embed')
+			: null;
+		let preservedEmbedStepRestored = false;
 
 		for (const plannedStep of sourcePlan.steps) {
 			try {
@@ -593,6 +706,10 @@ export async function executeReprocess(
 				if (result.status === 'failed') {
 					failedStep = plannedStep.stepName;
 					break;
+				}
+				if (plannedStep.stepName === 'enrich' && !preservedEmbedStepRestored) {
+					await restorePreservedEmbedStep(pool, preservedEmbedStep);
+					preservedEmbedStepRestored = true;
 				}
 			} catch (error: unknown) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -627,6 +744,7 @@ export async function executeReprocess(
 		completedSources++;
 		const lastStep =
 			sourcePlan.steps[sourcePlan.steps.length - 1]?.stepName ?? sourcePlan.steps[0]?.stepName ?? 'extract';
+		await updateSourceStatus(pool, sourcePlan.sourceId, targetSourceStatusForStep(lastStep));
 		await upsertPipelineRunSource(pool, {
 			runId: run.id,
 			sourceId: sourcePlan.sourceId,

@@ -173,6 +173,7 @@ export {
 	deleteEntitiesBySourceId,
 	deleteEntityAlias,
 	deleteEvidenceChainsByThesis,
+	deleteGraphDerivedEdgesBySourceId,
 	deleteSource,
 	deleteSourceStep,
 	deleteStoriesBySourceId,

@@ -95,6 +95,11 @@ function writeConfigVariant(pathname: string, threshold: string): void {
 	writeFileSync(pathname, updated, 'utf-8');
 }
 
+function writeConfigWithReplacements(pathname: string, replacer: (input: string) => string): void {
+	const base = readFileSync(EXAMPLE_CONFIG, 'utf-8');
+	writeFileSync(pathname, replacer(base), 'utf-8');
+}
+
 describe('Spec 78 — Selective Reprocessing', () => {
 	let pgAvailable = false;
 	let core: typeof import('@mulder/core');
@@ -366,28 +371,227 @@ describe('Spec 78 — Selective Reprocessing', () => {
 		expect(parsed.plan.sources[0].steps[1].force).toBe(true);
 	});
 
-	it('QA-05: reprocess --step embed and --step graph ignore segmented-only sources', async () => {
+	it('QA-05: embedding changes are detected from source_steps even when source status is segmented', async () => {
 		if (!pgAvailable) return;
 
-		await seedSegmentedSource('spec78-qa05');
+		await seedProcessedSource('spec78-qa05');
 
-		const embedPlan = await pipeline.planReprocess({ step: 'embed' }, config, pool);
-		expect(embedPlan.sourcesConsidered).toBe(0);
-		expect(embedPlan.plannedSourceCount).toBe(0);
-		expect(embedPlan.skippedSourceCount).toBe(0);
+		const tempConfig = resolve(ROOT, '.local', 'tmp-tests', 'spec78-qa05-config.yaml');
+		mkdirSync(resolve(tempConfig, '..'), { recursive: true });
+		writeConfigWithReplacements(tempConfig, (base) => base.replace('chunk_size_tokens: 512', 'chunk_size_tokens: 384'));
 
-		const graphPlan = await pipeline.planReprocess({ step: 'graph' }, config, pool);
-		expect(graphPlan.sourcesConsidered).toBe(0);
-		expect(graphPlan.plannedSourceCount).toBe(0);
-		expect(graphPlan.skippedSourceCount).toBe(0);
+		const changedConfig = core.loadConfig(tempConfig);
+		const plan = await pipeline.planReprocess({}, changedConfig, pool);
+		expect(plan.plannedSourceCount).toBe(1);
+		expect(plan.sources[0]?.steps.map((step) => step.stepName)).toEqual(['embed', 'graph']);
+		expect(plan.sources[0]?.steps.map((step) => step.force)).toEqual([true, true]);
 	});
 
-	it('QA-06: analysis-only config changes plan a global analyze pass without source reruns', async () => {
+	it('QA-06: taxonomy changes plan enrich and graph while preserving embed', async () => {
 		if (!pgAvailable) return;
 
 		await seedProcessedSource('spec78-qa06');
 
 		const tempConfig = resolve(ROOT, '.local', 'tmp-tests', 'spec78-qa06-config.yaml');
+		mkdirSync(resolve(tempConfig, '..'), { recursive: true });
+		writeConfigWithReplacements(tempConfig, (base) => `${base}\ntaxonomy:\n  normalization_threshold: 0.55\n`);
+
+		const changedConfig = core.loadConfig(tempConfig);
+		const plan = await pipeline.planReprocess({}, changedConfig, pool);
+		expect(plan.plannedSourceCount).toBe(1);
+		expect(plan.sources[0]?.steps.map((step) => step.stepName)).toEqual(['enrich', 'graph']);
+		expect(plan.sources[0]?.steps.map((step) => step.force)).toEqual([true, true]);
+	});
+
+	it('QA-07: project locale changes do not trigger reprocessing', async () => {
+		if (!pgAvailable) return;
+
+		await seedProcessedSource('spec78-qa07');
+
+		const tempConfig = resolve(ROOT, '.local', 'tmp-tests', 'spec78-qa07-config.yaml');
+		mkdirSync(resolve(tempConfig, '..'), { recursive: true });
+		writeConfigWithReplacements(tempConfig, (base) =>
+			base.replace('supported_locales: ["en"]', 'supported_locales: ["en", "de"]'),
+		);
+
+		const changedConfig = core.loadConfig(tempConfig);
+		const plan = await pipeline.planReprocess({}, changedConfig, pool);
+		expect(plan.plannedSourceCount).toBe(0);
+		expect(plan.skippedSourceCount).toBe(1);
+	});
+
+	it('QA-08: simultaneous taxonomy and embed changes plan the union of impacted steps', async () => {
+		if (!pgAvailable) return;
+
+		await seedProcessedSource('spec78-qa08');
+
+		const tempConfig = resolve(ROOT, '.local', 'tmp-tests', 'spec78-qa08-config.yaml');
+		mkdirSync(resolve(tempConfig, '..'), { recursive: true });
+		writeConfigWithReplacements(
+			tempConfig,
+			(base) =>
+				`${base.replace('chunk_size_tokens: 512', 'chunk_size_tokens: 384')}\ntaxonomy:\n  normalization_threshold: 0.55\n`,
+		);
+
+		const changedConfig = core.loadConfig(tempConfig);
+		const plan = await pipeline.planReprocess({}, changedConfig, pool);
+		expect(plan.plannedSourceCount).toBe(1);
+		expect(plan.sources[0]?.steps.map((step) => step.stepName)).toEqual(['enrich', 'embed', 'graph']);
+		expect(plan.sources[0]?.steps.map((step) => step.force)).toEqual([true, true, true]);
+	});
+
+	it('QA-09: graph-derived cleanup removes cross-source story references only', async () => {
+		if (!pgAvailable) return;
+
+		const sourceA = await core.createSource(pool, {
+			filename: 'spec78-cross-source-a.pdf',
+			storagePath: `raw/spec78-cross-source-a/${randomUUID()}.pdf`,
+			fileHash: randomUUID().replace(/-/g, ''),
+			pageCount: 1,
+			hasNativeText: true,
+			nativeTextRatio: 1,
+		});
+		const sourceB = await core.createSource(pool, {
+			filename: 'spec78-cross-source-b.pdf',
+			storagePath: `raw/spec78-cross-source-b/${randomUUID()}.pdf`,
+			fileHash: randomUUID().replace(/-/g, ''),
+			pageCount: 1,
+			hasNativeText: true,
+			nativeTextRatio: 1,
+		});
+		const storyA = await core.createStory(pool, {
+			sourceId: sourceA.id,
+			title: 'Spec 78 story A',
+			gcsMarkdownUri: `segments/${sourceA.id}/a.md`,
+			gcsMetadataUri: `segments/${sourceA.id}/a.meta.json`,
+		});
+		const storyB = await core.createStory(pool, {
+			sourceId: sourceB.id,
+			title: 'Spec 78 story B',
+			gcsMarkdownUri: `segments/${sourceB.id}/b.md`,
+			gcsMetadataUri: `segments/${sourceB.id}/b.meta.json`,
+		});
+		const sourceEntity = await core.createEntity(pool, {
+			name: `Spec 78 Source Entity ${randomUUID()}`,
+			type: 'person',
+		});
+		const targetEntity = await core.createEntity(pool, {
+			name: `Spec 78 Target Entity ${randomUUID()}`,
+			type: 'event',
+		});
+
+		await core.createEdge(pool, {
+			sourceEntityId: sourceEntity.id,
+			targetEntityId: targetEntity.id,
+			relationship: 'duplicate_near',
+			storyId: storyB.id,
+			edgeType: 'DUPLICATE_OF',
+			attributes: { storyIdA: storyA.id, storyIdB: storyB.id },
+		});
+		await core.createEdge(pool, {
+			sourceEntityId: targetEntity.id,
+			targetEntityId: sourceEntity.id,
+			relationship: 'co_occurs_with',
+			storyId: storyB.id,
+			edgeType: 'RELATIONSHIP',
+			attributes: { generatedBy: 'graph.cooccurrence_fallback', storyIdA: storyA.id, storyIdB: storyB.id },
+		});
+		await core.createEdge(pool, {
+			sourceEntityId: sourceEntity.id,
+			targetEntityId: targetEntity.id,
+			relationship: 'co_occurs_with',
+			storyId: storyB.id,
+			edgeType: 'RELATIONSHIP',
+			attributes: { storyIdA: storyA.id, storyIdB: storyB.id },
+		});
+		await core.createEdge(pool, {
+			sourceEntityId: sourceEntity.id,
+			targetEntityId: targetEntity.id,
+			relationship: 'kept_relationship',
+			storyId: storyB.id,
+			edgeType: 'RELATIONSHIP',
+			attributes: { storyIdA: storyA.id, storyIdB: storyB.id },
+		});
+
+		const deleted = await core.deleteGraphDerivedEdgesBySourceId(pool, sourceA.id);
+		expect(deleted).toBe(2);
+
+		const duplicateCount = Number.parseInt(
+			db.runSql(`SELECT COUNT(*) FROM entity_edges WHERE story_id = '${storyB.id}' AND edge_type = 'DUPLICATE_OF';`),
+			10,
+		);
+		expect(duplicateCount).toBe(0);
+
+		const markedFallbackCount = Number.parseInt(
+			db.runSql(
+				`SELECT COUNT(*) FROM entity_edges WHERE story_id = '${storyB.id}' AND relationship = 'co_occurs_with' AND attributes->>'generatedBy' = 'graph.cooccurrence_fallback';`,
+			),
+			10,
+		);
+		expect(markedFallbackCount).toBe(0);
+
+		const domainCooccurrenceCount = Number.parseInt(
+			db.runSql(
+				`SELECT COUNT(*) FROM entity_edges WHERE story_id = '${storyB.id}' AND relationship = 'co_occurs_with' AND attributes->>'generatedBy' IS NULL;`,
+			),
+			10,
+		);
+		expect(domainCooccurrenceCount).toBe(1);
+
+		const relationshipCount = Number.parseInt(
+			db.runSql(`SELECT COUNT(*) FROM entity_edges WHERE story_id = '${storyB.id}' AND edge_type = 'RELATIONSHIP';`),
+			10,
+		);
+		expect(relationshipCount).toBe(2);
+	});
+
+	it('QA-10: live enrich reprocess preserves embed step state', async () => {
+		if (!pgAvailable) return;
+
+		const sourceId = await seedProcessedSource('spec78-qa10');
+		const embedHashBefore = db.runSql(
+			`SELECT config_hash FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'embed';`,
+		);
+
+		const result = runCli(['reprocess', '--step', 'enrich'], { timeout: 900_000 });
+		expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
+
+		const embedHashAfter = db.runSql(
+			`SELECT config_hash FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'embed';`,
+		);
+		expect(embedHashAfter).toBe(embedHashBefore);
+
+		const sourceStatus = db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`);
+		expect(sourceStatus).toBe('graphed');
+
+		const followupPlan = await pipeline.planReprocess({}, config, pool);
+		expect(followupPlan.plannedSourceCount).toBe(0);
+	});
+
+	it('QA-11: reprocess --step embed and --step graph ignore segmented-only sources', async () => {
+		if (!pgAvailable) return;
+
+		await seedSegmentedSource('spec78-qa11');
+
+		const embedPlan = await pipeline.planReprocess({ step: 'embed' }, config, pool);
+		expect(embedPlan.sourcesConsidered).toBe(1);
+		expect(embedPlan.plannedSourceCount).toBe(0);
+		expect(embedPlan.skippedSourceCount).toBe(1);
+		expect(embedPlan.sources[0]?.skipReason).toBe('has not reached embed');
+
+		const graphPlan = await pipeline.planReprocess({ step: 'graph' }, config, pool);
+		expect(graphPlan.sourcesConsidered).toBe(1);
+		expect(graphPlan.plannedSourceCount).toBe(0);
+		expect(graphPlan.skippedSourceCount).toBe(1);
+		expect(graphPlan.sources[0]?.skipReason).toBe('has not reached graph');
+	});
+
+	it('QA-12: analysis-only config changes plan a global analyze pass without source reruns', async () => {
+		if (!pgAvailable) return;
+
+		await seedProcessedSource('spec78-qa12');
+
+		const tempConfig = resolve(ROOT, '.local', 'tmp-tests', 'spec78-qa12-config.yaml');
 		mkdirSync(resolve(tempConfig, '..'), { recursive: true });
 		const base = readFileSync(EXAMPLE_CONFIG, 'utf-8');
 		const updated = base
@@ -404,7 +608,7 @@ describe('Spec 78 — Selective Reprocessing', () => {
 		expect(plan.globalAnalyzePlanned).toBe(true);
 	});
 
-	it('QA-07: failed source-step rewrites clear stale config hashes', async () => {
+	it('QA-13: failed source-step rewrites clear stale config hashes', async () => {
 		if (!pgAvailable) return;
 
 		const source = await core.createSource(pool, {

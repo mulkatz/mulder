@@ -210,7 +210,7 @@ export async function execute(
 							sourceEntityId: entityIds[i],
 							targetEntityId: entityIds[j],
 							relationship: 'co_occurs_with',
-							attributes: {},
+							attributes: { generatedBy: 'graph.cooccurrence_fallback' },
 							storyId: input.storyId,
 							edgeType: 'RELATIONSHIP',
 						});

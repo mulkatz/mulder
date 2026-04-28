@@ -51,20 +51,17 @@ function getConfigProjection(config: MulderConfig, step: ReprocessableStep): unk
 		case 'extract':
 			return {
 				extraction: config.extraction,
-				vertex: config.vertex,
 			};
 		case 'segment':
 			return {
 				segmentation: config.extraction.segmentation,
-				project: { supported_locales: config.project.supported_locales },
-				vertex: config.vertex,
 			};
 		case 'enrich':
 			return {
 				enrichment: config.enrichment,
 				entity_resolution: config.entity_resolution,
 				ontology: config.ontology,
-				project: { supported_locales: config.project.supported_locales },
+				taxonomy: config.taxonomy,
 			};
 		case 'embed':
 			return {
@@ -74,6 +71,9 @@ function getConfigProjection(config: MulderConfig, step: ReprocessableStep): unk
 			return {
 				deduplication: config.deduplication,
 				graph: config.graph,
+				thresholds: {
+					graph_community_detection: config.thresholds.graph_community_detection,
+				},
 			};
 	}
 }

@@ -18,7 +18,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache_2.0-green?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/GCP-native-4285F4?style=flat-square&logo=googlecloud&logoColor=white" alt="GCP" />
-  <img src="https://img.shields.io/badge/status-v1.0_complete-green?style=flat-square" alt="Status" />
+  <img src="https://img.shields.io/badge/status-M8_operations_complete-green?style=flat-square" alt="Status" />
 </p>
 
 <p align="center">
@@ -34,7 +34,7 @@
 <table align="center">
 <tr><td>
 
-**Development Progress** &ensp; `76 / 131 steps`
+**Development Progress** &ensp; `82 / 131 steps`
 
 ```
 M1   Foundation       ██████████████████████████████ 11/11 ✓
@@ -47,7 +47,7 @@ M5   Curation         ███████████████████�
 M6   Intelligence     ██████████████████████████████  7/7  ✓
 M7   API+Workers      ███████████████████████████░░░ 10/11
 M7.5 V1 Web App       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/6
-M8   Operations       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/6
+M8   Operations       ██████████████████████████████  6/6  ✓
 M9   Multi-Format     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/13
 M10  Provenance       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/9
 M11  Trust Layer      ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/5
@@ -196,7 +196,9 @@ Everything beyond `project` and `ontology` has sensible defaults. See [`mulder.c
 
 ## Status
 
-Mulder's **v1.0 MVP (M4)** is complete — the full pipeline from ingest through hybrid retrieval is operational. PDFs go in, a knowledge graph comes out, and natural-language queries return ranked passages with LLM re-ranking. The [functional spec](./docs/functional-spec.md), [implementation roadmap](./docs/roadmap.md), and [config schema](./mulder.config.example.yaml) are finalized.
+Mulder's **CLI/backend track is complete through M8 Operations**: the v1.0 search pipeline is operational, the v2.0 intelligence layer is in place, and the production-safety tooling now covers evals, cost gates, budget alerts, selective reprocessing, dead-letter retry, and devlog conventions.
+
+The browser demo remains tracked separately under M7/H11 and M7.5. The [functional spec](./docs/functional-spec.md), [implementation roadmap](./docs/roadmap.md), and [config schema](./mulder.config.example.yaml) are finalized.
 
 See the [roadmap](./docs/roadmap.md) for all 14 milestones from foundation to autonomous research agent.
 

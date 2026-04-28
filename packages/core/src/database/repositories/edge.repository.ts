@@ -601,3 +601,47 @@ export async function deleteEdgesBySourceId(pool: pg.Pool, sourceId: string): Pr
 		});
 	}
 }
+
+/**
+ * Deletes graph-derived edges for all stories belonging to a source while
+ * preserving RELATIONSHIP edges emitted by enrichment.
+ *
+ * Used by selective reprocessing when graph artifacts need refreshing without
+ * discarding the freshly extracted relationship graph.
+ *
+ * @returns The number of deleted edges.
+ */
+export async function deleteGraphDerivedEdgesBySourceId(pool: pg.Pool, sourceId: string): Promise<number> {
+	const sql = `
+    WITH source_story_ids AS (
+      SELECT id::text AS id FROM stories WHERE source_id = $1
+    )
+    DELETE FROM entity_edges
+    WHERE (
+        story_id::text IN (SELECT id FROM source_story_ids)
+        OR attributes->>'storyIdA' IN (SELECT id FROM source_story_ids)
+        OR attributes->>'storyIdB' IN (SELECT id FROM source_story_ids)
+      )
+      AND (
+        edge_type IN ('DUPLICATE_OF', 'POTENTIAL_CONTRADICTION', 'CONFIRMED_CONTRADICTION', 'DISMISSED_CONTRADICTION')
+        OR (
+          edge_type = 'RELATIONSHIP'
+          AND attributes->>'generatedBy' = 'graph.cooccurrence_fallback'
+        )
+      )
+  `;
+
+	try {
+		const result = await pool.query(sql, [sourceId]);
+		const count = result.rowCount ?? 0;
+		if (count > 0) {
+			repoLogger.debug({ sourceId, count }, 'Graph-derived edges deleted for source');
+		}
+		return count;
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to delete graph-derived edges by source ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { sourceId },
+		});
+	}
+}

@@ -53,6 +53,7 @@ export {
 	deleteEdge,
 	deleteEdgesBySourceId,
 	deleteEdgesByStoryId,
+	deleteGraphDerivedEdgesBySourceId,
 	findAllEdges,
 	findAllEdgesByTypes,
 	findEdgeById,
