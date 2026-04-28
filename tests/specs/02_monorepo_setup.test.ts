@@ -1,9 +1,69 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { relative, resolve } from 'node:path';
+import ts from 'typescript';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 const ROOT = resolve(import.meta.dirname, '../..');
+const TYPE_ASSERTION_ALLOW_COMMENT = 'mulder-allow-type-assertion:';
+
+interface NamedTypeAssertionFinding {
+	file: string;
+	line: number;
+	column: number;
+	assertion: string;
+}
+
+function findTypeScriptFiles(directory: string): string[] {
+	const files: string[] = [];
+
+	for (const entry of readdirSync(directory, { withFileTypes: true })) {
+		const entryPath = resolve(directory, entry.name);
+		if (entry.isDirectory()) {
+			files.push(...findTypeScriptFiles(entryPath));
+			continue;
+		}
+
+		if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) {
+			files.push(entryPath);
+		}
+	}
+
+	return files.sort();
+}
+
+function hasAdjacentTypeAssertionAllowComment(sourceFile: ts.SourceFile, line: number): boolean {
+	const lines = sourceFile.text.split(/\r?\n/);
+	return [lines[line], lines[line - 1]].some((text) => text?.includes(TYPE_ASSERTION_ALLOW_COMMENT));
+}
+
+function isNamedTypeAssertion(assertion: ts.AsExpression, sourceFile: ts.SourceFile): boolean {
+	const assertedType = assertion.type.getText(sourceFile).trim();
+	return /^[A-Z]/.test(assertedType);
+}
+
+function findUnjustifiedNamedTypeAssertions(sourceFile: ts.SourceFile): NamedTypeAssertionFinding[] {
+	const findings: NamedTypeAssertionFinding[] = [];
+
+	function visit(node: ts.Node): void {
+		if (ts.isAsExpression(node) && isNamedTypeAssertion(node, sourceFile)) {
+			const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+			if (!hasAdjacentTypeAssertionAllowComment(sourceFile, position.line)) {
+				findings.push({
+					file: relative(ROOT, sourceFile.fileName),
+					line: position.line + 1,
+					column: position.character + 1,
+					assertion: node.getText(sourceFile),
+				});
+			}
+		}
+
+		ts.forEachChild(node, visit);
+	}
+
+	visit(sourceFile);
+	return findings;
+}
 
 /**
  * Black-box QA tests for Spec 02: Monorepo Setup — pnpm, Turborepo, TypeScript, Biome
@@ -301,35 +361,31 @@ describe('Spec 02: Monorepo Setup', () => {
 			expect(anyFound, `Found \`any\` types in:\n${anyFound.join('\n')}`).toHaveLength(0);
 		});
 
-		it('no `as` type assertions in scaffolding source files', () => {
-			const asFound: string[] = [];
+		it('no unjustified named type assertions in scaffolding source files', () => {
+			const assertionFindings: NamedTypeAssertionFinding[] = [];
 			for (const pkg of PACKAGES) {
 				const srcDir = resolve(ROOT, pkg, 'src');
 				if (!existsSync(srcDir)) continue;
 
-				try {
-					// Look for " as " pattern that indicates type assertions
-					// Exclude common false positives like "import ... as ..."
-					const output = execFileSync('grep', ['-r', '--include=*.ts', '-n', ' as [A-Z]', srcDir], {
-						cwd: ROOT,
-						encoding: 'utf-8',
-						timeout: 15_000,
-					});
-					if (output.trim()) {
-						// Filter out import aliases ("import X as Y")
-						const lines = output
-							.trim()
-							.split('\n')
-							.filter((line) => !line.includes('import'));
-						if (lines.length > 0) {
-							asFound.push(`${pkg}: ${lines.join('\n')}`);
-						}
-					}
-				} catch {
-					// grep exits 1 = no matches, which is good
+				for (const filePath of findTypeScriptFiles(srcDir)) {
+					const sourceFile = ts.createSourceFile(
+						filePath,
+						readFileSync(filePath, 'utf-8'),
+						ts.ScriptTarget.Latest,
+						true,
+						ts.ScriptKind.TS,
+					);
+					assertionFindings.push(...findUnjustifiedNamedTypeAssertions(sourceFile));
 				}
 			}
-			expect(asFound, `Found \`as\` assertions in:\n${asFound.join('\n')}`).toHaveLength(0);
+
+			const message = assertionFindings
+				.map((finding) => `${finding.file}:${finding.line}:${finding.column} ${finding.assertion}`)
+				.join('\n');
+			expect(
+				assertionFindings,
+				`Found named type assertions without an adjacent \`${TYPE_ASSERTION_ALLOW_COMMENT}\` comment:\n${message}`,
+			).toHaveLength(0);
 		});
 	});
 
