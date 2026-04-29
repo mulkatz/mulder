@@ -21,6 +21,9 @@ const OWNER_EMAIL = 'owner.e2e@mulder.local';
 const OWNER_PASSWORD = 'correct horse battery staple';
 const INVITE_EMAIL = 'invite.e2e@mulder.local';
 const INVITE_TOKEN = 'mulder-e2e-invite-token';
+const SEED_ALLOW_ENV = 'MULDER_ALLOW_LOCAL_E2E_SEEDING';
+const SEED_ALLOW_VALUE = 'local-docker-only';
+const POSTGRES_CONTAINER = process.env.MULDER_E2E_POSTGRES_CONTAINER ?? 'mulder-postgres';
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const PAGE_PALETTE = [
 	[190, 111, 24],
@@ -268,6 +271,71 @@ function run(command, args, options = {}) {
 	}
 }
 
+function requireLocalE2ESeedIntent() {
+	if (process.env[SEED_ALLOW_ENV] !== SEED_ALLOW_VALUE) {
+		throw new Error(
+			[
+				'Refusing to seed the Mulder browser E2E fixture.',
+				`Set ${SEED_ALLOW_ENV}=${SEED_ALLOW_VALUE} only for the local Docker-backed E2E database.`,
+				'This script deletes and inserts fixture rows and must never run against production.',
+			].join(' '),
+		);
+	}
+}
+
+function assertLocalE2EConfig(config) {
+	const cloudSql = config.gcp?.cloud_sql;
+	const failures = [];
+
+	if (config.dev_mode !== true) failures.push('dev_mode must be true');
+	if (config.project?.name !== 'mulder-demo-e2e') failures.push('project.name must be mulder-demo-e2e');
+	if (config.gcp?.project_id !== 'mulder-demo-e2e') failures.push('gcp.project_id must be mulder-demo-e2e');
+	if (!cloudSql) failures.push('gcp.cloud_sql is required');
+	if (cloudSql && !['localhost', '127.0.0.1'].includes(cloudSql.host)) failures.push('cloud_sql.host must be localhost or 127.0.0.1');
+	if (cloudSql && cloudSql.port !== 5432) failures.push('cloud_sql.port must be 5432');
+	if (cloudSql && cloudSql.user !== 'mulder') failures.push('cloud_sql.user must be mulder');
+	if (cloudSql && cloudSql.password !== 'mulder') failures.push('cloud_sql.password must be mulder');
+	if (cloudSql && cloudSql.database !== 'mulder') failures.push('cloud_sql.database must be mulder');
+
+	if (failures.length > 0) {
+		throw new Error(`Refusing to seed browser E2E fixture: ${failures.join('; ')}.`);
+	}
+}
+
+function assertDockerPostgresOwnsConfiguredPort(config) {
+	const inspect = spawnSync('docker', ['inspect', POSTGRES_CONTAINER], {
+		cwd: ROOT,
+		encoding: 'utf8',
+		stdio: ['ignore', 'pipe', 'pipe'],
+	});
+
+	if ((inspect.status ?? 1) !== 0) {
+		throw new Error(
+			[
+				`Refusing to seed browser E2E fixture: Docker container ${POSTGRES_CONTAINER} is not inspectable.`,
+				'Start the local docker-compose Postgres service before running this script.',
+			].join(' '),
+		);
+	}
+
+	const [container] = JSON.parse(inspect.stdout);
+	const portBindings = container?.NetworkSettings?.Ports?.['5432/tcp'] ?? [];
+	const ownsPort = Boolean(
+		container?.State?.Running &&
+			portBindings.some((binding) => String(binding.HostPort) === String(config.gcp.cloud_sql.port)),
+	);
+
+	if (!ownsPort) {
+		throw new Error(
+			[
+				`Refusing to seed browser E2E fixture: ${POSTGRES_CONTAINER} is not the running local Postgres service`,
+				`bound to host port ${config.gcp.cloud_sql.port}.`,
+				'This prevents accidental fixture writes through a Cloud SQL proxy or production database tunnel.',
+			].join(' '),
+		);
+	}
+}
+
 function buildPackages() {
 	for (const packageName of packagesToBuild) {
 		run('pnpm', ['--filter', packageName, 'build']);
@@ -433,7 +501,6 @@ function writeStorageArtifacts() {
 
 async function deleteFixtureRows(client) {
 	const stories = storyIds();
-	const entities = Object.values(ENTITY_IDS);
 	const fileHashes = DEMO_SOURCES.map((source) => source.fileHash).concat(
 		'mulder-demo-e2e-native-text-sample',
 		...REAL_UPLOAD_FIXTURES.map(fileHashForPath),
@@ -443,6 +510,16 @@ async function deleteFixtureRows(client) {
 		[sourceIds(), fileHashes],
 	);
 	const sources = Array.from(new Set([...sourceIds(), ...previousSources.rows.map((row) => row.id)]));
+	const previousDevEntities = await client.query(
+		`
+			SELECT id FROM entities
+			WHERE id = ANY($1::uuid[])
+				OR name IN ('Dev Test Person', 'Dev Test Location', 'Dev Test Entity')
+				OR name LIKE 'Dev Test %'
+		`,
+		[Object.values(ENTITY_IDS)],
+	);
+	const entities = Array.from(new Set([...Object.values(ENTITY_IDS), ...previousDevEntities.rows.map((row) => row.id)]));
 	const uploadFilenames = [
 		'native-text-sample.pdf',
 		'mulder-demo-upload.pdf',
@@ -864,6 +941,11 @@ async function seedJobs(client) {
 async function seedDatabase() {
 	const core = await import(pathToFileURL(CORE_DIST).href);
 	const config = core.loadConfig(CONFIG_PATH);
+
+	requireLocalE2ESeedIntent();
+	assertLocalE2EConfig(config);
+	assertDockerPostgresOwnsConfiguredPort(config);
+
 	const pool = core.getWorkerPool(config.gcp.cloud_sql);
 	await core.runMigrations(pool, MIGRATIONS_DIR);
 
@@ -886,6 +968,7 @@ async function seedDatabase() {
 	}
 }
 
+requireLocalE2ESeedIntent();
 buildPackages();
 writeStorageArtifacts();
 await seedDatabase();
