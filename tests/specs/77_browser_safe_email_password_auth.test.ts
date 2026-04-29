@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as db from '../lib/db.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -213,6 +213,53 @@ describe('Spec 77: Browser-safe email/password auth', () => {
 			{ Cookie: memberCookie },
 		);
 		expect(denied.status).toBe(403);
+	});
+
+	it('QA-05b: production invitation creation sends the raw token through the delivery provider only', async () => {
+		const originalDelivery = process.env.MULDER_INVITE_DELIVERY;
+		const originalBaseUrl = process.env.MULDER_APP_BASE_URL;
+		const originalFrom = process.env.MULDER_MAIL_FROM;
+		const originalApiKey = process.env.RESEND_API_KEY;
+		const fetchCalls: Array<{ body?: unknown }> = [];
+		const fetchMock = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+			fetchCalls.push({ body: init?.body });
+			return new Response('{}', { status: 200 });
+		});
+		const originalFetch = globalThis.fetch;
+
+		process.env.MULDER_INVITE_DELIVERY = 'resend';
+		process.env.MULDER_APP_BASE_URL = 'https://mulder.mulkatz.dev';
+		process.env.MULDER_MAIL_FROM = 'Mulder <invites@example.com>';
+		process.env.RESEND_API_KEY = 'resend-test-key';
+		globalThis.fetch = fetchMock as typeof fetch;
+
+		try {
+			const response = await postJson(
+				app,
+				'/api/auth/invitations',
+				{ email: 'owner@example.com', role: 'owner' },
+				{ Authorization: 'Bearer test-api-key' },
+			);
+			expect(response.status).toBe(201);
+			const responseBody = await response.json();
+			expect(JSON.stringify(responseBody)).not.toContain('/auth/invitations/');
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+
+			const deliveryBody = JSON.parse(String(fetchCalls[0]?.body)) as { to: string; html: string; text: string };
+			expect(deliveryBody.to).toBe('owner@example.com');
+			expect(deliveryBody.text).toContain('https://mulder.mulkatz.dev/auth/invitations/');
+			expect(deliveryBody.html).toContain('https://mulder.mulkatz.dev/auth/invitations/');
+		} finally {
+			globalThis.fetch = originalFetch;
+			if (originalDelivery === undefined) delete process.env.MULDER_INVITE_DELIVERY;
+			else process.env.MULDER_INVITE_DELIVERY = originalDelivery;
+			if (originalBaseUrl === undefined) delete process.env.MULDER_APP_BASE_URL;
+			else process.env.MULDER_APP_BASE_URL = originalBaseUrl;
+			if (originalFrom === undefined) delete process.env.MULDER_MAIL_FROM;
+			else process.env.MULDER_MAIL_FROM = originalFrom;
+			if (originalApiKey === undefined) delete process.env.RESEND_API_KEY;
+			else process.env.RESEND_API_KEY = originalApiKey;
+		}
 	});
 
 	it('QA-06: the demo bundle source does not reference VITE_MULDER_API_KEY', () => {

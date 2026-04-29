@@ -1,5 +1,6 @@
 export { createAuthMiddleware } from './auth.js';
 export { createBodyLimitMiddleware, MAX_API_BODY_BYTES } from './body-limit.js';
+export { createCorsMiddleware } from './cors.js';
 export { createErrorHandler, mapErrorToStatus } from './error-handler.js';
 export { createRateLimitMiddleware } from './rate-limit.js';
 export { createRequestContextMiddleware } from './request-context.js';

@@ -121,6 +121,7 @@ export function registerAuthRoutes(app: Hono, apiConfig: ApiConfig): void {
 			role: body.role,
 			invitedByUserId: principal.type === 'session' ? principal.userId : null,
 			apiConfig,
+			logger: c.get('requestContext')?.logger,
 		});
 		const response = {
 			data: {
