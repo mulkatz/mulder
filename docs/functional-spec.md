@@ -2525,9 +2525,9 @@ title: "Short, concrete title"
 tags: [relevant, technical, tags]
 ---
 
-2-5 sentences. What was done or decided, and the result.
+2-15 sentences. What was done or decided, and the result.
 No filler, no "today I", no introduction. Direct to the point.
-Technical enough for a developer, short enough for 15 seconds.
+Technical enough for a developer, short enough to skim quickly.
 ```
 
 **Type values:** `architecture` | `implementation` | `breakthrough` | `decision` | `refactor` | `integration` | `milestone`

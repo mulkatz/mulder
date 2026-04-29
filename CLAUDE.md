@@ -303,7 +303,7 @@ mulder/
 - Types: `architecture`, `implementation`, `breakthrough`, `decision`, `refactor`, `integration`, `milestone`
 - Write entry when: new capability works, architecture decision is made or revised, a non-obvious technical problem is solved, a GCP service is integrated for the first time, a significant refactor changes the structure, or a milestone is reached
 - Skip entry when: the change is routine refactoring, a bug fix, a dependency update, formatting or typo cleanup, or a repeated iteration on the same feature
-- Style: English, direct, technical, filler-free, 2-5 sentences
+- Style: English, direct, technical, filler-free, 2-15 sentences
 
 ## Testing
 
