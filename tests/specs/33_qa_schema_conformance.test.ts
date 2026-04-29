@@ -252,6 +252,7 @@ describe('Spec 33 — QA-1: Schema Conformance', () => {
 			tsvector: ['string', 'string | null'], // tsvector
 			geometry: ['string', 'string | null'], // PostGIS geometry(Point, 4326)
 			job_status: ['string'], // enum stored as TEXT in TS
+			source_type: ['SourceType'], // enum exposed as SourceType in TS
 		};
 
 		for (const [tableName, config] of Object.entries(TABLE_TYPE_MAP)) {
