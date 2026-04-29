@@ -6,19 +6,15 @@ on:
       project_id:
         description: GCP project id
         required: true
-        default: mulder-platform
       region:
         description: Cloud Run and Artifact Registry region
         required: true
-        default: europe-west1
       api_domain:
         description: Public API origin
         required: true
-        default: https://api.mulder.mulkatz.dev
       app_origin:
-        description: Cloudflare frontend origin
+        description: Public frontend origin
         required: true
-        default: https://mulder.mulkatz.dev
 
 jobs:
   deploy:

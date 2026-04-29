@@ -2,10 +2,12 @@
 
 This guide keeps production data clean: the live demo must be populated through the API/UI pipeline, never by SQL fixture seeding.
 
+Keep deployment-specific domains, project IDs, sender addresses, and corpus choices outside the repository. Store them in GitHub Actions inputs/secrets, Secret Manager, DNS, hosting environment variables, or private operator notes.
+
 ## Architecture
 
-- Frontend: Cloudflare Pages, `https://mulder.mulkatz.dev`
-- API: Cloud Run service, `https://api.mulder.mulkatz.dev`
+- Frontend: static app host, for example Cloudflare Pages, `<app-origin>`
+- API: Cloud Run service, `<api-origin>`
 - Worker: Cloud Run service using `scripts/run-worker-service.mjs`, minimum one instance, CPU always allocated
 - Data: Cloud SQL Postgres, GCS, Firestore
 - Users: Mulder Postgres tables (`api_users`, `api_invitations`, `api_sessions`)
@@ -13,7 +15,7 @@ This guide keeps production data clean: the live demo must be populated through 
 
 ## Required GCP Setup
 
-Enable these APIs in `mulder-platform`:
+Enable these APIs in the target GCP project:
 
 ```bash
 gcloud services enable \
@@ -22,17 +24,17 @@ gcloud services enable \
   run.googleapis.com \
   secretmanager.googleapis.com \
   sqladmin.googleapis.com \
-  --project mulder-platform
+  --project <gcp-project-id>
 ```
 
 Create:
 
 - Artifact Registry repository: `mulder`
-- Runtime service account: `mulder-runtime@mulder-platform.iam.gserviceaccount.com`
+- Runtime service account: `mulder-runtime@<gcp-project-id>.iam.gserviceaccount.com`
 - Cloud SQL Postgres database with `vector`, `pg_trgm`, and `postgis`
 - Secret Manager secret `mulder-config-yaml`
 - Secret Manager secret `resend-api-key`
-- DNS record/domain mapping for `api.mulder.mulkatz.dev`
+- DNS record/domain mapping for `<api-origin>`
 
 The runtime service account needs access to Cloud SQL, GCS, Firestore, Document AI, Vertex AI, and the two runtime secrets.
 
@@ -43,8 +45,8 @@ Cloud Run API environment:
 ```text
 NODE_ENV=production
 MULDER_CONFIG=/secrets/mulder.config.yaml
-MULDER_CORS_ORIGINS=https://mulder.mulkatz.dev
-MULDER_APP_BASE_URL=https://mulder.mulkatz.dev
+MULDER_CORS_ORIGINS=<app-origin>
+MULDER_APP_BASE_URL=<app-origin>
 MULDER_INVITE_DELIVERY=resend
 MULDER_MAIL_FROM=<verified sender>
 RESEND_API_KEY=<secret mounted from Secret Manager>
@@ -63,7 +65,7 @@ api:
 Cloudflare Pages environment:
 
 ```text
-VITE_API_BASE_URL=https://api.mulder.mulkatz.dev
+VITE_API_BASE_URL=<api-origin>
 VITE_PREVIEW_AUTH_BYPASS=false
 ```
 
@@ -83,7 +85,7 @@ The workflow builds `Dockerfile.api`, pushes the image to Artifact Registry, dep
 After the API is healthy, request the first owner invitation:
 
 ```bash
-MULDER_API_URL=https://api.mulder.mulkatz.dev \
+MULDER_API_URL=<api-origin> \
 MULDER_OWNER_EMAIL=<owner@example.com> \
 MULDER_OPERATOR_API_KEY=<operator-api-key> \
 pnpm invite:owner
@@ -94,6 +96,7 @@ The API sends the invite email in production. In local/dev with `MULDER_INVITE_D
 ## Live Smoke
 
 ```bash
+MULDER_API_URL=<api-origin> \
 pnpm smoke:live
 ```
 

@@ -11,10 +11,7 @@ function readOption(name) {
 	return inline ? inline.slice(prefixed.length) : undefined;
 }
 
-const apiUrl = (readOption('api-url') ?? process.env.MULDER_API_URL ?? 'https://api.mulder.mulkatz.dev').replace(
-	/\/$/,
-	'',
-);
+const apiUrl = (readOption('api-url') ?? process.env.MULDER_API_URL ?? 'http://localhost:8080').replace(/\/$/, '');
 const email = readOption('email') ?? process.env.MULDER_SMOKE_EMAIL;
 const password = readOption('password') ?? process.env.MULDER_SMOKE_PASSWORD;
 
