@@ -21,6 +21,14 @@ function PdfCanvas({
   pageNumber: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const baseSize = useMemo(() => {
+    if (!page) {
+      return null;
+    }
+
+    const viewport = page.getViewport({ scale: 1 });
+    return { width: viewport.width, height: viewport.height };
+  }, [page]);
 
   useEffect(() => {
     if (!page || !canvasRef.current || !shouldRender) {
@@ -50,14 +58,25 @@ function PdfCanvas({
     };
   }, [page, shouldRender]);
 
+  const frameStyle = baseSize
+    ? {
+        aspectRatio: `${baseSize.width} / ${baseSize.height}`,
+        maxWidth: `${baseSize.width * 1.4}px`,
+      }
+    : undefined;
+
   return (
-    <div className="relative">
-      <canvas
-        aria-label={`Rendered PDF page ${pageNumber}`}
-        className="block max-w-full"
-        data-testid="pdf-canvas"
-        ref={canvasRef}
-      />
+    <div className="relative flex justify-center">
+      <div className="relative w-full bg-white" style={frameStyle}>
+        {shouldRender ? (
+          <canvas
+            aria-label={`Rendered PDF page ${pageNumber}`}
+            className="absolute inset-0 block size-full"
+            data-testid="pdf-canvas"
+            ref={canvasRef}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }

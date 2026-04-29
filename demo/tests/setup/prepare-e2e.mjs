@@ -394,22 +394,36 @@ function writeStorageArtifacts() {
 		const rawDir = resolve(STORAGE_DIR, `raw/${source.id}`);
 		const extractedDir = resolve(STORAGE_DIR, `extracted/${source.id}`);
 		const pagesDir = resolve(extractedDir, 'pages');
+		const segmentsDir = resolve(STORAGE_DIR, `segments/${source.id}`);
 
 		mkdirSync(rawDir, { recursive: true });
 		mkdirSync(pagesDir, { recursive: true });
+		mkdirSync(segmentsDir, { recursive: true });
 		copyFileSync(FIXTURE_PDF, resolve(rawDir, 'original.pdf'));
 
 		writeFileSync(
 			resolve(extractedDir, 'layout.md'),
 			source.stories
-				.flatMap((story) => [
-					`# ${story.title}`,
-					'',
-					story.content,
-					'',
-				])
-				.join('\n'),
+				.map((story) => [`Page ${story.pageStart}`, '', story.content].join('\n'))
+				.join('\n\n---\n\n'),
 		);
+
+		for (const story of source.stories) {
+			writeFileSync(resolve(segmentsDir, `${story.id}.md`), [`# ${story.title}`, '', story.content, ''].join('\n'));
+			writeFileSync(
+				resolve(segmentsDir, `${story.id}.meta.json`),
+				JSON.stringify(
+					{
+						title: story.title,
+						page_start: story.pageStart,
+						page_end: story.pageEnd,
+						category: story.category,
+					},
+					null,
+					2,
+				),
+			);
+		}
 
 		for (let page = 1; page <= 3; page += 1) {
 			writeFileSync(resolve(pagesDir, `page-${String(page).padStart(3, '0')}.png`), createPagePng(sourceIndex, page));

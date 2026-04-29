@@ -175,6 +175,30 @@ export interface ContradictionsResponse {
   meta?: { count: number; limit: number; offset: number; status: 'potential' | 'confirmed' | 'dismissed' | 'all' };
 }
 
+export interface DocumentStoryRecord {
+  id: string;
+  source_id: string;
+  title: string;
+  subtitle: string | null;
+  language: string | null;
+  category: string | null;
+  page_start: number | null;
+  page_end: number | null;
+  extraction_confidence: number | null;
+  status: string;
+  markdown: string;
+  excerpt: string;
+  entities: EntityRecord[];
+}
+
+export interface DocumentStoriesResponse {
+  data: {
+    source_id: string;
+    stories: DocumentStoryRecord[];
+  };
+  meta: { count: number };
+}
+
 export interface StoryRecord {
   id: string;
   title: string;

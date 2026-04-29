@@ -1,12 +1,15 @@
 import { performance } from 'node:perf_hooks';
 import {
+	countProcessedSources,
 	countSources,
 	createChildLogger,
 	createLogger,
 	createServiceRegistry,
 	DATABASE_ERROR_CODES,
 	DatabaseError,
+	type Entity,
 	findAllSources,
+	findEntitiesByStoryId,
 	findLatestPipelineRunSourceForSource,
 	findPipelineRunById,
 	findSourceById,
@@ -20,6 +23,7 @@ import {
 	MulderError,
 	type PipelineRun,
 	type PipelineRunSource,
+	presentCorroborationScore,
 	type Services,
 	type Source,
 	type SourceFilter,
@@ -35,6 +39,8 @@ import type {
 	DocumentObservabilityResponse,
 	DocumentPageItem,
 	DocumentPagesResponse,
+	DocumentStoriesResponse,
+	DocumentStoryResponse,
 } from '../routes/documents.schemas.js';
 import { PIPELINE_STEP_VALUES } from '../routes/pipeline.schemas.js';
 
@@ -118,8 +124,45 @@ function mapSourceToDocument(source: Source, layoutAvailable: boolean, pageImage
 	};
 }
 
+function mapEntityForDocument(
+	entity: Entity,
+	input: { corpusSize: number; threshold: number },
+): DocumentStoryResponse['entities'][number] {
+	const corroboration = presentCorroborationScore(entity.corroborationScore, {
+		corpusSize: input.corpusSize,
+		threshold: input.threshold,
+	});
+
+	return {
+		id: entity.id,
+		canonical_id: entity.canonicalId,
+		name: entity.name,
+		type: entity.type,
+		taxonomy_status: entity.taxonomyStatus,
+		taxonomy_id: entity.taxonomyId,
+		corroboration_score: corroboration.score,
+		corroboration_status: corroboration.status,
+		source_count: entity.sourceCount,
+		attributes: entity.attributes ?? {},
+		created_at: toIsoString(entity.createdAt),
+		updated_at: toIsoString(entity.updatedAt),
+	};
+}
+
 function escapeRegExp(value: string): string {
 	return value.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function stripMarkdown(markdown: string): string {
+	return markdown
+		.replace(/^#+\s+/gm, '')
+		.replaceAll(/[*_`>#-]/g, '')
+		.replaceAll(/\n+/g, ' ')
+		.trim();
+}
+
+function excerptMarkdown(markdown: string): string {
+	return stripMarkdown(markdown).slice(0, 200);
 }
 
 function buildStoragePath(prefix: string, sourceId: string, suffix: string): string {
@@ -867,6 +910,83 @@ async function buildDocumentListResponse(input: DocumentListQuery, logger: Logge
 export async function listDocuments(input: DocumentListQuery, logger?: Logger): Promise<DocumentListResponse> {
 	const rootLogger = logger ?? createLogger();
 	return await buildDocumentListResponse(input, rootLogger);
+}
+
+async function loadStoryMarkdown(services: Services, story: Story): Promise<string> {
+	const exists = await services.storage.exists(story.gcsMarkdownUri);
+	if (!exists) {
+		throw notFoundError(`Story markdown not found for story ${story.id}`, {
+			source_id: story.sourceId,
+			story_id: story.id,
+			storage_path: story.gcsMarkdownUri,
+		});
+	}
+
+	const buffer = await services.storage.download(story.gcsMarkdownUri);
+	return buffer.toString('utf-8');
+}
+
+export async function getDocumentStories(id: string, logger?: Logger): Promise<DocumentStoriesResponse> {
+	const rootLogger = logger ?? createLogger();
+	const requestLogger = createRouteLogger(rootLogger, {
+		action: 'stories',
+		source_id: id,
+	});
+	const { config, pool } = resolveContext();
+	const services = createServiceRegistry(config, requestLogger);
+	const startedAt = performance.now();
+	const source = await requireSource(pool, id);
+	const stories = await findStoriesBySourceId(pool, source.id);
+	const corpusSize = await countProcessedSources(pool);
+	const entityPresentation = {
+		corpusSize,
+		threshold: config.thresholds.corroboration_meaningful,
+	};
+
+	const responseStories = await Promise.all(
+		stories.map(async (story): Promise<DocumentStoryResponse> => {
+			const [markdown, entities] = await Promise.all([
+				loadStoryMarkdown(services, story),
+				findEntitiesByStoryId(pool, story.id),
+			]);
+
+			return {
+				id: story.id,
+				source_id: story.sourceId,
+				title: story.title,
+				subtitle: story.subtitle,
+				language: story.language,
+				category: story.category,
+				page_start: story.pageStart,
+				page_end: story.pageEnd,
+				extraction_confidence: story.extractionConfidence,
+				status: story.status,
+				markdown,
+				excerpt: excerptMarkdown(markdown),
+				entities: entities.map((entity) => mapEntityForDocument(entity, entityPresentation)),
+			};
+		}),
+	);
+
+	const response: DocumentStoriesResponse = {
+		data: {
+			source_id: source.id,
+			stories: responseStories,
+		},
+		meta: {
+			count: responseStories.length,
+		},
+	};
+
+	requestLogger.info(
+		{
+			story_count: response.meta.count,
+			duration_ms: Math.round(performance.now() - startedAt),
+		},
+		'document stories request completed',
+	);
+
+	return response;
 }
 
 export async function getDocumentObservability(id: string, logger?: Logger): Promise<DocumentObservabilityResponse> {
