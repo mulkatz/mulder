@@ -22,7 +22,7 @@ export function UploadDialog() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const upload = useDocumentUpload();
   const [open, setOpen] = useState(false);
-  const [tags, setTags] = useState('demo');
+  const [tags, setTags] = useState('');
   const [progress, setProgress] = useState<UploadProgress | null>(null);
 
   useEffect(() => {
@@ -69,13 +69,13 @@ export function UploadDialog() {
             <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-amber">Browser upload</p>
             <DialogTitle className="mt-2 font-serif text-3xl text-ink">Add a document to the archive.</DialogTitle>
             <p className="mt-2 text-sm text-ink-muted">
-              The demo uses the real upload contract: initiate, direct upload, finalize job, then worker polling.
+              This flow uses the upload contract: initiate, direct upload, finalize job, then worker polling.
             </p>
           </div>
 
           <label className="block space-y-2 text-sm text-ink-muted">
             Tags
-            <Input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="demo, field-note" />
+            <Input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="field-note, source" />
           </label>
 
           <div className="rounded-xl border border-dashed border-thread-strong bg-surface p-6 text-center">

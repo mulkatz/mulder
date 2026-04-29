@@ -10,7 +10,11 @@ function runPrepare() {
   const result = spawnSync('npm', ['run', 'demo:prepare'], {
     cwd: DEMO_DIR,
     stdio: 'inherit',
-    env: { ...process.env, MULDER_LOG_LEVEL: 'silent' },
+    env: {
+      ...process.env,
+      MULDER_ALLOW_LOCAL_E2E_SEEDING: 'local-docker-only',
+      MULDER_LOG_LEVEL: 'silent',
+    },
   });
 
   if ((result.status ?? 1) !== 0) {

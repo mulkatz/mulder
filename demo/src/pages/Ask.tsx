@@ -84,7 +84,7 @@ export function AskPage() {
 
       {search.isError ? (
         <div className="rounded-xl border border-carmine-soft bg-carmine-faint p-4 text-sm text-carmine">
-          Search failed. Confirm the API is running and the corpus is seeded.
+          Search failed. Confirm the API is running and the corpus has indexed documents.
         </div>
       ) : null}
 

@@ -1,8 +1,13 @@
-# Mulder Demo
+# Mulder Local Demo
 
-This app is the local, API-backed Mulder demo. It is intentionally not a mock showcase: login, documents, upload,
-Case Files, search, Board, Audit, jobs, and corpus metrics all go through the real API against a deterministic local
-Postgres/storage fixture.
+This app is the local, API-backed Mulder browser demo and E2E harness. Login, documents, upload, Case Files, search,
+Board, Audit, jobs, and corpus metrics all go through the real API against a deterministic local Postgres/storage
+fixture.
+
+The fixture setup is intentionally local-only. `demo:prepare` refuses to seed unless it is pointed at the local
+docker-compose `mulder-postgres` service on port 5432 and `MULDER_ALLOW_LOCAL_E2E_SEEDING=local-docker-only` is set.
+Do not use this setup path for the production demo database; production should contain only documents ingested through
+the normal upload/pipeline flow.
 
 ## Credentials
 
@@ -19,7 +24,7 @@ cd demo
 npm run demo:stack
 ```
 
-`demo:stack` performs the full local setup:
+`demo:stack` performs the full local E2E setup:
 
 - Builds `@mulder/core`, retrieval, pipeline, worker, evidence, API, and CLI packages.
 - Runs migrations and seeds the deterministic fixture corpus.
@@ -29,7 +34,7 @@ npm run demo:stack
 
 Useful single-process commands:
 
-- `npm run demo:prepare` reseeds Postgres and writes `.local/storage` demo artifacts.
+- `npm run demo:prepare` reseeds the guarded local Docker Postgres fixture and writes `.local/storage` artifacts.
 - `npm run demo:api` starts only the API with the demo E2E config.
 - `npm run demo:worker` starts only the worker.
 - `npm run demo:web` starts only Vite.
