@@ -105,6 +105,14 @@ export function CaseFilePage() {
     return <ErrorState body={copy.errors.documentNotFound} title="Document not found" />;
   }
 
+  if (pages.isError) {
+    return <ErrorState body={copy.errors.generic} title="Pages unavailable" />;
+  }
+
+  if (stories.isError) {
+    return <ErrorState body={copy.errors.storiesUnavailable} title="Stories unavailable" />;
+  }
+
   if (document.isLoading || pages.isLoading || stories.isLoading) {
     return (
       <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_22rem] gap-4">
@@ -118,6 +126,12 @@ export function CaseFilePage() {
   if (!document.data || !pages.data) {
     return <ErrorState body={copy.errors.documentNotFound} title="Document not found" />;
   }
+
+  if (!stories.data) {
+    return <ErrorState body={copy.errors.storiesUnavailable} title="Stories unavailable" />;
+  }
+
+  const storyRecords = stories.data;
 
   return (
     <section className="space-y-4">
@@ -153,7 +167,7 @@ export function CaseFilePage() {
           activePage={activePage}
           onSelectPage={(page) => pdfPaneRef.current?.scrollToPage(page)}
           pages={pages.data.data.pages}
-          stories={stories.data ?? []}
+          stories={storyRecords}
         />
         <PDFPane
           activeStoryId={currentStory?.id ?? null}
@@ -161,7 +175,7 @@ export function CaseFilePage() {
           onPageChange={setActivePage}
           ref={pdfPaneRef}
           reveal={reveal}
-          stories={stories.data ?? []}
+          stories={storyRecords}
           url={pdfUrl}
         />
         {storyRailOpen ? (
@@ -171,7 +185,7 @@ export function CaseFilePage() {
             onReadStory={(storyId) => navigate(routes.reading(id, storyId))}
             onStoryChange={setSelectedStoryId}
             reveal={reveal}
-            stories={stories.data ?? []}
+            stories={storyRecords}
           />
         ) : null}
       </div>

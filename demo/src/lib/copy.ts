@@ -31,5 +31,6 @@ export const copy = {
     documentNotFound: 'This document could not be found.',
     layoutUnavailable: "This document has been ingested but stories haven't been extracted yet.",
     pdfRead: "Couldn't read this PDF. The scan may be corrupted.",
+    storiesUnavailable: "The story artifacts for this document couldn't be loaded.",
   },
 };
