@@ -94,7 +94,7 @@ export function DeskPage() {
           <div className="divide-y divide-thread">
             {recentDocuments.map((document) => (
               <Link
-                className="flex items-center justify-between gap-4 py-4 no-underline"
+                className="flex min-w-0 items-center justify-between gap-4 py-4 no-underline"
                 key={document.id}
                 to={routes.caseFile(document.id)}
               >
@@ -102,7 +102,9 @@ export function DeskPage() {
                   <p className="truncate font-serif text-2xl text-ink">{document.filename}</p>
                   <Timestamp value={document.created_at} />
                 </div>
-                <PipelineBadge status={document.status} />
+                <div className="shrink-0">
+                  <PipelineBadge status={document.status} />
+                </div>
               </Link>
             ))}
           </div>
@@ -179,7 +181,7 @@ function MiniMetric({ label, value }: { label: string; value: string }) {
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-thread bg-raised p-5 shadow-xs">
+    <section className="min-w-0 rounded-2xl border border-thread bg-raised p-5 shadow-xs">
       <h2 className="font-serif text-3xl text-ink">{title}</h2>
       <div className="mt-4">{children}</div>
     </section>

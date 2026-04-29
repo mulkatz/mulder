@@ -20,12 +20,13 @@ const edgeTypes = [
   'CONFIRMED_CONTRADICTION',
   'DISMISSED_CONTRADICTION',
 ];
+const graphNodeTypes = { entity: EntityNode };
 
 export function BoardPage() {
   const entityDrawer = useEntityDrawer();
   const [entityType, setEntityType] = useState('all');
   const [edgeType, setEdgeType] = useState('all');
-  const [listView, setListView] = useState(false);
+  const [listView, setListView] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
   const entities = useEntities({ limit: 100 });
   const rankedEntities = useMemo(() => rankEntities(entities.data?.data ?? []), [entities.data?.data]);
   const visibleEntities = rankedEntities.filter((entity) => entityType === 'all' || entity.type === entityType).slice(0, 100);
@@ -96,13 +97,15 @@ export function BoardPage() {
           ))}
         </div>
       ) : (
-        <div className="h-[46rem] overflow-hidden rounded-2xl border border-thread bg-surface">
+        <div className="h-[46rem] w-full overflow-hidden rounded-2xl border border-thread bg-surface">
           <ReactFlow
+            className="size-full"
             edges={graph.edges}
             fitView
-            nodeTypes={{ entity: EntityNode }}
+            nodeTypes={graphNodeTypes}
             nodes={graph.nodes}
             onNodeClick={(_, node) => entityDrawer.openEntity(String(node.id))}
+            style={{ height: '100%', width: '100%' }}
           >
             <Background />
             <Controls />
@@ -112,8 +115,8 @@ export function BoardPage() {
       )}
 
       <div className="rounded-xl border border-amber-soft bg-amber-faint p-4 text-sm text-ink-muted">
-        Temporal scrubber: the current seeded attributes do not provide enough normalized event dates for a reliable
-        timeline control, so the demo renders graph and list exploration without pretending a timeline exists.
+        Temporal scrubber: the current corpus does not provide enough normalized event dates for a reliable timeline
+        control, so the board renders graph and list exploration without pretending a timeline exists.
       </div>
     </section>
   );

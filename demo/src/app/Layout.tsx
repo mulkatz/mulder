@@ -119,7 +119,7 @@ export function Layout() {
                   data-testid={`nav-${item.label.toLowerCase().replaceAll(/\s+/g, '-')}`}
                   className={({ isActive }) =>
                     cn(
-                      'inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm transition-colors',
+                      'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-2 text-xs transition-colors sm:gap-2 sm:px-4 sm:text-sm',
                       isActive ? 'bg-surface text-ink shadow-xs' : 'text-ink-muted hover:bg-surface hover:text-ink',
                     )
                   }

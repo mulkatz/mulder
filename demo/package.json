@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "demo:api": "cd .. && MULDER_CONFIG=demo/tests/config/mulder.e2e.config.yaml NODE_ENV=development MULDER_LOG_LEVEL=silent MULDER_API_PORT=8080 node apps/api/dist/index.js",
-    "demo:prepare": "node ./tests/setup/prepare-e2e.mjs",
+    "demo:prepare": "MULDER_ALLOW_LOCAL_E2E_SEEDING=local-docker-only node ./tests/setup/prepare-e2e.mjs",
     "demo:stack": "node ./scripts/run-demo-stack.mjs",
     "demo:web": "VITE_PREVIEW_AUTH_BYPASS=false VITE_API_PROXY_TARGET=http://127.0.0.1:8080 vite --host 127.0.0.1",
     "demo:worker": "cd .. && MULDER_CONFIG=demo/tests/config/mulder.e2e.config.yaml NODE_ENV=development MULDER_LOG_LEVEL=silent node apps/cli/dist/index.js worker start --poll-interval 250 --concurrency 1",
