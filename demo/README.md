@@ -20,12 +20,12 @@ the normal upload/pipeline flow.
 From the repository root:
 
 ```sh
-cd demo
-npm run demo:stack
+pnpm dev
 ```
 
-`demo:stack` performs the full local E2E setup:
+This runs the Turbo `dev` task. It performs the full local E2E setup:
 
+- Starts the local `mulder-postgres` Docker Compose service and waits for it to become healthy.
 - Builds `@mulder/core`, retrieval, pipeline, worker, evidence, API, and CLI packages.
 - Runs migrations and seeds the deterministic fixture corpus.
 - Starts the API on `127.0.0.1:8080`.
@@ -34,6 +34,7 @@ npm run demo:stack
 
 Useful single-process commands:
 
+- `pnpm turbo run dev --filter=@mulder/dev` is the direct Turbo form of `pnpm dev`.
 - `npm run demo:prepare` reseeds the guarded local Docker Postgres fixture and writes `.local/storage` artifacts.
 - `npm run demo:api` starts only the API with the demo E2E config.
 - `npm run demo:worker` starts only the worker.
