@@ -133,7 +133,7 @@ Examples:
 
 					// Print results table
 					if (result.data.length > 0) {
-						const header = `${'Filename'.padEnd(40)}  ${'Source ID'.padEnd(36)}  ${'Pages'.padEnd(6)}  ${'Native Text'.padEnd(12)}  Status`;
+						const header = `${'Filename'.padEnd(40)}  ${'Type'.padEnd(6)}  ${'Source ID'.padEnd(36)}  ${'Pages'.padEnd(6)}  ${'Native Text'.padEnd(12)}  Status`;
 						const separator = '-'.repeat(header.length);
 
 						process.stdout.write(`${header}\n`);
@@ -144,7 +144,7 @@ Examples:
 							const nativeText = item.hasNativeText ? `${(item.nativeTextRatio * 100).toFixed(0)}%` : 'no';
 							const status = item.duplicate ? 'duplicate' : options.dryRun ? 'validated' : 'ingested';
 							process.stdout.write(
-								`${filename.padEnd(40)}  ${item.sourceId.padEnd(36)}  ${String(item.pageCount).padEnd(6)}  ${nativeText.padEnd(12)}  ${status}\n`,
+								`${filename.padEnd(40)}  ${item.sourceType.padEnd(6)}  ${item.sourceId.padEnd(36)}  ${String(item.pageCount).padEnd(6)}  ${nativeText.padEnd(12)}  ${status}\n`,
 							);
 						}
 					}

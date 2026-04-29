@@ -18,6 +18,12 @@ export type SourceStatus = 'ingested' | 'extracted' | 'segmented' | 'enriched' |
 /** Source step execution status. */
 export type SourceStepStatus = 'pending' | 'completed' | 'failed' | 'partial';
 
+/** Source format discriminator. */
+export type SourceType = 'pdf' | 'image' | 'text' | 'docx' | 'spreadsheet' | 'email' | 'url';
+
+/** Format-specific metadata payload. */
+export type SourceFormatMetadata = Record<string, unknown>;
+
 // ────────────────────────────────────────────────────────────
 // Source types
 // ────────────────────────────────────────────────────────────
@@ -28,6 +34,8 @@ export interface Source {
 	filename: string;
 	storagePath: string;
 	fileHash: string;
+	sourceType: SourceType;
+	formatMetadata: SourceFormatMetadata;
 	pageCount: number | null;
 	hasNativeText: boolean;
 	nativeTextRatio: number;
@@ -45,6 +53,8 @@ export interface CreateSourceInput {
 	filename: string;
 	storagePath: string;
 	fileHash: string;
+	sourceType?: SourceType;
+	formatMetadata?: SourceFormatMetadata;
 	pageCount?: number;
 	hasNativeText?: boolean;
 	nativeTextRatio?: number;
@@ -56,6 +66,8 @@ export interface CreateSourceInput {
 export interface UpdateSourceInput {
 	filename?: string;
 	storagePath?: string;
+	sourceType?: SourceType;
+	formatMetadata?: SourceFormatMetadata;
 	pageCount?: number;
 	hasNativeText?: boolean;
 	nativeTextRatio?: number;
@@ -68,6 +80,7 @@ export interface UpdateSourceInput {
 /** Filters for querying sources. */
 export interface SourceFilter {
 	status?: SourceStatus;
+	sourceType?: SourceType;
 	/** Case-insensitive filename substring filter. */
 	search?: string;
 	tags?: string[];

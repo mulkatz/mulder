@@ -13,7 +13,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import type { Logger, MulderConfig, Services, StepError } from '@mulder/core';
+import type { Logger, MulderConfig, PdfMetadata, Services, StepError } from '@mulder/core';
 import {
 	createChildLogger,
 	createSource,
@@ -25,16 +25,12 @@ import {
 	upsertSourceStep,
 } from '@mulder/core';
 import type pg from 'pg';
+import { detectSourceType } from './source-type.js';
 import type { IngestFileResult, IngestInput, IngestResult } from './types.js';
 
+export type { SourceDetectionConfidence, SourceDetectionResult } from './source-type.js';
+export { detectSourceType } from './source-type.js';
 export type { IngestFileResult, IngestInput, IngestResult } from './types.js';
-
-// ────────────────────────────────────────────────────────────
-// Constants
-// ────────────────────────────────────────────────────────────
-
-/** PDF magic bytes: `%PDF-` */
-const PDF_MAGIC_BYTES = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d]);
 
 const STEP_NAME = 'ingest';
 
@@ -86,20 +82,23 @@ export async function resolvePdfFiles(inputPath: string): Promise<string[]> {
 // ────────────────────────────────────────────────────────────
 
 /**
- * Checks the first 5 bytes of a buffer for the `%PDF-` magic bytes.
- */
-function hasPdfMagicBytes(buffer: Buffer): boolean {
-	if (buffer.length < 5) {
-		return false;
-	}
-	return buffer.subarray(0, 5).equals(PDF_MAGIC_BYTES);
-}
-
-/**
  * Computes the SHA-256 hash of a buffer, returned as a hex string.
  */
 function computeFileHash(buffer: Buffer): string {
 	return createHash('sha256').update(buffer).digest('hex');
+}
+
+function buildPdfFormatMetadata(pdfMeta: PdfMetadata): Record<string, unknown> {
+	const pdfMetadataJson: Record<string, unknown> = {};
+	if (pdfMeta.pdfVersion) pdfMetadataJson.pdf_version = pdfMeta.pdfVersion;
+	if (pdfMeta.title) pdfMetadataJson.title = pdfMeta.title;
+	if (pdfMeta.author) pdfMetadataJson.author = pdfMeta.author;
+	if (pdfMeta.creator) pdfMetadataJson.creator = pdfMeta.creator;
+	if (pdfMeta.producer) pdfMetadataJson.producer = pdfMeta.producer;
+	if (pdfMeta.creationDate) pdfMetadataJson.creation_date = pdfMeta.creationDate.toISOString();
+	if (pdfMeta.modificationDate) pdfMetadataJson.modification_date = pdfMeta.modificationDate.toISOString();
+	if (pdfMeta.encrypted !== undefined) pdfMetadataJson.encrypted = pdfMeta.encrypted;
+	return pdfMetadataJson;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -130,15 +129,36 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		});
 	}
 
-	// b. Check magic bytes (read first 5 bytes)
+	// b. Detect source type with magic bytes before extension fallback.
 	const buffer = await readFile(filePath);
+	const detection = detectSourceType(buffer, filePath);
 
-	if (!hasPdfMagicBytes(buffer)) {
+	if (!detection) {
+		if (filename.toLowerCase().endsWith('.pdf')) {
+			throw new IngestError(
+				`Not a valid PDF file (missing %PDF- header): ${filename}`,
+				INGEST_ERROR_CODES.INGEST_NOT_PDF,
+				{
+					context: { path: filePath },
+				},
+			);
+		}
 		throw new IngestError(
-			`Not a valid PDF file (missing %PDF- header): ${filename}`,
-			INGEST_ERROR_CODES.INGEST_NOT_PDF,
+			`Unsupported or unknown source format for ${filename}`,
+			INGEST_ERROR_CODES.INGEST_UNKNOWN_SOURCE_TYPE,
 			{
 				context: { path: filePath },
+			},
+		);
+	}
+
+	const sourceType = detection.sourceType;
+	if (sourceType !== 'pdf') {
+		throw new IngestError(
+			`Unsupported source type "${sourceType}" for ${filename}; only pdf is supported in this step`,
+			INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+			{
+				context: { path: filePath, sourceType, confidence: detection.confidence },
 			},
 		);
 	}
@@ -169,9 +189,11 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 	}
 
 	log.debug(
-		{ pageCount: pdfMeta.pageCount, pdfVersion: pdfMeta.pdfVersion, title: pdfMeta.title },
+		{ sourceType, pageCount: pdfMeta.pageCount, pdfVersion: pdfMeta.pdfVersion, title: pdfMeta.title },
 		'PDF metadata extracted (lightweight)',
 	);
+
+	const formatMetadata = buildPdfFormatMetadata(pdfMeta);
 
 	// f. Compute SHA-256 hash
 	const fileHash = computeFileHash(buffer);
@@ -186,6 +208,8 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 				filename,
 				storagePath: existing.storagePath,
 				fileHash,
+				sourceType: existing.sourceType,
+				formatMetadata: existing.formatMetadata,
 				pageCount: existing.pageCount ?? 0,
 				hasNativeText: existing.hasNativeText,
 				nativeTextRatio: existing.nativeTextRatio,
@@ -209,6 +233,8 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			filename,
 			storagePath,
 			fileHash,
+			sourceType,
+			formatMetadata,
 			pageCount: textResult.pageCount,
 			hasNativeText: textResult.hasNativeText,
 			nativeTextRatio: textResult.nativeTextRatio,
@@ -237,26 +263,18 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 	}
 
 	// k. Create source record (store PDF metadata in JSONB column)
-	const pdfMetadataJson: Record<string, unknown> = {};
-	if (pdfMeta.pdfVersion) pdfMetadataJson.pdf_version = pdfMeta.pdfVersion;
-	if (pdfMeta.title) pdfMetadataJson.title = pdfMeta.title;
-	if (pdfMeta.author) pdfMetadataJson.author = pdfMeta.author;
-	if (pdfMeta.creator) pdfMetadataJson.creator = pdfMeta.creator;
-	if (pdfMeta.producer) pdfMetadataJson.producer = pdfMeta.producer;
-	if (pdfMeta.creationDate) pdfMetadataJson.creation_date = pdfMeta.creationDate.toISOString();
-	if (pdfMeta.modificationDate) pdfMetadataJson.modification_date = pdfMeta.modificationDate.toISOString();
-	if (pdfMeta.encrypted !== undefined) pdfMetadataJson.encrypted = pdfMeta.encrypted;
-
 	const source = await createSource(ctx.pool, {
 		id: sourceId,
 		filename,
 		storagePath,
 		fileHash,
+		sourceType,
+		formatMetadata,
 		pageCount: textResult.pageCount,
 		hasNativeText: textResult.hasNativeText,
 		nativeTextRatio: textResult.nativeTextRatio,
 		tags: ctx.tags,
-		metadata: pdfMetadataJson,
+		metadata: formatMetadata,
 	});
 
 	if (source.id !== sourceId) {
@@ -279,6 +297,8 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			filename,
 			storagePath: source.storagePath,
 			fileHash,
+			sourceType: source.sourceType,
+			formatMetadata: source.formatMetadata,
 			pageCount: source.pageCount ?? 0,
 			hasNativeText: source.hasNativeText,
 			nativeTextRatio: source.nativeTextRatio,
@@ -298,6 +318,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 	ctx.services.firestore
 		.setDocument('documents', source.id, {
 			filename,
+			sourceType,
 			uploadedAt: new Date().toISOString(),
 			fileHash,
 			status: 'ingested',
@@ -310,6 +331,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		{
 			sourceId: source.id,
 			filename,
+			sourceType,
 			pageCount: textResult.pageCount,
 			hasNativeText: textResult.hasNativeText,
 			nativeTextRatio: textResult.nativeTextRatio,
@@ -322,6 +344,8 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		filename,
 		storagePath: source.storagePath,
 		fileHash,
+		sourceType: source.sourceType,
+		formatMetadata: source.formatMetadata,
 		pageCount: textResult.pageCount,
 		hasNativeText: textResult.hasNativeText,
 		nativeTextRatio: textResult.nativeTextRatio,
