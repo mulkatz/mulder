@@ -158,6 +158,27 @@ const { createLogger, createChildLogger, withDuration, ConfigError } = core;`;
 			expect(infoLines.length).toBe(0);
 			expect(warnLines.length).toBe(1);
 		});
+
+		it('does not allocate pretty transports or warn when silent loggers are created repeatedly', () => {
+			const { stdout, stderr, exitCode } = runScriptFull(
+				[
+					importCore,
+					'for (let i = 0; i < 20; i += 1) {',
+					'  createLogger();',
+					'}',
+					'await new Promise(r => setTimeout(r, 100));',
+				],
+				{
+					MULDER_LOG_LEVEL: 'silent',
+					MULDER_LOG_PRETTY: 'true',
+					NODE_OPTIONS: '--trace-warnings',
+				},
+			);
+
+			expect(exitCode).toBe(0);
+			expect(stdout).toBe('');
+			expect(stderr).not.toContain('MaxListenersExceededWarning');
+		});
 	});
 
 	// ─── QA-03: Child logger binds context ───
