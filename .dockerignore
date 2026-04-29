@@ -1,0 +1,13 @@
+.git
+.local
+.turbo
+.env
+.env.*
+mulder.config.yaml
+node_modules
+**/node_modules
+**/test-results
+demo/dist
+coverage
+*.dump
+*.log

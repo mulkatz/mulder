@@ -22,7 +22,13 @@ api:
       session_ttl_hours: 168
       invitation_ttl_hours: 168
       cookie_secure: false            # Set true behind HTTPS in production
-      same_site: "Lax"
+      same_site: "Lax"                # Use "None" for the Cloudflare frontend + api subdomain production split
+  # Production browser deployment also uses environment variables:
+  # MULDER_CORS_ORIGINS=https://mulder.mulkatz.dev
+  # MULDER_APP_BASE_URL=https://mulder.mulkatz.dev
+  # MULDER_INVITE_DELIVERY=resend
+  # MULDER_MAIL_FROM=<verified sender>
+  # RESEND_API_KEY=<mounted secret>
   rate_limiting:
     enabled: true                     # In-memory token buckets per Cloud Run instance
   budget:
