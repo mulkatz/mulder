@@ -42,7 +42,7 @@ export function StoryFrames({
           <div
             key={`${story.id}-${pageNumber}`}
             className={cn(
-              'absolute inset-3 rounded-lg border-[1.5px] transition-all duration-base',
+              'story-frame absolute inset-3 rounded-lg border-[1.5px] transition-all duration-base',
               color,
               activeStoryId === story.id ? 'opacity-100 shadow-[0_0_0_1px_rgba(212,162,74,0.35)]' : 'opacity-65',
               reveal && 'animate-compose-in',
