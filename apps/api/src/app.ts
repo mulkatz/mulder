@@ -2,6 +2,7 @@ import { type ApiConfig, CONFIG_DEFAULTS, createLogger, type Logger } from '@mul
 import { Hono } from 'hono';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createBodyLimitMiddleware } from './middleware/body-limit.js';
+import { createCorsMiddleware } from './middleware/cors.js';
 import { createErrorHandler } from './middleware/error-handler.js';
 import { createRateLimitMiddleware } from './middleware/rate-limit.js';
 import { createRequestContextMiddleware } from './middleware/request-context.js';
@@ -32,6 +33,7 @@ export function createApp(options: AppOptions = {}): Hono {
 	app.onError(createErrorHandler(rootLogger));
 	app.use('*', createRequestIdMiddleware());
 	app.use('*', createRequestContextMiddleware(rootLogger));
+	app.use('*', createCorsMiddleware());
 	app.use('*', createSecureHeadersMiddleware());
 	app.use('*', createBodyLimitMiddleware());
 	app.use('*', createAuthMiddleware(apiConfig));

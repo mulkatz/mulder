@@ -389,4 +389,40 @@ ontology:
 			rmSync(configDir, { recursive: true, force: true });
 		}
 	});
+
+	it('QA-07: configured browser origins get credentialed CORS preflight headers', async () => {
+		const originalOrigins = process.env.MULDER_CORS_ORIGINS;
+		process.env.MULDER_CORS_ORIGINS = 'https://mulder.mulkatz.dev';
+
+		try {
+			const app = createApp();
+			const allowed = await app.request('http://localhost/api/documents', {
+				method: 'OPTIONS',
+				headers: {
+					Origin: 'https://mulder.mulkatz.dev',
+					'Access-Control-Request-Method': 'GET',
+				},
+			});
+			expect(allowed.status).toBe(204);
+			expect(allowed.headers.get('access-control-allow-origin')).toBe('https://mulder.mulkatz.dev');
+			expect(allowed.headers.get('access-control-allow-credentials')).toBe('true');
+			expect(allowed.headers.get('access-control-allow-headers')).toContain('Authorization');
+
+			const blocked = await app.request('http://localhost/api/documents', {
+				method: 'OPTIONS',
+				headers: {
+					Origin: 'https://example.invalid',
+					'Access-Control-Request-Method': 'GET',
+				},
+			});
+			expect(blocked.status).toBe(403);
+			expect(blocked.headers.get('access-control-allow-origin')).toBeNull();
+		} finally {
+			if (originalOrigins === undefined) {
+				delete process.env.MULDER_CORS_ORIGINS;
+			} else {
+				process.env.MULDER_CORS_ORIGINS = originalOrigins;
+			}
+		}
+	});
 });

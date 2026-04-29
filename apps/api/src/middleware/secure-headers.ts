@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 
 export const SECURE_HEADERS = {
-	'Cross-Origin-Resource-Policy': 'same-origin',
+	'Cross-Origin-Resource-Policy': 'same-site',
 	'Referrer-Policy': 'no-referrer',
 	'X-Content-Type-Options': 'nosniff',
 	'X-DNS-Prefetch-Control': 'off',
