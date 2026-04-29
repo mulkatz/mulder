@@ -35,6 +35,18 @@ export function CaseFileReadingPage() {
     return <Skeleton className="h-[calc(100vh-10rem)] w-full rounded-2xl" />;
   }
 
+  if (document.isError || !document.data) {
+    return <ErrorState body={copy.errors.documentNotFound} title="Document not found" />;
+  }
+
+  if (stories.isError) {
+    return <ErrorState body={copy.errors.storiesUnavailable} title="Stories unavailable" />;
+  }
+
+  if (!stories.data) {
+    return <ErrorState body={copy.errors.storiesUnavailable} title="Stories unavailable" />;
+  }
+
   if (!story) {
     return <ErrorState body={copy.errors.documentNotFound} title="Story not found" />;
   }

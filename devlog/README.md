@@ -61,7 +61,6 @@ Skip a devlog entry when:
 
 - Write in English
 - Keep the body direct, technical, and filler-free
-- Aim for 2-5 sentences
+- Use 2-15 sentences
 - Do not use "today I", "in this entry", or similar intro phrasing
 - Make the result or decision explicit
-

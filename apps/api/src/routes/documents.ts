@@ -1,6 +1,7 @@
 import type { Context, Hono } from 'hono';
 import {
 	getDocumentObservability,
+	getDocumentStories,
 	listDocumentPages,
 	listDocuments,
 	streamDocumentLayout,
@@ -14,6 +15,7 @@ import {
 	DocumentPageParamsSchema,
 	DocumentPagesResponseSchema,
 	DocumentParamsSchema,
+	DocumentStoriesResponseSchema,
 } from './documents.schemas.js';
 
 function readDocumentListQuery(url: string): Record<string, string | undefined> {
@@ -53,6 +55,13 @@ export function registerDocumentRoutes(app: Hono): void {
 		const { id } = DocumentParamsSchema.parse({ id: c.req.param('id') });
 		const response = await listDocumentPages(id, readRequestLogger(c));
 		DocumentPagesResponseSchema.parse(response);
+		return c.json(response, 200);
+	});
+
+	app.get('/api/documents/:id/stories', async (c) => {
+		const { id } = DocumentParamsSchema.parse({ id: c.req.param('id') });
+		const response = await getDocumentStories(id, readRequestLogger(c));
+		DocumentStoriesResponseSchema.parse(response);
 		return c.json(response, 200);
 	});
 

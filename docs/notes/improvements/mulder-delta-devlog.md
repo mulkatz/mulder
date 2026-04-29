@@ -82,7 +82,7 @@ Neuer Abschnitt **"Devlog"** (nach "Testing" oder am Ende):
 - Types: architecture | implementation | breakthrough | decision | refactor | integration | milestone
 - Write entry when: new capability works, architecture decision made/revised, non-obvious problem solved, GCP service first integrated, significant refactor, milestone reached
 - Skip when: routine refactoring, bug fixes, dependency updates, formatting, repeated iterations
-- Style: English, direct, technical, max 5 sentences, no filler
+- Style: English, direct, technical, max 15 sentences, no filler
 ```
 
 ## Änderungen an Repo-Struktur

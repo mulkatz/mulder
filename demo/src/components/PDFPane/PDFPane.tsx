@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import type { PDFPageProxy } from 'pdfjs-dist/types/src/display/api';
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist/types/src/display/api';
 import type { StoryRecord } from '@/lib/api-types';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Skeleton } from '@/components/shared/Skeleton';
@@ -11,14 +11,42 @@ export interface PDFPaneHandle {
   scrollToPage: (pageNumber: number) => void;
 }
 
+interface PageSize {
+  width: number;
+  height: number;
+}
+
+interface LoadedPages {
+  doc: PDFDocumentProxy | null;
+  pages: Map<number, PDFPageProxy>;
+}
+
+const EMPTY_PAGES = new Map<number, PDFPageProxy>();
+
+function isRenderingCancelledError(error: unknown) {
+  return typeof error === 'object' && error !== null && 'name' in error && error.name === 'RenderingCancelledException';
+}
+
 function PdfCanvas({
   page,
   shouldRender,
+  pageNumber,
+  fallbackSize,
 }: {
   page: PDFPageProxy | null;
   shouldRender: boolean;
+  pageNumber: number;
+  fallbackSize: PageSize | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const baseSize = useMemo(() => {
+    if (!page) {
+      return fallbackSize;
+    }
+
+    const viewport = page.getViewport({ scale: 1 });
+    return { width: viewport.width, height: viewport.height };
+  }, [fallbackSize, page]);
 
   useEffect(() => {
     if (!page || !canvasRef.current || !shouldRender) {
@@ -42,15 +70,36 @@ function PdfCanvas({
     canvas.style.height = `${viewport.height}px`;
 
     const task = page.render({ canvas, canvasContext: context, viewport });
+    void task.promise.catch((nextError: unknown) => {
+      if (!isRenderingCancelledError(nextError)) {
+        throw nextError;
+      }
+    });
 
     return () => {
       task.cancel();
     };
   }, [page, shouldRender]);
 
+  const frameStyle = baseSize
+    ? {
+        aspectRatio: `${baseSize.width} / ${baseSize.height}`,
+        maxWidth: `${baseSize.width * 1.4}px`,
+      }
+    : undefined;
+
   return (
-    <div className="relative">
-      <canvas className="block max-w-full" ref={canvasRef} />
+    <div className="relative flex justify-center">
+      <div className="relative w-full bg-white" style={frameStyle}>
+        {shouldRender ? (
+          <canvas
+            aria-label={`Rendered PDF page ${pageNumber}`}
+            className="absolute inset-0 block size-full"
+            data-testid="pdf-canvas"
+            ref={canvasRef}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -63,10 +112,11 @@ export const PDFPane = forwardRef<PDFPaneHandle, {
   reveal: boolean;
 }>(function PDFPane({ url, stories, activeStoryId, onPageChange, reveal }, ref) {
   const { doc, numPages, loading, error } = usePdfDocument(url);
-  const [pages, setPages] = useState<Map<number, PDFPageProxy>>(new Map());
+  const [loadedPages, setLoadedPages] = useState<LoadedPages>(() => ({ doc: null, pages: new Map() }));
   const [currentPage, setCurrentPage] = useState(1);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const pages = loadedPages.doc === doc ? loadedPages.pages : EMPTY_PAGES;
 
   useEffect(() => {
     if (!doc) {
@@ -77,15 +127,17 @@ export const PDFPane = forwardRef<PDFPaneHandle, {
     const currentDoc = doc;
 
     async function loadPages() {
-      const loadedPages = new Map<number, PDFPageProxy>();
-
       for (let pageNumber = 1; pageNumber <= currentDoc.numPages; pageNumber += 1) {
         const page = await currentDoc.getPage(pageNumber);
-        loadedPages.set(pageNumber, page);
-      }
+        if (cancelled) {
+          return;
+        }
 
-      if (!cancelled) {
-        setPages(loadedPages);
+        setLoadedPages((state) => {
+          const nextPages = state.doc === currentDoc ? new Map(state.pages) : new Map<number, PDFPageProxy>();
+          nextPages.set(pageNumber, page);
+          return { doc: currentDoc, pages: nextPages };
+        });
       }
     }
 
@@ -153,8 +205,17 @@ export const PDFPane = forwardRef<PDFPaneHandle, {
       end: Math.min(numPages, currentPage + 3),
     };
   }, [currentPage, numPages]);
+  const fallbackPageSize = useMemo(() => {
+    const firstPage = pages.get(1);
+    if (!firstPage) {
+      return null;
+    }
 
-  if (loading) {
+    const viewport = firstPage.getViewport({ scale: 1 });
+    return { width: viewport.width, height: viewport.height };
+  }, [pages]);
+
+  if (loading || (numPages > 0 && !fallbackPageSize)) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-20 w-full rounded-xl" />
@@ -179,6 +240,7 @@ export const PDFPane = forwardRef<PDFPaneHandle, {
               key={pageNumber}
               className="relative overflow-hidden rounded-2xl border border-thread bg-white shadow-md"
               data-page={pageNumber}
+              data-testid="pdf-page"
               ref={(node) => {
                 if (node) {
                   pageRefs.current.set(pageNumber, node);
@@ -191,7 +253,7 @@ export const PDFPane = forwardRef<PDFPaneHandle, {
                   {copy.loading.document(pageNumber, numPages)}
                 </span>
               </div>
-              <PdfCanvas page={page} shouldRender={shouldRender} />
+              <PdfCanvas fallbackSize={fallbackPageSize} page={page} pageNumber={pageNumber} shouldRender={shouldRender} />
               <StoryFrames activeStoryId={activeStoryId} pageNumber={pageNumber} reveal={reveal} stories={stories} />
             </div>
           );

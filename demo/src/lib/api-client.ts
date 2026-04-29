@@ -30,7 +30,7 @@ async function parseErrorBody(response: Response) {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
@@ -57,7 +57,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 }
 
 export async function apiFetchText(path: string, init?: RequestInit): Promise<string> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     credentials: 'include',
     headers: {
       Accept: 'text/markdown, text/plain',
@@ -80,5 +80,8 @@ export async function apiFetchText(path: string, init?: RequestInit): Promise<st
 }
 
 export function buildApiUrl(path: string) {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
   return `${API_BASE}${path}`;
 }

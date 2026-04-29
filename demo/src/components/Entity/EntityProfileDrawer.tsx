@@ -2,7 +2,9 @@ import { useQueries } from '@tanstack/react-query';
 import { ArrowRight } from 'lucide-react';
 import { useEntityDrawer } from '@/app/stores/EntityDrawerStore';
 import { Drawer, DrawerContent } from '@/components/primitives/Drawer';
+import { DialogTitle } from '@/components/primitives/Dialog';
 import { Separator } from '@/components/primitives/Separator';
+import { VisuallyHidden } from '@/components/primitives/VisuallyHidden';
 import { Button } from '@/components/primitives/Button';
 import { ConfidenceBar } from '@/components/shared/ConfidenceBar';
 import { Skeleton } from '@/components/shared/Skeleton';
@@ -37,7 +39,12 @@ export function EntityProfileDrawer() {
 
   return (
     <Drawer onOpenChange={(open) => (!open ? drawer.close() : undefined)} open={drawer.open}>
-      <DrawerContent aria-describedby={undefined}>
+      <DrawerContent aria-describedby={undefined} data-testid="entity-profile-drawer">
+        {!detail.data ? (
+          <VisuallyHidden>
+            <DialogTitle>Entity profile</DialogTitle>
+          </VisuallyHidden>
+        ) : null}
         {detail.isLoading ? (
           <div className="space-y-4">
             <Skeleton className="h-8 w-40" />
@@ -49,7 +56,9 @@ export function EntityProfileDrawer() {
           <div className="space-y-5">
             <div>
               <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-amber">Entity profile</p>
-              <h2 className="mt-2 font-serif text-4xl text-ink">{detail.data.data.entity.name}</h2>
+              <DialogTitle asChild>
+                <h2 className="mt-2 font-serif text-4xl text-ink">{detail.data.data.entity.name}</h2>
+              </DialogTitle>
               <span className={`mt-3 inline-flex rounded-full px-2 py-1 font-mono text-[11px] uppercase tracking-[0.16em] ${entityClass(detail.data.data.entity.type)}`}>
                 {detail.data.data.entity.type}
               </span>

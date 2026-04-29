@@ -193,7 +193,7 @@ Move from CLI to HTTP. Job queue, async workers, a full REST API over the pipeli
 | 🟢 | H8 | Entity API routes (sync) | §10.6 |
 | 🟢 | H9 | Evidence API routes (sync) | §10.6 |
 | 🟢 | H10 | Document retrieval routes — list/pdf/markdown sync routes | §10.6 |
-| 🟢 | H11 | Document Viewer UI — Vite+React split-view (PDF + layout.md) | §13 (demo/), consumes H10 |
+| 🟢 | H11 | Document Viewer UI — Vite+React split-view (PDF + stories + entities) | §13 (demo/), consumes H10 |
 
 **Also read for all M7 steps:** [`docs/api-architecture.md`](./api-architecture.md) (framework choice, route structure, middleware stack, OpenAPI strategy, key trade-offs), §10 (full job queue section — especially §10.3 transaction discipline), §14 (design decisions — PostgreSQL queue, auto-commit dequeue, per-step job slicing)
 
@@ -211,7 +211,7 @@ The browser experience. Parallel to M8; depends on M7 (H10 routes + Spec 77 auth
 
 | Status | Step | What | Spec |
 |--------|------|------|------|
-| 🟢 | V1 | Viewer foundations + Case File (PDF + stories + entities + Hero 1/2) — supersedes H11 | Spec 77, H10 |
+| 🟢 | V1 | Viewer foundations + Case File (PDF + stories + entities + Hero 1/2) — supersedes H11 | Spec 84, Spec 77, H10 |
 | ⚪ | V2 | Archive + Desk (document list, upload, overview ribbon, "worth following" leads) | H5, H10 |
 | ⚪ | V3 | Ask (search console with citations + retrieval trace) + Command Palette (⌘K) | H7 |
 | ⚪ | V4 | Board (knowledge graph with custom nodes/edges + timeline scrubber) | H7, H8 |

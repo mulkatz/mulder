@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 const ROOT = resolve(import.meta.dirname, '../..');
 const DEVLOG_DIR = resolve(ROOT, 'devlog');
 const DEVLOG_README = resolve(DEVLOG_DIR, 'README.md');
+const MAX_DEVLOG_SENTENCES = 15;
 const ALLOWED_TYPES = new Set([
 	'architecture',
 	'implementation',
@@ -129,7 +130,7 @@ describe('Spec 78 — Devlog System', () => {
 		);
 		expect(section).toContain('Write entry when');
 		expect(section).toContain('Skip entry when');
-		expect(section).toContain('2-5 sentences');
+		expect(section).toContain('2-15 sentences');
 	});
 
 	it('QA-03: checked-in devlog entries follow the repository contract', () => {
@@ -149,7 +150,7 @@ describe('Spec 78 — Devlog System', () => {
 			expect(entry.title.length).toBeGreaterThan(0);
 			expect(entry.tags.length).toBeGreaterThan(0);
 			expect(entry.body.length).toBeGreaterThan(0);
-			expect(countSentences(entry.body)).toBeLessThanOrEqual(5);
+			expect(countSentences(entry.body)).toBeLessThanOrEqual(MAX_DEVLOG_SENTENCES);
 		}
 	});
 

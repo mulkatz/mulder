@@ -4,7 +4,6 @@ import { toast } from 'sonner';
 import { Button } from '@/components/primitives/Button';
 import { Input } from '@/components/primitives/Input';
 import { useLogin } from '@/features/auth/useLogin';
-import { useSession } from '@/features/auth/useSession';
 import { ApiError } from '@/lib/api-client';
 import { copy } from '@/lib/copy';
 import { routes } from '@/lib/routes';
@@ -12,7 +11,6 @@ import { routes } from '@/lib/routes';
 export function LoginCard({ expired = false }: { expired?: boolean }) {
   const navigate = useNavigate();
   const login = useLogin();
-  const session = useSession();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -21,7 +19,6 @@ export function LoginCard({ expired = false }: { expired?: boolean }) {
 
     try {
       await login.mutateAsync({ email, password });
-      await session.refetch();
       navigate(routes.desk(), { replace: true });
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {

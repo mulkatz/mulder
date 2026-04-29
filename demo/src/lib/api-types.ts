@@ -6,9 +6,22 @@ export interface UserSummary {
   role: UserRole;
 }
 
-export interface SessionResponse {
+export interface SessionPayload {
   user: UserSummary;
   expires_at: string;
+}
+
+export interface SessionResponse {
+  data: SessionPayload;
+}
+
+export interface InvitationResponse {
+  data: {
+    id: string;
+    email: string;
+    role: UserRole;
+    expires_at: string;
+  };
 }
 
 export interface DocumentRecord {
@@ -74,6 +87,7 @@ export interface EntityRecord {
   taxonomy_status: 'auto' | 'curated' | 'merged';
   taxonomy_id: string | null;
   corroboration_score: number | null;
+  corroboration_status: 'scored' | 'not_scored' | 'insufficient_data';
   source_count: number;
   attributes: Record<string, unknown>;
   created_at: string;
@@ -125,7 +139,12 @@ export interface EntityEdgesResponse {
 
 export interface EvidenceSummary {
   data: {
-    entities: { total: number; scored: number; avg_corroboration: number };
+    entities: {
+      total: number;
+      scored: number;
+      avg_corroboration: number | null;
+      corroboration_status: 'scored' | 'not_scored' | 'insufficient_data';
+    };
     contradictions: { potential: number; confirmed: number; dismissed: number };
     duplicates: { count: number };
     sources: { total: number; scored: number; data_reliability: 'insufficient' | 'low' | 'moderate' | 'high' };
@@ -153,6 +172,31 @@ export interface ContradictionRecord {
 
 export interface ContradictionsResponse {
   data: ContradictionRecord[];
+  meta?: { count: number; limit: number; offset: number; status: 'potential' | 'confirmed' | 'dismissed' | 'all' };
+}
+
+export interface DocumentStoryRecord {
+  id: string;
+  source_id: string;
+  title: string;
+  subtitle: string | null;
+  language: string | null;
+  category: string | null;
+  page_start: number | null;
+  page_end: number | null;
+  extraction_confidence: number | null;
+  status: string;
+  markdown: string;
+  excerpt: string;
+  entities: EntityRecord[];
+}
+
+export interface DocumentStoriesResponse {
+  data: {
+    source_id: string;
+    stories: DocumentStoryRecord[];
+  };
+  meta: { count: number };
 }
 
 export interface StoryRecord {
@@ -168,4 +212,177 @@ export interface StoryRecord {
   excerpt: string;
   entities: EntityRecord[];
   status: string | null;
+}
+
+export interface StatusResponse {
+  data: {
+    budget: {
+      month: string;
+      limit_usd: number;
+      reserved_usd: number;
+      committed_usd: number;
+      released_usd: number;
+      remaining_usd: number;
+    };
+    jobs: {
+      pending: number;
+      running: number;
+      completed: number;
+      failed: number;
+      dead_letter: number;
+    };
+  };
+}
+
+export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'dead_letter';
+
+export interface JobSummary {
+  id: string;
+  type: string;
+  status: JobStatus;
+  attempts: number;
+  max_attempts: number;
+  worker_id: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  links: { self: string };
+}
+
+export interface JobListResponse {
+  data: JobSummary[];
+  meta: { count: number; limit: number };
+}
+
+export interface JobDetailResponse {
+  data: {
+    job: JobSummary & {
+      error_log: string | null;
+      payload: Record<string, unknown>;
+    };
+    progress: {
+      run_id: string;
+      run_status: 'running' | 'completed' | 'partial' | 'failed';
+      source_counts: { pending: number; processing: number; completed: number; failed: number };
+      sources: {
+        source_id: string;
+        current_step: string;
+        status: 'pending' | 'processing' | 'completed' | 'failed';
+        error_message: string | null;
+        updated_at: string;
+      }[];
+    } | null;
+  };
+}
+
+export interface InitiateUploadResponse {
+  data: {
+    source_id: string;
+    storage_path: string;
+    upload: {
+      url: string;
+      method: 'PUT';
+      headers: Record<string, string>;
+      transport: string;
+      expires_at: string;
+    };
+    limits: { max_bytes: number };
+  };
+}
+
+export interface CompleteUploadResponse {
+  data: {
+    job_id: string;
+    status: 'pending';
+    source_id: string;
+  };
+  links: { status: string };
+}
+
+export interface SearchResponse {
+  data: {
+    query: string;
+    strategy: 'vector' | 'fulltext' | 'graph' | 'hybrid';
+    top_k: number;
+    results: SearchResult[];
+    confidence: {
+      corpus_size: number;
+      taxonomy_status: 'not_started' | 'bootstrapping' | 'active' | 'mature';
+      corroboration_reliability: 'insufficient' | 'low' | 'moderate' | 'high';
+      graph_density: number;
+      degraded: boolean;
+      message: string | null;
+    };
+    explain: {
+      counts: Record<string, number>;
+      skipped: string[];
+      failures: Record<string, string>;
+      seed_entity_ids: string[];
+      contributions: {
+        chunk_id: string;
+        rerank_score: number;
+        rrf_score: number;
+        strategies: { strategy: 'vector' | 'fulltext' | 'graph'; rank: number; score: number }[];
+      }[];
+    };
+  };
+}
+
+export interface SearchResult {
+  chunk_id: string;
+  story_id: string;
+  content: string;
+  score: number;
+  rerank_score: number;
+  rank: number;
+  contributions: { strategy: 'vector' | 'fulltext' | 'graph'; rank: number; score: number }[];
+  metadata: {
+    source_id?: string;
+    source_filename?: string;
+    story_title?: string;
+    page_start?: number;
+    page_end?: number;
+    [key: string]: unknown;
+  };
+}
+
+export interface EvidenceReliabilitySourcesResponse {
+  data: {
+    id: string;
+    filename: string;
+    status: string;
+    reliability_score: number | null;
+    created_at: string;
+    updated_at: string;
+  }[];
+  meta: { count: number; limit: number; offset: number; scored_only: boolean };
+}
+
+export interface EvidenceChainsResponse {
+  data: {
+    thesis: string;
+    chains: {
+      id: string;
+      path: string[];
+      strength: number;
+      supports: boolean;
+      computed_at: string;
+    }[];
+  }[];
+  meta: { thesis_count: number; record_count: number };
+}
+
+export interface EvidenceClustersResponse {
+  data: {
+    id: string;
+    cluster_type: 'temporal' | 'spatial' | 'spatio-temporal';
+    center_lat: number | null;
+    center_lng: number | null;
+    time_start: string | null;
+    time_end: string | null;
+    event_count: number;
+    event_ids: string[];
+    computed_at: string;
+  }[];
+  meta: { count: number; cluster_type?: 'temporal' | 'spatial' | 'spatio-temporal' };
 }

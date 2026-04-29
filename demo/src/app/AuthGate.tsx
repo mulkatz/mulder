@@ -9,7 +9,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const session = useSession();
   const [expired, setExpired] = useState(false);
-  const previewMode = import.meta.env.DEV && session.error instanceof ApiError && session.error.status === 404;
+  const previewMode =
+    import.meta.env.DEV &&
+    import.meta.env.VITE_PREVIEW_AUTH_BYPASS === 'true' &&
+    session.error instanceof ApiError &&
+    session.error.status === 404;
 
   useEffect(() => {
     function handleExpired() {
@@ -32,7 +36,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     };
   }, [queryClient]);
 
-  if (session.isLoading) {
+  if (session.isLoading && session.failureCount === 0) {
     return (
       <div className="mx-auto flex min-h-screen w-full max-w-md items-center px-6">
         <div className="w-full rounded-xl border border-thread bg-surface p-8 shadow-lg">

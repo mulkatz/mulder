@@ -55,9 +55,14 @@ export function StoryListItem({
         </div>
       </AccordionTrigger>
       <AccordionContent>
-        <div className="space-y-4" ref={rootRef}>
+        <div className="space-y-4" data-story-id={story.id} data-testid="story-list-item" ref={rootRef}>
           <p className={cn('text-sm leading-7 text-ink-muted', expanded && 'amber-underline')}>{story.excerpt}…</p>
-          <button className="font-mono text-xs uppercase tracking-[0.16em] text-cobalt hover:text-cobalt-hover" onClick={onRead} type="button">
+          <button
+            className="font-mono text-xs uppercase tracking-[0.16em] text-cobalt hover:text-cobalt-hover"
+            data-testid="read-full-story"
+            onClick={onRead}
+            type="button"
+          >
             Read full story →
           </button>
           <div className="flex flex-wrap gap-2">

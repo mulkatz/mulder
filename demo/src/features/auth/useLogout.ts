@@ -10,9 +10,9 @@ export function useLogout() {
       apiFetch<void>('/api/auth/logout', {
         method: 'POST',
       }),
-    onSettled: async () => {
+    onSettled: () => {
       queryClient.removeQueries({ queryKey: sessionQueryKey });
-      await queryClient.invalidateQueries();
+      queryClient.clear();
       window.localStorage.setItem('mulder-auth-sync', String(Date.now()));
     },
   });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EntitySchema } from './entities.schemas.js';
 import { JobStatusSchema, PipelineRunSourceStatusSchema, PipelineRunStatusSchema } from './jobs.schemas.js';
 
 export const SOURCE_STATUS_VALUES = [
@@ -59,6 +60,32 @@ export const DocumentPagesResponseSchema = z.object({
 	data: z.object({
 		source_id: z.string().uuid(),
 		pages: z.array(DocumentPageSchema),
+	}),
+	meta: z.object({
+		count: z.number().int().nonnegative(),
+	}),
+});
+
+export const DocumentStorySchema = z.object({
+	id: z.string().uuid(),
+	source_id: z.string().uuid(),
+	title: z.string().min(1),
+	subtitle: z.string().nullable(),
+	language: z.string().nullable(),
+	category: z.string().nullable(),
+	page_start: z.number().int().nullable(),
+	page_end: z.number().int().nullable(),
+	extraction_confidence: z.number().nullable(),
+	status: z.string(),
+	markdown: z.string(),
+	excerpt: z.string(),
+	entities: z.array(EntitySchema),
+});
+
+export const DocumentStoriesResponseSchema = z.object({
+	data: z.object({
+		source_id: z.string().uuid(),
+		stories: z.array(DocumentStorySchema),
 	}),
 	meta: z.object({
 		count: z.number().int().nonnegative(),
@@ -173,6 +200,8 @@ export type DocumentListResponse = z.infer<typeof DocumentListResponseSchema>;
 export type DocumentListItem = z.infer<typeof DocumentListItemSchema>;
 export type DocumentPagesResponse = z.infer<typeof DocumentPagesResponseSchema>;
 export type DocumentPageItem = z.infer<typeof DocumentPageSchema>;
+export type DocumentStoriesResponse = z.infer<typeof DocumentStoriesResponseSchema>;
+export type DocumentStoryResponse = z.infer<typeof DocumentStorySchema>;
 export type DocumentArtifact = z.infer<typeof DocumentArtifactSchema>;
 export type DocumentParams = z.infer<typeof DocumentParamsSchema>;
 export type DocumentPageParams = z.infer<typeof DocumentPageParamsSchema>;

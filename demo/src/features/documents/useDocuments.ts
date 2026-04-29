@@ -7,6 +7,7 @@ interface UseDocumentsOptions {
   search?: string;
   limit?: number;
   offset?: number;
+  enabled?: boolean;
 }
 
 function buildDocumentsQuery(options: UseDocumentsOptions) {
@@ -30,5 +31,6 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
   return useQuery({
     queryKey: ['documents', 'list', options],
     queryFn: () => apiFetch<DocumentListResponse>(buildDocumentsQuery(options)),
+    enabled: options.enabled ?? true,
   });
 }

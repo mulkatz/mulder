@@ -47,6 +47,8 @@ export function StoryFrames({
               activeStoryId === story.id ? 'opacity-100 shadow-[0_0_0_1px_rgba(212,162,74,0.35)]' : 'opacity-65',
               reveal && 'animate-compose-in',
             )}
+            data-story-id={story.id}
+            data-testid="story-frame"
             style={reveal ? { animationDelay: `${index * 100}ms` } : undefined}
           >
             {isLeadPage ? (
