@@ -149,7 +149,7 @@ export function detectSourceType(
 			};
 		}
 
-		if (!extension && isReadableText(buffer)) {
+		if (isReadableText(buffer)) {
 			return { sourceType: 'text', confidence: 'content', mediaType: 'text/plain' };
 		}
 	}

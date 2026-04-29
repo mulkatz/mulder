@@ -200,6 +200,18 @@ describe('Spec 85 — Source Type Discriminator + Format Metadata', () => {
 		expect(`${result.stdout}\n${result.stderr}`).toMatch(/\btext\b/i);
 		expect(db.runSql('SELECT COUNT(*) FROM sources;')).toBe('0');
 		expectNoStorageUpload(beforeStorage);
+
+		const logFile = join(tmpDir, 'note.log');
+		writeFileSync(logFile, 'A readable log file should still be classified as unsupported text.\n', 'utf-8');
+
+		const logResult = runCli(['ingest', logFile]);
+		expect(logResult.exitCode).not.toBe(0);
+		expect(`${logResult.stdout}\n${logResult.stderr}`).toMatch(
+			/INGEST_UNSUPPORTED_SOURCE_TYPE|unsupported source type/i,
+		);
+		expect(`${logResult.stdout}\n${logResult.stderr}`).toMatch(/\btext\b/i);
+		expect(db.runSql('SELECT COUNT(*) FROM sources;')).toBe('0');
+		expectNoStorageUpload(beforeStorage);
 	});
 
 	it('QA-06: public source repository API round trips source type and format metadata', () => {
