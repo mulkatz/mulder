@@ -26,7 +26,7 @@ export function InviteDialog({ children }: { children?: React.ReactNode }) {
     event.preventDefault();
     try {
       await createInvite.mutateAsync({ email, role });
-      toast.success('Invitation created. The raw token stays server-side.');
+      toast.success('Invitation sent.');
       setEmail('');
       setOpen(false);
     } catch {
@@ -43,7 +43,7 @@ export function InviteDialog({ children }: { children?: React.ReactNode }) {
             <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-amber">Admin</p>
             <DialogTitle className="mt-2 font-serif text-3xl text-ink">Create an invitation.</DialogTitle>
             <p className="mt-2 text-sm text-ink-muted">
-              The API returns invitation metadata only. Tokens are intentionally not exposed in the browser.
+              Mulder sends the invite link server-side. Tokens are intentionally not exposed in the browser.
             </p>
           </div>
           <label className="block space-y-2 text-sm text-ink-muted">

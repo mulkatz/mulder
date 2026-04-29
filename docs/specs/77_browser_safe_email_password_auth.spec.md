@@ -63,6 +63,7 @@ The browser-facing auth contract is:
   - allowed for operator API key or session role `owner|admin`
   - denied for session role `member`
   - response never includes the raw invite token
+  - API delivers the raw invite link server-side: log delivery in local/dev, transactional email in production
 
 ### 4.3 Auth Model
 
@@ -77,6 +78,7 @@ The browser-facing auth contract is:
 - The middleware contract must stop treating browser auth as out of scope for the V1 app path
 - The invite flow in the UI and the admin-gated invite API must agree on roles, expiration semantics, and generic failure copy
 - Dev mode must use the Vite proxy path so cookies behave same-origin during local work
+- Production invite links use `MULDER_APP_BASE_URL` and delivery is selected by `MULDER_INVITE_DELIVERY` (`log` or `resend`)
 
 ### 4.5 Implementation Phases
 

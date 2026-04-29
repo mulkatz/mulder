@@ -2,6 +2,7 @@ import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } fr
 import {
 	type ApiConfig,
 	getWorkerPool,
+	type Logger,
 	loadConfig,
 	MulderError,
 	PIPELINE_ERROR_CODES,
@@ -63,6 +64,15 @@ interface InvitationRow {
 
 type Queryable = pg.Pool | pg.PoolClient;
 
+type InviteDeliveryProvider = 'log' | 'resend';
+
+interface InviteDeliverySettings {
+	provider: InviteDeliveryProvider;
+	appBaseUrl: string;
+	from?: string;
+	resendApiKeyEnv: string;
+}
+
 function getPool(): pg.Pool {
 	const config = loadConfig();
 	if (!config.gcp?.cloud_sql) {
@@ -83,6 +93,26 @@ function getBrowserConfig(apiConfig?: ApiConfig): ApiConfig['auth']['browser'] {
 
 function normalizeEmail(email: string): string {
 	return email.trim().toLowerCase();
+}
+
+function normalizeBaseUrl(value: string): string {
+	return value.endsWith('/') ? value.slice(0, -1) : value;
+}
+
+function getInviteDeliverySettings(): InviteDeliverySettings {
+	const provider = (process.env.MULDER_INVITE_DELIVERY ?? 'log').trim().toLowerCase();
+	if (provider !== 'log' && provider !== 'resend') {
+		throw new MulderError('Unsupported invitation delivery provider', 'CONFIG_INVALID', {
+			context: { provider },
+		});
+	}
+
+	return {
+		provider,
+		appBaseUrl: normalizeBaseUrl(process.env.MULDER_APP_BASE_URL ?? 'http://localhost:5173'),
+		from: process.env.MULDER_MAIL_FROM,
+		resendApiKeyEnv: process.env.MULDER_RESEND_API_KEY_ENV ?? 'RESEND_API_KEY',
+	};
 }
 
 function tokenHash(token: string, apiConfig?: ApiConfig): string {
@@ -149,6 +179,102 @@ async function findUserByEmail(pool: Queryable, email: string): Promise<UserRow 
 		[normalizeEmail(email)],
 	);
 	return result.rows[0] ?? null;
+}
+
+function buildInvitationUrl(token: string): string {
+	const settings = getInviteDeliverySettings();
+	return `${settings.appBaseUrl}/auth/invitations/${encodeURIComponent(token)}`;
+}
+
+async function sendResendInvitation(input: {
+	email: string;
+	role: BrowserUserRole;
+	invitationUrl: string;
+	settings: InviteDeliverySettings;
+}): Promise<void> {
+	const apiKey = process.env[input.settings.resendApiKeyEnv];
+	if (!apiKey) {
+		throw new MulderError('Resend API key is required for invitation delivery', 'CONFIG_INVALID', {
+			context: { env: input.settings.resendApiKeyEnv },
+		});
+	}
+
+	if (!input.settings.from) {
+		throw new MulderError('Invitation sender address is required for Resend delivery', 'CONFIG_INVALID', {
+			context: { env: 'MULDER_MAIL_FROM' },
+		});
+	}
+
+	const response = await fetch('https://api.resend.com/emails', {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${apiKey}`,
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({
+			from: input.settings.from,
+			to: input.email,
+			subject: 'Your Mulder invitation',
+			text: [
+				'You have been invited to Mulder.',
+				'',
+				`Role: ${input.role}`,
+				`Accept the invitation: ${input.invitationUrl}`,
+				'',
+				'This link is time-limited and can be used once.',
+			].join('\n'),
+			html: [
+				'<p>You have been invited to Mulder.</p>',
+				`<p><strong>Role:</strong> ${input.role}</p>`,
+				`<p><a href="${input.invitationUrl}">Accept the invitation</a></p>`,
+				'<p>This link is time-limited and can be used once.</p>',
+			].join(''),
+		}),
+	});
+
+	if (!response.ok) {
+		throw new MulderError('Invitation email delivery failed', 'INVITATION_DELIVERY_FAILED', {
+			context: { provider: 'resend', status: response.status },
+		});
+	}
+}
+
+async function deliverInvitation(input: {
+	email: string;
+	role: BrowserUserRole;
+	token: string;
+	logger?: Logger;
+}): Promise<void> {
+	const settings = getInviteDeliverySettings();
+	const invitationUrl = buildInvitationUrl(input.token);
+
+	if (settings.provider === 'log') {
+		input.logger?.info(
+			{
+				email: input.email,
+				role: input.role,
+				invitation_url: invitationUrl,
+			},
+			'invitation link created',
+		);
+		return;
+	}
+
+	await sendResendInvitation({
+		email: input.email,
+		role: input.role,
+		invitationUrl,
+		settings,
+	});
+
+	input.logger?.info(
+		{
+			email: input.email,
+			role: input.role,
+			provider: settings.provider,
+		},
+		'invitation email sent',
+	);
 }
 
 async function createSessionForUser(
@@ -252,6 +378,7 @@ export async function createInvitation(input: {
 	role: BrowserUserRole;
 	invitedByUserId?: string | null;
 	apiConfig?: ApiConfig;
+	logger?: Logger;
 }): Promise<{ id: string; email: string; role: BrowserUserRole; expiresAt: Date }> {
 	const browser = getBrowserConfig(input.apiConfig);
 	const pool = getPool();
@@ -273,6 +400,18 @@ export async function createInvitation(input: {
 	);
 
 	const row = result.rows[0];
+	try {
+		await deliverInvitation({
+			email: row.email,
+			role: row.role,
+			token,
+			logger: input.logger,
+		});
+	} catch (error) {
+		await pool.query('DELETE FROM api_invitations WHERE id = $1 AND accepted_at IS NULL', [row.id]);
+		throw error;
+	}
+
 	return {
 		id: row.id,
 		email: row.email,
