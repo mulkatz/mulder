@@ -334,6 +334,34 @@ describe('Spec 88 — Plain Text Ingestion on the Pre-Structured Path', () => {
 		});
 	});
 
+	it('QA-07: pipeline run can resume one text source by --source-id and skip segment', () => {
+		if (!pgAvailable) return;
+
+		const ingest = runCli(['ingest', txtFile]);
+		expect(ingest.exitCode, `${ingest.stdout}\n${ingest.stderr}`).toBe(0);
+		const sourceId = sourceIdForFilename(basename(txtFile));
+
+		const result = runCli(['pipeline', 'run', '--from', 'extract', '--up-to', 'enrich', '--source-id', sourceId], {
+			timeout: 240_000,
+		});
+		expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
+		expect(`${result.stdout}\n${result.stderr}`).toMatch(/Pipeline complete/i);
+
+		expect(
+			db.runSql(`SELECT status FROM source_steps WHERE source_id = ${sqlLiteral(sourceId)} AND step_name = 'extract';`),
+		).toBe('completed');
+		expect(
+			db.runSql(`SELECT status FROM source_steps WHERE source_id = ${sqlLiteral(sourceId)} AND step_name = 'segment';`),
+		).toBe('skipped');
+		expect(
+			db.runSql(`SELECT status FROM source_steps WHERE source_id = ${sqlLiteral(sourceId)} AND step_name = 'enrich';`),
+		).toBe('completed');
+		expect(db.runSql(`SELECT status FROM stories WHERE source_id = ${sqlLiteral(sourceId)};`)).toBe('enriched');
+		expect(
+			db.runSql(`SELECT COUNT(*) FROM jobs WHERE type = 'segment' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`),
+		).toBe('0');
+	});
+
 	it('QA-08: API upload accepts Markdown media types and queues extract', async () => {
 		if (!pgAvailable) return;
 
