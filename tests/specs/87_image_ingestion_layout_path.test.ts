@@ -388,6 +388,39 @@ describe('Spec 87 — Image Ingestion on the Layout Extraction Path', () => {
 		).toBe('1');
 	});
 
+	it('QA-07b: upload finalization canonicalizes storage paths from detected bytes', async () => {
+		if (!pgAvailable) return;
+
+		const initiate = await apiPost('/api/uploads/documents/initiate', {
+			filename: 'declared.pdf',
+			size_bytes: PNG_BYTES.byteLength,
+			content_type: 'application/pdf',
+		});
+		expect(initiate.status).toBe(201);
+		const initiateBody = await readJson(initiate);
+		const sourceId = String((initiateBody.data as Record<string, unknown>).source_id);
+		const declaredStoragePath = String((initiateBody.data as Record<string, unknown>).storage_path);
+		expect(declaredStoragePath).toBe(`raw/${sourceId}/original.pdf`);
+		writeUploadedObject(declaredStoragePath, PNG_BYTES);
+
+		const complete = await apiPost('/api/uploads/documents/complete', {
+			source_id: sourceId,
+			filename: 'declared.pdf',
+			storage_path: declaredStoragePath,
+			start_pipeline: false,
+		});
+		expect(complete.status).toBe(202);
+
+		const processed = await processOneJob();
+		expect(processed.state).toBe('completed');
+		const sourceRow = db.runSql(
+			`SELECT source_type::text, storage_path, format_metadata->>'media_type' FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
+		);
+		expect(sourceRow).toBe(`image|raw/${sourceId}/original.png|image/png`);
+		expect(existsSync(resolve(STORAGE_DIR, `raw/${sourceId}/original.png`))).toBe(true);
+		expect(existsSync(resolve(STORAGE_DIR, declaredStoragePath))).toBe(false);
+	});
+
 	it('QA-08: unsupported formats still fail before persistence', () => {
 		if (!pgAvailable) return;
 

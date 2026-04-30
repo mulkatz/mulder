@@ -60,46 +60,62 @@ export const resolvePdfFiles = resolveIngestFiles;
 export async function collectIngestSourceProfiles(inputPath: string): Promise<EstimatedSourceProfile[]> {
 	const ingestFiles = await resolveIngestFiles(inputPath);
 	const sourceProfiles: EstimatedSourceProfile[] = [];
+	const inputStats = await stat(resolve(inputPath)).catch(() => null);
+	const allowPartial = inputStats?.isDirectory() ?? false;
+	let firstError: Error | null = null;
 
 	for (const filePath of ingestFiles) {
-		const buffer = await readFile(filePath);
-		const detection = detectSourceType(buffer, filePath);
-		if (!detection) {
+		try {
+			const buffer = await readFile(filePath);
+			const detection = detectSourceType(buffer, filePath);
+			if (!detection) {
+				throw new IngestError(
+					`Unsupported or unknown source format for ${filePath}`,
+					INGEST_ERROR_CODES.INGEST_UNKNOWN_SOURCE_TYPE,
+					{
+						context: { path: filePath },
+					},
+				);
+			}
+
+			if (detection.sourceType === 'pdf') {
+				const nativeText = await detectNativeText(buffer);
+				sourceProfiles.push({
+					filename: filePath,
+					pageCount: nativeText.pageCount,
+					nativeTextRatio: nativeText.nativeTextRatio,
+				});
+				continue;
+			}
+
+			if (detection.sourceType === 'image') {
+				sourceProfiles.push({
+					filename: filePath,
+					pageCount: 1,
+					nativeTextRatio: 0,
+				});
+				continue;
+			}
+
 			throw new IngestError(
-				`Unsupported or unknown source format for ${filePath}`,
-				INGEST_ERROR_CODES.INGEST_UNKNOWN_SOURCE_TYPE,
+				`Unsupported source type "${detection.sourceType}" for ${filePath}; only pdf and image are supported in this step`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
 				{
-					context: { path: filePath },
+					context: { path: filePath, sourceType: detection.sourceType, confidence: detection.confidence },
 				},
 			);
+		} catch (cause: unknown) {
+			if (!allowPartial) {
+				throw cause;
+			}
+			if (!firstError) {
+				firstError = cause instanceof Error ? cause : new Error(String(cause));
+			}
 		}
+	}
 
-		if (detection.sourceType === 'pdf') {
-			const nativeText = await detectNativeText(buffer);
-			sourceProfiles.push({
-				filename: filePath,
-				pageCount: nativeText.pageCount,
-				nativeTextRatio: nativeText.nativeTextRatio,
-			});
-			continue;
-		}
-
-		if (detection.sourceType === 'image') {
-			sourceProfiles.push({
-				filename: filePath,
-				pageCount: 1,
-				nativeTextRatio: 0,
-			});
-			continue;
-		}
-
-		throw new IngestError(
-			`Unsupported source type "${detection.sourceType}" for ${filePath}; only pdf and image are supported in this step`,
-			INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
-			{
-				context: { path: filePath, sourceType: detection.sourceType, confidence: detection.confidence },
-			},
-		);
+	if (sourceProfiles.length === 0 && firstError) {
+		throw firstError;
 	}
 
 	return sourceProfiles;

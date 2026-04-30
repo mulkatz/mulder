@@ -34,6 +34,7 @@ import {
 	executeGraph,
 	executePipelineRun,
 	executeSegment,
+	getStorageExtensionForDetection,
 	isSupportedImageMediaType,
 	type PipelineRunOptions,
 } from '@mulder/pipeline';
@@ -102,6 +103,8 @@ interface FinalizedUploadMetadata {
 	pageCount: number;
 	hasNativeText: boolean;
 	nativeTextRatio: number;
+	mediaType: string;
+	storageExtension: string;
 }
 
 function isFinalizableSourceType(sourceType: SourceType): sourceType is FinalizableSourceType {
@@ -226,6 +229,21 @@ async function finalizeUploadedDocument(
 			},
 		);
 	}
+	const canonicalStorageExtension = getStorageExtensionForDetection(detection);
+	if (!canonicalStorageExtension || !detection.mediaType) {
+		throw new IngestError(
+			`Unsupported or unknown source format for ${payload.filename}`,
+			INGEST_ERROR_CODES.INGEST_UNKNOWN_SOURCE_TYPE,
+			{
+				context: {
+					storagePath: payload.storagePath,
+					sourceId: payload.sourceId,
+					sourceType: detection.sourceType,
+					mediaType: detection.mediaType,
+				},
+			},
+		);
+	}
 
 	const fileHash = createHash('sha256').update(buffer).digest('hex');
 	const duplicateSource = await findSourceByHash(pool, fileHash);
@@ -263,6 +281,8 @@ async function finalizeUploadedDocument(
 			pageCount: textResult.pageCount,
 			hasNativeText: textResult.hasNativeText,
 			nativeTextRatio: textResult.nativeTextRatio,
+			mediaType: detection.mediaType,
+			storageExtension: canonicalStorageExtension,
 		};
 	} else {
 		if (!isSupportedImageMediaType(detection.mediaType)) {
@@ -280,7 +300,20 @@ async function finalizeUploadedDocument(
 			pageCount: 1,
 			hasNativeText: false,
 			nativeTextRatio: 0,
+			mediaType: detection.mediaType,
+			storageExtension: canonicalStorageExtension,
 		};
+	}
+
+	const finalizedStoragePath = `raw/${payload.sourceId}/original.${finalizedMetadata.storageExtension}`;
+	if (payload.storagePath !== finalizedStoragePath) {
+		await services.storage.upload(finalizedStoragePath, buffer, finalizedMetadata.mediaType);
+		await services.storage.delete(payload.storagePath).catch((cause: unknown) => {
+			log.warn(
+				{ err: cause, sourceId: payload.sourceId, storagePath: payload.storagePath, finalizedStoragePath },
+				'Uploaded object canonicalized, but original cleanup failed',
+			);
+		});
 	}
 
 	const client = await pool.connect();
@@ -290,7 +323,7 @@ async function finalizeUploadedDocument(
 		const source = await createSource(client, {
 			id: payload.sourceId,
 			filename: payload.filename,
-			storagePath: payload.storagePath,
+			storagePath: finalizedStoragePath,
 			fileHash,
 			pageCount: finalizedMetadata.pageCount,
 			hasNativeText: finalizedMetadata.hasNativeText,
@@ -303,7 +336,7 @@ async function finalizeUploadedDocument(
 
 		if (source.id !== payload.sourceId) {
 			await client.query('ROLLBACK');
-			await services.storage.delete(payload.storagePath);
+			await services.storage.delete(finalizedStoragePath);
 			return {
 				result_status: 'duplicate',
 				resolved_source_id: source.id,
@@ -367,7 +400,7 @@ async function finalizeUploadedDocument(
 				// Observability projection remains best-effort.
 			});
 
-		log.info({ sourceId: source.id, storagePath: payload.storagePath }, 'Browser upload finalized');
+		log.info({ sourceId: source.id, storagePath: finalizedStoragePath }, 'Browser upload finalized');
 		return completionPayload;
 	} catch (error) {
 		try {
