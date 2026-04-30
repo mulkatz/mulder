@@ -306,14 +306,9 @@ async function finalizeUploadedDocument(
 	}
 
 	const finalizedStoragePath = `raw/${payload.sourceId}/original.${finalizedMetadata.storageExtension}`;
-	if (payload.storagePath !== finalizedStoragePath) {
+	const shouldCleanupOriginalUpload = payload.storagePath !== finalizedStoragePath;
+	if (shouldCleanupOriginalUpload) {
 		await services.storage.upload(finalizedStoragePath, buffer, finalizedMetadata.mediaType);
-		await services.storage.delete(payload.storagePath).catch((cause: unknown) => {
-			log.warn(
-				{ err: cause, sourceId: payload.sourceId, storagePath: payload.storagePath, finalizedStoragePath },
-				'Uploaded object canonicalized, but original cleanup failed',
-			);
-		});
 	}
 
 	const client = await pool.connect();
@@ -337,6 +332,14 @@ async function finalizeUploadedDocument(
 		if (source.id !== payload.sourceId) {
 			await client.query('ROLLBACK');
 			await services.storage.delete(finalizedStoragePath);
+			if (shouldCleanupOriginalUpload) {
+				await services.storage.delete(payload.storagePath).catch((cause: unknown) => {
+					log.warn(
+						{ err: cause, sourceId: payload.sourceId, storagePath: payload.storagePath, finalizedStoragePath },
+						'Duplicate upload finalized, but original cleanup failed',
+					);
+				});
+			}
 			return {
 				result_status: 'duplicate',
 				resolved_source_id: source.id,
@@ -399,6 +402,15 @@ async function finalizeUploadedDocument(
 			.catch(() => {
 				// Observability projection remains best-effort.
 			});
+
+		if (shouldCleanupOriginalUpload) {
+			services.storage.delete(payload.storagePath).catch((cause: unknown) => {
+				log.warn(
+					{ err: cause, sourceId: source.id, storagePath: payload.storagePath, finalizedStoragePath },
+					'Uploaded object canonicalized, but original cleanup failed',
+				);
+			});
+		}
 
 		log.info({ sourceId: source.id, storagePath: finalizedStoragePath }, 'Browser upload finalized');
 		return completionPayload;

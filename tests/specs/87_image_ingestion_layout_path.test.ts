@@ -1,9 +1,11 @@
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { WorkerRuntimeContext } from '@mulder/worker';
+import type { DocumentUploadFinalizeJobPayload, WorkerJobEnvelope, WorkerRuntimeContext } from '@mulder/worker';
+import type { Pool, PoolClient } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
 import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir } from '../lib/storage.js';
@@ -182,6 +184,66 @@ function writeUploadedObject(storagePath: string, content: Buffer): void {
 
 async function processOneJob() {
 	return await workerModule.processNextJob(workerContext, 'spec-87-worker');
+}
+
+async function dispatchFinalizeJob(payload: DocumentUploadFinalizeJobPayload, pool: Pool = workerContext.pool) {
+	const job: WorkerJobEnvelope<'document_upload_finalize'> = {
+		id: randomUUID(),
+		type: 'document_upload_finalize',
+		payload,
+		status: 'running',
+		attempts: 1,
+		maxAttempts: 3,
+		errorLog: null,
+		workerId: 'spec-87-worker',
+		createdAt: new Date(),
+		startedAt: new Date(),
+		finishedAt: null,
+	};
+	return await workerModule.dispatchJob(job, {
+		config: workerContext.config,
+		services: workerContext.services,
+		pool,
+		workerId: 'spec-87-worker',
+		logger: workerContext.logger,
+	});
+}
+
+function withFailingFinalizeCommit(pool: Pool): Pool {
+	let shouldFailCommit = true;
+	return new Proxy(pool, {
+		get(target, property, receiver) {
+			if (property === 'connect') {
+				return async (): Promise<PoolClient> => {
+					const client = await target.connect();
+					return new Proxy(client, {
+						get(clientTarget, clientProperty, clientReceiver) {
+							if (clientProperty === 'query') {
+								return async (queryText: unknown, values?: unknown): Promise<unknown> => {
+									if (
+										shouldFailCommit &&
+										typeof queryText === 'string' &&
+										queryText.trim().toUpperCase() === 'COMMIT'
+									) {
+										shouldFailCommit = false;
+										throw new Error('simulated finalize commit failure');
+									}
+									if (values === undefined) {
+										return await clientTarget.query(queryText as never);
+									}
+									return await clientTarget.query(queryText as never, values as never);
+								};
+							}
+							const value = Reflect.get(clientTarget, clientProperty, clientReceiver) as unknown;
+							return typeof value === 'function' ? value.bind(clientTarget) : value;
+						},
+					}) as PoolClient;
+				};
+			}
+			const value = Reflect.get(target, property, receiver) as unknown;
+			return typeof value === 'function' ? value.bind(target) : value;
+		},
+	});
 }
 
 describe('Spec 87 — Image Ingestion on the Layout Extraction Path', () => {
@@ -419,6 +481,38 @@ describe('Spec 87 — Image Ingestion on the Layout Extraction Path', () => {
 		expect(sourceRow).toBe(`image|raw/${sourceId}/original.png|image/png`);
 		expect(existsSync(resolve(STORAGE_DIR, `raw/${sourceId}/original.png`))).toBe(true);
 		expect(existsSync(resolve(STORAGE_DIR, declaredStoragePath))).toBe(false);
+	});
+
+	it('QA-07c: canonicalization keeps retry payload object until persistence succeeds', async () => {
+		if (!pgAvailable) return;
+
+		const sourceId = randomUUID();
+		const declaredStoragePath = `raw/${sourceId}/original.pdf`;
+		writeUploadedObject(declaredStoragePath, PNG_BYTES);
+		const payload: DocumentUploadFinalizeJobPayload = {
+			sourceId,
+			filename: 'declared.pdf',
+			storagePath: declaredStoragePath,
+			startPipeline: false,
+		};
+
+		await expect(dispatchFinalizeJob(payload, withFailingFinalizeCommit(workerContext.pool))).rejects.toThrow(
+			/simulated finalize commit failure/,
+		);
+		expect(db.runSql(`SELECT COUNT(*) FROM sources WHERE id = ${sqlLiteral(sourceId)};`)).toBe('0');
+		expect(existsSync(resolve(STORAGE_DIR, declaredStoragePath))).toBe(true);
+		expect(existsSync(resolve(STORAGE_DIR, `raw/${sourceId}/original.png`))).toBe(true);
+
+		const retryResult = await dispatchFinalizeJob(payload);
+		expect(retryResult).toMatchObject({
+			result_status: 'created',
+			resolved_source_id: sourceId,
+		});
+		const sourceRow = db.runSql(
+			`SELECT source_type::text, storage_path, format_metadata->>'media_type' FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
+		);
+		expect(sourceRow).toBe(`image|raw/${sourceId}/original.png|image/png`);
+		expect(existsSync(resolve(STORAGE_DIR, `raw/${sourceId}/original.png`))).toBe(true);
 	});
 
 	it('QA-08: unsupported formats still fail before persistence', () => {
