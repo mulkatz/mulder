@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -332,6 +333,29 @@ describe('Spec 88 — Plain Text Ingestion on the Pre-Structured Path', () => {
 			source_type: 'text',
 			is_markdown: false,
 		});
+	});
+
+	it('QA-06 regression: text extract rejects UTF-8 control-byte payloads before creating stories', () => {
+		if (!pgAvailable) return;
+
+		const sourceId = randomUUID();
+		const storagePath = `raw/${sourceId}/original.txt`;
+		writeUploadedObject(storagePath, Buffer.from([0x50, 0x6c, 0x61, 0x69, 0x6e, 0x00, 0x74, 0x65, 0x78, 0x74]));
+		db.runSql(
+			`INSERT INTO sources (id, filename, storage_path, file_hash, page_count, has_native_text, native_text_ratio, status, reliability_score, tags, metadata, source_type, format_metadata)
+			 VALUES (${sqlLiteral(sourceId)}, 'binary-valid-utf8.txt', ${sqlLiteral(storagePath)}, ${sqlLiteral(sourceId.replaceAll('-', ''))}, 0, false, 0, 'ingested', NULL, ARRAY[]::text[], '{}'::jsonb, 'text', '{"media_type":"text/plain","encoding":"utf-8"}'::jsonb);`,
+		);
+
+		const extract = runCli(['extract', sourceId], { timeout: 180_000 });
+		expect(extract.exitCode).not.toBe(0);
+		expect(`${extract.stdout}\n${extract.stderr}`).toMatch(/not readable UTF-8/i);
+		expect(db.runSql(`SELECT status FROM sources WHERE id = ${sqlLiteral(sourceId)};`)).toBe('ingested');
+		expect(db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = ${sqlLiteral(sourceId)};`)).toBe('0');
+		expect(
+			db.runSql(
+				`SELECT COUNT(*) FROM source_steps WHERE source_id = ${sqlLiteral(sourceId)} AND step_name = 'extract';`,
+			),
+		).toBe('0');
 	});
 
 	it('QA-07: pipeline run can resume one text source by --source-id and skip segment', () => {

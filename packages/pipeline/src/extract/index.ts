@@ -29,7 +29,12 @@ import {
 } from '@mulder/core';
 import { PDFParse } from 'pdf-parse';
 import type pg from 'pg';
-import { decodeUtf8TextBuffer, detectSourceType, isSupportedImageMediaType } from '../ingest/source-type.js';
+import {
+	decodeUtf8TextBuffer,
+	detectSourceType,
+	isReadableText,
+	isSupportedImageMediaType,
+} from '../ingest/source-type.js';
 import { layoutToMarkdown } from './layout-to-markdown.js';
 import type { ExtractInput, ExtractionData, ExtractResult, LayoutBlock, LayoutDocument, LayoutPage } from './types.js';
 
@@ -273,7 +278,7 @@ async function extractTextSource(input: {
 	}
 
 	const decoded = decodeUtf8TextBuffer(buffer);
-	if (decoded === null) {
+	if (decoded === null || !isReadableText(buffer)) {
 		throw new ExtractError(
 			`Text source is not readable UTF-8: ${input.sourceId}`,
 			EXTRACT_ERROR_CODES.EXTRACT_NATIVE_TEXT_FAILED,
