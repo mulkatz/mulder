@@ -10,7 +10,7 @@
  * @see docs/functional-spec.md §3.1, §3.2, §3.3
  */
 
-import type { StepError } from '@mulder/core';
+import type { SourceType, StepError } from '@mulder/core';
 import type { AnalyzeResult } from '../analyze/types.js';
 
 // ────────────────────────────────────────────────────────────
@@ -60,6 +60,14 @@ export interface PipelineRunInput {
 /** Per-source outcome for a single pipeline run. */
 export interface PipelineRunSourceOutcome {
 	sourceId: string;
+	/** Source discriminator used for source-specific planning. */
+	sourceType?: SourceType;
+	/** Requested global range after applying --from/--up-to. */
+	requestedSteps?: PipelineStepName[];
+	/** Steps that can execute for this source type. */
+	executableSteps?: PipelineStepName[];
+	/** Requested steps omitted because this source type never runs them. */
+	skippedSteps?: PipelineStepName[];
 	/** Last step the source reached, or `null` if no steps ran for it. */
 	finalStep: PipelineStepName | null;
 	status: 'pending' | 'processing' | 'completed' | 'failed';

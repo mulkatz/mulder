@@ -35,6 +35,7 @@ import {
 	PIPELINE_ERROR_CODES,
 	PipelineError,
 	upsertPipelineRunSource,
+	upsertSourceStep,
 } from '@mulder/core';
 import type pg from 'pg';
 import { execute as executeAnalyze } from '../analyze/index.js';
@@ -44,6 +45,7 @@ import { execute as executeExtract } from '../extract/index.js';
 import { execute as executeGraph } from '../graph/index.js';
 import { execute as executeIngest, resolvePdfFiles } from '../ingest/index.js';
 import { execute as executeSegment } from '../segment/index.js';
+import { computeRequestedSteps, isPrestructuredSourceType, planPipelineSteps, type StepPlan } from './step-plan.js';
 import type {
 	PipelineGlobalAnalysisOutcome,
 	PipelineRunInput,
@@ -53,6 +55,14 @@ import type {
 	PipelineStepName,
 } from './types.js';
 
+export type { StepPlan, StepPlanInput } from './step-plan.js';
+export {
+	computeRequestedSteps,
+	isLayoutSourceType,
+	isPrestructuredSourceType,
+	planPipelineSteps,
+	STEP_ORDER,
+} from './step-plan.js';
 // Re-export types for the package barrel.
 export type {
 	PipelineGlobalAnalysisOutcome,
@@ -62,26 +72,6 @@ export type {
 	PipelineRunSourceOutcome,
 	PipelineStepName,
 } from './types.js';
-
-// ────────────────────────────────────────────────────────────
-// Step ordering
-// ────────────────────────────────────────────────────────────
-
-/**
- * Ordered v1.0 pipeline steps. Ground (v2.0) and Analyze (v2.0) are
- * deliberately omitted — when they ship, they will be appended to the
- * tuple and `plannedSteps` will naturally pick them up.
- *
- * Exported so the CLI and tests can validate `--from`/`--up-to`.
- */
-export const STEP_ORDER: readonly PipelineStepName[] = [
-	'ingest',
-	'extract',
-	'segment',
-	'enrich',
-	'embed',
-	'graph',
-] as const;
 
 /** Source statuses ordered to match `STEP_ORDER` (the state *after* each step). */
 const SOURCE_STATUS_ORDER: readonly SourceStatus[] = [
@@ -116,10 +106,6 @@ const STEP_NAME = 'pipeline-orchestrator';
  */
 function hasStringCode(value: unknown): value is { code: string } {
 	return typeof value === 'object' && value !== null && typeof Reflect.get(value, 'code') === 'string';
-}
-
-function stepIndex(step: PipelineStepName): number {
-	return STEP_ORDER.indexOf(step);
 }
 
 function sourceStatusIndex(status: SourceStatus): number {
@@ -233,32 +219,6 @@ export function shouldRun(
 	return false;
 }
 
-/** Computes the slice of `STEP_ORDER` between `from` and `upTo` (both inclusive). */
-function computePlannedSteps(options: PipelineRunOptions): PipelineStepName[] {
-	const fromIdx = options.from ? stepIndex(options.from) : 0;
-	const upToIdx = options.upTo ? stepIndex(options.upTo) : STEP_ORDER.length - 1;
-
-	if (fromIdx === -1) {
-		throw new PipelineError(`Unknown step in --from: ${options.from}`, PIPELINE_ERROR_CODES.PIPELINE_WRONG_STATUS, {
-			context: { from: options.from, validSteps: [...STEP_ORDER] },
-		});
-	}
-	if (upToIdx === -1) {
-		throw new PipelineError(`Unknown step in --up-to: ${options.upTo}`, PIPELINE_ERROR_CODES.PIPELINE_WRONG_STATUS, {
-			context: { upTo: options.upTo, validSteps: [...STEP_ORDER] },
-		});
-	}
-	if (fromIdx > upToIdx) {
-		throw new PipelineError(
-			`--from ${options.from} comes after --up-to ${options.upTo} in step order`,
-			PIPELINE_ERROR_CODES.PIPELINE_WRONG_STATUS,
-			{ context: { from: options.from, upTo: options.upTo } },
-		);
-	}
-
-	return STEP_ORDER.slice(fromIdx, upToIdx + 1);
-}
-
 function createSkippedGlobalAnalysis(summary: string): PipelineGlobalAnalysisOutcome {
 	return {
 		status: 'skipped',
@@ -317,6 +277,63 @@ function summarizeGlobalAnalyzeResult(result: Awaited<ReturnType<typeof executeA
 	}
 
 	return result.status;
+}
+
+function buildSourcePlan(source: Source, options: PipelineRunOptions): StepPlan {
+	return planPipelineSteps({
+		sourceType: source.sourceType,
+		from: options.from,
+		upTo: options.upTo,
+	});
+}
+
+function buildSourcePlans(sources: Source[], options: PipelineRunOptions): Map<string, StepPlan> {
+	const plans = new Map<string, StepPlan>();
+	for (const source of sources) {
+		plans.set(source.id, buildSourcePlan(source, options));
+	}
+	return plans;
+}
+
+function getSourcePlan(source: Source, ctx: ProcessSourceContext): StepPlan {
+	return ctx.sourcePlans.get(source.id) ?? buildSourcePlan(source, ctx.options);
+}
+
+function eligibleStatusesForFirstStep(firstStep: PipelineStepName): SourceStatus[] {
+	switch (firstStep) {
+		case 'extract':
+			return ['ingested'];
+		case 'segment':
+			return ['extracted'];
+		case 'enrich':
+			return ['segmented', 'extracted'];
+		case 'embed':
+			return ['enriched', 'segmented', 'extracted'];
+		case 'graph':
+			return ['embedded', 'enriched', 'segmented', 'extracted'];
+		default:
+			return ['ingested'];
+	}
+}
+
+function shouldKeepResumeSource(source: Source, firstStep: PipelineStepName): boolean {
+	if (source.status !== 'extracted') {
+		return true;
+	}
+
+	if (firstStep === 'extract' || firstStep === 'segment') {
+		return true;
+	}
+
+	return isPrestructuredSourceType(source.sourceType);
+}
+
+async function recordSkippedStepForSource(pool: pg.Pool, source: Source, step: PipelineStepName): Promise<void> {
+	await upsertSourceStep(pool, {
+		sourceId: source.id,
+		stepName: step,
+		status: 'skipped',
+	});
 }
 
 // ────────────────────────────────────────────────────────────
@@ -384,28 +401,8 @@ async function enumerateSources(
 	}
 
 	// Resume path: pull sources whose status is compatible with the first planned step.
-	// Eligible source statuses for each step's first run.
 	const firstStep = plannedSteps[0];
-	const eligibleStatuses: SourceStatus[] = [];
-	switch (firstStep) {
-		case 'extract':
-			eligibleStatuses.push('ingested');
-			break;
-		case 'segment':
-			eligibleStatuses.push('extracted');
-			break;
-		case 'enrich':
-			eligibleStatuses.push('segmented');
-			break;
-		case 'embed':
-			eligibleStatuses.push('enriched', 'segmented');
-			break;
-		case 'graph':
-			eligibleStatuses.push('embedded', 'enriched', 'segmented');
-			break;
-		default:
-			eligibleStatuses.push('ingested');
-	}
+	const eligibleStatuses = eligibleStatusesForFirstStep(firstStep);
 
 	const collected: Source[] = [];
 	for (const status of eligibleStatuses) {
@@ -421,7 +418,7 @@ async function enumerateSources(
 			unique.push(src);
 		}
 	}
-	return { sources: unique, ingestErrors: [] };
+	return { sources: unique.filter((source) => shouldKeepResumeSource(source, firstStep)), ingestErrors: [] };
 }
 
 // ────────────────────────────────────────────────────────────
@@ -431,6 +428,7 @@ async function enumerateSources(
 interface ProcessSourceContext {
 	runId: string;
 	plannedSteps: PipelineStepName[];
+	sourcePlans: Map<string, StepPlan>;
 	options: PipelineRunOptions;
 	config: MulderConfig;
 	services: Services;
@@ -449,14 +447,22 @@ async function processSource(source: Source, ctx: ProcessSourceContext): Promise
 	const sourceLog = createChildLogger(ctx.logger, { sourceId: source.id });
 	let finalStep: PipelineStepName | null = null;
 	let lastError: { message: string; code: string } | null = null;
-
-	// Steps to attempt for this source: planned steps minus ingest.
-	const stepsForSource = ctx.plannedSteps.filter((s): s is Exclude<PipelineStepName, 'ingest'> => s !== 'ingest');
+	const sourcePlan = getSourcePlan(source, ctx);
 
 	// Re-load the source to ensure status is current after any prior step.
 	let currentSource: Source = source;
 
-	for (const step of stepsForSource) {
+	for (const step of sourcePlan.requestedSteps) {
+		if (step === 'ingest') {
+			continue;
+		}
+
+		if (sourcePlan.skippedSteps.includes(step)) {
+			await recordSkippedStepForSource(ctx.pool, currentSource, step);
+			sourceLog.info({ step, sourceType: currentSource.sourceType }, 'pipeline.source.step.skipped_by_source_type');
+			continue;
+		}
+
 		// Refresh the source status before each step (the previous iteration may have changed it).
 		const refreshed = await findSourceById(ctx.pool, currentSource.id);
 		if (!refreshed) {
@@ -597,8 +603,8 @@ export async function execute(
 	const startTime = performance.now();
 	const options = input.options ?? {};
 
-	// 1. Compute planned steps (validates `from` / `upTo`).
-	const plannedSteps = computePlannedSteps(options);
+	// 1. Compute requested steps (validates `from` / `upTo`).
+	const plannedSteps = computeRequestedSteps({ from: options.from, upTo: options.upTo });
 
 	const log = createChildLogger(logger, { module: STEP_NAME });
 
@@ -608,38 +614,35 @@ export async function execute(
 		// estimate the source count for the resume / retry paths, but we
 		// avoid running any side effects.
 		let dryRunSourceCount = 0;
+		let dryRunSources: Source[] = [];
 		if (options.sourceIds && options.sourceIds.length > 0) {
-			dryRunSourceCount = options.sourceIds.length;
+			if (pool) {
+				dryRunSources = (await enumerateSources(input, plannedSteps, pool, config, services, log)).sources;
+				dryRunSourceCount = dryRunSources.length;
+			} else {
+				dryRunSourceCount = options.sourceIds.length;
+			}
 		} else if (input.path && plannedSteps.includes('ingest')) {
 			dryRunSourceCount = (await resolvePdfFiles(input.path)).length;
 		} else if (pool && !plannedSteps.includes('ingest')) {
-			// Resume path: estimate by listing.
-			const firstStep = plannedSteps[0];
-			const eligibleStatuses: SourceStatus[] = [];
-			switch (firstStep) {
-				case 'extract':
-					eligibleStatuses.push('ingested');
-					break;
-				case 'segment':
-					eligibleStatuses.push('extracted');
-					break;
-				case 'enrich':
-					eligibleStatuses.push('segmented');
-					break;
-				case 'embed':
-					eligibleStatuses.push('enriched', 'segmented');
-					break;
-				case 'graph':
-					eligibleStatuses.push('embedded', 'enriched', 'segmented');
-					break;
-				default:
-					break;
-			}
-			for (const status of eligibleStatuses) {
-				const batch = await findAllSources(pool, { status, limit: 1000 });
-				dryRunSourceCount += batch.length;
-			}
+			dryRunSources = (await enumerateSources(input, plannedSteps, pool, config, services, log)).sources;
+			dryRunSourceCount = dryRunSources.length;
 		}
+
+		const dryRunSourcePlans = buildSourcePlans(dryRunSources, options);
+		const dryRunSourceOutcomes: PipelineRunSourceOutcome[] = dryRunSources.map((source) => {
+			const plan = dryRunSourcePlans.get(source.id) ?? buildSourcePlan(source, options);
+			return {
+				sourceId: source.id,
+				sourceType: source.sourceType,
+				requestedSteps: plan.requestedSteps,
+				executableSteps: plan.executableSteps,
+				skippedSteps: plan.skippedSteps,
+				finalStep: null,
+				status: 'pending',
+				errorMessage: null,
+			};
+		});
 
 		log.info({ plannedSteps, dryRunSourceCount }, 'pipeline.run.dry_run');
 
@@ -659,7 +662,7 @@ export async function execute(
 				completedSources: 0,
 				failedSources: 0,
 				skippedSources: dryRunSourceCount,
-				sources: [],
+				sources: dryRunSourceOutcomes,
 				analysis: dryRunAnalysis,
 			},
 			errors: [],
@@ -714,6 +717,7 @@ export async function execute(
 	try {
 		const { sources, ingestErrors } = enumeration;
 		const errors: StepError[] = [...ingestErrors];
+		const sourcePlans = buildSourcePlans(sources, options);
 
 		// Seed pending rows for all enumerated sources.
 		for (const src of sources) {
@@ -733,6 +737,7 @@ export async function execute(
 		const ctx: ProcessSourceContext = {
 			runId: run.id,
 			plannedSteps,
+			sourcePlans,
 			options,
 			config,
 			services,
@@ -742,8 +747,13 @@ export async function execute(
 
 		for (const src of sources) {
 			const result = await processSource(src, ctx);
+			const sourcePlan = sourcePlans.get(src.id) ?? buildSourcePlan(src, options);
 			sourceOutcomes.push({
 				sourceId: src.id,
+				sourceType: src.sourceType,
+				requestedSteps: sourcePlan.requestedSteps,
+				executableSteps: sourcePlan.executableSteps,
+				skippedSteps: sourcePlan.skippedSteps,
 				finalStep: result.finalStep,
 				status: result.status,
 				errorMessage: result.errorMessage,

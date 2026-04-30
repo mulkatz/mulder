@@ -106,13 +106,6 @@ Examples:
 		)
 		.action(
 			withErrorHandler(async (path: string | undefined, options: PipelineRunCliOptions) => {
-				// Path is required (we keep UX simple in v1).
-				if (!path) {
-					printError('<path> is required');
-					process.exit(1);
-					return;
-				}
-
 				// Step name validation. Capture into local consts to keep narrowing.
 				let upToStep: PipelineStepName | undefined;
 				if (options.upTo !== undefined) {
@@ -146,12 +139,19 @@ Examples:
 					}
 				}
 
+				const plannedStepsForEstimate = computePlannedStepsForEstimate(fromStep, upToStep);
+				if (!path && plannedStepsForEstimate.includes('ingest')) {
+					printError('<path> is required unless --from selects existing sources');
+					process.exit(1);
+					return;
+				}
+
 				const config = loadConfig();
-				const estimatedSourceProfiles = await collectPdfSourceProfiles(path);
+				const estimatedSourceProfiles = path ? await collectPdfSourceProfiles(path) : [];
 				const estimate = estimateForSteps({
 					mode: 'pipeline',
 					sourceProfiles: estimatedSourceProfiles,
-					steps: mapPipelineStepsToEstimateSteps(computePlannedStepsForEstimate(fromStep, upToStep)),
+					steps: mapPipelineStepsToEstimateSteps(plannedStepsForEstimate),
 					groundingEnabled: false,
 				});
 				const showEstimate = shouldShowEstimate({
@@ -211,6 +211,16 @@ Examples:
 					if (options.dryRun) {
 						process.stdout.write(`Planned steps: ${result.data.plannedSteps.join(' → ')}\n`);
 						process.stdout.write(`Sources to process: ${result.data.totalSources}\n`);
+						for (const row of result.data.sources.slice(0, 50)) {
+							const executable = row.executableSteps?.filter((step) => step !== 'ingest') ?? [];
+							const skipped = row.skippedSteps ?? [];
+							process.stdout.write(
+								`Source ${shortId(row.sourceId)} (${row.sourceType ?? 'unknown'}): executable ${executable.length > 0 ? executable.join(' → ') : '-'}; skipped ${skipped.length > 0 ? skipped.join(' → ') : '-'}\n`,
+							);
+						}
+						if (result.data.sources.length > 50) {
+							process.stdout.write(`... ${result.data.sources.length - 50} more rows truncated\n`);
+						}
 						process.stdout.write(`Global analyze: ${result.data.analysis.summary}\n`);
 						printSuccess('Dry run complete (no changes made)');
 						return;

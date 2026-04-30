@@ -17,7 +17,9 @@ import {
 	secondsUntilNextBudgetMonth,
 	summarizeMonthlyBudgetReservations,
 	upsertPipelineRunSource,
+	upsertSourceStep,
 } from '@mulder/core';
+import { type PipelineStepName, planPipelineSteps, type StepPlan } from '@mulder/pipeline';
 import type { Pool, PoolClient } from 'pg';
 import type { PipelineRetryRequest, PipelineRunRequest } from '../routes/pipeline.schemas.js';
 import { PIPELINE_STEP_VALUES } from '../routes/pipeline.schemas.js';
@@ -128,13 +130,6 @@ function buildRunOptions(input: {
 			};
 }
 
-function derivePlannedSteps(from?: PipelineStep, upTo?: PipelineStep): BudgetablePipelineStep[] {
-	const fromIndex = from ? PIPELINE_STEP_VALUES.indexOf(from) : 0;
-	const upToIndex = upTo ? PIPELINE_STEP_VALUES.indexOf(upTo) : PIPELINE_STEP_VALUES.length - 1;
-
-	return PIPELINE_STEP_VALUES.slice(fromIndex, upToIndex + 1).filter(isBudgetablePipelineStep);
-}
-
 async function requireSource(pool: Queryable, sourceId: string): Promise<Source> {
 	const source = await findSourceById(pool, sourceId);
 	if (!source) {
@@ -182,6 +177,44 @@ function deriveRetryStep(latest: PipelineRunSource, explicitStep?: PipelineStep)
 	}
 
 	return latest.currentStep;
+}
+
+function planSourcePipeline(input: { source: Source; from?: PipelineStep; upTo?: PipelineStep }): StepPlan {
+	return planPipelineSteps({
+		sourceType: input.source.sourceType,
+		from: input.from ?? 'extract',
+		upTo: input.upTo,
+	});
+}
+
+function requireExecutablePipelineStep(step: PipelineStepName): PipelineStep {
+	if (isPipelineStep(step)) {
+		return step;
+	}
+
+	throw new PipelineError(
+		`Pipeline job cannot enqueue non-worker step "${step}"`,
+		PIPELINE_ERROR_CODES.PIPELINE_INVALID_STEP_RANGE,
+		{ context: { step } },
+	);
+}
+
+function firstExecutableStep(plan: StepPlan): PipelineStep {
+	return requireExecutablePipelineStep(plan.executableSteps[0]);
+}
+
+function budgetableExecutableSteps(plan: StepPlan): BudgetablePipelineStep[] {
+	return plan.executableSteps.filter(isBudgetablePipelineStep);
+}
+
+async function recordSkippedSourceSteps(pool: Queryable, source: Source, plan: StepPlan): Promise<void> {
+	for (const step of plan.skippedSteps) {
+		await upsertSourceStep(pool, {
+			sourceId: source.id,
+			stepName: step,
+			status: 'skipped',
+		});
+	}
 }
 
 async function assertNoInFlightPipelineJob(pool: Queryable, sourceId: string): Promise<void> {
@@ -300,6 +333,8 @@ export async function createPipelineRunJob(input: PipelineRunRequest): Promise<P
 	return await runInTransaction(context.pool, async (client) => {
 		const source = await requireSource(client, input.source_id);
 		await assertNoInFlightPipelineJob(client, source.id);
+		const stepPlan = planSourcePipeline({ source, from: input.from, upTo: input.up_to });
+		const firstStep = firstExecutableStep(stepPlan);
 		const run = await createPipelineRun(client, {
 			tag: input.tag ?? null,
 			options: buildRunOptions({
@@ -312,7 +347,7 @@ export async function createPipelineRunJob(input: PipelineRunRequest): Promise<P
 		const job = await enqueuePipelineJob(client, {
 			sourceId: source.id,
 			runId: run.id,
-			step: input.from ?? 'extract',
+			step: firstStep,
 			upTo: input.up_to,
 			tag: input.tag,
 			force: input.force ?? false,
@@ -323,11 +358,12 @@ export async function createPipelineRunJob(input: PipelineRunRequest): Promise<P
 			currentStep: 'ingest',
 			status: 'pending',
 		});
+		await recordSkippedSourceSteps(client, source, stepPlan);
 		await reserveBudgetForAcceptedRun(client, context, {
 			source,
 			run,
 			job,
-			plannedSteps: derivePlannedSteps(input.from, input.up_to),
+			plannedSteps: budgetableExecutableSteps(stepPlan),
 			force: input.force ?? false,
 			kind: 'run',
 		});
@@ -343,6 +379,8 @@ export async function createPipelineRetryJob(input: PipelineRetryRequest): Promi
 		await assertNoInFlightPipelineJob(client, source.id);
 		const latest = await findLatestPipelineRunSourceForSource(client, source.id);
 		const step = deriveRetryStep(assertRetryableSource(source, latest), input.step);
+		const stepPlan = planSourcePipeline({ source, from: step, upTo: step });
+		const firstStep = firstExecutableStep(stepPlan);
 		const previousReservation = await findLatestMonthlyBudgetReservationForSource(client, source.id);
 		const run = await createPipelineRun(client, {
 			tag: input.tag ?? null,
@@ -356,7 +394,7 @@ export async function createPipelineRetryJob(input: PipelineRetryRequest): Promi
 		const job = await enqueuePipelineJob(client, {
 			sourceId: source.id,
 			runId: run.id,
-			step,
+			step: firstStep,
 			upTo: step,
 			tag: input.tag,
 			force: true,
@@ -367,11 +405,12 @@ export async function createPipelineRetryJob(input: PipelineRetryRequest): Promi
 			currentStep: step,
 			status: 'pending',
 		});
+		await recordSkippedSourceSteps(client, source, stepPlan);
 		await reserveBudgetForAcceptedRun(client, context, {
 			source,
 			run,
 			job,
-			plannedSteps: [step],
+			plannedSteps: budgetableExecutableSteps(stepPlan),
 			force: true,
 			kind: 'retry',
 			retryOfReservationId: previousReservation?.id ?? null,
