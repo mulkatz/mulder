@@ -14,7 +14,7 @@ Store real values in Cloudflare settings, GitHub Actions secrets or variables, G
 
 ## Scope
 
-The target product UI is `apps/app`. The older `demo/` app may remain useful as a local API-backed reference, visual archive, or E2E harness, but it is not the UI direction for the product app.
+The target product UI is `apps/app`. The older `demo/` app has been removed from the active tree and must not guide new product UI work. Reusable API integration lessons from that app are preserved in [`docs/product-app-api-integration.md`](./product-app-api-integration.md).
 
 The product app must be populated through the product pipeline only:
 
@@ -48,8 +48,9 @@ Already present:
 - Resend-backed invite delivery plumbing
 - owner invite helper: `pnpm invite:owner`
 - live smoke helper: `pnpm smoke:live`
-- one-command local dev stack: `pnpm dev`
+- one-command local product-app dev entrypoint: `pnpm dev`
 - `apps/app` scaffold for the preferred product UI direction
+- product-app API integration notes in `docs/product-app-api-integration.md`
 
 Still required before live:
 
@@ -68,7 +69,7 @@ Still required before live:
 
 Do not go live until all of these are true:
 
-- `apps/app` no longer depends on `apps/app/src/lib/fixtures.ts` for production screens.
+- `apps/app` does not depend on checked-in fixture data or fixed shards for product screens.
 - Cloudflare production has `VITE_API_BASE_URL=<api-origin>`.
 - Cloudflare production has preview/mock bypass disabled.
 - The API health check at `<api-origin>/api/health` returns 200.
@@ -122,7 +123,7 @@ If the product app uses a differently named mock or preview flag, the production
 - add session bootstrap against `GET /api/auth/session`
 - add login, logout, and invite acceptance screens
 - replace fixture-backed route data with API-backed loading, empty, success, and error states
-- keep prototype fixtures available only for local development or tests behind an explicit dev/test path
+- keep any future fixed-shard showcase as a separate demo surface, not inside `apps/app`
 - ensure production API errors are visible and not masked by fallback mock data
 - run `pnpm --filter @mulder/app build` from the repo root
 

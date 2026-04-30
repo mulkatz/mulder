@@ -1,5 +1,7 @@
 # Mulder V1 Web App — UX/UI & Feature Design Document
 
+> **Legacy notice:** This document is retained as historical context for the removed V1 `demo/` app. It is superseded by [`docs/product-app-design-strategy.md`](./product-app-design-strategy.md) for current browser product work in `apps/app`. Do not use this document as the current visual, IA, or product strategy.
+
 > **Milestone:** M7.5 V1–V6 (see [`roadmap.md`](./roadmap.md)). V1 also satisfies the M7-H11 roadmap anchor.
 > **Companion:** [`docs/v1-web-app-plan.md`](./v1-web-app-plan.md) — the phase-by-phase implementation blueprint.
 > **Audience:** Investors, early users, and the engineering team building this out.

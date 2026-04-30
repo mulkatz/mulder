@@ -8,9 +8,9 @@
 
 ## 1. Executive Direction
 
-`apps/app` is the primary product direction for Mulder's browser experience.
+`apps/app` is the only active product direction for Mulder's browser experience.
 
-The existing v1 `demo/` app should remain useful as a reference for storytelling, document reading, earlier interaction ideas, and API-backed test coverage, but `apps/app` is the stronger foundation for the actual product. Mulder is a powerful research and analysis system. The interface should therefore feel like a precise technical workbench, not like an editorial presentation layer.
+The legacy v1 `demo/` app has been removed from the active tree to avoid confusing the product direction. Its reusable API lessons are captured in [`docs/product-app-api-integration.md`](./product-app-api-integration.md); its V1 design and implementation documents are retained only as deprecated historical records. Mulder is a powerful research and analysis system. The interface should therefore feel like a precise technical workbench, not like an editorial presentation layer.
 
 The key decision is not simply "make v1 cleaner." The better path is to continue the product app as an API-contract-first, capability-aware product shell:
 
@@ -347,10 +347,10 @@ Recommended architecture:
 1. A typed API client layer.
 2. React Query hooks per backend capability.
 3. A capability registry describing the real contract state of each feature.
-4. Fixture data only as a development fallback, never as the default source of truth once an endpoint exists.
+4. No fixed shards or checked-in fixture data in product screens.
 5. UI states for loading, error, empty, partial, and unavailable.
 
-The prototype currently uses static fixtures to establish the visual direction. The next step is to replace fixture-backed surfaces with real data incrementally.
+The initial prototype used static fixtures to establish the visual direction. The product app should now behave like the real application: API data when available, honest empty/error/unavailable states when it is not. If a public fixed-data showcase is needed later, it should live beside the product app as an explicit demo surface.
 
 ### Contract States
 
@@ -366,7 +366,7 @@ type CapabilityState =
 	| 'missing';
 ```
 
-The app should only use fixtures as the primary data source for `documented-target`, `future-milestone`, and `missing` capabilities. For `mounted-api` and `mounted-partial`, the default path should be real API data with development fallbacks.
+For `mounted-api` and `mounted-partial`, the default path must be real API data. For `documented-target`, `future-milestone`, and `missing` capabilities, the product app should show unavailable or planned states rather than silently substituting fixed data.
 
 ### Mounted API Coverage
 
@@ -431,7 +431,7 @@ The UI should be designed with these needs in mind, but it should not fabricate 
 
 ### Phase 1: Bind Real API Data
 
-Replace local fixtures with real API hooks for:
+Replace static prototype data with real API hooks for:
 
 - Overview metrics.
 - Jobs/runs table.
@@ -440,7 +440,7 @@ Replace local fixtures with real API hooks for:
 - Source reliability.
 - Search status where useful.
 
-Keep fixture fallbacks only for design review or Storybook-like development.
+Do not keep fixed-data fallbacks in product screens. Use empty, unavailable, or planned states when an API contract is not ready.
 
 ### Phase 2: Add Capability-Aware Product States
 
@@ -515,7 +515,7 @@ The product app is succeeding if:
 
 - It feels immediately more credible as a powerful analysis product than v1.
 - Users can understand system state without reading explanatory prose.
-- Real API data replaces fixtures incrementally without redesigning screens.
+- Real API data replaces static prototype data without redesigning screens.
 - Missing capabilities are visible but not fake.
 - Sidebar IA scales as new milestones land while keeping research modules visually primary.
 - Tables, inspectors, filters, and status surfaces become the dominant interaction model.

@@ -1,5 +1,7 @@
 # Mulder V1 Web App — Implementation Plan
 
+> **Legacy notice:** This plan is retained as historical context for the removed V1 `demo/` app. It is superseded by [`docs/product-app-design-strategy.md`](./product-app-design-strategy.md), [`docs/product-app-api-integration.md`](./product-app-api-integration.md), and [`apps/app`](../apps/app) for current browser product work. Do not use this plan as the current implementation blueprint.
+
 > **Roadmap scope:** This plan covers **M7.5 V1–V6** (see [`roadmap.md`](./roadmap.md)). V1 also satisfies the M7-H11 roadmap anchor.
 > **For the agent reading this in a fresh session.** This plan is the full brief. You don't need to re-explore or re-design — everything needed to execute is here or linked from here. Follow the phases in order.
 
