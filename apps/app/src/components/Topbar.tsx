@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Bell, HelpCircle, LogOut, Menu, Plus, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { IconButton } from '@/components/IconButton';
 import { SearchInput } from '@/components/SearchInput';
 import { useLogout } from '@/features/auth/useLogout';
@@ -7,6 +8,7 @@ import { useSession } from '@/features/auth/useSession';
 
 export function Topbar({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 	const queryClient = useQueryClient();
+	const navigate = useNavigate();
 	const sessionQuery = useSession();
 	const logout = useLogout();
 	const user = sessionQuery.data?.data.user;
@@ -50,7 +52,13 @@ export function Topbar({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 				<button
 					className="hidden h-9 max-w-[220px] items-center gap-2 rounded-md border border-border bg-field px-2 text-sm text-text transition-colors hover:bg-field-hover min-[480px]:flex sm:px-3"
 					disabled={logout.isPending}
-					onClick={() => logout.mutate()}
+					onClick={() => {
+						logout.mutate(undefined, {
+							onSettled: () => {
+								navigate('/login', { replace: true });
+							},
+						});
+					}}
 					title={user ? `Signed in as ${user.email}. Click to sign out.` : 'Sign out'}
 					type="button"
 				>
