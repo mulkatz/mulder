@@ -1,18 +1,18 @@
-# Mulder Demo v2 Design Strategy
+# Mulder Product App Design Strategy
 
 **Date:** 2026-04-30
-**Status:** Direction-setting document for the `demo-v2/` prototype
+**Status:** Direction-setting document for `apps/app`, the Mulder product web app
 **Audience:** Product, design, and engineering contributors extending the Mulder web app
 
 ---
 
 ## 1. Executive Direction
 
-The `demo-v2/` prototype should become the primary product direction for Mulder's browser experience.
+`apps/app` is the primary product direction for Mulder's browser experience.
 
-The existing v1 demo should remain useful as a reference for storytelling, document reading, and earlier interaction ideas, but v2 is the stronger foundation for the actual product. Mulder is a powerful research and analysis system. The interface should therefore feel like a precise technical workbench, not like an editorial presentation layer.
+The existing v1 `demo/` app should remain useful as a reference for storytelling, document reading, earlier interaction ideas, and API-backed test coverage, but `apps/app` is the stronger foundation for the actual product. Mulder is a powerful research and analysis system. The interface should therefore feel like a precise technical workbench, not like an editorial presentation layer.
 
-The key decision is not simply "make v1 cleaner." The better path is to continue v2 as an API-contract-first, capability-aware product shell:
+The key decision is not simply "make v1 cleaner." The better path is to continue the product app as an API-contract-first, capability-aware product shell:
 
 - Build the UI around real workflows: documents, runs, evidence, entities, search, graph, review.
 - Bind real API data as early as possible.
@@ -25,15 +25,15 @@ This avoids the trap of building a beautiful static frontend that later has to b
 
 ---
 
-## 2. Why v2 Exists
+## 2. Why The Product App Exists
 
 The v1 design was visually polished, but its concept was not fully aligned with the product's purpose. It leaned into an investigative, literary, archival tone: serif headlines, large atmospheric surfaces, cinematic pacing, and a narrated "hero moment" structure.
 
 That direction can work for a fundable product demo, but it is less convincing as the daily interface for a serious analysis tool. It makes the app feel like it is presenting insight rather than helping the user operate a complex system.
 
-v2 exists to shift the product posture:
+The product app exists to shift the product posture:
 
-| v1 tendency | v2 correction |
+| v1 tendency | product app correction |
 | --- | --- |
 | Editorial, cinematic, narrated | Technical, operational, direct |
 | Large hero surfaces | Dense work surfaces |
@@ -79,7 +79,7 @@ Not:
 
 ## 4. Product Posture
 
-v2 should feel:
+The product app should feel:
 
 - **Clean:** restrained palette, low decoration, clear layout rhythm.
 - **Productive:** users can scan, compare, filter, inspect, and act quickly.
@@ -145,7 +145,7 @@ Recommended sidebar grouping:
 | Operations | Usage | Cost, budget, worker, and capacity signals | CLI/package-only plus mounted status pieces; product API partial |
 | Admin | Settings | Workspace, users, API/auth, config, policy | Future milestone |
 
-`Analysis Runs` can stay active in the v2 prototype because it is the fastest way to validate API binding and operational states. In the real product navigation, it should sit under Operations so pipeline machinery does not look like the core research object.
+`Analysis Runs` can stay active early because it is the fastest way to validate API binding and operational states. In the real product navigation, it should sit under Operations so pipeline machinery does not look like the core research object.
 
 Use precise contract states in planning:
 
@@ -164,11 +164,11 @@ Disabled or "soon" items are acceptable in the prototype only if they are visual
 
 ## 6. Visual System
 
-The v2 visual system lives in `demo-v2/src/styles.css`. That file should remain the main adjustment surface.
+The product app visual system lives in `apps/app/src/styles.css`. That file should remain the main adjustment surface.
 
 ### Typography
 
-Use sans-first typography for all product UI. Avoid v1's editorial display-serif language in v2.
+Use sans-first typography for all product UI. Avoid v1's editorial display-serif language in the product app.
 
 Recommended usage:
 
@@ -237,7 +237,7 @@ Do not make Mulder feel powerful only by making everything smaller. The interfac
 
 ## 7. Usability Strategy
 
-v2 should optimize for repeated analytical work, not just first impression.
+The product app should optimize for repeated analytical work, not just first impression.
 
 ### Research First, Pipeline Second
 
@@ -305,7 +305,7 @@ The UI should reserve space for:
 - Sensitivity and access-control signals.
 - Source rollback or deletion status.
 
-Until those backend contracts exist, v2 can support demo/development ingest and design exploration, but it should not imply archive-grade provenance, compliance, or review safety. This is a hard product boundary for a serious research system.
+Until those backend contracts exist, the app can support development ingest and design exploration, but it should not imply archive-grade provenance, compliance, or review safety. This is a hard product boundary for a serious research system.
 
 ### Do Not Fake Capability
 
@@ -366,7 +366,7 @@ type CapabilityState =
 	| 'missing';
 ```
 
-The v2 UI should only use fixtures as the primary data source for `documented-target`, `future-milestone`, and `missing` capabilities. For `mounted-api` and `mounted-partial`, the default path should be real API data with development fallbacks.
+The app should only use fixtures as the primary data source for `documented-target`, `future-milestone`, and `missing` capabilities. For `mounted-api` and `mounted-partial`, the default path should be real API data with development fallbacks.
 
 ### Mounted API Coverage
 
@@ -405,7 +405,7 @@ These can be bound immediately or with minimal UI adaptation:
 
 ### Missing or Weak API Shapes
 
-These are important for the v2 workbench:
+These are important for the product workbench:
 
 | Need | Contract state | Recommendation |
 | --- | --- | --- |
@@ -431,7 +431,7 @@ The UI should be designed with these needs in mind, but it should not fabricate 
 
 ### Phase 1: Bind Real API Data
 
-Replace v2 fixtures with real API hooks for:
+Replace local fixtures with real API hooks for:
 
 - Overview metrics.
 - Jobs/runs table.
@@ -494,7 +494,7 @@ Once the API shape exists, expand:
 
 ## 10. Non-Goals
 
-v2 should not attempt to:
+The product app should not attempt to:
 
 - Recreate v1's cinematic document reveal language.
 - Ship a complete fake workbench before API coverage exists.
@@ -511,7 +511,7 @@ The goal is a durable product shell that can absorb backend capability as it lan
 
 ## 11. Success Criteria
 
-v2 is succeeding if:
+The product app is succeeding if:
 
 - It feels immediately more credible as a powerful analysis product than v1.
 - Users can understand system state without reading explanatory prose.
@@ -531,4 +531,4 @@ The product should feel like it was built by people who trust the user with comp
 
 Mulder does not need to make research look magical. It needs to make difficult research controllable, inspectable, and reliable.
 
-That is the core design strategy for v2.
+That is the core design strategy for the Mulder product app.

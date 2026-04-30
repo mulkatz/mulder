@@ -8,6 +8,9 @@
 	},
 	"scripts": {
 		"dev": "turbo run dev --filter=@mulder/dev",
+		"app:dev": "pnpm --filter @mulder/app dev",
+		"app:build": "pnpm --filter @mulder/app build",
+		"app:preview": "pnpm --filter @mulder/app preview",
 		"build": "turbo run build",
 		"typecheck": "turbo run typecheck",
 		"lint": "biome check .",

@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://mulder.mulkatz.dev"><img src="https://img.shields.io/badge/demo-live-blue?style=flat-square" alt="Live Demo" /></a>
+  <a href="https://mulder.mulkatz.dev"><img src="https://img.shields.io/badge/app-live-blue?style=flat-square" alt="Live App" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache_2.0-green?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/GCP-native-4285F4?style=flat-square&logo=googlecloud&logoColor=white" alt="GCP" />
@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <a href="https://mulder.mulkatz.dev">Live Demo</a> &middot;
+  <a href="https://mulder.mulkatz.dev">Live App</a> &middot;
   <a href="./docs/functional-spec.md">Functional Spec</a> &middot;
   <a href="./docs/roadmap.md">Roadmap</a> &middot;
   <a href="./mulder.config.example.yaml">Example Config</a>
@@ -198,7 +198,7 @@ Everything beyond `project` and `ontology` has sensible defaults. See [`mulder.c
 
 Mulder's **CLI/backend track is complete through M8 Operations**: the v1.0 search pipeline is operational, the v2.0 intelligence layer is in place, and the production-safety tooling now covers evals, cost gates, budget alerts, selective reprocessing, dead-letter retry, and devlog conventions.
 
-The browser demo remains tracked separately under M7/H11 and M7.5. The [functional spec](./docs/functional-spec.md), [implementation roadmap](./docs/roadmap.md), and [config schema](./mulder.config.example.yaml) are finalized.
+The browser product app now lives in [`apps/app`](./apps/app) and is guided by the [product app design strategy](./docs/product-app-design-strategy.md) and [deployment runbook](./docs/product-app-deployment.md). The older [`demo/`](./demo) app remains as a reference and E2E harness. The [functional spec](./docs/functional-spec.md), [implementation roadmap](./docs/roadmap.md), and [config schema](./mulder.config.example.yaml) are finalized.
 
 See the [roadmap](./docs/roadmap.md) for all 14 milestones from foundation to autonomous research agent.
 

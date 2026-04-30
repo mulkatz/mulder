@@ -1,6 +1,6 @@
-# Mulder Live Demo Deployment and Infrastructure Runbook
+# Mulder Product App Deployment and Infrastructure Runbook
 
-This runbook describes what must be in place before the live demo is exposed to real users. It is intentionally configuration-neutral: do not commit private domains, GCP project IDs, sender addresses, customer names, private corpus choices, API keys, service-account keys, or production config files to this open-source repository.
+This runbook describes what must be in place before the product app is exposed to real users. It is intentionally configuration-neutral: do not commit private domains, GCP project IDs, sender addresses, customer names, private corpus choices, API keys, service-account keys, or production config files to this open-source repository.
 
 Use placeholders in repo-tracked documentation and code:
 
@@ -14,13 +14,13 @@ Store real values in Cloudflare settings, GitHub Actions secrets or variables, G
 
 ## Scope
 
-The target live product UI is `demo-v2`. The older `demo/` app may remain useful as a local API-backed reference or E2E harness, but it is not the UI direction for the public live demo.
+The target product UI is `apps/app`. The older `demo/` app may remain useful as a local API-backed reference, visual archive, or E2E harness, but it is not the UI direction for the product app.
 
-The live demo must be populated through the product pipeline only:
+The product app must be populated through the product pipeline only:
 
 - no SQL fixture seeding in production
 - no checked-in production corpus configuration
-- no fixed demo UUID families
+- no fixed showcase UUID families
 - no `*.e2e@mulder.local` users
 - no `demo` or `full-functional-demo` metadata in production data
 
@@ -28,7 +28,7 @@ The live demo must be populated through the product pipeline only:
 
 | Area | Target |
 | --- | --- |
-| Frontend | Cloudflare Pages serving `demo-v2` at `<app-origin>` |
+| Frontend | Cloudflare Pages serving `apps/app` at `<app-origin>` |
 | API | GCP Cloud Run service at `<api-origin>` |
 | Worker | Separate Cloud Run worker service using the same container image |
 | Database | Cloud SQL Postgres |
@@ -43,32 +43,32 @@ The live demo must be populated through the product pipeline only:
 Already present:
 
 - API production container via `Dockerfile.api`
-- manual GitHub Actions workflow: `Deploy Live Demo`
+- manual GitHub Actions workflow for API and worker deployment
 - API and worker Cloud Run deployment steps
 - Resend-backed invite delivery plumbing
 - owner invite helper: `pnpm invite:owner`
 - live smoke helper: `pnpm smoke:live`
 - one-command local dev stack: `pnpm dev`
-- `demo-v2` scaffold for the preferred product UI direction
+- `apps/app` scaffold for the preferred product UI direction
 
 Still required before live:
 
-- make `demo-v2` API-backed instead of fixture-backed
-- make `demo-v2` a first-class deploy target
+- make `apps/app` API-backed instead of fixture-backed
+- make `apps/app` a first-class deploy target
 - create and permission GCP infrastructure
 - create production secrets
 - run production database migrations
 - deploy API and worker
 - configure Cloudflare Pages
 - create the first owner invitation
-- upload real demo PDFs through the product
+- upload real pilot PDFs through the product
 - run production smoke and browser QA
 
 ## Release Blockers
 
 Do not go live until all of these are true:
 
-- `demo-v2` no longer depends on `demo-v2/src/lib/fixtures.ts` for production screens.
+- `apps/app` no longer depends on `apps/app/src/lib/fixtures.ts` for production screens.
 - Cloudflare production has `VITE_API_BASE_URL=<api-origin>`.
 - Cloudflare production has preview/mock bypass disabled.
 - The API health check at `<api-origin>/api/health` returns 200.
@@ -86,22 +86,21 @@ Choose `<app-origin>` outside the repo, for example in private deployment notes.
 
 ### 2. Create the Cloudflare Pages project
 
-Until `demo-v2` is added to the root pnpm workspace, use `demo-v2` as the Pages root:
-
-```text
-Root directory: demo-v2
-Install command: npm ci
-Build command: npm run build
-Build output directory: dist
-```
-
-If `demo-v2` later becomes a root workspace package, prefer the monorepo build path:
+`apps/app` is part of the root pnpm workspace. Use the monorepo build path:
 
 ```text
 Root directory: /
 Install command: pnpm install --frozen-lockfile
-Build command: pnpm --filter mulder-demo-v2 build
-Build output directory: demo-v2/dist
+Build command: pnpm --filter @mulder/app build
+Build output directory: apps/app/dist
+```
+
+Do not use the old standalone npm app path. It is obsolete now that the app lives at `apps/app`.
+
+The local build command is:
+
+```text
+pnpm --filter @mulder/app build
 ```
 
 ### 3. Configure Cloudflare environment variables
@@ -113,11 +112,11 @@ VITE_API_BASE_URL=<api-origin>
 VITE_PREVIEW_AUTH_BYPASS=false
 ```
 
-If the final V2 frontend uses a differently named mock or preview flag, the production value must still disable mock data and auth bypass.
+If the product app uses a differently named mock or preview flag, the production value must still disable mock data and auth bypass.
 
-### 4. Complete V2 API integration before production
+### 4. Complete product app API integration before production
 
-`demo-v2` currently starts as a prototype scaffold. Before assigning the production domain to it:
+`apps/app` currently starts from the product shell scaffold. Before assigning the production domain to it:
 
 - add an API client that reads `VITE_API_BASE_URL`
 - add session bootstrap against `GET /api/auth/session`
@@ -125,7 +124,7 @@ If the final V2 frontend uses a differently named mock or preview flag, the prod
 - replace fixture-backed route data with API-backed loading, empty, success, and error states
 - keep prototype fixtures available only for local development or tests behind an explicit dev/test path
 - ensure production API errors are visible and not masked by fallback mock data
-- run `npm run build` from `demo-v2`
+- run `pnpm --filter @mulder/app build` from the repo root
 
 ### 5. Browser QA the deployed frontend
 
@@ -251,11 +250,11 @@ The deploy identity needs:
 - Service Usage Admin if the workflow is allowed to enable APIs
 - enough Secret Manager access to attach runtime secrets to Cloud Run
 
-For open-source safety, prefer GitHub Workload Identity Federation over long-lived JSON service-account keys. The current workflow supports `GCP_CREDENTIALS_JSON`; treat that as a temporary demo shortcut unless a private deployment policy explicitly accepts it.
+For open-source safety, prefer GitHub Workload Identity Federation over long-lived JSON service-account keys. The current workflow supports `GCP_CREDENTIALS_JSON`; treat that as a temporary deployment shortcut unless a private deployment policy explicitly accepts it.
 
 ## Backend Deploy
 
-Use the manual GitHub Actions workflow `Deploy Live Demo`.
+Use the manual GitHub Actions workflow `Deploy Product App`.
 
 Required GitHub configuration:
 
@@ -335,18 +334,18 @@ The API sends the invite email in production. In local/dev with log delivery ena
 
 After the first owner accepts the invitation, all future users should be invited from the product admin flow.
 
-## Live Demo Data
+## Product App Data
 
-Do not insert demo corpus rows directly into Cloud SQL.
+Do not insert product corpus rows directly into Cloud SQL.
 
 Populate the live corpus through the product:
 
 1. Log in as the owner.
-2. Upload the agreed demo PDFs through the UI.
+2. Upload the agreed pilot PDFs through the UI.
 3. Let API and worker processing complete.
 4. Verify the documents, stories, entities, retrieval, and analysis views from the frontend.
 
-The checked-in PDFs in `fixtures/raw/` can be used for technical smoke only if they are acceptable for the demo. Any curated real demo corpus choice belongs in private operator notes, not in this repo.
+The checked-in PDFs in `fixtures/raw/` can be used for technical smoke only if they are acceptable for the product trial. Any curated real pilot corpus choice belongs in private operator notes, not in this repo.
 
 After processing, audit production for:
 
@@ -386,7 +385,7 @@ Minimum pass criteria:
 - recipient receives the invite email
 - PDF upload creates a source
 - worker advances queued jobs
-- processed documents appear in the V2 frontend
+- processed documents appear in the product app
 
 ## Infrastructure Checklist Before Go-Live
 
@@ -411,8 +410,8 @@ Operator-owned:
 
 Engineering-owned:
 
-- `demo-v2` API integration completed
-- `demo-v2` production build path configured
+- `apps/app` API integration completed
+- `apps/app` production build path configured
 - mock/fixture data disabled in production
 - Cloud Run API deployed
 - Cloud Run worker deployed
@@ -424,11 +423,11 @@ Engineering-owned:
 
 ## Recommended Follow-Up PRs
 
-1. `demo-v2` API foundation
+1. `apps/app` API foundation
    - Add API client, session bootstrap, auth routes, and typed route-level loading/error states.
 
-2. `demo-v2` production readiness
-   - Add `demo-v2` to the monorepo workspace or document the standalone Cloudflare build path.
+2. `apps/app` production readiness
+   - Keep `apps/app` as the monorepo workspace package for the product UI.
 
 3. Production migration job
    - Add a Cloud Run Job or GitHub Actions step that runs `db migrate` with production config.
