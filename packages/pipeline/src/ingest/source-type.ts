@@ -219,20 +219,22 @@ export function isReadableText(buffer: Buffer): boolean {
 		return false;
 	}
 
-	const sample = buffer.subarray(0, Math.min(buffer.length, 4096));
-	let suspiciousControlBytes = 0;
-	for (const byte of sample) {
-		if (byte === 0x00) {
+	for (let index = 0; index < decoded.length; index++) {
+		const codePoint = decoded.codePointAt(index);
+		if (codePoint === undefined) {
+			continue;
+		}
+		if (codePoint > 0xffff) {
+			index++;
+		}
+		if (codePoint === 0x00) {
 			return false;
 		}
-		const isAllowedWhitespace = byte === 0x09 || byte === 0x0a || byte === 0x0d;
-		if (byte < 0x20 && !isAllowedWhitespace) {
-			suspiciousControlBytes++;
+		const isAllowedWhitespace = codePoint === 0x09 || codePoint === 0x0a || codePoint === 0x0d;
+		const isControlCharacter = codePoint < 0x20 || (codePoint >= 0x7f && codePoint <= 0x9f);
+		if (isControlCharacter && !isAllowedWhitespace) {
+			return false;
 		}
-	}
-
-	if (suspiciousControlBytes / sample.length > 0.02) {
-		return false;
 	}
 
 	const replacementCount = decoded.split('\uFFFD').length - 1;

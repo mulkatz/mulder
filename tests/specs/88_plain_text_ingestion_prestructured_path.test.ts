@@ -335,12 +335,13 @@ describe('Spec 88 — Plain Text Ingestion on the Pre-Structured Path', () => {
 		});
 	});
 
-	it('QA-06 regression: text extract rejects UTF-8 control-byte payloads before creating stories', () => {
+	it('QA-06 regression: text extract rejects UTF-8 control-byte payloads after the initial read sample', () => {
 		if (!pgAvailable) return;
 
 		const sourceId = randomUUID();
 		const storagePath = `raw/${sourceId}/original.txt`;
-		writeUploadedObject(storagePath, Buffer.from([0x50, 0x6c, 0x61, 0x69, 0x6e, 0x00, 0x74, 0x65, 0x78, 0x74]));
+		const readablePrefix = `${'Plain text line.\n'.repeat(300)}Still looks readable before the binary byte.`;
+		writeUploadedObject(storagePath, Buffer.concat([Buffer.from(readablePrefix, 'utf-8'), Buffer.from([0x00])]));
 		db.runSql(
 			`INSERT INTO sources (id, filename, storage_path, file_hash, page_count, has_native_text, native_text_ratio, status, reliability_score, tags, metadata, source_type, format_metadata)
 			 VALUES (${sqlLiteral(sourceId)}, 'binary-valid-utf8.txt', ${sqlLiteral(storagePath)}, ${sqlLiteral(sourceId.replaceAll('-', ''))}, 0, false, 0, 'ingested', NULL, ARRAY[]::text[], '{}'::jsonb, 'text', '{"media_type":"text/plain","encoding":"utf-8"}'::jsonb);`,
