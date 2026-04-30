@@ -155,7 +155,7 @@ export function createLogger(options?: LoggerOptions): Logger {
 		},
 	};
 
-	if (shouldPrettyPrint(options?.pretty)) {
+	if (level !== 'silent' && shouldPrettyPrint(options?.pretty)) {
 		return pino(
 			pinoOptions,
 			pino.transport({

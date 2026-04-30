@@ -1,0 +1,9 @@
+{
+	"name": "@mulder/dev",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "node ../../demo/scripts/run-demo-stack.mjs"
+	}
+}
