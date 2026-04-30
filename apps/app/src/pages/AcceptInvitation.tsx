@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AuthFrame } from '@/components/AuthFrame';
 import { StateNotice } from '@/components/StateNotice';
@@ -7,6 +8,7 @@ import { useSession } from '@/features/auth/useSession';
 import { getErrorMessage } from '@/lib/query-state';
 
 export function AcceptInvitationPage() {
+	const { t } = useTranslation();
 	const { token = '' } = useParams();
 	const [password, setPassword] = useState('');
 	const [confirmPassword, setConfirmPassword] = useState('');
@@ -36,16 +38,13 @@ export function AcceptInvitationPage() {
 	}
 
 	return (
-		<AuthFrame
-			description="Create your password to join the Mulder workspace. Passwords must be at least 12 characters."
-			title="Accept invitation"
-		>
+		<AuthFrame description={t('auth.inviteDescription')} title={t('auth.inviteTitle')}>
 			<form className="space-y-4" onSubmit={handleSubmit}>
-				{token ? null : <StateNotice tone="error" title="Invitation token missing" />}
+				{token ? null : <StateNotice tone="error" title={t('auth.inviteMissingTitle')} />}
 
 				<div>
 					<label className="text-sm font-medium text-text" htmlFor="password">
-						Password
+						{t('common.password')}
 					</label>
 					<input
 						autoComplete="new-password"
@@ -61,7 +60,7 @@ export function AcceptInvitationPage() {
 
 				<div>
 					<label className="text-sm font-medium text-text" htmlFor="confirm-password">
-						Confirm password
+						{t('common.confirmPassword')}
 					</label>
 					<input
 						autoComplete="new-password"
@@ -76,12 +75,12 @@ export function AcceptInvitationPage() {
 				</div>
 
 				{password && confirmPassword && !passwordsMatch ? (
-					<StateNotice tone="error" title="Passwords do not match" />
+					<StateNotice tone="error" title={t('auth.passwordsDoNotMatch')} />
 				) : null}
 
 				{acceptInvitation.error ? (
-					<StateNotice tone="error" title="Could not accept invitation">
-						{getErrorMessage(acceptInvitation.error)}
+					<StateNotice tone="error" title={t('auth.inviteErrorTitle')}>
+						{getErrorMessage(acceptInvitation.error, t('common.apiRequestFailed'))}
 					</StateNotice>
 				) : null}
 
@@ -90,7 +89,7 @@ export function AcceptInvitationPage() {
 					disabled={!token || !passwordsMatch || acceptInvitation.isPending}
 					type="submit"
 				>
-					{acceptInvitation.isPending ? 'Creating account...' : 'Accept invitation'}
+					{acceptInvitation.isPending ? t('auth.inviteSubmitting') : t('auth.inviteSubmit')}
 				</button>
 			</form>
 		</AuthFrame>

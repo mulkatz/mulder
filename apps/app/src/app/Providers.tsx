@@ -1,5 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MotionConfig } from 'framer-motion';
 import { type ReactNode, useEffect, useState } from 'react';
+import { appTransition } from '@/app/motion';
+import { PreferencesProvider } from '@/app/preferences';
 import { ApiError } from '@/lib/api-client';
 
 function createQueryClient() {
@@ -39,5 +42,11 @@ export function Providers({ children }: { children: ReactNode }) {
 		return () => window.removeEventListener('auth:expired', handleAuthExpired);
 	}, [queryClient]);
 
-	return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+	return (
+		<PreferencesProvider>
+			<MotionConfig reducedMotion="user" transition={appTransition}>
+				<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+			</MotionConfig>
+		</PreferencesProvider>
+	);
 }

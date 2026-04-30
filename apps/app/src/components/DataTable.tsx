@@ -1,4 +1,5 @@
 import type { Key, ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 
 export interface DataColumn<T> {
@@ -14,7 +15,7 @@ export function DataTable<T>({
 	getRowKey,
 	selectedKey,
 	onRowClick,
-	emptyMessage = 'No rows',
+	emptyMessage,
 	minWidth = 760,
 }: {
 	rows: T[];
@@ -25,6 +26,9 @@ export function DataTable<T>({
 	emptyMessage?: string;
 	minWidth?: number;
 }) {
+	const { t } = useTranslation();
+	const resolvedEmptyMessage = emptyMessage ?? t('common.noRows');
+
 	return (
 		<div className="overflow-x-auto">
 			<table className="w-full border-collapse text-left" style={{ minWidth }}>
@@ -78,7 +82,7 @@ export function DataTable<T>({
 					{rows.length === 0 ? (
 						<tr>
 							<td className="px-4 py-8 text-center text-sm text-text-muted" colSpan={columns.length}>
-								{emptyMessage}
+								{resolvedEmptyMessage}
 							</td>
 						</tr>
 					) : null}

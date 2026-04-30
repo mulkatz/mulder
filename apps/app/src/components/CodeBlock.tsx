@@ -1,7 +1,9 @@
 import { Copy } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { IconButton } from '@/components/IconButton';
 
 export function CodeBlock({ label = 'params.json', value }: { label?: string; value: unknown }) {
+	const { t } = useTranslation();
 	const formatted = JSON.stringify(value, null, 2);
 
 	return (
@@ -10,7 +12,7 @@ export function CodeBlock({ label = 'params.json', value }: { label?: string; va
 				<span className="font-mono text-xs text-white/60">{label}</span>
 				<IconButton
 					className="size-7 border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
-					label="Copy parameters"
+					label={t('common.copyParameters')}
 				>
 					<Copy className="size-3.5" />
 				</IconButton>

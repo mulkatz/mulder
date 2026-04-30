@@ -40,7 +40,7 @@ Build output is `apps/app/dist`. Production only needs `VITE_API_BASE_URL=<api-o
 
 ## Design Tokens
 
-The app's look is controlled from `src/styles.css`.
+The app's look is controlled from `src/styles.css`. Light and dark mode are implemented through the same semantic tokens; components should use token-backed Tailwind utilities and should not branch on the active theme.
 
 - Surface tokens: `--canvas`, `--panel`, `--panel-raised`, `--field`
 - Text tokens: `--text`, `--text-muted`, `--text-subtle`, `--text-inverse`
@@ -48,6 +48,14 @@ The app's look is controlled from `src/styles.css`.
 - Accent tokens: `--accent`, `--accent-hover`, `--accent-soft`
 - Status tokens: `--success`, `--warning`, `--danger`, `--info`
 - Density tokens: `--sidebar-width`, `--topbar-height`, `--radius-*`
+
+## i18n, Theme, And Motion
+
+- UI copy lives in `src/i18n/resources.ts` and is served through `i18next` / `react-i18next`.
+- English and German are first-class locales. New UI strings should not be hard-coded in components.
+- User language and theme preferences live in `src/app/preferences.tsx`.
+- Motion uses `framer-motion` through `MotionConfig` in `src/app/Providers.tsx`.
+- Animations should be sparse, fast, and respect `prefers-reduced-motion`.
 
 The app intentionally avoids editorial serif language. It is sans-first, light-first, research-focused, and optimized for dense analysis screens without becoming a developer-only console.
 
