@@ -224,6 +224,7 @@ async function finalizeUploadedDocument(
 	}
 
 	const textResult = await detectNativeText(buffer);
+	const pdfMetadataJson = buildPdfMetadataJson(pdfMeta);
 
 	const client = await pool.connect();
 	try {
@@ -238,7 +239,9 @@ async function finalizeUploadedDocument(
 			hasNativeText: textResult.hasNativeText,
 			nativeTextRatio: textResult.nativeTextRatio,
 			tags: payload.tags,
-			metadata: buildPdfMetadataJson(pdfMeta),
+			sourceType: 'pdf',
+			formatMetadata: pdfMetadataJson,
+			metadata: pdfMetadataJson,
 		});
 
 		if (source.id !== payload.sourceId) {
@@ -300,6 +303,7 @@ async function finalizeUploadedDocument(
 				filename: payload.filename,
 				uploadedAt: new Date().toISOString(),
 				fileHash,
+				sourceType: source.sourceType,
 				status: 'ingested',
 			})
 			.catch(() => {

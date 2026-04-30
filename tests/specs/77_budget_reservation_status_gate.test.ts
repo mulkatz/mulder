@@ -391,6 +391,8 @@ describe('Spec 77 — Budget reservation status gate', () => {
 			filename: 'partial.pdf',
 			storagePath: '/tmp/partial.pdf',
 			fileHash: 'hash',
+			sourceType: 'pdf',
+			formatMetadata: {},
 			pageCount: 10,
 			hasNativeText: false,
 			nativeTextRatio: 0,

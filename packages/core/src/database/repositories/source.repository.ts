@@ -18,9 +18,11 @@ import type {
 	FailedSourceInfo,
 	Source,
 	SourceFilter,
+	SourceFormatMetadata,
 	SourceStatus,
 	SourceStep,
 	SourceStepStatus,
+	SourceType,
 	SourceWithSteps,
 	SourceWithStepsFilter,
 	UpdateSourceInput,
@@ -41,6 +43,8 @@ interface SourceRow {
 	filename: string;
 	storage_path: string;
 	file_hash: string;
+	source_type: SourceType | null;
+	format_metadata: SourceFormatMetadata | null;
 	page_count: number | null;
 	has_native_text: boolean;
 	native_text_ratio: number;
@@ -75,6 +79,8 @@ function mapSourceRow(row: SourceRow): Source {
 		filename: row.filename,
 		storagePath: row.storage_path,
 		fileHash: row.file_hash,
+		sourceType: row.source_type ?? 'pdf',
+		formatMetadata: row.format_metadata ?? {},
 		pageCount: row.page_count,
 		hasNativeText: row.has_native_text,
 		nativeTextRatio: row.native_text_ratio,
@@ -131,6 +137,12 @@ function buildSourceFilterClause(filter?: SourceFilter): { conditions: string[];
 		paramIndex++;
 	}
 
+	if (filter?.sourceType) {
+		conditions.push(`source_type = $${paramIndex}`);
+		params.push(filter.sourceType);
+		paramIndex++;
+	}
+
 	if (filter?.search) {
 		conditions.push(`filename ILIKE $${paramIndex} ESCAPE '\\'`);
 		params.push(`%${escapeLikePattern(filter.search)}%`);
@@ -140,6 +152,7 @@ function buildSourceFilterClause(filter?: SourceFilter): { conditions: string[];
 	if (filter?.tags && filter.tags.length > 0) {
 		conditions.push(`tags @> $${paramIndex}`);
 		params.push(filter.tags);
+		paramIndex++;
 	}
 
 	return { conditions, params };
@@ -162,6 +175,8 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				'filename',
 				'storage_path',
 				'file_hash',
+				'source_type',
+				'format_metadata',
 				'page_count',
 				'has_native_text',
 				'native_text_ratio',
@@ -172,6 +187,8 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				'filename',
 				'storage_path',
 				'file_hash',
+				'source_type',
+				'format_metadata',
 				'page_count',
 				'has_native_text',
 				'native_text_ratio',
@@ -184,6 +201,8 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				input.filename,
 				input.storagePath,
 				input.fileHash,
+				input.sourceType ?? 'pdf',
+				JSON.stringify(input.formatMetadata ?? {}),
 				input.pageCount ?? null,
 				input.hasNativeText ?? false,
 				input.nativeTextRatio ?? 0,
@@ -194,6 +213,8 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				input.filename,
 				input.storagePath,
 				input.fileHash,
+				input.sourceType ?? 'pdf',
+				JSON.stringify(input.formatMetadata ?? {}),
 				input.pageCount ?? null,
 				input.hasNativeText ?? false,
 				input.nativeTextRatio ?? 0,
@@ -372,6 +393,7 @@ export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourc
 	const fieldMap: Array<[keyof UpdateSourceInput, string]> = [
 		['filename', 'filename'],
 		['storagePath', 'storage_path'],
+		['sourceType', 'source_type'],
 		['pageCount', 'page_count'],
 		['hasNativeText', 'has_native_text'],
 		['nativeTextRatio', 'native_text_ratio'],
@@ -392,6 +414,12 @@ export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourc
 	if (input.metadata !== undefined) {
 		setClauses.push(`metadata = $${paramIndex}`);
 		params.push(JSON.stringify(input.metadata));
+		paramIndex++;
+	}
+
+	if (input.formatMetadata !== undefined) {
+		setClauses.push(`format_metadata = $${paramIndex}`);
+		params.push(JSON.stringify(input.formatMetadata));
 		paramIndex++;
 	}
 
@@ -562,6 +590,8 @@ export async function findSourcesWithSteps(pool: pg.Pool, filter?: SourceWithSte
       s.filename,
       s.storage_path,
       s.file_hash,
+      s.source_type,
+      s.format_metadata,
       s.page_count,
       s.has_native_text,
       s.native_text_ratio,

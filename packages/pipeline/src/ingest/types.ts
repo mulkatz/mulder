@@ -5,7 +5,7 @@
  * @see docs/functional-spec.md §2.1
  */
 
-import type { PdfMetadata, StepError } from '@mulder/core';
+import type { PdfMetadata, SourceFormatMetadata, SourceType, StepError } from '@mulder/core';
 
 // ────────────────────────────────────────────────────────────
 // Input
@@ -35,6 +35,10 @@ export interface IngestFileResult {
 	storagePath: string;
 	/** SHA-256 hash of the file content. */
 	fileHash: string;
+	/** Detected source format discriminator. */
+	sourceType: SourceType;
+	/** Format-specific metadata stored on the source row. */
+	formatMetadata: SourceFormatMetadata;
 	/** Number of pages in the PDF. */
 	pageCount: number;
 	/** Whether the PDF contains extractable native text. */

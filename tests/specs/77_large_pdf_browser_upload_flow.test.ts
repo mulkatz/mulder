@@ -317,18 +317,23 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 
 		const sourceRow = readJsonCell(
 			`SELECT row_to_json(source_row)::text FROM (
-				SELECT id, filename, storage_path, status, tags
+				SELECT id, filename, storage_path, status, tags, source_type, metadata, format_metadata
 				FROM sources
 				WHERE id = '${sourceId}'
 			) AS source_row;`,
 		);
-		expect(sourceRow).toEqual({
+		expect(sourceRow).toMatchObject({
 			id: sourceId,
 			filename: 'native-text-sample.pdf',
 			storage_path: storagePath,
 			status: 'ingested',
 			tags: ['review'],
+			source_type: 'pdf',
 		});
+		const formatMetadata = sourceRow.format_metadata as Record<string, unknown>;
+		const legacyMetadata = sourceRow.metadata as Record<string, unknown>;
+		expect(formatMetadata).toEqual(legacyMetadata);
+		expect(Object.keys(formatMetadata).length).toBeGreaterThan(0);
 		expect(db.runSql(`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'ingest';`)).toBe(
 			'completed',
 		);
