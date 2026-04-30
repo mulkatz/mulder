@@ -40,16 +40,25 @@ export function startApiServer(): ReturnType<typeof serve> {
 	const app = createApp({ logger, config: apiConfig });
 	const port = resolveApiPort(apiConfig);
 	const server = serve({ fetch: app.fetch, port });
+	let shuttingDown = false;
 
 	logger.info({ port }, 'API server started');
 
-	process.once('SIGTERM', () => {
-		server.close();
-	});
+	function shutdown(signal: NodeJS.Signals) {
+		if (shuttingDown) {
+			return;
+		}
 
-	process.once('SIGINT', () => {
-		server.close();
-	});
+		shuttingDown = true;
+		logger.info({ signal }, 'API server shutting down');
+		server.close(() => {
+			process.exit(0);
+		});
+		setTimeout(() => process.exit(0), 3000).unref();
+	}
+
+	process.once('SIGTERM', shutdown);
+	process.once('SIGINT', shutdown);
 
 	return server;
 }
