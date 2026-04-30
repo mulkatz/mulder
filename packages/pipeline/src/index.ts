@@ -92,13 +92,28 @@ export {
 export type { GroundInput, GroundingData, GroundOutcome, GroundResult } from './ground/index.js';
 export { execute as executeGround } from './ground/index.js';
 export type {
+	ImageDimensions,
 	IngestFileResult,
 	IngestInput,
 	IngestResult,
 	SourceDetectionConfidence,
 	SourceDetectionResult,
+	SourceStorageExtension,
+	SupportedImageMediaType,
 } from './ingest/index.js';
-export { detectSourceType, execute as executeIngest, resolvePdfFiles } from './ingest/index.js';
+export {
+	buildImageFormatMetadata,
+	detectSourceType,
+	execute as executeIngest,
+	getCanonicalStorageExtensionForMediaType,
+	getOriginalExtension,
+	getStorageExtensionForDetection,
+	isSupportedImageMediaType,
+	isSupportedIngestFilename,
+	readImageDimensions,
+	resolveIngestFiles,
+	resolvePdfFiles,
+} from './ingest/index.js';
 export type {
 	PipelineGlobalAnalysisOutcome,
 	PipelineRunInput,

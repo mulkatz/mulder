@@ -13,7 +13,7 @@ import { closeAllPools, createLogger, createServiceRegistry, getWorkerPool, load
 import { executeIngest } from '@mulder/pipeline';
 import type { Command } from 'commander';
 import {
-	collectPdfSourceProfiles,
+	collectIngestSourceProfiles,
 	estimateForSteps,
 	printCostEstimate,
 	promptYesNo,
@@ -43,8 +43,8 @@ interface IngestOptions {
 export function registerIngestCommands(program: Command): void {
 	program
 		.command('ingest')
-		.description('Ingest PDF(s) — file or directory')
-		.argument('<path>', 'path to a PDF file or directory containing PDFs')
+		.description('Ingest PDFs or supported images — file or directory')
+		.argument('<path>', 'path to a supported file or directory containing supported files')
 		.option('--dry-run', 'validate without uploading or creating DB records')
 		.option('--tag <tag>', 'tag ingested sources (repeatable)', collect, [])
 		.option('--cost-estimate', 'show an estimated downstream pipeline cost before executing')
@@ -52,14 +52,14 @@ export function registerIngestCommands(program: Command): void {
 			'after',
 			`
 Examples:
-  $ mulder ingest ./my-pdfs/                       # Ingest every PDF in a directory
+  $ mulder ingest ./incoming/                      # Ingest supported files in a directory
   $ mulder ingest paper.pdf --tag review --tag q1  # Tag a single ingest with two tags
   $ mulder ingest paper.pdf --dry-run              # Validate without writing to GCS or the DB`,
 		)
 		.action(
 			withErrorHandler(async (inputPath: string, options: IngestOptions) => {
 				const config = loadConfig();
-				const sourceProfiles = await collectPdfSourceProfiles(inputPath);
+				const sourceProfiles = await collectIngestSourceProfiles(inputPath);
 				const estimate = estimateForSteps({
 					mode: 'ingest',
 					sourceProfiles,

@@ -1,8 +1,8 @@
 /**
  * Ingest pipeline step — the entry point for all documents into Mulder.
  *
- * Accepts PDF files (single file or directory), validates them, detects
- * native text, uploads to Cloud Storage, and registers them as sources
+ * Accepts supported source files (single file or directory), validates them,
+ * uploads to Cloud Storage, and registers them as sources
  * in PostgreSQL.
  *
  * @see docs/specs/16_ingest_step.spec.md
@@ -13,7 +13,15 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import type { Logger, MulderConfig, PdfMetadata, Services, StepError } from '@mulder/core';
+import type {
+	Logger,
+	MulderConfig,
+	PdfMetadata,
+	Services,
+	SourceFormatMetadata,
+	SourceType,
+	StepError,
+} from '@mulder/core';
 import {
 	createChildLogger,
 	createSource,
@@ -25,11 +33,32 @@ import {
 	upsertSourceStep,
 } from '@mulder/core';
 import type pg from 'pg';
-import { detectSourceType } from './source-type.js';
+import {
+	buildImageFormatMetadata,
+	detectSourceType,
+	getStorageExtensionForDetection,
+	isSupportedImageMediaType,
+	isSupportedIngestFilename,
+} from './source-type.js';
 import type { IngestFileResult, IngestInput, IngestResult } from './types.js';
 
-export type { SourceDetectionConfidence, SourceDetectionResult } from './source-type.js';
-export { detectSourceType } from './source-type.js';
+export type {
+	ImageDimensions,
+	SourceDetectionConfidence,
+	SourceDetectionResult,
+	SourceStorageExtension,
+	SupportedImageMediaType,
+} from './source-type.js';
+export {
+	buildImageFormatMetadata,
+	detectSourceType,
+	getCanonicalStorageExtensionForMediaType,
+	getOriginalExtension,
+	getStorageExtensionForDetection,
+	isSupportedImageMediaType,
+	isSupportedIngestFilename,
+	readImageDimensions,
+} from './source-type.js';
 export type { IngestFileResult, IngestInput, IngestResult } from './types.js';
 
 const STEP_NAME = 'ingest';
@@ -39,11 +68,12 @@ const STEP_NAME = 'ingest';
 // ────────────────────────────────────────────────────────────
 
 /**
- * Resolves the input path to a list of PDF file paths.
- * If the path is a directory, recursively finds all `.pdf` files.
- * If the path is a single file, returns it as-is.
+ * Resolves the input path to a list of supported ingest file paths.
+ * If the path is a directory, recursively finds PDFs and supported images.
+ * If the path is a single file, returns it as-is so validation can report
+ * an explicit unsupported-format error.
  */
-export async function resolvePdfFiles(inputPath: string): Promise<string[]> {
+export async function resolveIngestFiles(inputPath: string): Promise<string[]> {
 	const resolved = resolve(inputPath);
 	const stats = await stat(resolved).catch(() => null);
 
@@ -59,13 +89,13 @@ export async function resolvePdfFiles(inputPath: string): Promise<string[]> {
 
 	if (stats.isDirectory()) {
 		const entries = await readdir(resolved, { recursive: true });
-		const pdfFiles: string[] = [];
+		const ingestFiles: string[] = [];
 		for (const entry of entries) {
-			if (entry.toLowerCase().endsWith('.pdf')) {
-				pdfFiles.push(join(resolved, entry));
+			if (isSupportedIngestFilename(entry)) {
+				ingestFiles.push(join(resolved, entry));
 			}
 		}
-		return pdfFiles.sort();
+		return ingestFiles.sort();
 	}
 
 	throw new IngestError(
@@ -76,6 +106,8 @@ export async function resolvePdfFiles(inputPath: string): Promise<string[]> {
 		},
 	);
 }
+
+export const resolvePdfFiles = resolveIngestFiles;
 
 // ────────────────────────────────────────────────────────────
 // Validation helpers
@@ -114,8 +146,25 @@ interface ProcessFileContext {
 	dryRun: boolean;
 }
 
+type IngestibleSourceType = Extract<SourceType, 'pdf' | 'image'>;
+
+interface PreparedFileMetadata {
+	sourceType: IngestibleSourceType;
+	mediaType: string;
+	storageExtension: string;
+	formatMetadata: SourceFormatMetadata;
+	pageCount: number;
+	hasNativeText: boolean;
+	nativeTextRatio: number;
+	pdfMetadata?: PdfMetadata;
+}
+
+function isIngestibleSourceType(sourceType: SourceType): sourceType is IngestibleSourceType {
+	return sourceType === 'pdf' || sourceType === 'image';
+}
+
 /**
- * Processes a single PDF file through the ingest pipeline.
+ * Processes a single supported file through the ingest pipeline.
  */
 async function processFile(filePath: string, ctx: ProcessFileContext): Promise<IngestFileResult> {
 	const filename = basename(filePath);
@@ -152,13 +201,12 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		);
 	}
 
-	const sourceType = detection.sourceType;
-	if (sourceType !== 'pdf') {
+	if (!isIngestibleSourceType(detection.sourceType)) {
 		throw new IngestError(
-			`Unsupported source type "${sourceType}" for ${filename}; only pdf is supported in this step`,
+			`Unsupported source type "${detection.sourceType}" for ${filename}; only pdf and image are supported in this step`,
 			INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
 			{
-				context: { path: filePath, sourceType, confidence: detection.confidence },
+				context: { path: filePath, sourceType: detection.sourceType, confidence: detection.confidence },
 			},
 		);
 	}
@@ -174,26 +222,71 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		);
 	}
 
-	// d. Lightweight PDF metadata extraction (no page content decompression).
-	//    Reads page count from the trailer/page tree root — PDF bomb gate.
-	const pdfMeta = await extractPdfMetadata(buffer);
-
-	// e. Check page count BEFORE full parse — rejects PDF bombs early
-	const maxPages = ctx.config.ingestion.max_pages;
-	if (pdfMeta.pageCount > maxPages) {
+	let prepared: PreparedFileMetadata;
+	const storageExtension = getStorageExtensionForDetection(detection);
+	if (!storageExtension || !detection.mediaType) {
 		throw new IngestError(
-			`Too many pages: ${filename} has ${pdfMeta.pageCount} pages, max is ${maxPages}`,
-			INGEST_ERROR_CODES.INGEST_TOO_MANY_PAGES,
-			{ context: { path: filePath, pageCount: pdfMeta.pageCount, maxPages } },
+			`Unsupported or unknown source format for ${filename}`,
+			INGEST_ERROR_CODES.INGEST_UNKNOWN_SOURCE_TYPE,
+			{
+				context: { path: filePath, sourceType: detection.sourceType, mediaType: detection.mediaType },
+			},
 		);
 	}
 
-	log.debug(
-		{ sourceType, pageCount: pdfMeta.pageCount, pdfVersion: pdfMeta.pdfVersion, title: pdfMeta.title },
-		'PDF metadata extracted (lightweight)',
-	);
+	if (detection.sourceType === 'pdf') {
+		// d. Lightweight PDF metadata extraction (no page content decompression).
+		//    Reads page count from the trailer/page tree root — PDF bomb gate.
+		const pdfMeta = await extractPdfMetadata(buffer);
 
-	const formatMetadata = buildPdfFormatMetadata(pdfMeta);
+		// e. Check page count BEFORE full parse — rejects PDF bombs early
+		const maxPages = ctx.config.ingestion.max_pages;
+		if (pdfMeta.pageCount > maxPages) {
+			throw new IngestError(
+				`Too many pages: ${filename} has ${pdfMeta.pageCount} pages, max is ${maxPages}`,
+				INGEST_ERROR_CODES.INGEST_TOO_MANY_PAGES,
+				{ context: { path: filePath, pageCount: pdfMeta.pageCount, maxPages } },
+			);
+		}
+
+		log.debug(
+			{ sourceType: 'pdf', pageCount: pdfMeta.pageCount, pdfVersion: pdfMeta.pdfVersion, title: pdfMeta.title },
+			'PDF metadata extracted (lightweight)',
+		);
+
+		const textResult = await detectNativeText(buffer);
+		prepared = {
+			sourceType: 'pdf',
+			mediaType: detection.mediaType,
+			storageExtension,
+			formatMetadata: buildPdfFormatMetadata(pdfMeta),
+			pageCount: textResult.pageCount,
+			hasNativeText: textResult.hasNativeText,
+			nativeTextRatio: textResult.nativeTextRatio,
+			pdfMetadata: pdfMeta,
+		};
+	} else {
+		if (!isSupportedImageMediaType(detection.mediaType)) {
+			throw new IngestError(
+				`Unsupported image media type for ${filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { path: filePath, mediaType: detection.mediaType },
+				},
+			);
+		}
+
+		prepared = {
+			sourceType: 'image',
+			mediaType: detection.mediaType,
+			storageExtension,
+			formatMetadata: buildImageFormatMetadata(buffer, filename, detection.mediaType),
+			pageCount: 1,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+		};
+		log.debug({ sourceType: 'image', mediaType: detection.mediaType, pageCount: 1 }, 'Image metadata prepared');
+	}
 
 	// f. Compute SHA-256 hash
 	const fileHash = computeFileHash(buffer);
@@ -214,32 +307,29 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 				hasNativeText: existing.hasNativeText,
 				nativeTextRatio: existing.nativeTextRatio,
 				duplicate: true,
-				pdfMetadata: pdfMeta,
+				pdfMetadata: prepared.pdfMetadata,
 			};
 		}
 	}
 
-	// h. Native text detection (now safe — page count already verified)
-	const textResult = await detectNativeText(buffer);
-
 	// i. Dry run: skip upload and DB insert
 	const sourceId = randomUUID();
-	const storagePath = `raw/${sourceId}/original.pdf`;
+	const storagePath = `raw/${sourceId}/original.${prepared.storageExtension}`;
 
 	if (ctx.dryRun) {
-		log.info({ sourceId, filename, pageCount: textResult.pageCount }, 'Dry run — skipping upload and DB insert');
+		log.info({ sourceId, filename, pageCount: prepared.pageCount }, 'Dry run — skipping upload and DB insert');
 		return {
 			sourceId,
 			filename,
 			storagePath,
 			fileHash,
-			sourceType,
-			formatMetadata,
-			pageCount: textResult.pageCount,
-			hasNativeText: textResult.hasNativeText,
-			nativeTextRatio: textResult.nativeTextRatio,
+			sourceType: prepared.sourceType,
+			formatMetadata: prepared.formatMetadata,
+			pageCount: prepared.pageCount,
+			hasNativeText: prepared.hasNativeText,
+			nativeTextRatio: prepared.nativeTextRatio,
 			duplicate: false,
-			pdfMetadata: pdfMeta,
+			pdfMetadata: prepared.pdfMetadata,
 		};
 	}
 
@@ -254,7 +344,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 
 	// j. Upload to storage
 	try {
-		await ctx.services.storage.upload(storagePath, buffer, 'application/pdf');
+		await ctx.services.storage.upload(storagePath, buffer, prepared.mediaType);
 	} catch (cause: unknown) {
 		throw new IngestError(`Upload failed for ${filename}`, INGEST_ERROR_CODES.INGEST_UPLOAD_FAILED, {
 			cause,
@@ -268,13 +358,13 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		filename,
 		storagePath,
 		fileHash,
-		sourceType,
-		formatMetadata,
-		pageCount: textResult.pageCount,
-		hasNativeText: textResult.hasNativeText,
-		nativeTextRatio: textResult.nativeTextRatio,
+		sourceType: prepared.sourceType,
+		formatMetadata: prepared.formatMetadata,
+		pageCount: prepared.pageCount,
+		hasNativeText: prepared.hasNativeText,
+		nativeTextRatio: prepared.nativeTextRatio,
 		tags: ctx.tags,
-		metadata: formatMetadata,
+		metadata: prepared.formatMetadata,
 	});
 
 	if (source.id !== sourceId) {
@@ -303,7 +393,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			hasNativeText: source.hasNativeText,
 			nativeTextRatio: source.nativeTextRatio,
 			duplicate: true,
-			pdfMetadata: pdfMeta,
+			pdfMetadata: prepared.pdfMetadata,
 		};
 	}
 
@@ -318,7 +408,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 	ctx.services.firestore
 		.setDocument('documents', source.id, {
 			filename,
-			sourceType,
+			sourceType: prepared.sourceType,
 			uploadedAt: new Date().toISOString(),
 			fileHash,
 			status: 'ingested',
@@ -331,10 +421,10 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		{
 			sourceId: source.id,
 			filename,
-			sourceType,
-			pageCount: textResult.pageCount,
-			hasNativeText: textResult.hasNativeText,
-			nativeTextRatio: textResult.nativeTextRatio,
+			sourceType: prepared.sourceType,
+			pageCount: prepared.pageCount,
+			hasNativeText: prepared.hasNativeText,
+			nativeTextRatio: prepared.nativeTextRatio,
 		},
 		'File ingested successfully',
 	);
@@ -346,11 +436,11 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		fileHash,
 		sourceType: source.sourceType,
 		formatMetadata: source.formatMetadata,
-		pageCount: textResult.pageCount,
-		hasNativeText: textResult.hasNativeText,
-		nativeTextRatio: textResult.nativeTextRatio,
+		pageCount: source.pageCount ?? prepared.pageCount,
+		hasNativeText: source.hasNativeText,
+		nativeTextRatio: source.nativeTextRatio,
 		duplicate: false,
-		pdfMetadata: pdfMeta,
+		pdfMetadata: prepared.pdfMetadata,
 	};
 }
 
@@ -361,7 +451,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 /**
  * Executes the ingest pipeline step.
  *
- * Accepts a file or directory path, validates each PDF, uploads to
+ * Accepts a file or directory path, validates each supported source, uploads to
  * Cloud Storage, and registers sources in PostgreSQL. Per-file errors
  * are caught and collected — processing continues for remaining files.
  *
@@ -385,10 +475,10 @@ export async function execute(
 	log.info({ path: input.path, dryRun: input.dryRun ?? false }, 'Ingest step started');
 
 	// 1. Resolve files
-	const filePaths = await resolvePdfFiles(input.path);
+	const filePaths = await resolveIngestFiles(input.path);
 
 	if (filePaths.length === 0) {
-		log.info('No PDF files found');
+		log.info('No supported ingest files found');
 		return {
 			status: 'success',
 			data: [],
@@ -402,7 +492,7 @@ export async function execute(
 		};
 	}
 
-	log.info({ fileCount: filePaths.length }, 'PDF files resolved');
+	log.info({ fileCount: filePaths.length }, 'Ingest files resolved');
 
 	// 2. Process each file
 	const ctx: ProcessFileContext = {

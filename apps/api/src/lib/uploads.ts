@@ -21,6 +21,12 @@ import type {
 	InitiateDocumentUploadRequest,
 	InitiateDocumentUploadResponse,
 } from '../routes/uploads.schemas.js';
+import {
+	canonicalUploadExtensionForContentType,
+	canonicalUploadExtensionForFilename,
+	isSupportedOriginalStoragePath,
+	type UploadStorageExtension,
+} from '../routes/uploads.schemas.js';
 
 interface UploadContext {
 	config: MulderConfig;
@@ -33,7 +39,6 @@ type Queryable = pg.Pool | pg.PoolClient;
 let cachedContext: UploadContext | null = null;
 let cachedConfigPath: string | null = null;
 
-const PDF_CONTENT_TYPE = 'application/pdf';
 const FINALIZE_JOB_TYPE = 'document_upload_finalize';
 
 function resolveConfigPath(): string {
@@ -79,18 +84,39 @@ function maxUploadBytes(config: MulderConfig): number {
 	return config.ingestion.max_file_size_mb * 1024 * 1024;
 }
 
-function ensurePdfInput(input: { filename: string; contentType: string }): void {
-	if (!input.filename.toLowerCase().endsWith('.pdf')) {
-		throw new MulderError('Filename must end with .pdf', 'VALIDATION_ERROR', {
+function resolveUploadInput(input: { filename: string; contentType: string }): {
+	mediaType: string;
+	storageExtension: UploadStorageExtension;
+} {
+	const extension = canonicalUploadExtensionForFilename(input.filename);
+	const contentTypeExtension = canonicalUploadExtensionForContentType(input.contentType);
+
+	if (!extension) {
+		throw new MulderError('Filename must end with .pdf, .png, .jpg, .jpeg, .tif, or .tiff', 'VALIDATION_ERROR', {
 			context: { filename: input.filename },
 		});
 	}
 
-	if (input.contentType.toLowerCase() !== PDF_CONTENT_TYPE) {
-		throw new MulderError('Only application/pdf uploads are supported', 'VALIDATION_ERROR', {
+	if (!contentTypeExtension) {
+		throw new MulderError('Only PDF, PNG, JPEG, and TIFF uploads are supported', 'VALIDATION_ERROR', {
 			context: { content_type: input.contentType },
 		});
 	}
+
+	if (extension !== contentTypeExtension) {
+		throw new MulderError('Upload filename extension and content_type do not match', 'VALIDATION_ERROR', {
+			context: {
+				filename: input.filename,
+				content_type: input.contentType,
+			},
+		});
+	}
+
+	const normalizedContentType = input.contentType.split(';')[0]?.trim().toLowerCase() ?? input.contentType;
+	return {
+		mediaType: normalizedContentType,
+		storageExtension: extension,
+	};
 }
 
 async function assertNoInFlightFinalizeJob(pool: Queryable, sourceId: string): Promise<void> {
@@ -123,7 +149,7 @@ export async function initiateDocumentUpload(
 		size_bytes: input.size_bytes,
 	});
 
-	ensurePdfInput({ filename: input.filename, contentType: input.content_type });
+	const uploadInput = resolveUploadInput({ filename: input.filename, contentType: input.content_type });
 	const maxBytes = maxUploadBytes(config);
 	if (input.size_bytes > maxBytes) {
 		throw new MulderError(
@@ -140,9 +166,9 @@ export async function initiateDocumentUpload(
 	}
 
 	const sourceId = randomUUID();
-	const storagePath = `raw/${sourceId}/original.pdf`;
+	const storagePath = `raw/${sourceId}/original.${uploadInput.storageExtension}`;
 	const upload = await services.storage.createUploadSession(storagePath, {
-		contentType: input.content_type,
+		contentType: uploadInput.mediaType,
 		expectedSizeBytes: input.size_bytes,
 	});
 
@@ -262,7 +288,7 @@ export async function handleDevUploadProxy(
 		throw new MulderError('Dev upload proxy is unavailable', 'UPLOAD_PROXY_FORBIDDEN');
 	}
 
-	if (!storagePath.startsWith('raw/') || !storagePath.endsWith('/original.pdf')) {
+	if (!isSupportedOriginalStoragePath(storagePath)) {
 		throw new MulderError('Invalid storage path for dev upload', 'VALIDATION_ERROR', {
 			context: { storage_path: storagePath },
 		});

@@ -85,11 +85,11 @@ export interface DocumentAiResult {
 
 /**
  * Abstraction over Google Document AI Layout Parser.
- * Processes a PDF document and returns structured layout data with spatial information.
+ * Processes a layout-oriented document and returns structured layout data with spatial information.
  */
 export interface DocumentAiService {
-	/** Process a PDF document and return structured layout data + page images. */
-	processDocument(pdfContent: Buffer, sourceId: string): Promise<DocumentAiResult>;
+	/** Process a layout-oriented document and return structured layout data + page images. */
+	processDocument(documentContent: Buffer, sourceId: string, mediaType?: string): Promise<DocumentAiResult>;
 }
 
 // ────────────────────────────────────────────────────────────

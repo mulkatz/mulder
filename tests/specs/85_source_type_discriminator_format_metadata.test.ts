@@ -178,9 +178,8 @@ describe('Spec 85 — Source Type Discriminator + Format Metadata', () => {
 		const imageRenamedPdf = join(tmpDir, 'image-renamed.pdf');
 		writeFileSync(imageRenamedPdf, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]));
 
-		const result = runCli(['ingest', imageRenamedPdf]);
-		expect(result.exitCode).not.toBe(0);
-		expect(`${result.stdout}\n${result.stderr}`).toMatch(/INGEST_UNSUPPORTED_SOURCE_TYPE|unsupported source type/i);
+		const result = runCli(['ingest', '--dry-run', imageRenamedPdf]);
+		expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
 		expect(`${result.stdout}\n${result.stderr}`).toMatch(/\bimage\b/i);
 		expect(db.runSql('SELECT COUNT(*) FROM sources;')).toBe('0');
 		expectNoStorageUpload(beforeStorage);
