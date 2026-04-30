@@ -206,7 +206,7 @@ mulder/
 ├── apps/
 │   ├── cli/                      # CLI application (commands/ + lib/)
 │   ├── api/                      # HTTP API (routes/ + middleware/)
-│   └── app/                      # Browser product app
+│   └── app/                      # Browser app
 │
 ├── terraform/modules/            # GCP infrastructure
 │   └── {cloud-sql,storage,cloud-run,pubsub,firestore,budget,iam,networking}

@@ -89,7 +89,7 @@ export function Sidebar({ onClose, mobile = false }: { onClose?: () => void; mob
 					className="flex w-full items-center justify-between rounded-md border border-border bg-field px-3 py-2 text-left text-sm text-text transition-colors hover:bg-field-hover"
 					type="button"
 				>
-					<span>Product App</span>
+					<span>App</span>
 					<span className="rounded-sm bg-panel px-1.5 py-0.5 font-mono text-[11px] text-accent">API</span>
 				</button>
 			</div>

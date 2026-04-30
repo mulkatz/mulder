@@ -193,27 +193,27 @@ Move from CLI to HTTP. Job queue, async workers, a full REST API over the pipeli
 | 🟢 | H8 | Entity API routes (sync) | §10.6 |
 | 🟢 | H9 | Evidence API routes (sync) | §10.6 |
 | 🟢 | H10 | Document retrieval routes — list/pdf/markdown sync routes | §10.6 |
-| 🟢 | H11 | Browser product shell consuming H10 routes | §13, consumes H10 |
+| 🟢 | H11 | Browser app shell consuming H10 routes | §13, consumes H10 |
 
 **Also read for all M7 steps:** [`docs/api-architecture.md`](./api-architecture.md) (framework choice, route structure, middleware stack, OpenAPI strategy, key trade-offs), §10 (full job queue section — especially §10.3 transaction discipline), §14 (design decisions — PostgreSQL queue, auto-commit dequeue, per-step job slicing)
 
 **Verification guidance for M7:** use package-local builds plus step- or milestone-scoped spec tests while iterating (`pnpm test:scope -- step M7-Hx` / `pnpm test:scope -- milestone M7`). For HTTP work, use `pnpm test:api:e2e` as the API-focused end-to-end lane for M7-H3 through M7-H10. Do not default to the full CI-equivalent suite for routine API milestone work.
 
-**Testable:** HTTP API for everything. Workers process jobs asynchronously. Deployable to Cloud Run. First browser product shell consuming the real API.
+**Testable:** HTTP API for everything. Workers process jobs asynchronously. Deployable to Cloud Run. First browser app shell consuming the real API.
 
-**Note on H11 (Document Viewer):** Current browser product work lives in `apps/app` and should follow the product-app documents. An earlier off-roadmap attempt was reverted in commit 90bee3a (issue #127 closed) because the clean path requires a real HTTP API to sit on, not a dev-only Vite filesystem plugin that would have bypassed the service abstraction.
+**Note on H11 (Document Viewer):** Current browser app work lives in `apps/app` and should follow the app documents. An earlier off-roadmap attempt was reverted in commit 90bee3a (issue #127 closed) because the clean path requires a real HTTP API to sit on, not a dev-only Vite filesystem plugin that would have bypassed the service abstraction.
 
 ---
 
-## M7.5: Retired Browser Prototype Track
+## M7.5: Browser App Track
 
-This track is retired. Current browser product work is governed by `apps/app`, [`docs/product-app-design-strategy.md`](./product-app-design-strategy.md), [`docs/product-app-api-integration.md`](./product-app-api-integration.md), and [`docs/product-app-deployment.md`](./product-app-deployment.md).
+Current browser app work is governed by `apps/app`, [`docs/app-design-strategy.md`](./app-design-strategy.md), [`docs/app-api-integration.md`](./app-api-integration.md), and [`docs/app-deployment.md`](./app-deployment.md).
 
-Do not start new implementation from retired prototype routes, visual language, or fixed showcase data. If a public fixed-data showcase is needed later, build it as a separate, explicitly labeled surface that does not point at a private production project.
+Do not start new implementation from old visual language or checked-in static data. Public examples, if needed later, must be separate from the production app and must not point at a private production project.
 
-**Current product-app verification:** `pnpm --filter @mulder/app dev`, `pnpm --filter @mulder/app build`, and browser checks against `apps/app`.
+**Current app verification:** `pnpm --filter @mulder/app dev`, `pnpm --filter @mulder/app build`, and browser checks against `apps/app`.
 
-**Current target:** Product-app acceptance is governed by the product-app strategy, API integration notes, and deployment runbook.
+**Current target:** App acceptance is governed by the app strategy, API integration notes, and deployment runbook.
 
 ---
 
@@ -389,7 +389,7 @@ M1 Foundation
                      ├→ M5 Curation
                      ├→ M6 Intelligence (v2.0)
                      ├→ M7 API+Workers
-                    │   └→ Product App Track ← API-backed browser work
+                    │   └→ App Track ← API-backed browser work
                      ├→ M8 Operations
                      ├→ M9 Multi-Format Ingestion
                      └→ M10 Provenance & Quality ← BEFORE FIRST REAL ARCHIVE INGEST

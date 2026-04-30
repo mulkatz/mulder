@@ -44,7 +44,7 @@ QA Gate: Post-MVP     ███████████████████�
 M5   Curation         ██████████████████████████████  5/5  ✓
 M6   Intelligence     ██████████████████████████████  7/7  ✓
 M7   API+Workers      ██████████████████████████████ 11/11 ✓
-M7.5 Product App      █████░░░░░░░░░░░░░░░░░░░░░░░░░  1/6
+M7.5 App              █████░░░░░░░░░░░░░░░░░░░░░░░░░  1/6
 M8   Operations       ██████████████████████████████  6/6  ✓
 M9   Multi-Format     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/13
 M10  Provenance       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/9
@@ -196,7 +196,7 @@ Everything beyond `project` and `ontology` has sensible defaults. See [`mulder.c
 
 Mulder's **CLI/backend track is complete through M8 Operations**: the v1.0 search pipeline is operational, the v2.0 intelligence layer is in place, and the production-safety tooling now covers evals, cost gates, budget alerts, selective reprocessing, dead-letter retry, and devlog conventions.
 
-The browser product app lives in [`apps/app`](./apps/app) and is guided by the [product app design strategy](./docs/product-app-design-strategy.md), [API integration notes](./docs/product-app-api-integration.md), and [deployment runbook](./docs/product-app-deployment.md). The [functional spec](./docs/functional-spec.md), [implementation roadmap](./docs/roadmap.md), and [config schema](./mulder.config.example.yaml) are finalized.
+The browser app lives in [`apps/app`](./apps/app) and is guided by the [app design strategy](./docs/app-design-strategy.md), [API integration notes](./docs/app-api-integration.md), and [deployment runbook](./docs/app-deployment.md). The [functional spec](./docs/functional-spec.md), [implementation roadmap](./docs/roadmap.md), and [config schema](./mulder.config.example.yaml) are finalized.
 
 See the [roadmap](./docs/roadmap.md) for all 14 milestones from foundation to autonomous research agent.
 

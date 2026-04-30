@@ -1,7 +1,7 @@
-# Mulder Product App Design Strategy
+# Mulder App Design Strategy
 
 **Date:** 2026-04-30
-**Status:** Direction-setting document for `apps/app`, the Mulder product web app
+**Status:** Direction-setting document for `apps/app`, the Mulder web app
 **Audience:** Product, design, and engineering contributors extending the Mulder web app
 
 ---
@@ -10,9 +10,9 @@
 
 `apps/app` is the only active product direction for Mulder's browser experience.
 
-Mulder is a powerful research and analysis system. The interface should therefore feel like a precise technical workbench, not like an editorial presentation layer. API integration decisions are captured in [`docs/product-app-api-integration.md`](./product-app-api-integration.md).
+Mulder is a powerful research and analysis system. The interface should therefore feel like a precise technical workbench, not like an editorial presentation layer. API integration decisions are captured in [`docs/app-api-integration.md`](./app-api-integration.md).
 
-The key decision is not simply "make v1 cleaner." The better path is to continue the product app as an API-contract-first, capability-aware product shell:
+The key decision is not simply "make the earlier interface cleaner." The better path is to continue the app as an API-contract-first, capability-aware shell:
 
 - Build the UI around real workflows: documents, runs, evidence, entities, search, graph, review.
 - Bind real API data as early as possible.
@@ -25,23 +25,23 @@ This avoids the trap of building a beautiful static frontend that later has to b
 
 ---
 
-## 2. Why The Product App Exists
+## 2. Why The App Exists
 
-The v1 design was visually polished, but its concept was not fully aligned with the product's purpose. It leaned into an investigative, literary, archival tone: serif headlines, large atmospheric surfaces, cinematic pacing, and a narrated "hero moment" structure.
+The earlier visual direction was polished, but its concept was not fully aligned with the product's purpose. It leaned into an investigative, literary, archival tone: serif headlines, large atmospheric surfaces, cinematic pacing, and a narrated "hero moment" structure.
 
-That direction can work for a fundable showcase, but it is less convincing as the daily interface for a serious analysis tool. It makes the app feel like it is presenting insight rather than helping the user operate a complex system.
+That direction can work for a fundable presentation, but it is less convincing as the daily interface for a serious analysis tool. It makes the app feel like it is presenting insight rather than helping the user operate a complex system.
 
-The product app exists to shift the product posture:
+The app exists to shift the product posture:
 
-| v1 tendency | product app correction |
+| Earlier tendency | app correction |
 | --- | --- |
 | Editorial, cinematic, narrated | Technical, operational, direct |
 | Large hero surfaces | Dense work surfaces |
 | Serif/display emphasis | Sans-first UI typography |
 | Mood-led visual identity | Data-led visual identity |
-| Top-nav prototype structure | Sidebar-first product IA |
+| Top-nav-only structure | Sidebar-first product IA |
 | Screens as chapters | Screens as tools |
-| Static showcase risk | API-contract-backed workbench |
+| Static screen risk | API-contract-backed workbench |
 
 The product should communicate that it can handle difficult research work: messy sources, long-running jobs, contradictory claims, entity resolution, graph traversal, and auditability. The UI should make that power feel controllable.
 
@@ -79,7 +79,7 @@ Not:
 
 ## 4. Product Posture
 
-The product app should feel:
+The app should feel:
 
 - **Clean:** restrained palette, low decoration, clear layout rhythm.
 - **Productive:** users can scan, compare, filter, inspect, and act quickly.
@@ -140,9 +140,9 @@ Recommended sidebar grouping:
 | Research | Search | Hybrid retrieval, citations, trace disclosure | Mounted API; trace depth is partial |
 | Knowledge | Entities | Entity search, profiles, aliases, merges | Mounted API |
 | Knowledge | Graph | Relationship exploration and graph-backed review | Mounted partial; aggregate graph endpoint or batch edge query needed |
-| Operations | Analysis Runs | Queue, jobs, artifacts, failures, retries | Jobs mounted; product-shaped run facade needed |
+| Operations | Analysis Runs | Queue, jobs, artifacts, failures, retries | Jobs mounted; app-shaped run facade needed |
 | Operations | Activity | Cross-system event stream | Missing aggregate |
-| Operations | Usage | Cost, budget, worker, and capacity signals | CLI/package-only plus mounted status pieces; product API partial |
+| Operations | Usage | Cost, budget, worker, and capacity signals | CLI/package-only plus mounted status pieces; app API partial |
 | Admin | Settings | Workspace, users, API/auth, config, policy | Future milestone |
 
 `Analysis Runs` can stay active early because it is the fastest way to validate API binding and operational states. In the real product navigation, it should sit under Operations so pipeline machinery does not look like the core research object.
@@ -158,17 +158,17 @@ Use precise contract states in planning:
 | Future milestone | Depends on upcoming milestone work before product use |
 | Missing | Needed by the product direction but not yet planned clearly |
 
-Disabled or "soon" items are acceptable in the prototype only if they are visually honest and non-interactive. As APIs become real, these sections should graduate from disabled to functional.
+Disabled or "soon" items are acceptable only if they are visually honest and non-interactive. As APIs become real, these sections should graduate from disabled to functional.
 
 ---
 
 ## 6. Visual System
 
-The product app visual system lives in `apps/app/src/styles.css`. That file should remain the main adjustment surface.
+The app visual system lives in `apps/app/src/styles.css`. That file should remain the main adjustment surface.
 
 ### Typography
 
-Use sans-first typography for all product UI. Avoid v1's editorial display-serif language in the product app.
+Use sans-first typography for all app UI. Avoid editorial display-serif language in the app.
 
 Recommended usage:
 
@@ -237,7 +237,7 @@ Do not make Mulder feel powerful only by making everything smaller. The interfac
 
 ## 7. Usability Strategy
 
-The product app should optimize for repeated analytical work, not just first impression.
+The app should optimize for repeated analytical work, not just first impression.
 
 ### Research First, Pipeline Second
 
@@ -312,7 +312,7 @@ Until those backend contracts exist, the app can support development ingest and 
 If an action has no API, do not render it as a working primary action. Use one of these patterns instead:
 
 - Hide the action until available.
-- Render a disabled control with "API pending" or similar internal-facing language in prototype mode.
+- Render a disabled control with "API pending" or similar internal-facing language in internal planning mode.
 - Show a capability-aware empty state.
 
 This is especially important for evidence review actions, graph aggregation, taxonomy management, exports, and cost controls.
@@ -339,18 +339,18 @@ This does not mean the backend should become UI-driven. Mulder's durable archite
 - Long-running operations are produced as jobs.
 - The worker executes domain pipeline steps.
 - Read-only browser views consume stable HTTP read models.
-- Product facades are acceptable when they compose existing domain data for the UI.
-- Product facades are not acceptable when they duplicate pipeline logic or become a second implementation of domain behavior.
+- App facades are acceptable when they compose existing domain data for the UI.
+- App facades are not acceptable when they duplicate pipeline logic or become a second implementation of domain behavior.
 
 Recommended architecture:
 
 1. A typed API client layer.
 2. React Query hooks per backend capability.
 3. A capability registry describing the real contract state of each feature.
-4. No checked-in fixture data in product screens.
+4. No checked-in fixture data in app screens.
 5. UI states for loading, error, empty, partial, and unavailable.
 
-The initial prototype used static fixtures to establish the visual direction. The product app should now behave like the real application: API data when available, honest empty/error/unavailable states when it is not. If a public fixed-data showcase is needed later, it should live beside the product app as an explicit showcase surface.
+The initial static shell used fixtures to establish the visual direction. The app should now behave like the real application: API data when available, honest empty/error/unavailable states when it is not. Public examples, if needed later, must be separate from the production app direction.
 
 ### Contract States
 
@@ -366,7 +366,7 @@ type CapabilityState =
 	| 'missing';
 ```
 
-For `mounted-api` and `mounted-partial`, the default path must be real API data. For `documented-target`, `future-milestone`, and `missing` capabilities, the product app should show unavailable or planned states rather than silently substituting fixed data.
+For `mounted-api` and `mounted-partial`, the default path must be real API data. For `documented-target`, `future-milestone`, and `missing` capabilities, the app should show unavailable or planned states rather than silently substituting checked-in static data.
 
 ### Mounted API Coverage
 
@@ -405,13 +405,13 @@ These can be bound immediately or with minimal UI adaptation:
 
 ### Missing or Weak API Shapes
 
-These are important for the product workbench:
+These are important for the app workbench:
 
 | Need | Contract state | Recommendation |
 | --- | --- | --- |
-| Analysis run list/detail | Mounted partial: jobs exist, product-shaped runs do not | Add `/api/analysis-runs` facade or enrich `/api/jobs` with stable run grouping, progress, artifacts, parameters, and source status |
+| Analysis run list/detail | Mounted partial: jobs exist, app-shaped runs do not | Add `/api/analysis-runs` facade or enrich `/api/jobs` with stable run grouping, progress, artifacts, parameters, and source status |
 | Run artifacts and params | Mounted partial: payload exists but is not normalized for UI | Expose a stable artifact/parameter read model rather than parsing job payloads in components |
-| Evidence claims | Missing/product facade needed: contradictions exist, claims are not first-class | Add `/api/evidence/claims` with claim text, source support, confidence, contradiction state, and review state |
+| Evidence claims | Missing app facade needed: contradictions exist, claims are not first-class | Add `/api/evidence/claims` with claim text, source support, confidence, contradiction state, and review state |
 | Evidence review actions | Missing | Add confirm, dismiss, watch, resolve, and annotate actions with optimistic-safe contracts |
 | Graph aggregate | Mounted partial: per-entity edges only | Add `/api/graph` or `/api/entities/edges?entity_ids=...` for graph surfaces beyond one entity |
 | Global stories | Mounted partial: document-scoped stories exist | Add `/api/stories` and `/api/stories/:id` or keep story access intentionally document-scoped |
@@ -431,7 +431,7 @@ The UI should be designed with these needs in mind, but it should not fabricate 
 
 ### Phase 1: Bind Real API Data
 
-Replace static prototype data with real API hooks for:
+Replace static shell data with real API hooks for:
 
 - Overview metrics.
 - Jobs/runs table.
@@ -440,9 +440,9 @@ Replace static prototype data with real API hooks for:
 - Source reliability.
 - Search status where useful.
 
-Do not keep fixed-data fallbacks in product screens. Use empty, unavailable, or planned states when an API contract is not ready.
+Do not keep checked-in static-data fallbacks in app screens. Use empty, unavailable, or planned states when an API contract is not ready.
 
-### Phase 2: Add Capability-Aware Product States
+### Phase 2: Add Capability-Aware App States
 
 Introduce a small capability map:
 
@@ -462,7 +462,7 @@ Use it to control:
 - Missing actions.
 - Empty states.
 - Tooltips.
-- "API pending" prototype notes.
+- "API pending" internal notes.
 
 ### Phase 3: Close Backend Gaps in Product Order
 
@@ -494,9 +494,9 @@ Once the API shape exists, expand:
 
 ## 10. Non-Goals
 
-The product app should not attempt to:
+The app should not attempt to:
 
-- Recreate v1's cinematic document reveal language.
+- Recreate cinematic document reveal language.
 - Ship a complete fake workbench before API coverage exists.
 - Add complex visual effects before core workflows are usable.
 - Optimize for a marketing landing page.
@@ -505,17 +505,17 @@ The product app should not attempt to:
 - Move pipeline or domain logic into frontend-shaped API routes.
 - Productize real archive ingest before the provenance/trust gate is resolved or explicitly waived.
 
-The goal is a durable product shell that can absorb backend capability as it lands.
+The goal is a durable app shell that can absorb backend capability as it lands.
 
 ---
 
 ## 11. Success Criteria
 
-The product app is succeeding if:
+The app is succeeding if:
 
-- It feels immediately more credible as a powerful analysis product than v1.
+- It feels immediately credible as a powerful analysis product.
 - Users can understand system state without reading explanatory prose.
-- Real API data replaces static prototype data without redesigning screens.
+- Real API data replaces static shell data without redesigning screens.
 - Missing capabilities are visible but not fake.
 - Sidebar IA scales as new milestones land while keeping research modules visually primary.
 - Tables, inspectors, filters, and status surfaces become the dominant interaction model.
@@ -531,4 +531,4 @@ The product should feel like it was built by people who trust the user with comp
 
 Mulder does not need to make research look magical. It needs to make difficult research controllable, inspectable, and reliable.
 
-That is the core design strategy for the Mulder product app.
+That is the core design strategy for the Mulder app.

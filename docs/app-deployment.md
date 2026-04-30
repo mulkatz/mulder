@@ -1,6 +1,6 @@
-# Mulder Product App Deployment and Infrastructure Runbook
+# Mulder App Deployment and Infrastructure Runbook
 
-This runbook describes what must be in place before the product app is exposed to real users. It is intentionally configuration-neutral: do not commit private domains, GCP project IDs, sender addresses, customer names, private corpus choices, API keys, service-account keys, or production config files to this open-source repository.
+This runbook describes what must be in place before the app is exposed to real users. It is intentionally configuration-neutral: do not commit private domains, GCP project IDs, sender addresses, customer names, private corpus choices, API keys, service-account keys, or production config files to this open-source repository.
 
 Use placeholders in repo-tracked documentation and code:
 
@@ -14,15 +14,15 @@ Store real values in Cloudflare settings, GitHub Actions secrets or variables, G
 
 ## Scope
 
-The target product UI is `apps/app`. Product API integration rules are preserved in [`docs/product-app-api-integration.md`](./product-app-api-integration.md).
+The target browser UI is `apps/app`. API integration rules are preserved in [`docs/app-api-integration.md`](./app-api-integration.md).
 
-The product app must be populated through the product pipeline only:
+The app must be populated through the Mulder pipeline only:
 
 - no SQL fixture seeding in production
 - no checked-in production corpus configuration
-- no showcase UUID families
+- no checked-in static UUID families
 - no `*.e2e@mulder.local` users
-- no showcase metadata in production data
+- no static sample metadata in production data
 
 ## Target Architecture
 
@@ -48,9 +48,9 @@ Already present:
 - Resend-backed invite delivery plumbing
 - owner invite helper: `pnpm invite:owner`
 - live smoke helper: `pnpm smoke:live`
-- one-command local product-app dev entrypoint: `pnpm dev`
+- one-command local app dev entrypoint: `pnpm dev`
 - API-backed `apps/app` shell with browser auth, loading, empty, and error states
-- product-app API integration notes in `docs/product-app-api-integration.md`
+- app API integration notes in `docs/app-api-integration.md`
 - `wrangler.json` points Cloudflare assets at `apps/app/dist`
 
 Still required before live:
@@ -68,7 +68,7 @@ Still required before live:
 
 Do not go live until all of these are true:
 
-- `apps/app` does not depend on checked-in fixture data for product screens.
+- `apps/app` does not depend on checked-in fixture data for app screens.
 - Cloudflare production has `VITE_API_BASE_URL=<api-origin>`.
 - The API health check at `<api-origin>/api/health` returns 200.
 - Production database migrations have completed successfully.
@@ -112,16 +112,16 @@ VITE_API_BASE_URL=<api-origin>
 
 Do not add operator API keys, preview auth bypasses, mock data toggles, or fixture fallbacks to the browser bundle.
 
-### 4. Verify product app API integration before production
+### 4. Verify app API integration before production
 
-Before assigning the production domain to `apps/app`, verify that the current API-backed product shell still has:
+Before assigning the production domain to `apps/app`, verify that the current API-backed app shell still has:
 
 - API client support for `VITE_API_BASE_URL`
 - session bootstrap against `GET /api/auth/session`
 - login, logout, and invite acceptance screens
 - no operator API keys in the browser bundle
 - API-backed loading, empty, success, and error states
-- no checked-in fixture fallback for product screens
+- no checked-in fixture fallback for app screens
 - visible production API errors rather than masked fallback data
 - a green repo-root `pnpm --filter @mulder/app build`
 
@@ -144,7 +144,7 @@ For each route, verify:
 - no overlapping UI
 - professional empty states for a fresh database
 - loading states do not shift the layout badly
-- API failures show product-appropriate errors
+- API failures show appropriate errors
 - no preview or mock data appears in production
 
 ## Backend Work Order: GCP API and Worker
@@ -253,7 +253,7 @@ For open-source safety, prefer GitHub Workload Identity Federation over long-liv
 
 ## Backend Deploy
 
-Use the manual GitHub Actions workflow `Deploy Product App`.
+Use the manual GitHub Actions workflow `Deploy App`.
 
 Required GitHub configuration:
 
@@ -331,11 +331,11 @@ pnpm invite:owner
 
 The API sends the invite email in production. In local/dev with log delivery enabled, it logs the acceptance URL server-side.
 
-After the first owner accepts the invitation, all future users should be invited from the product admin flow.
+After the first owner accepts the invitation, all future users should be invited from the admin flow.
 
-## Product App Data
+## App Data
 
-Do not insert product corpus rows directly into Cloud SQL.
+Do not insert corpus rows directly into Cloud SQL.
 
 Populate the live corpus through the product:
 
@@ -344,7 +344,7 @@ Populate the live corpus through the product:
 3. Let API and worker processing complete.
 4. Verify the documents, stories, entities, retrieval, and analysis views from the frontend.
 
-The checked-in PDFs in `fixtures/raw/` can be used for technical smoke only if they are acceptable for the product trial. Any curated real pilot corpus choice belongs in private operator notes, not in this repo.
+The checked-in PDFs in `fixtures/raw/` can be used for technical smoke only if they are acceptable for the trial. Any curated real pilot corpus choice belongs in private operator notes, not in this repo.
 
 After processing, audit production for:
 
@@ -354,7 +354,7 @@ SELECT * FROM api_users WHERE email LIKE '%.e2e@mulder.local';
 SELECT * FROM sources WHERE id::text LIKE '11111111-%' OR id::text LIKE '22222222-%' OR id::text LIKE '33333333-%';
 ```
 
-Also check metadata and tags for retired showcase labels.
+Also check metadata and tags for retired static sample labels.
 
 ## No-Deploy Local Smoke
 
@@ -376,7 +376,7 @@ MULDER_SMOKE_PASSWORD=<password> \
 pnpm smoke:live
 ```
 
-Browser smoke against the local product app:
+Browser smoke against the local app:
 
 - unauthenticated `/` redirects to `/login`
 - login succeeds with the local owner account
@@ -417,7 +417,7 @@ Minimum pass criteria:
 - recipient receives the invite email
 - PDF upload creates a source
 - worker advances queued jobs
-- processed documents appear in the product app
+- processed documents appear in the app
 
 ## Infrastructure Checklist Before Go-Live
 
@@ -444,7 +444,7 @@ Engineering-owned:
 
 - `apps/app` API integration completed
 - `apps/app` production build path configured
-- no mock or fixture fallback in production product screens
+- no mock or fixture fallback in production app screens
 - Cloud Run API deployed
 - Cloud Run worker deployed
 - production migrations run
@@ -456,7 +456,7 @@ Engineering-owned:
 ## Recommended Follow-Up PRs
 
 1. `apps/app` production readiness
-   - Keep `apps/app` as the monorepo workspace package for the product UI.
+   - Keep `apps/app` as the monorepo workspace package for the browser UI.
 
 2. Production migration job
    - Add a Cloud Run Job or GitHub Actions step that runs `db migrate` with production config.

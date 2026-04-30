@@ -1,4 +1,4 @@
-name: Deploy Product App
+name: Deploy App
 
 on:
   workflow_dispatch:
@@ -51,7 +51,7 @@ jobs:
             --project "${{ inputs.project_id }}" \
             --location "${{ inputs.region }}" \
             --repository-format docker \
-            --description "Mulder product app containers"
+            --description "Mulder API and worker containers"
 
       - name: Configure Docker auth
         run: gcloud auth configure-docker "${{ inputs.region }}-docker.pkg.dev" --quiet

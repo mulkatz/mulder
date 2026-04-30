@@ -182,5 +182,5 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Build product app
+      - name: Build app
         run: pnpm --filter @mulder/app build

@@ -182,7 +182,7 @@ No divergences found. Implementation matches spec:
 - **Severity:** NOTE
 - **Spec says:** §13 lists a browser UI surface.
 - **Code does:** current browser product work lives in `apps/app`.
-- **Evidence:** This is consistent with the current product-app layout. Not a divergence.
+- **Evidence:** This is consistent with the current app layout. Not a divergence.
 
 No divergences found. All directories listed in §13 exist:
 - packages/core, packages/pipeline, packages/retrieval, packages/taxonomy, packages/worker, packages/evidence
@@ -261,4 +261,4 @@ None.
 3. [DIV-006]: v2.0 migration files (009-011) will be created in M6
 4. [DIV-008]: `cost-estimator.ts` is M8-I2 scope
 5. [DIV-011]: `shared/types.ts` can be created when shared types are needed beyond service interfaces
-6. [DIV-013]: Not a real divergence — the browser product app lives in `apps/app`
+6. [DIV-013]: Not a real divergence — the browser app lives in `apps/app`
