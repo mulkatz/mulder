@@ -21,6 +21,7 @@ import { performance } from 'node:perf_hooks';
 import type { Logger, MulderConfig, Services, Source, SourceStatus, StepError, Story, StoryStatus } from '@mulder/core';
 import {
 	completedStepsFromProgress,
+	computeRequestedSteps,
 	createChildLogger,
 	createPipelineRun,
 	finalizeBudgetReservation,
@@ -32,8 +33,14 @@ import {
 	findPipelineRunSourcesByRunId,
 	findSourceById,
 	findStoriesBySourceId,
+	isLayoutSourceType,
+	isPrestructuredSourceType,
 	PIPELINE_ERROR_CODES,
+	PIPELINE_STEP_ORDER,
 	PipelineError,
+	planPipelineSteps,
+	type StepPlan,
+	type StepPlanInput,
 	upsertPipelineRunSource,
 	upsertSourceStep,
 } from '@mulder/core';
@@ -45,7 +52,6 @@ import { execute as executeExtract } from '../extract/index.js';
 import { execute as executeGraph } from '../graph/index.js';
 import { execute as executeIngest, resolvePdfFiles } from '../ingest/index.js';
 import { execute as executeSegment } from '../segment/index.js';
-import { computeRequestedSteps, isPrestructuredSourceType, planPipelineSteps, type StepPlan } from './step-plan.js';
 import type {
 	PipelineGlobalAnalysisOutcome,
 	PipelineRunInput,
@@ -55,14 +61,6 @@ import type {
 	PipelineStepName,
 } from './types.js';
 
-export type { StepPlan, StepPlanInput } from './step-plan.js';
-export {
-	computeRequestedSteps,
-	isLayoutSourceType,
-	isPrestructuredSourceType,
-	planPipelineSteps,
-	STEP_ORDER,
-} from './step-plan.js';
 // Re-export types for the package barrel.
 export type {
 	PipelineGlobalAnalysisOutcome,
@@ -72,6 +70,14 @@ export type {
 	PipelineRunSourceOutcome,
 	PipelineStepName,
 } from './types.js';
+export type { StepPlan, StepPlanInput };
+export {
+	computeRequestedSteps,
+	isLayoutSourceType,
+	isPrestructuredSourceType,
+	PIPELINE_STEP_ORDER as STEP_ORDER,
+	planPipelineSteps,
+};
 
 /** Source statuses ordered to match `STEP_ORDER` (the state *after* each step). */
 const SOURCE_STATUS_ORDER: readonly SourceStatus[] = [

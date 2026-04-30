@@ -10,7 +10,7 @@
  * @see docs/functional-spec.md §3.1, §3.2, §3.3
  */
 
-import type { SourceType, StepError } from '@mulder/core';
+import type { PipelinePlanStep, SourceType, StepError } from '@mulder/core';
 import type { AnalyzeResult } from '../analyze/types.js';
 
 // ────────────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ import type { AnalyzeResult } from '../analyze/types.js';
  * deliberately omitted — when they ship, they will be appended to the
  * tuple in `index.ts` and `plannedSteps` will naturally pick them up.
  */
-export type PipelineStepName = 'ingest' | 'extract' | 'segment' | 'enrich' | 'embed' | 'graph';
+export type PipelineStepName = PipelinePlanStep;
 
 // ────────────────────────────────────────────────────────────
 // Run options + input

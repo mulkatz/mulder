@@ -13,13 +13,15 @@ import {
 	loadConfig,
 	PIPELINE_ERROR_CODES,
 	PipelineError,
+	type PipelinePlanStep,
 	type PipelineStep,
+	planPipelineSteps,
+	type StepPlan,
 	secondsUntilNextBudgetMonth,
 	summarizeMonthlyBudgetReservations,
 	upsertPipelineRunSource,
 	upsertSourceStep,
 } from '@mulder/core';
-import { type PipelineStepName, planPipelineSteps, type StepPlan } from '@mulder/pipeline';
 import type { Pool, PoolClient } from 'pg';
 import type { PipelineRetryRequest, PipelineRunRequest } from '../routes/pipeline.schemas.js';
 import { PIPELINE_STEP_VALUES } from '../routes/pipeline.schemas.js';
@@ -187,7 +189,7 @@ function planSourcePipeline(input: { source: Source; from?: PipelineStep; upTo?:
 	});
 }
 
-function requireExecutablePipelineStep(step: PipelineStepName): PipelineStep {
+function requireExecutablePipelineStep(step: PipelinePlanStep): PipelineStep {
 	if (isPipelineStep(step)) {
 		return step;
 	}

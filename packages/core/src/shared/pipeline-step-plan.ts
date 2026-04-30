@@ -9,11 +9,13 @@
  * @see docs/functional-spec.md §3.1, §3.2
  */
 
-import type { SourceType } from '@mulder/core';
-import { PIPELINE_ERROR_CODES, PipelineError } from '@mulder/core';
-import type { PipelineStepName } from './types.js';
+import type { PipelineStep } from '../database/repositories/pipeline-reset.js';
+import type { SourceType } from '../database/repositories/source.types.js';
+import { PIPELINE_ERROR_CODES, PipelineError } from './errors.js';
 
-export const STEP_ORDER: readonly PipelineStepName[] = [
+export type PipelinePlanStep = 'ingest' | PipelineStep;
+
+export const PIPELINE_STEP_ORDER: readonly PipelinePlanStep[] = [
 	'ingest',
 	'extract',
 	'segment',
@@ -34,22 +36,22 @@ export const PRESTRUCTURED_SOURCE_TYPES: readonly SourceType[] = [
 
 export interface StepPlanInput {
 	sourceType: SourceType;
-	from?: PipelineStepName;
-	upTo?: PipelineStepName;
+	from?: PipelinePlanStep;
+	upTo?: PipelinePlanStep;
 }
 
 export interface StepPlan {
-	requestedSteps: PipelineStepName[];
-	executableSteps: PipelineStepName[];
-	skippedSteps: PipelineStepName[];
+	requestedSteps: PipelinePlanStep[];
+	executableSteps: PipelinePlanStep[];
+	skippedSteps: PipelinePlanStep[];
 }
 
-function isKnownStep(value: string | undefined): value is PipelineStepName {
-	return value !== undefined && STEP_ORDER.some((step) => step === value);
+function isKnownStep(value: string | undefined): value is PipelinePlanStep {
+	return value !== undefined && PIPELINE_STEP_ORDER.some((step) => step === value);
 }
 
-function stepIndex(step: PipelineStepName): number {
-	return STEP_ORDER.indexOf(step);
+function stepIndex(step: PipelinePlanStep): number {
+	return PIPELINE_STEP_ORDER.indexOf(step);
 }
 
 export function isLayoutSourceType(sourceType: SourceType): boolean {
@@ -60,20 +62,20 @@ export function isPrestructuredSourceType(sourceType: SourceType): boolean {
 	return PRESTRUCTURED_SOURCE_TYPES.some((candidate) => candidate === sourceType);
 }
 
-export function computeRequestedSteps(input: Omit<StepPlanInput, 'sourceType'>): PipelineStepName[] {
+export function computeRequestedSteps(input: Omit<StepPlanInput, 'sourceType'>): PipelinePlanStep[] {
 	if (input.from !== undefined && !isKnownStep(input.from)) {
 		throw new PipelineError(`Unknown step in --from: ${input.from}`, PIPELINE_ERROR_CODES.PIPELINE_WRONG_STATUS, {
-			context: { from: input.from, validSteps: [...STEP_ORDER] },
+			context: { from: input.from, validSteps: [...PIPELINE_STEP_ORDER] },
 		});
 	}
 	if (input.upTo !== undefined && !isKnownStep(input.upTo)) {
 		throw new PipelineError(`Unknown step in --up-to: ${input.upTo}`, PIPELINE_ERROR_CODES.PIPELINE_WRONG_STATUS, {
-			context: { upTo: input.upTo, validSteps: [...STEP_ORDER] },
+			context: { upTo: input.upTo, validSteps: [...PIPELINE_STEP_ORDER] },
 		});
 	}
 
 	const fromIdx = input.from ? stepIndex(input.from) : 0;
-	const upToIdx = input.upTo ? stepIndex(input.upTo) : STEP_ORDER.length - 1;
+	const upToIdx = input.upTo ? stepIndex(input.upTo) : PIPELINE_STEP_ORDER.length - 1;
 
 	if (fromIdx > upToIdx) {
 		throw new PipelineError(
@@ -83,12 +85,12 @@ export function computeRequestedSteps(input: Omit<StepPlanInput, 'sourceType'>):
 		);
 	}
 
-	return STEP_ORDER.slice(fromIdx, upToIdx + 1);
+	return PIPELINE_STEP_ORDER.slice(fromIdx, upToIdx + 1);
 }
 
 export function planPipelineSteps(input: StepPlanInput): StepPlan {
 	const requestedSteps = computeRequestedSteps({ from: input.from, upTo: input.upTo });
-	const skippedSteps: PipelineStepName[] = isPrestructuredSourceType(input.sourceType)
+	const skippedSteps: PipelinePlanStep[] = isPrestructuredSourceType(input.sourceType)
 		? requestedSteps.filter((step) => step === 'segment')
 		: [];
 	const executableSteps = requestedSteps.filter((step) => !skippedSteps.includes(step));

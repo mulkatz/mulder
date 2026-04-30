@@ -17,7 +17,6 @@
 		"@hono/node-server": "^1.15.0",
 		"@mulder/core": "workspace:*",
 		"@mulder/evidence": "workspace:*",
-		"@mulder/pipeline": "workspace:*",
 		"@mulder/retrieval": "workspace:*",
 		"@mulder/taxonomy": "workspace:*",
 		"@mulder/worker": "workspace:*",

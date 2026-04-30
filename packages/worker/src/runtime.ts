@@ -26,11 +26,13 @@ import {
 	findSourceById,
 	markJobCompleted,
 	markJobFailed,
+	type PipelinePlanStep,
+	planPipelineSteps,
 	reapRunningJobs,
+	type StepPlan,
 	upsertPipelineRunSource,
 	upsertSourceStep,
 } from '@mulder/core';
-import { type PipelineStepName, planPipelineSteps, type StepPlan } from '@mulder/pipeline';
 import type pg from 'pg';
 import { dispatchJob } from './dispatch.js';
 import {
@@ -171,7 +173,7 @@ function isStepJob(job: WorkerJobEnvelope | null): job is WorkerJobEnvelope<Work
 	return Boolean(job && STEP_ORDER.some((step) => step === job.type));
 }
 
-function isWorkerPipelineStepName(step: PipelineStepName): step is WorkerPipelineStepName {
+function isWorkerPipelineStepName(step: PipelinePlanStep): step is WorkerPipelineStepName {
 	return STEP_ORDER.some((candidate) => candidate === step);
 }
 

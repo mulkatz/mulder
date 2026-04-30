@@ -41,9 +41,6 @@ importers:
       '@mulder/evidence':
         specifier: workspace:*
         version: link:../../packages/evidence
-      '@mulder/pipeline':
-        specifier: workspace:*
-        version: link:../../packages/pipeline
       '@mulder/retrieval':
         specifier: workspace:*
         version: link:../../packages/retrieval
