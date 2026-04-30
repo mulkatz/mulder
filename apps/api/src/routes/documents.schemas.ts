@@ -101,7 +101,13 @@ export const DocumentPageParamsSchema = z.object({
 	num: z.coerce.number().int().positive(),
 });
 
-export const DOCUMENT_OBSERVABILITY_STEP_STATUS_VALUES = ['pending', 'completed', 'failed', 'partial'] as const;
+export const DOCUMENT_OBSERVABILITY_STEP_STATUS_VALUES = [
+	'pending',
+	'completed',
+	'failed',
+	'partial',
+	'skipped',
+] as const;
 export const DocumentObservabilityStepStatusSchema = z.enum(DOCUMENT_OBSERVABILITY_STEP_STATUS_VALUES);
 
 export const DocumentObservabilityStepSchema = z.object({

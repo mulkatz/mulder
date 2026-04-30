@@ -26,8 +26,12 @@ import {
 	findSourceById,
 	markJobCompleted,
 	markJobFailed,
+	type PipelinePlanStep,
+	planPipelineSteps,
 	reapRunningJobs,
+	type StepPlan,
 	upsertPipelineRunSource,
+	upsertSourceStep,
 } from '@mulder/core';
 import type pg from 'pg';
 import { dispatchJob } from './dispatch.js';
@@ -35,9 +39,11 @@ import {
 	createWorkerId,
 	describeWorkerError,
 	parseWorkerJobEnvelope,
+	WORKER_ERROR_CODES,
 	type WorkerActiveJobSnapshot,
 	type WorkerDispatchContext,
 	type WorkerDispatchFn,
+	WorkerError,
 	type WorkerJobEnvelope,
 	type WorkerJobStatusSnapshot,
 	type WorkerPipelineStepName,
@@ -167,13 +173,32 @@ function isStepJob(job: WorkerJobEnvelope | null): job is WorkerJobEnvelope<Work
 	return Boolean(job && STEP_ORDER.some((step) => step === job.type));
 }
 
-function nextStepAfter(step: WorkerPipelineStepName, upTo?: WorkerPipelineStepName): WorkerPipelineStepName | null {
-	const currentIndex = STEP_ORDER.indexOf(step);
-	const terminalIndex = upTo ? STEP_ORDER.indexOf(upTo) : STEP_ORDER.length - 1;
-	if (currentIndex < 0 || terminalIndex < 0 || currentIndex >= terminalIndex) {
-		return null;
+function isWorkerPipelineStepName(step: PipelinePlanStep): step is WorkerPipelineStepName {
+	return STEP_ORDER.some((candidate) => candidate === step);
+}
+
+function nextStepAfterPlan(plan: StepPlan, step: WorkerPipelineStepName): WorkerPipelineStepName | null {
+	const executableSteps = plan.executableSteps.filter(isWorkerPipelineStepName);
+	const currentIndex = executableSteps.indexOf(step);
+	if (currentIndex === -1) {
+		return executableSteps[0] ?? null;
 	}
-	return STEP_ORDER[currentIndex + 1] ?? null;
+
+	return executableSteps[currentIndex + 1] ?? null;
+}
+
+async function recordSkippedSourceSteps(
+	pool: pg.Pool | pg.PoolClient,
+	sourceId: string,
+	plan: StepPlan,
+): Promise<void> {
+	for (const step of plan.skippedSteps) {
+		await upsertSourceStep(pool, {
+			sourceId,
+			stepName: step,
+			status: 'skipped',
+		});
+	}
 }
 
 function getSourceScopedRunPayload(job: WorkerJobEnvelope<WorkerPipelineStepName>): {
@@ -320,7 +345,22 @@ async function chainStepJobAfterSuccess(
 		return;
 	}
 
-	const nextStep = nextStepAfter(job.type, sourceRunPayload.upTo);
+	const source = await findSourceById(pool, sourceRunPayload.sourceId);
+	if (!source) {
+		throw new WorkerError(
+			`Source not found for pipeline chain: ${sourceRunPayload.sourceId}`,
+			WORKER_ERROR_CODES.WORKER_INVALID_JOB_PAYLOAD,
+			{ context: { sourceId: sourceRunPayload.sourceId, runId: sourceRunPayload.runId } },
+		);
+	}
+
+	const stepPlan = planPipelineSteps({
+		sourceType: source.sourceType,
+		from: job.type,
+		upTo: sourceRunPayload.upTo,
+	});
+	const nextStep = nextStepAfterPlan(stepPlan, job.type);
+	await recordSkippedSourceSteps(pool, sourceRunPayload.sourceId, stepPlan);
 	await upsertPipelineRunSource(pool, {
 		runId: sourceRunPayload.runId,
 		sourceId: sourceRunPayload.sourceId,

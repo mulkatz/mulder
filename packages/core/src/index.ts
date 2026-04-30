@@ -386,6 +386,16 @@ export {
 	createLogger,
 	withDuration,
 } from './shared/logger.js';
+export type { PipelinePlanStep, StepPlan, StepPlanInput } from './shared/pipeline-step-plan.js';
+export {
+	computeRequestedSteps,
+	isLayoutSourceType,
+	isPrestructuredSourceType,
+	LAYOUT_SOURCE_TYPES,
+	PIPELINE_STEP_ORDER,
+	PRESTRUCTURED_SOURCE_TYPES,
+	planPipelineSteps,
+} from './shared/pipeline-step-plan.js';
 export type { RateLimiterOptions } from './shared/rate-limiter.js';
 // ── Rate limiter ────────────────────────────────────────────
 export { RateLimiter } from './shared/rate-limiter.js';

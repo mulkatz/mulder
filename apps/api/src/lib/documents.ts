@@ -301,7 +301,7 @@ interface DocumentObservabilityProgress {
 
 interface DocumentObservabilityStep {
 	step: string;
-	status: 'pending' | 'completed' | 'failed' | 'partial';
+	status: 'pending' | 'completed' | 'failed' | 'partial' | 'skipped';
 	completed_at: string | null;
 	error_message: string | null;
 }
@@ -526,6 +526,28 @@ function buildSourceTimelineEvents(
 						source_id: sourceId,
 						origin: 'postgresql',
 						error_message: step.errorMessage,
+					},
+				}),
+			);
+		}
+
+		if (step.status === 'skipped') {
+			const occurredAt = step.completedAt?.toISOString() ?? progressUpdatedAt;
+			if (!occurredAt) {
+				continue;
+			}
+
+			events.push(
+				makeTimelineEvent({
+					scope: 'source',
+					event: 'source_step.skipped',
+					status: step.status,
+					occurred_at: occurredAt,
+					step: step.stepName,
+					story_id: null,
+					details: {
+						source_id: sourceId,
+						origin: 'postgresql',
 					},
 				}),
 			);

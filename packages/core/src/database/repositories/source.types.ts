@@ -16,7 +16,7 @@
 export type SourceStatus = 'ingested' | 'extracted' | 'segmented' | 'enriched' | 'embedded' | 'graphed' | 'analyzed';
 
 /** Source step execution status. */
-export type SourceStepStatus = 'pending' | 'completed' | 'failed' | 'partial';
+export type SourceStepStatus = 'pending' | 'completed' | 'failed' | 'partial' | 'skipped';
 
 /** Source format discriminator. */
 export type SourceType = 'pdf' | 'image' | 'text' | 'docx' | 'spreadsheet' | 'email' | 'url';

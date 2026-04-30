@@ -106,8 +106,18 @@ export type {
 	PipelineRunResult,
 	PipelineRunSourceOutcome,
 	PipelineStepName,
+	StepPlan,
+	StepPlanInput,
 } from './pipeline/index.js';
-export { execute as executePipelineRun, STEP_ORDER, shouldRun } from './pipeline/index.js';
+export {
+	computeRequestedSteps,
+	execute as executePipelineRun,
+	isLayoutSourceType,
+	isPrestructuredSourceType,
+	planPipelineSteps,
+	STEP_ORDER,
+	shouldRun,
+} from './pipeline/index.js';
 export type {
 	ReprocessInput,
 	ReprocessPlan,
