@@ -1,12 +1,19 @@
 import { extname } from 'node:path';
-import type { SourceType } from '@mulder/core';
+import type { SourceFormatMetadata, SourceType } from '@mulder/core';
 
 export type SourceDetectionConfidence = 'magic' | 'extension' | 'content';
+export type SupportedImageMediaType = 'image/png' | 'image/jpeg' | 'image/tiff';
+export type SourceStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff';
 
 export interface SourceDetectionResult {
 	sourceType: SourceType;
 	confidence: SourceDetectionConfidence;
 	mediaType?: string;
+}
+
+export interface ImageDimensions {
+	width: number;
+	height: number;
 }
 
 const PDF_SIGNATURE = Buffer.from('%PDF-', 'latin1');
@@ -16,8 +23,20 @@ const TIFF_LITTLE_ENDIAN_SIGNATURE = Buffer.from([0x49, 0x49, 0x2a, 0x00]);
 const TIFF_BIG_ENDIAN_SIGNATURE = Buffer.from([0x4d, 0x4d, 0x00, 0x2a]);
 const ZIP_LOCAL_FILE_HEADER_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 
+const PDF_MEDIA_TYPE = 'application/pdf';
+const PNG_MEDIA_TYPE: SupportedImageMediaType = 'image/png';
+const JPEG_MEDIA_TYPE: SupportedImageMediaType = 'image/jpeg';
+const TIFF_MEDIA_TYPE: SupportedImageMediaType = 'image/tiff';
 const DOCX_MEDIA_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MEDIA_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+const IMAGE_STORAGE_EXTENSIONS_BY_MEDIA_TYPE: Record<SupportedImageMediaType, SourceStorageExtension> = {
+	'image/png': 'png',
+	'image/jpeg': 'jpg',
+	'image/tiff': 'tiff',
+};
+
+const SUPPORTED_INGEST_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff']);
 
 function hasPrefix(buffer: Buffer, signature: Buffer): boolean {
 	return buffer.length >= signature.length && buffer.subarray(0, signature.length).equals(signature);
@@ -31,6 +50,119 @@ function getExtension(input: string): string {
 
 function hasHttpUrlShape(input: string): boolean {
 	return /^https?:\/\/\S+$/i.test(input.trim());
+}
+
+export function isSupportedIngestFilename(input: string): boolean {
+	return SUPPORTED_INGEST_EXTENSIONS.has(getExtension(input));
+}
+
+export function getOriginalExtension(input: string): string {
+	return getExtension(input).replace(/^\./, '');
+}
+
+export function isSupportedImageMediaType(mediaType: string | undefined): mediaType is SupportedImageMediaType {
+	return mediaType === PNG_MEDIA_TYPE || mediaType === JPEG_MEDIA_TYPE || mediaType === TIFF_MEDIA_TYPE;
+}
+
+export function getCanonicalStorageExtensionForMediaType(mediaType: string | undefined): SourceStorageExtension | null {
+	if (mediaType === PDF_MEDIA_TYPE) {
+		return 'pdf';
+	}
+	if (isSupportedImageMediaType(mediaType)) {
+		return IMAGE_STORAGE_EXTENSIONS_BY_MEDIA_TYPE[mediaType];
+	}
+	return null;
+}
+
+export function getStorageExtensionForDetection(detection: SourceDetectionResult): SourceStorageExtension | null {
+	return getCanonicalStorageExtensionForMediaType(detection.mediaType);
+}
+
+function readPngDimensions(buffer: Buffer): ImageDimensions | null {
+	if (!hasPrefix(buffer, PNG_SIGNATURE) || buffer.length < 24) {
+		return null;
+	}
+
+	const width = buffer.readUInt32BE(16);
+	const height = buffer.readUInt32BE(20);
+	return width > 0 && height > 0 ? { width, height } : null;
+}
+
+function isJpegStartOfFrameMarker(marker: number): boolean {
+	return (
+		(marker >= 0xc0 && marker <= 0xc3) ||
+		(marker >= 0xc5 && marker <= 0xc7) ||
+		(marker >= 0xc9 && marker <= 0xcb) ||
+		(marker >= 0xcd && marker <= 0xcf)
+	);
+}
+
+function readJpegDimensions(buffer: Buffer): ImageDimensions | null {
+	if (!hasPrefix(buffer, JPEG_SIGNATURE)) {
+		return null;
+	}
+
+	let offset = 2;
+	while (offset + 4 < buffer.length) {
+		if (buffer[offset] !== 0xff) {
+			offset++;
+			continue;
+		}
+
+		const marker = buffer[offset + 1];
+		offset += 2;
+
+		if (marker === 0xd9 || marker === 0xda) {
+			break;
+		}
+		if (offset + 2 > buffer.length) {
+			break;
+		}
+
+		const segmentLength = buffer.readUInt16BE(offset);
+		if (segmentLength < 2 || offset + segmentLength > buffer.length) {
+			break;
+		}
+
+		if (isJpegStartOfFrameMarker(marker) && segmentLength >= 7) {
+			const height = buffer.readUInt16BE(offset + 3);
+			const width = buffer.readUInt16BE(offset + 5);
+			return width > 0 && height > 0 ? { width, height } : null;
+		}
+
+		offset += segmentLength;
+	}
+
+	return null;
+}
+
+export function readImageDimensions(buffer: Buffer, mediaType: string | undefined): ImageDimensions | null {
+	if (mediaType === PNG_MEDIA_TYPE) {
+		return readPngDimensions(buffer);
+	}
+	if (mediaType === JPEG_MEDIA_TYPE) {
+		return readJpegDimensions(buffer);
+	}
+	return null;
+}
+
+export function buildImageFormatMetadata(
+	buffer: Buffer,
+	filename: string,
+	mediaType: SupportedImageMediaType,
+): SourceFormatMetadata {
+	const metadata: SourceFormatMetadata = {
+		media_type: mediaType,
+		original_extension: getOriginalExtension(filename),
+		byte_size: buffer.length,
+	};
+	const dimensions = readImageDimensions(buffer, mediaType);
+	if (dimensions) {
+		metadata.width = dimensions.width;
+		metadata.height = dimensions.height;
+		metadata.dimensions = dimensions;
+	}
+	return metadata;
 }
 
 function isReadableText(buffer: Buffer): boolean {
@@ -105,19 +237,19 @@ export function detectSourceType(
 
 	if (buffer) {
 		if (hasPrefix(buffer, PDF_SIGNATURE)) {
-			return { sourceType: 'pdf', confidence: 'magic', mediaType: 'application/pdf' };
+			return { sourceType: 'pdf', confidence: 'magic', mediaType: PDF_MEDIA_TYPE };
 		}
 
 		if (hasPrefix(buffer, PNG_SIGNATURE)) {
-			return { sourceType: 'image', confidence: 'magic', mediaType: 'image/png' };
+			return { sourceType: 'image', confidence: 'magic', mediaType: PNG_MEDIA_TYPE };
 		}
 
 		if (hasPrefix(buffer, JPEG_SIGNATURE)) {
-			return { sourceType: 'image', confidence: 'magic', mediaType: 'image/jpeg' };
+			return { sourceType: 'image', confidence: 'magic', mediaType: JPEG_MEDIA_TYPE };
 		}
 
 		if (hasPrefix(buffer, TIFF_LITTLE_ENDIAN_SIGNATURE) || hasPrefix(buffer, TIFF_BIG_ENDIAN_SIGNATURE)) {
-			return { sourceType: 'image', confidence: 'magic', mediaType: 'image/tiff' };
+			return { sourceType: 'image', confidence: 'magic', mediaType: TIFF_MEDIA_TYPE };
 		}
 
 		if (hasPrefix(buffer, ZIP_LOCAL_FILE_HEADER_SIGNATURE)) {

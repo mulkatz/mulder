@@ -234,7 +234,7 @@ class GcpStorageService implements StorageService {
 
 /**
  * Document AI Layout Parser implementation.
- * Processes PDF documents and returns structured layout data with page images.
+ * Processes layout-oriented documents and returns structured layout data with page images.
  */
 class GcpDocumentAiService implements DocumentAiService {
 	constructor(
@@ -243,16 +243,23 @@ class GcpDocumentAiService implements DocumentAiService {
 		private readonly logger: Logger,
 	) {}
 
-	async processDocument(pdfContent: Buffer, sourceId: string): Promise<DocumentAiResult> {
+	async processDocument(
+		documentContent: Buffer,
+		sourceId: string,
+		mediaType = 'application/pdf',
+	): Promise<DocumentAiResult> {
 		return withRetry(
 			async () => {
-				this.logger.info({ sourceId, processorName: this.processorName }, 'GcpDocumentAiService: processing');
+				this.logger.info(
+					{ sourceId, processorName: this.processorName, mediaType },
+					'GcpDocumentAiService: processing',
+				);
 
 				const request: protos.google.cloud.documentai.v1.IProcessRequest = {
 					name: this.processorName,
 					rawDocument: {
-						content: pdfContent.toString('base64'),
-						mimeType: 'application/pdf',
+						content: documentContent.toString('base64'),
+						mimeType: mediaType,
 					},
 				};
 

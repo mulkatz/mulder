@@ -69,6 +69,7 @@ export interface DocumentUploadFinalizeJobPayload {
 	storagePath: string;
 	tags?: string[];
 	startPipeline?: boolean;
+	declaredSizeBytes?: number;
 }
 
 export type LegacyPipelineRunJobPayload = PipelineRunJobPayload;
@@ -235,6 +236,10 @@ function asString(value: unknown): string | null {
 
 function asBoolean(value: unknown): boolean | undefined {
 	return typeof value === 'boolean' ? value : undefined;
+}
+
+function asPositiveInteger(value: unknown): number | undefined {
+	return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
 function readStringField(payload: Record<string, unknown>, primaryKey: string, fallbackKey?: string): string | null {
@@ -438,6 +443,11 @@ function parseDocumentUploadFinalizePayload(jobId: string, payload: unknown): Do
 	const startPipeline = asBoolean(payload.startPipeline);
 	if (startPipeline !== undefined) {
 		parsed.startPipeline = startPipeline;
+	}
+
+	const declaredSizeBytes = asPositiveInteger(payload.declaredSizeBytes ?? payload.declared_size_bytes);
+	if (declaredSizeBytes !== undefined) {
+		parsed.declaredSizeBytes = declaredSizeBytes;
 	}
 
 	return parsed;

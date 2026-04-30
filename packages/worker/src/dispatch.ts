@@ -9,7 +9,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import type { MulderConfig, Services } from '@mulder/core';
+import type { MulderConfig, Services, SourceFormatMetadata, SourceType } from '@mulder/core';
 import {
 	createChildLogger,
 	createPipelineRun,
@@ -26,12 +26,16 @@ import {
 	upsertSourceStep,
 } from '@mulder/core';
 import {
+	buildImageFormatMetadata,
+	detectSourceType,
 	executeEmbed,
 	executeEnrich,
 	executeExtract,
 	executeGraph,
 	executePipelineRun,
 	executeSegment,
+	getStorageExtensionForDetection,
+	isSupportedImageMediaType,
 	type PipelineRunOptions,
 } from '@mulder/pipeline';
 import {
@@ -76,12 +80,7 @@ function assertPipelineRunCompleted(job: WorkerJobEnvelope, status: string): voi
 	);
 }
 
-const PDF_MAGIC_BYTES = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d]);
 const BROWSER_UPLOAD_PIPELINE_TAG = 'browser-upload';
-
-function hasPdfMagicBytes(buffer: Buffer): boolean {
-	return buffer.length >= PDF_MAGIC_BYTES.length && buffer.subarray(0, PDF_MAGIC_BYTES.length).equals(PDF_MAGIC_BYTES);
-}
 
 function buildPdfMetadataJson(pdfMeta: Awaited<ReturnType<typeof extractPdfMetadata>>): Record<string, unknown> {
 	const pdfMetadataJson: Record<string, unknown> = {};
@@ -94,6 +93,22 @@ function buildPdfMetadataJson(pdfMeta: Awaited<ReturnType<typeof extractPdfMetad
 	if (pdfMeta.modificationDate) pdfMetadataJson.modification_date = pdfMeta.modificationDate.toISOString();
 	if (pdfMeta.encrypted !== undefined) pdfMetadataJson.encrypted = pdfMeta.encrypted;
 	return pdfMetadataJson;
+}
+
+type FinalizableSourceType = Extract<SourceType, 'pdf' | 'image'>;
+
+interface FinalizedUploadMetadata {
+	sourceType: FinalizableSourceType;
+	formatMetadata: SourceFormatMetadata;
+	pageCount: number;
+	hasNativeText: boolean;
+	nativeTextRatio: number;
+	mediaType: string;
+	storageExtension: string;
+}
+
+function isFinalizableSourceType(sourceType: SourceType): sourceType is FinalizableSourceType {
+	return sourceType === 'pdf' || sourceType === 'image';
 }
 
 async function runStoryStepForPayload(
@@ -190,10 +205,44 @@ async function finalizeUploadedDocument(
 	}
 
 	const buffer = await services.storage.download(payload.storagePath);
-	if (!hasPdfMagicBytes(buffer)) {
-		throw new IngestError(`Not a valid PDF file: ${payload.filename}`, INGEST_ERROR_CODES.INGEST_NOT_PDF, {
-			context: { storagePath: payload.storagePath, sourceId: payload.sourceId },
-		});
+	const detection = detectSourceType(buffer, payload.filename);
+	if (!detection) {
+		throw new IngestError(
+			`Unsupported or unknown source format for ${payload.filename}`,
+			INGEST_ERROR_CODES.INGEST_UNKNOWN_SOURCE_TYPE,
+			{
+				context: { storagePath: payload.storagePath, sourceId: payload.sourceId },
+			},
+		);
+	}
+	if (!isFinalizableSourceType(detection.sourceType)) {
+		throw new IngestError(
+			`Unsupported source type "${detection.sourceType}" for ${payload.filename}; only pdf and image are supported in this step`,
+			INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+			{
+				context: {
+					storagePath: payload.storagePath,
+					sourceId: payload.sourceId,
+					sourceType: detection.sourceType,
+					confidence: detection.confidence,
+				},
+			},
+		);
+	}
+	const canonicalStorageExtension = getStorageExtensionForDetection(detection);
+	if (!canonicalStorageExtension || !detection.mediaType) {
+		throw new IngestError(
+			`Unsupported or unknown source format for ${payload.filename}`,
+			INGEST_ERROR_CODES.INGEST_UNKNOWN_SOURCE_TYPE,
+			{
+				context: {
+					storagePath: payload.storagePath,
+					sourceId: payload.sourceId,
+					sourceType: detection.sourceType,
+					mediaType: detection.mediaType,
+				},
+			},
+		);
 	}
 
 	const fileHash = createHash('sha256').update(buffer).digest('hex');
@@ -207,24 +256,60 @@ async function finalizeUploadedDocument(
 		};
 	}
 
-	const pdfMeta = await extractPdfMetadata(buffer);
-	if (pdfMeta.pageCount > config.ingestion.max_pages) {
-		throw new IngestError(
-			`Uploaded file exceeds configured page limit: ${payload.filename}`,
-			INGEST_ERROR_CODES.INGEST_TOO_MANY_PAGES,
-			{
-				context: {
-					storagePath: payload.storagePath,
-					sourceId: payload.sourceId,
-					pageCount: pdfMeta.pageCount,
-					maxPages: config.ingestion.max_pages,
+	let finalizedMetadata: FinalizedUploadMetadata;
+	if (detection.sourceType === 'pdf') {
+		const pdfMeta = await extractPdfMetadata(buffer);
+		if (pdfMeta.pageCount > config.ingestion.max_pages) {
+			throw new IngestError(
+				`Uploaded file exceeds configured page limit: ${payload.filename}`,
+				INGEST_ERROR_CODES.INGEST_TOO_MANY_PAGES,
+				{
+					context: {
+						storagePath: payload.storagePath,
+						sourceId: payload.sourceId,
+						pageCount: pdfMeta.pageCount,
+						maxPages: config.ingestion.max_pages,
+					},
 				},
-			},
-		);
+			);
+		}
+
+		const textResult = await detectNativeText(buffer);
+		finalizedMetadata = {
+			sourceType: 'pdf',
+			formatMetadata: buildPdfMetadataJson(pdfMeta),
+			pageCount: textResult.pageCount,
+			hasNativeText: textResult.hasNativeText,
+			nativeTextRatio: textResult.nativeTextRatio,
+			mediaType: detection.mediaType,
+			storageExtension: canonicalStorageExtension,
+		};
+	} else {
+		if (!isSupportedImageMediaType(detection.mediaType)) {
+			throw new IngestError(
+				`Unsupported image media type for ${payload.filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { storagePath: payload.storagePath, sourceId: payload.sourceId, mediaType: detection.mediaType },
+				},
+			);
+		}
+		finalizedMetadata = {
+			sourceType: 'image',
+			formatMetadata: buildImageFormatMetadata(buffer, payload.filename, detection.mediaType),
+			pageCount: 1,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+			mediaType: detection.mediaType,
+			storageExtension: canonicalStorageExtension,
+		};
 	}
 
-	const textResult = await detectNativeText(buffer);
-	const pdfMetadataJson = buildPdfMetadataJson(pdfMeta);
+	const finalizedStoragePath = `raw/${payload.sourceId}/original.${finalizedMetadata.storageExtension}`;
+	const shouldCleanupOriginalUpload = payload.storagePath !== finalizedStoragePath;
+	if (shouldCleanupOriginalUpload) {
+		await services.storage.upload(finalizedStoragePath, buffer, finalizedMetadata.mediaType);
+	}
 
 	const client = await pool.connect();
 	try {
@@ -233,20 +318,28 @@ async function finalizeUploadedDocument(
 		const source = await createSource(client, {
 			id: payload.sourceId,
 			filename: payload.filename,
-			storagePath: payload.storagePath,
+			storagePath: finalizedStoragePath,
 			fileHash,
-			pageCount: textResult.pageCount,
-			hasNativeText: textResult.hasNativeText,
-			nativeTextRatio: textResult.nativeTextRatio,
+			pageCount: finalizedMetadata.pageCount,
+			hasNativeText: finalizedMetadata.hasNativeText,
+			nativeTextRatio: finalizedMetadata.nativeTextRatio,
 			tags: payload.tags,
-			sourceType: 'pdf',
-			formatMetadata: pdfMetadataJson,
-			metadata: pdfMetadataJson,
+			sourceType: finalizedMetadata.sourceType,
+			formatMetadata: finalizedMetadata.formatMetadata,
+			metadata: finalizedMetadata.formatMetadata,
 		});
 
 		if (source.id !== payload.sourceId) {
 			await client.query('ROLLBACK');
-			await services.storage.delete(payload.storagePath);
+			await services.storage.delete(finalizedStoragePath);
+			if (shouldCleanupOriginalUpload) {
+				await services.storage.delete(payload.storagePath).catch((cause: unknown) => {
+					log.warn(
+						{ err: cause, sourceId: payload.sourceId, storagePath: payload.storagePath, finalizedStoragePath },
+						'Duplicate upload finalized, but original cleanup failed',
+					);
+				});
+			}
 			return {
 				result_status: 'duplicate',
 				resolved_source_id: source.id,
@@ -310,7 +403,16 @@ async function finalizeUploadedDocument(
 				// Observability projection remains best-effort.
 			});
 
-		log.info({ sourceId: source.id, storagePath: payload.storagePath }, 'Browser upload finalized');
+		if (shouldCleanupOriginalUpload) {
+			services.storage.delete(payload.storagePath).catch((cause: unknown) => {
+				log.warn(
+					{ err: cause, sourceId: source.id, storagePath: payload.storagePath, finalizedStoragePath },
+					'Uploaded object canonicalized, but original cleanup failed',
+				);
+			});
+		}
+
+		log.info({ sourceId: source.id, storagePath: finalizedStoragePath }, 'Browser upload finalized');
 		return completionPayload;
 	} catch (error) {
 		try {

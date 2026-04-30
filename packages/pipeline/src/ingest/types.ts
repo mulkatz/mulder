@@ -13,7 +13,7 @@ import type { PdfMetadata, SourceFormatMetadata, SourceType, StepError } from '@
 
 /** Input for the ingest step. */
 export interface IngestInput {
-	/** File or directory path containing PDF(s). */
+	/** File or directory path containing supported source files. */
 	path: string;
 	/** Optional tags for batch operations. */
 	tags?: string[];
@@ -39,9 +39,9 @@ export interface IngestFileResult {
 	sourceType: SourceType;
 	/** Format-specific metadata stored on the source row. */
 	formatMetadata: SourceFormatMetadata;
-	/** Number of pages in the PDF. */
+	/** Number of pages represented by this source. */
 	pageCount: number;
-	/** Whether the PDF contains extractable native text. */
+	/** Whether the source contains extractable native text. */
 	hasNativeText: boolean;
 	/** Fraction of pages with native text (0-1). */
 	nativeTextRatio: number;

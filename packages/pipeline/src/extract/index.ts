@@ -27,6 +27,7 @@ import {
 } from '@mulder/core';
 import { PDFParse } from 'pdf-parse';
 import type pg from 'pg';
+import { detectSourceType, isSupportedImageMediaType } from '../ingest/source-type.js';
 import { layoutToMarkdown } from './layout-to-markdown.js';
 import type { ExtractInput, ExtractionData, ExtractResult, LayoutBlock, LayoutDocument, LayoutPage } from './types.js';
 
@@ -117,6 +118,53 @@ async function renderPageImages(pdfBuffer: Buffer, logger: Logger): Promise<Buff
 		logger.warn({ err: error }, 'PDF page rendering failed — downstream steps will run text-only');
 		return [];
 	}
+}
+
+async function renderImagePageImage(imageBuffer: Buffer, mediaType: string, logger: Logger): Promise<Buffer | null> {
+	if (mediaType === 'image/png') {
+		return imageBuffer;
+	}
+
+	if (mediaType !== 'image/jpeg') {
+		return null;
+	}
+
+	try {
+		const { createCanvas, loadImage } = await import('@napi-rs/canvas');
+		const image = await loadImage(imageBuffer);
+		const canvas = createCanvas(image.width, image.height);
+		const context = canvas.getContext('2d');
+		context.drawImage(image, 0, 0);
+		return canvas.toBuffer('image/png');
+	} catch (error: unknown) {
+		logger.warn({ err: error }, 'Image preview rendering failed — continuing without page image');
+		return null;
+	}
+}
+
+function readStoredMediaType(formatMetadata: Record<string, unknown>): string | null {
+	return typeof formatMetadata.media_type === 'string' ? formatMetadata.media_type : null;
+}
+
+function resolveSourceMediaType(
+	source: { filename: string; sourceType: string; formatMetadata: Record<string, unknown> },
+	buffer: Buffer,
+): string | null {
+	if (source.sourceType === 'pdf') {
+		return 'application/pdf';
+	}
+
+	const storedMediaType = readStoredMediaType(source.formatMetadata);
+	if (storedMediaType && isSupportedImageMediaType(storedMediaType)) {
+		return storedMediaType;
+	}
+
+	const detection = detectSourceType(buffer, source.filename);
+	if (detection?.sourceType === 'image' && isSupportedImageMediaType(detection.mediaType)) {
+		return detection.mediaType;
+	}
+
+	return null;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -560,25 +608,50 @@ export async function execute(
 		};
 	} else {
 		// ── Path A or B: Full extraction ────────────────────
-		// 3. Download PDF
+		if (source.sourceType !== 'pdf' && source.sourceType !== 'image') {
+			throw new ExtractError(
+				`Source type "${source.sourceType}" is not supported by the layout extract step`,
+				EXTRACT_ERROR_CODES.EXTRACT_INVALID_STATUS,
+				{ context: { sourceId: input.sourceId, sourceType: source.sourceType } },
+			);
+		}
+
+		// 3. Download source original
 		const storagePath = source.storagePath;
-		let pdfBuffer: Buffer;
+		let sourceBuffer: Buffer;
 		try {
-			pdfBuffer = await services.storage.download(storagePath);
+			sourceBuffer = await services.storage.download(storagePath);
 		} catch (cause: unknown) {
 			throw new ExtractError(
-				`Failed to download PDF for source ${input.sourceId}`,
+				`Failed to download source original for source ${input.sourceId}`,
 				EXTRACT_ERROR_CODES.EXTRACT_STORAGE_FAILED,
 				{ cause, context: { sourceId: input.sourceId, storagePath } },
 			);
 		}
 
 		// 4. Choose extraction path
-		const nativeTextRatio = source.nativeTextRatio;
+		const sourceMediaType = resolveSourceMediaType(source, sourceBuffer);
+		if (!sourceMediaType) {
+			throw new ExtractError(
+				`Unable to resolve image media type for source ${input.sourceId}`,
+				EXTRACT_ERROR_CODES.EXTRACT_INVALID_STATUS,
+				{ context: { sourceId: input.sourceId, sourceType: source.sourceType } },
+			);
+		}
+		const nativeTextRatio = source.sourceType === 'image' ? 0 : source.nativeTextRatio;
 		const threshold = config.extraction.native_text_threshold;
-		const isNativePath = nativeTextRatio >= threshold;
+		const isNativePath = source.sourceType === 'pdf' && nativeTextRatio >= threshold;
 
-		log.info({ nativeTextRatio, threshold, path: isNativePath ? 'native' : 'document_ai' }, 'Extraction path selected');
+		log.info(
+			{
+				nativeTextRatio,
+				threshold,
+				sourceType: source.sourceType,
+				mediaType: sourceMediaType,
+				path: isNativePath ? 'native' : 'document_ai',
+			},
+			'Extraction path selected',
+		);
 
 		const layoutPages: LayoutPage[] = [];
 		let pageImages: Buffer[] = [];
@@ -592,7 +665,7 @@ export async function execute(
 			primaryMethod = 'native';
 
 			try {
-				const pageTexts = await extractNativeText(pdfBuffer, log);
+				const pageTexts = await extractNativeText(sourceBuffer, log);
 
 				for (let i = 0; i < pageTexts.length; i++) {
 					layoutPages.push({
@@ -612,7 +685,7 @@ export async function execute(
 
 			// Render page images from PDF
 			try {
-				pageImages = await renderPageImages(pdfBuffer, log);
+				pageImages = await renderPageImages(sourceBuffer, log);
 			} catch (cause: unknown) {
 				log.warn({ err: cause }, 'Page image rendering failed — continuing without images');
 			}
@@ -622,7 +695,7 @@ export async function execute(
 
 			let docAiResult: DocumentAiResult;
 			try {
-				docAiResult = await services.documentAi.processDocument(pdfBuffer, input.sourceId);
+				docAiResult = await services.documentAi.processDocument(sourceBuffer, input.sourceId, sourceMediaType);
 			} catch (cause: unknown) {
 				throw new ExtractError(
 					`Document AI processing failed for source ${input.sourceId}`,
@@ -633,9 +706,23 @@ export async function execute(
 
 			documentAiRaw = docAiResult.document;
 			pageImages = docAiResult.pageImages;
+			if (source.sourceType === 'image' && pageImages.length === 0) {
+				const imagePage = await renderImagePageImage(sourceBuffer, sourceMediaType, log);
+				if (imagePage) {
+					pageImages = [imagePage];
+				}
+			}
 
 			// Parse the Document AI result into per-page data
 			const parsedPages = parseDocumentAiResult(docAiResult.document);
+			if (source.sourceType === 'image' && parsedPages.length === 0) {
+				parsedPages.push({
+					pageNumber: 1,
+					confidence: 0.9,
+					text: '',
+					blocks: [],
+				});
+			}
 
 			for (const parsed of parsedPages) {
 				layoutPages.push({

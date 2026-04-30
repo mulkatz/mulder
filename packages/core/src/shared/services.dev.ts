@@ -95,6 +95,15 @@ function slugify(value: string): string {
 	);
 }
 
+function contentTypeForBucketPath(bucketPath: string): string {
+	const lowerPath = bucketPath.toLowerCase();
+	if (lowerPath.endsWith('.pdf')) return 'application/pdf';
+	if (lowerPath.endsWith('.png')) return 'image/png';
+	if (lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg')) return 'image/jpeg';
+	if (lowerPath.endsWith('.tif') || lowerPath.endsWith('.tiff')) return 'image/tiff';
+	return 'application/octet-stream';
+}
+
 type GroundingFixtureScenario = 'accepted' | 'invalid-coordinates' | 'invalid-date';
 
 function resolveGroundingFixtureScenario(entityName: string): GroundingFixtureScenario {
@@ -178,7 +187,7 @@ class DevStorageService implements StorageService {
 		const stats = statSync(fullPath);
 		return {
 			sizeBytes: stats.size,
-			contentType: bucketPath.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
+			contentType: contentTypeForBucketPath(bucketPath),
 		};
 	}
 
@@ -234,8 +243,12 @@ class DevDocumentAiService implements DocumentAiService {
 		this.logger = logger;
 	}
 
-	async processDocument(_pdfContent: Buffer, sourceId: string): Promise<DocumentAiResult> {
-		this.logger.debug({ sourceId }, 'DevDocumentAiService: returning fixture data');
+	async processDocument(
+		documentContent: Buffer,
+		sourceId: string,
+		mediaType = 'application/pdf',
+	): Promise<DocumentAiResult> {
+		this.logger.debug({ sourceId, mediaType }, 'DevDocumentAiService: returning fixture data');
 
 		// Look for a layout.json in the source's fixture directory
 		const layoutPath = join(this.basePath, sourceId, 'layout.json');
@@ -255,6 +268,22 @@ class DevDocumentAiService implements DocumentAiService {
 			}
 
 			return { document, pageImages };
+		}
+
+		if (mediaType.startsWith('image/')) {
+			const pageImages = mediaType === 'image/png' ? [documentContent] : [];
+			return {
+				document: {
+					text: '',
+					pages: [
+						{
+							layout: { confidence: 0.9 },
+							paragraphs: [],
+						},
+					],
+				},
+				pageImages,
+			};
 		}
 
 		// Return empty result if no fixture exists
