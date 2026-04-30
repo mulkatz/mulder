@@ -1,4 +1,4 @@
--- Browser-safe session auth for the API demo and V1 web app.
+-- Browser-safe session auth for the API and product app.
 -- Password hashes use application-level scrypt. Session and invitation tokens
 -- are stored as irreversible hashes; raw tokens are never persisted.
 

@@ -1,6 +1,6 @@
 # Mulder — Implementation Roadmap
 
-Tracer bullet development path. Build the pipeline synchronously via CLI first (M1-M6), defer distributed infrastructure until the core works (M7-M8). Optimize for time to first demoable product (M4).
+Tracer bullet development path. Build the pipeline synchronously via CLI first (M1-M6), defer distributed infrastructure until the core works (M7-M8). Optimize for time to first usable product checkpoint (M4).
 
 **Spec references:** Each step lists the exact sections of [`functional-spec.md`](./functional-spec.md) needed to implement it. Read only those sections — never the full 2500-line spec.
 
@@ -193,7 +193,7 @@ Move from CLI to HTTP. Job queue, async workers, a full REST API over the pipeli
 | 🟢 | H8 | Entity API routes (sync) | §10.6 |
 | 🟢 | H9 | Evidence API routes (sync) | §10.6 |
 | 🟢 | H10 | Document retrieval routes — list/pdf/markdown sync routes | §10.6 |
-| 🟢 | H11 | Document Viewer UI — browser split-view consuming H10 routes | §13, consumes H10 |
+| 🟢 | H11 | Browser product shell consuming H10 routes | §13, consumes H10 |
 
 **Also read for all M7 steps:** [`docs/api-architecture.md`](./api-architecture.md) (framework choice, route structure, middleware stack, OpenAPI strategy, key trade-offs), §10 (full job queue section — especially §10.3 transaction discipline), §14 (design decisions — PostgreSQL queue, auto-commit dequeue, per-step job slicing)
 
@@ -384,7 +384,7 @@ M1 Foundation
  └→ M2 Ingest+Extract (+golden extraction tests)
      └→ M3 Segment+Enrich (+golden entity tests)
          └→ QA Gate: Pre-Search (verification checkpoint)
-             └→ M4 Search (v1.0 MVP) ← FIRST DEMO POINT
+             └→ M4 Search (v1.0 MVP) ← FIRST USABLE PRODUCT CHECKPOINT
                  └→ QA Gate: Post-MVP (verification checkpoint) ← we are here
                      ├→ M5 Curation
                      ├→ M6 Intelligence (v2.0)

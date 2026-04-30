@@ -17,7 +17,7 @@
 		"lint:fix": "biome check --write .",
 		"test:api:e2e": "node scripts/test-api-e2e.mjs",
 		"invite:owner": "node scripts/create-owner-invite.mjs",
-		"smoke:live": "node scripts/smoke-live-demo.mjs",
+		"smoke:live": "node scripts/smoke-live-api.mjs",
 		"worker:service": "node scripts/run-worker-service.mjs",
 		"test:scope": "node scripts/test-scope.mjs",
 		"test:shard": "node scripts/test-shards.mjs run",

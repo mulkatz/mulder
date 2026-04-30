@@ -16,7 +16,7 @@ The app should use:
 - `credentials: 'include'` for all authenticated API calls.
 - Cookie-backed browser sessions, not bundled bearer tokens.
 - Explicit loading, empty, unavailable, and error states.
-- No fixed shards, showcase IDs, or checked-in product-screen fixtures in `apps/app`.
+- No showcase IDs or checked-in product-screen fixtures in `apps/app`.
 
 The product app API client should keep these properties:
 
@@ -148,7 +148,7 @@ After the cleanup, the first product-app API implementation should stay narrow:
 1. Add the API client, local API types, React Query provider, and capability registry to `apps/app`.
 2. Bind existing routes only: `/`, `/runs`, and `/evidence`.
 3. Use real loading/empty/error states.
-4. Do not use fixed shards or checked-in fixture data in product screens.
+4. Do not use checked-in fixture data in product screens.
 5. Do not add new product modules until the API foundation is green.
 
-If Mulder needs a public, stable showcase later, build it as a separate demo surface with explicitly fixed demo data. That demo must not be the product app and must not point at a private production project.
+If Mulder needs a public, stable showcase later, build it as a separate, explicitly labeled surface with fixed showcase data. That surface must not be the product app and must not point at a private production project.

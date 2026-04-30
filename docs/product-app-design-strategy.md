@@ -29,7 +29,7 @@ This avoids the trap of building a beautiful static frontend that later has to b
 
 The v1 design was visually polished, but its concept was not fully aligned with the product's purpose. It leaned into an investigative, literary, archival tone: serif headlines, large atmospheric surfaces, cinematic pacing, and a narrated "hero moment" structure.
 
-That direction can work for a fundable product demo, but it is less convincing as the daily interface for a serious analysis tool. It makes the app feel like it is presenting insight rather than helping the user operate a complex system.
+That direction can work for a fundable showcase, but it is less convincing as the daily interface for a serious analysis tool. It makes the app feel like it is presenting insight rather than helping the user operate a complex system.
 
 The product app exists to shift the product posture:
 
@@ -39,7 +39,7 @@ The product app exists to shift the product posture:
 | Large hero surfaces | Dense work surfaces |
 | Serif/display emphasis | Sans-first UI typography |
 | Mood-led visual identity | Data-led visual identity |
-| Top-nav demo structure | Sidebar-first product IA |
+| Top-nav prototype structure | Sidebar-first product IA |
 | Screens as chapters | Screens as tools |
 | Static showcase risk | API-contract-backed workbench |
 
@@ -126,7 +126,7 @@ The app should not assume that "powerful" means "busy." The strongest interface 
 
 ## 5. Information Architecture
 
-The sidebar is the right foundation because Mulder will grow beyond four demo tabs. Future product breadth is expected, and top navigation will not scale.
+The sidebar is the right foundation because Mulder will grow beyond four tabs. Future product breadth is expected, and top navigation will not scale.
 
 The sidebar must still express product priorities. A research user should see Mulder as a workspace for documents, evidence, search, and knowledge. Operations should be available, but visually secondary.
 
@@ -347,10 +347,10 @@ Recommended architecture:
 1. A typed API client layer.
 2. React Query hooks per backend capability.
 3. A capability registry describing the real contract state of each feature.
-4. No fixed shards or checked-in fixture data in product screens.
+4. No checked-in fixture data in product screens.
 5. UI states for loading, error, empty, partial, and unavailable.
 
-The initial prototype used static fixtures to establish the visual direction. The product app should now behave like the real application: API data when available, honest empty/error/unavailable states when it is not. If a public fixed-data showcase is needed later, it should live beside the product app as an explicit demo surface.
+The initial prototype used static fixtures to establish the visual direction. The product app should now behave like the real application: API data when available, honest empty/error/unavailable states when it is not. If a public fixed-data showcase is needed later, it should live beside the product app as an explicit showcase surface.
 
 ### Contract States
 

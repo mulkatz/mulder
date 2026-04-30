@@ -52,7 +52,7 @@ Current implementation:
 - Config does not contain `ingest_provenance`, `document_quality`, `access_control`, `source_rollback`, or assertion-classification sections.
 
 Impact:
-- Mulder can ingest demo/development PDFs, but it does not yet meet the addendum's archive-grade ingest contract.
+- Mulder can ingest development PDFs, but it does not yet meet the addendum's archive-grade ingest contract.
 - If real archive material is loaded now, provenance and custody information would need a migration/backfill story later.
 
 Recommended action:

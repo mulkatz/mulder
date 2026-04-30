@@ -20,9 +20,9 @@ The product app must be populated through the product pipeline only:
 
 - no SQL fixture seeding in production
 - no checked-in production corpus configuration
-- no fixed showcase UUID families
+- no showcase UUID families
 - no `*.e2e@mulder.local` users
-- no `demo` or `full-functional-demo` metadata in production data
+- no showcase metadata in production data
 
 ## Target Architecture
 
@@ -69,7 +69,7 @@ Still required before live:
 
 Do not go live until all of these are true:
 
-- `apps/app` does not depend on checked-in fixture data or fixed shards for product screens.
+- `apps/app` does not depend on checked-in fixture data for product screens.
 - Cloudflare production has `VITE_API_BASE_URL=<api-origin>`.
 - Cloudflare production has preview/mock bypass disabled.
 - The API health check at `<api-origin>/api/health` returns 200.
@@ -124,7 +124,7 @@ If the product app uses a differently named mock or preview flag, the production
 - add login, logout, and invite acceptance screens
 - keep the browser bundle free of operator API keys
 - replace fixture-backed route data with API-backed loading, empty, success, and error states
-- keep any future fixed-shard showcase as a separate demo surface, not inside `apps/app`
+- keep any future fixed-data showcase as a separate surface, not inside `apps/app`
 - ensure production API errors are visible and not masked by fallback mock data
 - run `pnpm --filter @mulder/app build` from the repo root
 
@@ -357,7 +357,7 @@ SELECT * FROM api_users WHERE email LIKE '%.e2e@mulder.local';
 SELECT * FROM sources WHERE id::text LIKE '11111111-%' OR id::text LIKE '22222222-%' OR id::text LIKE '33333333-%';
 ```
 
-Also check metadata and tags for `demo` and `full-functional-demo`.
+Also check metadata and tags for retired showcase labels.
 
 ## Production Smoke
 
