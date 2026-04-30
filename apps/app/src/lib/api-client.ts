@@ -1,0 +1,110 @@
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '';
+
+interface ApiErrorBody {
+	error?: {
+		code?: string;
+		message?: string;
+		details?: unknown;
+	};
+}
+
+export class ApiError extends Error {
+	status: number;
+	code: string;
+	details?: unknown;
+
+	constructor(status: number, code: string, message: string, details?: unknown) {
+		super(message);
+		this.name = 'ApiError';
+		this.status = status;
+		this.code = code;
+		this.details = details;
+	}
+}
+
+async function parseErrorBody(response: Response): Promise<ApiErrorBody> {
+	try {
+		return (await response.json()) as ApiErrorBody;
+	} catch {
+		return {};
+	}
+}
+
+function buildJsonHeaders(init?: RequestInit) {
+	const headers = new Headers(init?.headers);
+	if (!headers.has('Content-Type') && init?.body !== undefined) {
+		headers.set('Content-Type', 'application/json');
+	}
+	return headers;
+}
+
+export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+	const response = await fetch(buildApiUrl(path), {
+		credentials: 'include',
+		...init,
+		headers: buildJsonHeaders(init),
+	});
+
+	if (!response.ok) {
+		const body = await parseErrorBody(response);
+		throw new ApiError(
+			response.status,
+			body.error?.code ?? 'UNKNOWN',
+			body.error?.message ?? response.statusText,
+			body.error?.details,
+		);
+	}
+
+	if (response.status === 204) {
+		return undefined as T;
+	}
+
+	try {
+		return (await response.json()) as T;
+	} catch (error) {
+		throw new ApiError(
+			response.status,
+			'INVALID_RESPONSE',
+			error instanceof Error ? error.message : 'The API returned an invalid JSON response.',
+		);
+	}
+}
+
+export async function apiFetchText(path: string, init?: RequestInit): Promise<string> {
+	const headers = new Headers(init?.headers);
+	if (!headers.has('Accept')) {
+		headers.set('Accept', 'text/markdown, text/plain');
+	}
+
+	const response = await fetch(buildApiUrl(path), {
+		credentials: 'include',
+		...init,
+		headers,
+	});
+
+	if (!response.ok) {
+		const body = await parseErrorBody(response);
+		throw new ApiError(
+			response.status,
+			body.error?.code ?? 'UNKNOWN',
+			body.error?.message ?? response.statusText,
+			body.error?.details,
+		);
+	}
+
+	return response.text();
+}
+
+export function buildApiUrl(path: string) {
+	if (/^https?:\/\//i.test(path)) {
+		return path;
+	}
+
+	if (!API_BASE) {
+		return path;
+	}
+
+	const base = API_BASE.endsWith('/') ? API_BASE.slice(0, -1) : API_BASE;
+	const suffix = path.startsWith('/') ? path : `/${path}`;
+	return `${base}${suffix}`;
+}

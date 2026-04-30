@@ -3,7 +3,7 @@
  *
  * Reads the `layout.md` artifact that spec 48 writes alongside `layout.json`
  * during the Extract step and prints it to stdout with lightweight ANSI
- * formatting. Stop-gap demoability command while the real document viewer
+ * formatting. Stop-gap inspection command while the real document viewer
  * waits for M7-H11.
  *
  * @see docs/roadmap.md M7 (H10/H11 — API + viewer that will supersede this)

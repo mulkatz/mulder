@@ -168,21 +168,19 @@ jobs:
           PGPASSWORD: mulder
           PGDATABASE: mulder
 
-  demo:
+  app:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: demo
     steps:
       - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
 
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: demo/package-lock.json
+          cache: pnpm
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
-      - name: Build demo
-        run: npm run build
+      - name: Build product app
+        run: pnpm --filter @mulder/app build

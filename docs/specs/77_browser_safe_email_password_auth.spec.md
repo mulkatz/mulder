@@ -1,6 +1,6 @@
 ---
 spec: "77"
-title: "Browser-Safe Email/Password Session Auth For The V1 Web App"
+title: "Browser-Safe Email/Password Session Auth For The Product App"
 roadmap_step: ""
 functional_spec: ["§10.6", "§13"]
 scope: phased
@@ -8,26 +8,26 @@ issue: "https://github.com/mulkatz/mulder/issues/195"
 created: 2026-04-18
 ---
 
-# Spec 77: Browser-Safe Email/Password Session Auth For The V1 Web App
+# Spec 77: Browser-Safe Email/Password Session Auth For The Product App
 
 ## 1. Objective
 
-Restore the missing auth contract that `M7.5` already assumes by delivering browser-safe, cookie-backed session auth for the V1 web app. The repository currently references this spec from `docs/roadmap.md` and `docs/v1-web-app-plan.md`, but the spec file itself is missing and the shipped API middleware remains API-key centric. This spec closes that gap by defining the auth/session routes, cookie behavior, role-gated invite flow, and browser-compatible middleware path needed for the V1 app to consume the real API without embedding bearer keys in the web bundle.
+Deliver browser-safe, cookie-backed session auth for the product app. This spec closes the browser auth gap by defining the auth/session routes, cookie behavior, role-gated invite flow, and browser-compatible middleware path needed for `apps/app` to consume the real API without embedding bearer keys in the web bundle.
 
-The functional-spec authority here is partial: `§10.6` governs the API boundary and `§13` governs the source layout. The concrete browser-auth contract is additionally anchored in the existing `M7.5` roadmap note and `docs/v1-web-app-plan.md` Appendix A.1, which already treat invite-based session auth as a prerequisite for the V1 web app.
+The functional-spec authority here is partial: `§10.6` governs the API boundary and `§13` governs the source layout. The active product-app implementation reference is `docs/product-app-api-integration.md`.
 
 ## 2. Boundaries
 
-- **Roadmap Step:** N/A — off-roadmap M7/M7.5 remediation follow-up restoring the missing auth prerequisite referenced by `M7.5`
-- **Target:** `packages/core/src/config/schema.ts`, `packages/core/src/config/types.ts`, `packages/core/src/config/defaults.ts`, `mulder.config.example.yaml`, `apps/api/src/app.ts`, `apps/api/src/middleware/auth.ts`, `apps/api/src/routes/auth.schemas.ts`, `apps/api/src/routes/auth.ts`, `apps/api/src/lib/auth.ts`, `demo/vite.config.ts`, `demo/src/lib/api-client.ts`, `demo/src/features/auth/useSession.ts`, `demo/src/features/auth/useLogin.ts`, `demo/src/features/auth/useLogout.ts`, `demo/src/features/auth/useAcceptInvite.ts`, `demo/src/features/auth/useCreateInvite.ts`, `demo/src/app/AuthGate.tsx`, `tests/specs/77_browser_safe_email_password_auth.test.ts`
-- **In scope:** cookie-backed browser login/logout/session routes; invitation acceptance and admin-gated invitation issuance; explicit role handling for `owner`, `admin`, and `member`; middleware support for session-authenticated browser requests alongside existing operator/API-key flows; dev-mode same-origin proxy alignment for the demo; and black-box verification that the V1 app can authenticate and then call protected API routes without embedding bearer tokens
-- **Out of scope:** OAuth/OIDC/SSO, password-reset flows, admin invitation management UI beyond create-invite, ACLs beyond role gating already assumed by the V1 plan, non-browser SDK auth, and unrelated OpenAPI/Scalar work
+- **Roadmap Step:** N/A — M7/M7.5 remediation follow-up restoring the browser auth prerequisite
+- **Target:** `packages/core/src/config/schema.ts`, `packages/core/src/config/types.ts`, `packages/core/src/config/defaults.ts`, `mulder.config.example.yaml`, `apps/api/src/app.ts`, `apps/api/src/middleware/auth.ts`, `apps/api/src/routes/auth.schemas.ts`, `apps/api/src/routes/auth.ts`, `apps/api/src/lib/auth.ts`, `apps/app/vite.config.ts`, `apps/app/src/lib/api-client.ts`, `apps/app/src/features/auth/useSession.ts`, `apps/app/src/features/auth/useLogin.ts`, `apps/app/src/features/auth/useLogout.ts`, `apps/app/src/features/auth/useAcceptInvitation.ts`, `apps/app/src/app/AuthGate.tsx`, `tests/specs/77_browser_safe_email_password_auth.test.ts`
+- **In scope:** cookie-backed browser login/logout/session routes; invitation acceptance and admin-gated invitation issuance; explicit role handling for `owner`, `admin`, and `member`; middleware support for session-authenticated browser requests alongside existing operator/API-key flows; dev-mode same-origin proxy alignment for the product app; and black-box verification that the product app can authenticate and then call protected API routes without embedding bearer tokens
+- **Out of scope:** OAuth/OIDC/SSO, password-reset flows, admin invitation management UI beyond create-invite, full ACL/RBAC beyond role gating, non-browser SDK auth, and unrelated OpenAPI/Scalar work
 - **Constraints:** the browser bundle must never carry a static API key; session cookies must be `HttpOnly`; auth failures on login must remain generic; protected read routes must accept valid session auth from the browser; and the implementation must not regress CLI/server-side bearer-key access where that path is still intentionally used
 
 ## 3. Dependencies
 
-- **Requires:** Spec 69 (`M7-H3`) Hono server scaffold, Spec 70 (`M7-H4`) middleware stack, Spec 76 (`M7-H10`) document retrieval routes, and the current V1 app auth hooks/pages under `demo/src/features/auth/*` and `demo/src/pages/auth/*`
-- **Blocks:** a fully clean `M7.5` V1 web app integration story, because the current web app assumes this auth model for all protected API access
+- **Requires:** Spec 69 (`M7-H3`) Hono server scaffold, Spec 70 (`M7-H4`) middleware stack, Spec 76 (`M7-H10`) document retrieval routes, and the current product app auth hooks/pages under `apps/app/src/features/auth/*` and `apps/app/src/pages/*`
+- **Blocks:** a fully clean browser product app integration story, because the current web app assumes this auth model for all protected API access
 
 ## 4. Blueprint
 
@@ -37,9 +37,9 @@ The functional-spec authority here is partial: `§10.6` governs the API boundary
 2. **`apps/api/src/routes/auth.schemas.ts`** — define Zod-backed request/response contracts for login, logout, session, invitation acceptance, and invitation creation
 3. **`apps/api/src/lib/auth.ts`** — implement session creation/validation/clearing plus invitation acceptance/issuance helpers behind one route-facing library boundary
 4. **`apps/api/src/routes/auth.ts`** — mount `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/session`, `POST /api/auth/invitations/accept`, and `POST /api/auth/invitations`
-5. **`apps/api/src/middleware/auth.ts`** and **`apps/api/src/app.ts`** — extend protected-route auth so browser session cookies can authorize the same read surfaces the demo uses, while preserving explicit public-path behavior and intentional operator-key support where documented
-6. **`demo/vite.config.ts`** and **`demo/src/lib/api-client.ts`** — keep the browser fetch path same-origin in dev and credential-aware in all environments
-7. **`demo/src/features/auth/*`** and **`demo/src/app/AuthGate.tsx`** — align the existing auth hooks/gate with the real API contract rather than preview-only fallbacks
+5. **`apps/api/src/middleware/auth.ts`** and **`apps/api/src/app.ts`** — extend protected-route auth so browser session cookies can authorize the same read surfaces the product app uses, while preserving explicit public-path behavior and intentional operator-key support where documented
+6. **`apps/app/vite.config.ts`** and **`apps/app/src/lib/api-client.ts`** — keep the browser fetch path same-origin in dev and credential-aware in all environments
+7. **`apps/app/src/features/auth/*`** and **`apps/app/src/app/AuthGate.tsx`** — align the existing auth hooks/gate with the real API contract rather than preview-only fallbacks
 8. **`tests/specs/77_browser_safe_email_password_auth.test.ts`** — add black-box verification for the API auth/session flow and the browser-facing contract
 
 ### 4.2 Route Contract
@@ -70,12 +70,12 @@ The browser-facing auth contract is:
 - Browser sessions are cookie-based and `HttpOnly`
 - The browser uses `credentials: 'include'`; it does not send a bearer key
 - CLI/server-side flows may continue to use bearer keys where those surfaces are intentionally operator-only
-- Protected read routes used by the demo (`/api/documents*`, `/api/search`, `/api/entities*`, `/api/evidence*`) must accept a valid browser session
+- Protected read routes used by the product app (`/api/documents*`, `/api/search`, `/api/entities*`, `/api/evidence*`) must accept a valid browser session
 
 ### 4.4 Integration Points
 
-- The existing `demo` auth hooks should become real clients of the API rather than preview-mode placeholders
-- The middleware contract must stop treating browser auth as out of scope for the V1 app path
+- The existing `apps/app` auth hooks should remain real clients of the API rather than preview-mode placeholders
+- The middleware contract must stop treating browser auth as out of scope for product app paths
 - The invite flow in the UI and the admin-gated invite API must agree on roles, expiration semantics, and generic failure copy
 - Dev mode must use the Vite proxy path so cookies behave same-origin during local work
 - Production invite links use `MULDER_APP_BASE_URL` and delivery is selected by `MULDER_INVITE_DELIVERY` (`log` or `resend`)
@@ -92,8 +92,8 @@ The browser-facing auth contract is:
 - preserve operator-key behavior where documented
 - wire the auth route family into the app
 
-**Phase 3: demo alignment + QA**
-- align `demo` auth hooks and proxy behavior with the real backend
+**Phase 3: product-app alignment + QA**
+- align `apps/app` auth hooks and proxy behavior with the real backend
 - verify protected document/search/entity/evidence routes work through session auth
 - close preview-only assumptions that mask missing backend auth
 
@@ -135,7 +135,7 @@ The browser-facing auth contract is:
    - Then: the admin/owner request succeeds and the member request returns `403`
 
 8. **QA-08: local browser dev uses same-origin credentials**
-   - Given: `demo` is run through the documented Vite dev setup
+   - Given: `apps/app` is run through the documented Vite dev setup
    - When: the browser logs in and then requests a protected route
    - Then: the session cookie is sent successfully without embedding any API key in frontend code
 

@@ -2247,7 +2247,7 @@ mulder/
 │   ├── specs/                      # Spec-driven development
 │   └── functional-spec.md          # This document
 │
-└── demo/                           # Demo UI (existing)
+└── apps/app/                       # Browser product app
 ```
 
 ### Package Dependencies

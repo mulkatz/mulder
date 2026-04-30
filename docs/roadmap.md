@@ -1,6 +1,6 @@
 # Mulder — Implementation Roadmap
 
-Tracer bullet development path. Build the pipeline synchronously via CLI first (M1-M6), defer distributed infrastructure until the core works (M7-M8). Optimize for time to first demoable product (M4).
+Tracer bullet development path. Build the pipeline synchronously via CLI first (M1-M6), defer distributed infrastructure until the core works (M7-M8). Optimize for time to first usable product checkpoint (M4).
 
 **Spec references:** Each step lists the exact sections of [`functional-spec.md`](./functional-spec.md) needed to implement it. Read only those sections — never the full 2500-line spec.
 
@@ -193,36 +193,27 @@ Move from CLI to HTTP. Job queue, async workers, a full REST API over the pipeli
 | 🟢 | H8 | Entity API routes (sync) | §10.6 |
 | 🟢 | H9 | Evidence API routes (sync) | §10.6 |
 | 🟢 | H10 | Document retrieval routes — list/pdf/markdown sync routes | §10.6 |
-| 🟢 | H11 | Document Viewer UI — Vite+React split-view (PDF + stories + entities) | §13 (demo/), consumes H10 |
+| 🟢 | H11 | Browser product shell consuming H10 routes | §13, consumes H10 |
 
 **Also read for all M7 steps:** [`docs/api-architecture.md`](./api-architecture.md) (framework choice, route structure, middleware stack, OpenAPI strategy, key trade-offs), §10 (full job queue section — especially §10.3 transaction discipline), §14 (design decisions — PostgreSQL queue, auto-commit dequeue, per-step job slicing)
 
 **Verification guidance for M7:** use package-local builds plus step- or milestone-scoped spec tests while iterating (`pnpm test:scope -- step M7-Hx` / `pnpm test:scope -- milestone M7`). For HTTP work, use `pnpm test:api:e2e` as the API-focused end-to-end lane for M7-H3 through M7-H10. Do not default to the full CI-equivalent suite for routine API milestone work.
 
-**Testable:** HTTP API for everything. Workers process jobs asynchronously. Deployable to Cloud Run. First demoable web UI (split-view PDF + derived Markdown) consuming the real API.
+**Testable:** HTTP API for everything. Workers process jobs asynchronously. Deployable to Cloud Run. First browser product shell consuming the real API.
 
-**Note on H11 (Document Viewer):** H11 is the minimum-viable viewer — the roadmap anchor. The full V1 web app — foundations, Case File, Desk, Archive, Ask, Board, Audit, polish — lives under milestone **M7.5** below. H11 closes when M7.5-V1 ships (they deliver the same artifact). An earlier off-roadmap attempt was reverted in commit 90bee3a (issue #127 closed) because the clean path requires a real HTTP API to sit on — not a dev-only Vite filesystem plugin that would have bypassed the service abstraction.
+**Note on H11 (Document Viewer):** Current browser product work lives in `apps/app` and should follow the product-app documents. An earlier off-roadmap attempt was reverted in commit 90bee3a (issue #127 closed) because the clean path requires a real HTTP API to sit on, not a dev-only Vite filesystem plugin that would have bypassed the service abstraction.
 
 ---
 
-## M7.5: "V1 Web App" — Frontend Demo
+## M7.5: Retired Browser Prototype Track
 
-The browser experience. Parallel to M8; depends on M7 (H10 routes + Spec 77 auth) being green. This is the **fundable demo** — the artifact that communicates what Mulder is to non-engineers.
+This track is retired. Current browser product work is governed by `apps/app`, [`docs/product-app-design-strategy.md`](./product-app-design-strategy.md), [`docs/product-app-api-integration.md`](./product-app-api-integration.md), and [`docs/product-app-deployment.md`](./product-app-deployment.md).
 
-| Status | Step | What | Spec |
-|--------|------|------|------|
-| 🟢 | V1 | Viewer foundations + Case File (PDF + stories + entities + Hero 1/2) — supersedes H11 | Spec 84, Spec 77, H10 |
-| ⚪ | V2 | Archive + Desk (document list, upload, overview ribbon, "worth following" leads) | H5, H10 |
-| ⚪ | V3 | Ask (search console with citations + retrieval trace) + Command Palette (⌘K) | H7 |
-| ⚪ | V4 | Board (knowledge graph with custom nodes/edges + timeline scrubber) | H7, H8 |
-| ⚪ | V5 | Audit Drawer (contradictions + source reliability + evidence chains) | H9 |
-| ⚪ | V6 | Polish, accessibility pass, hero screenshot, demo GIF, Cloudflare Pages deploy | CLAUDE.md "Open-Source-Projekt Finalisierung" |
+Do not start new implementation from retired prototype routes, visual language, or fixed showcase data. If a public fixed-data showcase is needed later, build it as a separate, explicitly labeled surface that does not point at a private production project.
 
-**Also read for all M7.5 steps:** [`docs/v1-web-app-design.md`](./v1-web-app-design.md) (UX/UI design doc — hero moments, visual language, screen specs), [`docs/v1-web-app-plan.md`](./v1-web-app-plan.md) (phase-by-phase implementation plan + API contract cheat sheet), [`docs/specs/77_browser_safe_email_password_auth.spec.md`](./specs/77_browser_safe_email_password_auth.spec.md) (browser auth prerequisite).
+**Current product-app verification:** `pnpm --filter @mulder/app dev`, `pnpm --filter @mulder/app build`, and browser checks against `apps/app`.
 
-**Verification guidance for M7.5:** `cd demo && npm run dev` — verify each step visually in a browser before flipping to 🟢. Type-check via `npm run build`. Lint via `npm run lint`. Playwright smoke tests land in V6 as the automated gate. Do not default to the repo-wide `pnpm test` — frontend work has no repository-level test impact.
-
-**Testable:** A browser-based V1 demo worth showing to funders. All five Hero moments land (see design doc §4). Accessibility score ≥ 95 on desktop. Live at `mulder.mulkatz.dev`.
+**Current target:** Product-app acceptance is governed by the product-app strategy, API integration notes, and deployment runbook.
 
 ---
 
@@ -393,12 +384,12 @@ M1 Foundation
  └→ M2 Ingest+Extract (+golden extraction tests)
      └→ M3 Segment+Enrich (+golden entity tests)
          └→ QA Gate: Pre-Search (verification checkpoint)
-             └→ M4 Search (v1.0 MVP) ← FIRST DEMO POINT
+             └→ M4 Search (v1.0 MVP) ← FIRST USABLE PRODUCT CHECKPOINT
                  └→ QA Gate: Post-MVP (verification checkpoint) ← we are here
                      ├→ M5 Curation
                      ├→ M6 Intelligence (v2.0)
                      ├→ M7 API+Workers
-                     │   └→ M7.5 V1 Web App ← FUNDABLE DEMO POINT
+                    │   └→ Product App Track ← API-backed browser work
                      ├→ M8 Operations
                      ├→ M9 Multi-Format Ingestion
                      └→ M10 Provenance & Quality ← BEFORE FIRST REAL ARCHIVE INGEST

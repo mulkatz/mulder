@@ -14,7 +14,7 @@ created: 2026-04-09
 
 Convert Mulder's normalized `LayoutDocument` (produced by the Extract step) into a single human-readable, GitHub-Flavored Markdown document representing the whole source. Produced as a byproduct of every Extract run, cached in storage next to `layout.json`, and exposed via a new CLI flag that downloads it to a local file for preview.
 
-This is the first feature that makes the pipeline's output directly consumable by a human. It enables a demoable "left: PDF / right: Markdown" view without a UI (users can open the downloaded `.md` in any editor), and it is the prerequisite for a future minimal viewer UI (to be specified separately). It is **not** a roadmap milestone step — it's a targeted, off-roadmap utility feature added between M4 and M5 to make the current pipeline state presentable.
+This is the first feature that makes the pipeline's output directly consumable by a human. It enables a presentable "left: PDF / right: Markdown" view without a UI (users can open the downloaded `.md` in any editor), and it is the prerequisite for a future minimal viewer UI (to be specified separately). It is **not** a roadmap milestone step — it's a targeted, off-roadmap utility feature added between M4 and M5 to make the current pipeline state presentable.
 
 **Why now:** The pipeline has been working end-to-end since M4, but its outputs live in GCS (JSON) and per-story Markdown fragments that only exist after the Segment step has run with Gemini. There is currently no way to extract a single PDF and **see what the tool got out of it** without running the full pipeline, paying for Gemini segmentation, and stitching together 8 per-story files. This spec closes that gap with one pure function, one storage write, and one CLI flag.
 

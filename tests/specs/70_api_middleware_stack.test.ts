@@ -392,19 +392,19 @@ ontology:
 
 	it('QA-07: configured browser origins get credentialed CORS preflight headers', async () => {
 		const originalOrigins = process.env.MULDER_CORS_ORIGINS;
-		process.env.MULDER_CORS_ORIGINS = 'https://mulder.mulkatz.dev';
+		process.env.MULDER_CORS_ORIGINS = 'https://app.example.test';
 
 		try {
 			const app = createApp();
 			const allowed = await app.request('http://localhost/api/documents', {
 				method: 'OPTIONS',
 				headers: {
-					Origin: 'https://mulder.mulkatz.dev',
+					Origin: 'https://app.example.test',
 					'Access-Control-Request-Method': 'GET',
 				},
 			});
 			expect(allowed.status).toBe(204);
-			expect(allowed.headers.get('access-control-allow-origin')).toBe('https://mulder.mulkatz.dev');
+			expect(allowed.headers.get('access-control-allow-origin')).toBe('https://app.example.test');
 			expect(allowed.headers.get('access-control-allow-credentials')).toBe('true');
 			expect(allowed.headers.get('access-control-allow-headers')).toContain('Authorization');
 
