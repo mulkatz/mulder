@@ -14,7 +14,7 @@ import { useJob } from '@/features/jobs/useJob';
 import { useJobs } from '@/features/jobs/useJobs';
 import { getErrorMessage } from '@/lib/query-state';
 import type { AnalysisRun, RunStatus } from '@/lib/types';
-import { jobToAnalysisRun } from '@/lib/view-models';
+import { jobDetailToAnalysisRun, jobToAnalysisRun } from '@/lib/view-models';
 
 const runColumns: DataColumn<AnalysisRun>[] = [
 	{
@@ -90,7 +90,7 @@ export function AnalysisRunsPage() {
 
 	const selectedListRun = filteredRuns.find((run) => run.id === selectedId) ?? filteredRuns[0];
 	const selectedJobQuery = useJob(selectedListRun?.id);
-	const selectedRun = selectedJobQuery.data ? jobToAnalysisRun(selectedJobQuery.data.data.job) : selectedListRun;
+	const selectedRun = selectedJobQuery.data ? jobDetailToAnalysisRun(selectedJobQuery.data.data) : selectedListRun;
 
 	return (
 		<>

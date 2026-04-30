@@ -53,24 +53,28 @@ export interface JobListResponse {
 	meta: { count: number; limit: number };
 }
 
+export interface JobProgress {
+	run_id: string;
+	run_status: 'running' | 'completed' | 'partial' | 'failed';
+	source_counts: { pending: number; processing: number; completed: number; failed: number };
+	sources: {
+		source_id: string;
+		current_step: string;
+		status: 'pending' | 'processing' | 'completed' | 'failed';
+		error_message: string | null;
+		updated_at: string;
+	}[];
+}
+
+export interface JobDetailRecord extends JobSummary {
+	error_log: string | null;
+	payload: Record<string, unknown>;
+}
+
 export interface JobDetailResponse {
 	data: {
-		job: JobSummary & {
-			error_log: string | null;
-			payload: Record<string, unknown>;
-			progress: {
-				run_id: string;
-				run_status: 'running' | 'completed' | 'partial' | 'failed';
-				source_counts: { pending: number; processing: number; completed: number; failed: number };
-				sources: {
-					source_id: string;
-					current_step: string;
-					status: 'pending' | 'processing' | 'completed' | 'failed';
-					error_message: string | null;
-					updated_at: string;
-				}[];
-			} | null;
-		};
+		job: JobDetailRecord;
+		progress: JobProgress | null;
 	};
 }
 

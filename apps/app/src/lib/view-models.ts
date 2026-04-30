@@ -2,13 +2,17 @@ import type {
 	ContradictionRecord,
 	DocumentListResponse,
 	EvidenceSummaryResponse,
+	JobDetailRecord,
 	JobDetailResponse,
+	JobProgress,
 	JobSummary,
 	StatusResponse,
 } from '@/lib/api-types';
 import type { ActivityEvent, AnalysisRun, EvidenceClaim, Finding, Metric, RunStatus, Severity } from '@/lib/types';
 
 const numberFormatter = new Intl.NumberFormat('en-US');
+
+type JobForAnalysis = JobSummary | (JobDetailRecord & { progress?: JobProgress | null });
 
 function formatNumber(value: number | null | undefined) {
 	return typeof value === 'number' ? numberFormatter.format(value) : '—';
@@ -61,7 +65,7 @@ function mapJobStatus(status: JobSummary['status']): RunStatus {
 	return status;
 }
 
-function progressFromJob(job: JobSummary | JobDetailResponse['data']['job']) {
+function progressFromJob(job: JobForAnalysis) {
 	if (job.status === 'completed') return 100;
 	if (job.status === 'pending') return 0;
 	if ('progress' in job && job.progress) {
@@ -72,7 +76,7 @@ function progressFromJob(job: JobSummary | JobDetailResponse['data']['job']) {
 	return null;
 }
 
-function timelineFromJob(job: JobSummary | JobDetailResponse['data']['job']) {
+function timelineFromJob(job: JobForAnalysis) {
 	const timeline: AnalysisRun['timeline'] = [
 		{
 			time: formatClock(job.created_at),
@@ -121,7 +125,7 @@ function timelineFromJob(job: JobSummary | JobDetailResponse['data']['job']) {
 	return timeline;
 }
 
-export function jobToAnalysisRun(job: JobSummary | JobDetailResponse['data']['job']): AnalysisRun {
+export function jobToAnalysisRun(job: JobForAnalysis): AnalysisRun {
 	const payload = 'payload' in job ? job.payload : { type: job.type };
 	const error = 'error_log' in job ? job.error_log : null;
 
@@ -145,6 +149,13 @@ export function jobToAnalysisRun(job: JobSummary | JobDetailResponse['data']['jo
 		timeline: timelineFromJob(job),
 		error: error ?? undefined,
 	};
+}
+
+export function jobDetailToAnalysisRun(detail: JobDetailResponse['data']): AnalysisRun {
+	return jobToAnalysisRun({
+		...detail.job,
+		progress: detail.progress,
+	});
 }
 
 export function jobsToActivity(jobs: JobSummary[]): ActivityEvent[] {
