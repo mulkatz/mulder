@@ -193,36 +193,27 @@ Move from CLI to HTTP. Job queue, async workers, a full REST API over the pipeli
 | 🟢 | H8 | Entity API routes (sync) | §10.6 |
 | 🟢 | H9 | Evidence API routes (sync) | §10.6 |
 | 🟢 | H10 | Document retrieval routes — list/pdf/markdown sync routes | §10.6 |
-| 🟢 | H11 | Document Viewer UI — Vite+React split-view (PDF + stories + entities) | §13 legacy demo anchor, consumes H10 |
+| 🟢 | H11 | Document Viewer UI — browser split-view consuming H10 routes | §13, consumes H10 |
 
 **Also read for all M7 steps:** [`docs/api-architecture.md`](./api-architecture.md) (framework choice, route structure, middleware stack, OpenAPI strategy, key trade-offs), §10 (full job queue section — especially §10.3 transaction discipline), §14 (design decisions — PostgreSQL queue, auto-commit dequeue, per-step job slicing)
 
 **Verification guidance for M7:** use package-local builds plus step- or milestone-scoped spec tests while iterating (`pnpm test:scope -- step M7-Hx` / `pnpm test:scope -- milestone M7`). For HTTP work, use `pnpm test:api:e2e` as the API-focused end-to-end lane for M7-H3 through M7-H10. Do not default to the full CI-equivalent suite for routine API milestone work.
 
-**Testable:** HTTP API for everything. Workers process jobs asynchronously. Deployable to Cloud Run. First demoable web UI (split-view PDF + derived Markdown) consuming the real API.
+**Testable:** HTTP API for everything. Workers process jobs asynchronously. Deployable to Cloud Run. First browser product shell consuming the real API.
 
-**Note on H11 (Document Viewer):** H11 was the minimum-viable viewer roadmap anchor for the legacy V1 demo track. Current browser product work now lives in `apps/app` and should follow the product-app documents rather than the removed `demo/` implementation. An earlier off-roadmap attempt was reverted in commit 90bee3a (issue #127 closed) because the clean path requires a real HTTP API to sit on — not a dev-only Vite filesystem plugin that would have bypassed the service abstraction.
+**Note on H11 (Document Viewer):** Current browser product work lives in `apps/app` and should follow the product-app documents. An earlier off-roadmap attempt was reverted in commit 90bee3a (issue #127 closed) because the clean path requires a real HTTP API to sit on, not a dev-only Vite filesystem plugin that would have bypassed the service abstraction.
 
 ---
 
-## M7.5: "V1 Web App" — Legacy Frontend Demo
+## M7.5: Retired Browser Prototype Track
 
-This section records the legacy V1 demo track. The old `demo/` app has been removed from the active tree and is superseded for current browser product work by `apps/app`, [`docs/product-app-design-strategy.md`](./product-app-design-strategy.md), [`docs/product-app-api-integration.md`](./product-app-api-integration.md), and [`docs/product-app-deployment.md`](./product-app-deployment.md). Treat the V1 documents as deprecated historical context, not current implementation guidance.
+This track is retired. Current browser product work is governed by `apps/app`, [`docs/product-app-design-strategy.md`](./product-app-design-strategy.md), [`docs/product-app-api-integration.md`](./product-app-api-integration.md), and [`docs/product-app-deployment.md`](./product-app-deployment.md).
 
-| Status | Step | What | Spec |
-|--------|------|------|------|
-| 🟢 | V1 | Viewer foundations + Case File (PDF + stories + entities + Hero 1/2) — supersedes H11 | Spec 84, Spec 77, H10 |
-| ⚪ | V2 | Archive + Desk (document list, upload, overview ribbon, "worth following" leads) | H5, H10 |
-| ⚪ | V3 | Ask (search console with citations + retrieval trace) + Command Palette (⌘K) | H7 |
-| ⚪ | V4 | Board (knowledge graph with custom nodes/edges + timeline scrubber) | H7, H8 |
-| ⚪ | V5 | Audit Drawer (contradictions + source reliability + evidence chains) | H9 |
-| ⚪ | V6 | Polish, accessibility pass, hero screenshot, demo GIF, Cloudflare Pages deploy | CLAUDE.md "Open-Source-Projekt Finalisierung" |
+Do not start new implementation from retired prototype routes, visual language, or fixed showcase data. If a public fixed-data showcase is needed later, build it as a separate, explicitly labeled surface that does not point at a private production project.
 
-**Current browser app guidance:** use [`apps/app`](../apps/app) and the product-app documents linked above. [`docs/v1-web-app-design.md`](./v1-web-app-design.md) and [`docs/v1-web-app-plan.md`](./v1-web-app-plan.md) remain only as deprecated records of the removed V1 demo.
+**Current product-app verification:** `pnpm --filter @mulder/app dev`, `pnpm --filter @mulder/app build`, and browser checks against `apps/app`.
 
-**Current product-app verification:** `pnpm --filter @mulder/app dev`, `pnpm --filter @mulder/app build`, and browser checks against `apps/app`. The old `cd demo && npm run ...` workflow no longer applies.
-
-**Historical target:** The removed V1 track aimed at a browser-based fundable demo with five hero moments. Current product-app acceptance is governed by the product-app strategy, API integration notes, and deployment runbook.
+**Current target:** Product-app acceptance is governed by the product-app strategy, API integration notes, and deployment runbook.
 
 ---
 
@@ -398,7 +389,7 @@ M1 Foundation
                      ├→ M5 Curation
                      ├→ M6 Intelligence (v2.0)
                      ├→ M7 API+Workers
-                     │   └→ M7.5 V1 Web App ← FUNDABLE DEMO POINT
+                    │   └→ Product App Track ← API-backed browser work
                      ├→ M8 Operations
                      ├→ M9 Multi-Format Ingestion
                      └→ M10 Provenance & Quality ← BEFORE FIRST REAL ARCHIVE INGEST

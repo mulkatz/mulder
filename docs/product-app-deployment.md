@@ -14,7 +14,7 @@ Store real values in Cloudflare settings, GitHub Actions secrets or variables, G
 
 ## Scope
 
-The target product UI is `apps/app`. The older `demo/` app has been removed from the active tree and must not guide new product UI work. Reusable API integration lessons from that app are preserved in [`docs/product-app-api-integration.md`](./product-app-api-integration.md).
+The target product UI is `apps/app`. Product API integration rules are preserved in [`docs/product-app-api-integration.md`](./product-app-api-integration.md).
 
 The product app must be populated through the product pipeline only:
 

@@ -1,10 +1,9 @@
 # Mulder Product App API Integration Notes
 
 **Status:** Active implementation reference for `apps/app`
-**Supersedes:** reusable API lessons from the removed legacy `demo/` app
 **Related:** [`product-app-design-strategy.md`](./product-app-design-strategy.md), [`product-app-deployment.md`](./product-app-deployment.md), [`api-architecture.md`](./api-architecture.md)
 
-This document preserves the useful API knowledge from the legacy V1 demo before the old `demo/` code was removed. It is not a visual or interaction-design reference. The product app must continue to follow the cleaner, research-first direction in `docs/product-app-design-strategy.md`.
+This document is the active API integration reference for the Mulder product app. It is not a visual or interaction-design reference. The product app must continue to follow the cleaner, research-first direction in `docs/product-app-design-strategy.md`.
 
 ## Integration Posture
 
@@ -19,7 +18,7 @@ The app should use:
 - Explicit loading, empty, unavailable, and error states.
 - No fixed shards, showcase IDs, or checked-in product-screen fixtures in `apps/app`.
 
-The legacy demo API client pattern is worth retaining:
+The product app API client should keep these properties:
 
 - `ApiError` carries `status`, `code`, `message`, and optional `details`.
 - Error responses are parsed from `{ error: { code, message, details } }` when available.
@@ -44,7 +43,7 @@ The product app should expose:
 
 ## Usable HTTP Surface
 
-These endpoints existed as usable browser contracts in the legacy demo and should be the first candidates for `apps/app`.
+These endpoints are the first candidates for `apps/app` because they already represent usable browser-facing contracts.
 
 | Area | Endpoint | Notes |
 | --- | --- | --- |
@@ -80,9 +79,9 @@ These endpoints existed as usable browser contracts in the legacy demo and shoul
 | Evidence | `GET /api/evidence/chains` | Evidence chains by thesis. |
 | Evidence | `GET /api/evidence/clusters` | Spatio-temporal clusters. |
 
-## Legacy Hook Mapping
+## Hook Mapping
 
-This mapping captures the old demo's useful implementation shape without preserving the old app.
+This mapping captures the product app's hook-per-contract shape.
 
 | Legacy hook | API contract | Product-app use |
 | --- | --- | --- |
@@ -136,10 +135,10 @@ These gaps should be visible in the app capability registry instead of hidden be
 
 ## What Not To Reuse
 
-- V1 visual language: serif/editorial typography, cinematic hero moments, dark dossier mood, or investor-demo pacing.
-- V1 route structure: Desk, Archive, Board, Ask as the default product IA.
+- Old editorial visual language: serif typography, cinematic hero moments, dark dossier mood, or investor-showcase pacing.
+- Old top-nav route structure: Desk, Archive, Board, Ask as the default product IA.
 - Fake hero interactions or fixture-backed product claims.
-- Demo-specific copy, seeded users, fixed showcase IDs, or local-only data assumptions.
+- Showcase-specific copy, seeded users, fixed showcase IDs, or local-only data assumptions.
 - Pipeline-first navigation that makes jobs feel like the main product object for non-technical researchers.
 
 ## First API Slice

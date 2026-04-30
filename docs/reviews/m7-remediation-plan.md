@@ -2,10 +2,12 @@
 source_review: m7-review.md
 created: 2026-04-17
 scope_classification: multi-spec
-status: proposed
+status: superseded
 ---
 
 # M7 Remediation Plan
+
+> Historical remediation record. Browser app guidance now lives in `apps/app`, `docs/product-app-design-strategy.md`, `docs/product-app-api-integration.md`, and `docs/product-app-deployment.md`. Do not use this plan as a current frontend implementation guide.
 
 Implementation plan for the still-open findings in [`docs/reviews/m7-review.md`](./m7-review.md).
 
@@ -17,14 +19,14 @@ Implementation plan for the still-open findings in [`docs/reviews/m7-review.md`]
 |----------|-------|--------------|
 | `DIV-001` | Async execution model | Still open. The API and worker still route normal async execution through legacy monolithic `pipeline_run` jobs rather than real per-step queue slicing. |
 | `DIV-002` | Queue retries | Still open. The queue repository still marks ordinary failures as `failed`, and the runtime does not appear to requeue them automatically before exhaustion. |
-| `DIV-003` | Browser auth contract | Still open. The demo still depends on browser session routes, while the current API middleware/spec set remains API-key centric and the referenced auth spec file is missing from `docs/specs/`. |
+| `DIV-003` | Browser auth contract | Resolved for the product-app path. Browser-safe session routes and `apps/app` auth hooks exist; keep future UI work on the product-app contract. |
 | `DIV-005` | API docs / middleware drift | Still open. OpenAPI/Scalar/CORS are still documented as shipping even though the app/config surface does not fully match that description. |
 
 ### Findings already resolved
 
 | Review ID | Theme | Resolution |
 |----------|-------|------------|
-| `DIV-004` | Demo production build | Resolved on `v1-app`. The `demo` build is currently green after the Ask/command-palette work. |
+| `DIV-004` | Retired browser prototype build | Superseded. The old browser prototype is no longer an active build target; verify `apps/app` instead. |
 
 ### Cross-cutting doc gap
 
@@ -50,19 +52,19 @@ That means the right next step is **decomposition**, not one giant catch-all spe
 
 Why this direction:
 
-- `M7.5` explicitly depends on “Spec 77 auth being green”
-- the V1 plan and design docs already assume invite-based session auth
+- the product app depends on Spec 77 auth being green
+- the product app assumes invite-based session auth
 - the current web app is built around cookie-backed session flows, not bearer-key entry
-- reverting the demo to API keys would move the product away from the documented browser story
+- reverting the app to API keys would move the product away from the documented browser story
 
 **Suggested issue title**
 
-`[API/Auth] Browser-safe session auth for demo clients — M7 follow-up`
+`[API/Auth] Browser-safe session auth for product app clients — M7 follow-up`
 
 **Suggested implementation scope**
 
 1. Recreate or replace the missing browser-auth spec file so the contract is explicit again.
-2. Add the missing `/api/auth/*` route family expected by the demo:
+2. Add the missing `/api/auth/*` route family expected by the product app:
    - `POST /api/auth/login`
    - `POST /api/auth/logout`
    - `GET /api/auth/session`
@@ -73,7 +75,7 @@ Why this direction:
    - same-origin dev proxy
    - credentialed CORS only where truly required
    - cookie flags by environment
-5. Add end-to-end verification from demo auth entrypoints through protected document/search routes.
+5. Add end-to-end verification from product-app auth entrypoints through protected document/search routes.
 
 **Primary surfaces**
 
@@ -82,14 +84,14 @@ Why this direction:
 - new `apps/api/src/routes/auth*.ts`
 - new auth/session library code under `apps/api/src/lib/`
 - `packages/core/src/config/schema.ts`
-- `demo/src/features/auth/*`
-- `demo/src/lib/api-client.ts`
+- `apps/app/src/features/auth/*`
+- `apps/app/src/lib/api-client.ts`
 
 **Verification target**
 
 - browser login sets a valid session
 - `GET /api/auth/session` round-trips the current user
-- protected demo routes work with browser credentials only
+- protected product app routes work with browser credentials only
 - admin invite creation matches the frontend modal contract
 
 ### Workstream B — Replace Monolithic `pipeline_run` Jobs With Per-Step Queue Jobs

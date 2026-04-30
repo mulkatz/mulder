@@ -9,6 +9,8 @@ verdict: NEEDS_ATTENTION
 
 # Milestone Review: M7 — API + Workers
 
+> Historical review record from 2026-04-17. It predates the current `apps/app` product-app direction and should not be used as frontend implementation guidance.
+
 ## Summary
 
 | Severity | Count |
@@ -127,4 +129,3 @@ M7 has real breadth: the queue repository exists, the worker runtime exists, the
 ### For Consideration
 
 1. Revisit whether `--concurrency <n>` on `mulder worker start` should stay as a forward-looking CLI knob or become real parallel execution now that M7 is marked complete.
-

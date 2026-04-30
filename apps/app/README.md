@@ -2,7 +2,7 @@
 
 Product browser app for the cleaner, technical Mulder research workbench direction.
 
-`apps/app` is the only active browser product app. The legacy V1 `demo/` app has been removed; reusable API integration lessons from it are captured in [`../../docs/product-app-api-integration.md`](../../docs/product-app-api-integration.md).
+`apps/app` is the only active browser product app. Product API integration decisions are captured in [`../../docs/product-app-api-integration.md`](../../docs/product-app-api-integration.md).
 
 ## Commands
 

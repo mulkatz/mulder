@@ -10,7 +10,7 @@
 
 `apps/app` is the only active product direction for Mulder's browser experience.
 
-The legacy v1 `demo/` app has been removed from the active tree to avoid confusing the product direction. Its reusable API lessons are captured in [`docs/product-app-api-integration.md`](./product-app-api-integration.md); its V1 design and implementation documents are retained only as deprecated historical records. Mulder is a powerful research and analysis system. The interface should therefore feel like a precise technical workbench, not like an editorial presentation layer.
+Mulder is a powerful research and analysis system. The interface should therefore feel like a precise technical workbench, not like an editorial presentation layer. API integration decisions are captured in [`docs/product-app-api-integration.md`](./product-app-api-integration.md).
 
 The key decision is not simply "make v1 cleaner." The better path is to continue the product app as an API-contract-first, capability-aware product shell:
 
