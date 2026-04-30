@@ -518,9 +518,9 @@ describe('Spec 87 — Image Ingestion on the Layout Extraction Path', () => {
 	it('QA-08: unsupported formats still fail before persistence', () => {
 		if (!pgAvailable) return;
 
-		const textFile = join(tmpDir, 'note.txt');
-		writeFileSync(textFile, 'Plain text remains out of scope for M9-J3.\n', 'utf-8');
-		const result = runCli(['ingest', textFile]);
+		const docxFile = join(tmpDir, 'note.docx');
+		writeFileSync(docxFile, Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00]));
+		const result = runCli(['ingest', docxFile]);
 		expect(result.exitCode).not.toBe(0);
 		expect(`${result.stdout}\n${result.stderr}`).toMatch(/unsupported source type|INGEST_UNSUPPORTED_SOURCE_TYPE/i);
 		expect(db.runSql('SELECT COUNT(*) FROM sources;')).toBe('0');

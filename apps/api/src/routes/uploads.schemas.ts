@@ -7,6 +7,9 @@ const SUPPORTED_UPLOAD_EXTENSIONS = new Map([
 	['jpeg', 'jpg'],
 	['tif', 'tiff'],
 	['tiff', 'tiff'],
+	['txt', 'txt'],
+	['md', 'md'],
+	['markdown', 'md'],
 ]);
 
 const SUPPORTED_UPLOAD_CONTENT_TYPES = new Map([
@@ -14,9 +17,12 @@ const SUPPORTED_UPLOAD_CONTENT_TYPES = new Map([
 	['image/png', 'png'],
 	['image/jpeg', 'jpg'],
 	['image/tiff', 'tiff'],
+	['text/plain', 'txt'],
+	['text/markdown', 'md'],
+	['text/x-markdown', 'md'],
 ]);
 
-export type UploadStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff';
+export type UploadStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff' | 'txt' | 'md';
 
 function filenameExtension(filename: string): string {
 	const basename = filename.split(/[\\/]/).pop() ?? filename;
@@ -26,17 +32,31 @@ function filenameExtension(filename: string): string {
 
 export function canonicalUploadExtensionForFilename(filename: string): UploadStorageExtension | null {
 	const extension = SUPPORTED_UPLOAD_EXTENSIONS.get(filenameExtension(filename));
-	return extension === 'pdf' || extension === 'png' || extension === 'jpg' || extension === 'tiff' ? extension : null;
+	return extension === 'pdf' ||
+		extension === 'png' ||
+		extension === 'jpg' ||
+		extension === 'tiff' ||
+		extension === 'txt' ||
+		extension === 'md'
+		? extension
+		: null;
 }
 
 export function canonicalUploadExtensionForContentType(contentType: string): UploadStorageExtension | null {
 	const normalized = contentType.split(';')[0]?.trim().toLowerCase() ?? '';
 	const extension = SUPPORTED_UPLOAD_CONTENT_TYPES.get(normalized);
-	return extension === 'pdf' || extension === 'png' || extension === 'jpg' || extension === 'tiff' ? extension : null;
+	return extension === 'pdf' ||
+		extension === 'png' ||
+		extension === 'jpg' ||
+		extension === 'tiff' ||
+		extension === 'txt' ||
+		extension === 'md'
+		? extension
+		: null;
 }
 
 export function isSupportedOriginalStoragePath(storagePath: string): boolean {
-	return /^raw\/[^/]+\/original\.(pdf|png|jpg|tiff)$/i.test(storagePath);
+	return /^raw\/[^/]+\/original\.(pdf|png|jpg|tiff|txt|md)$/i.test(storagePath);
 }
 
 export const UploadTransportSchema = z.enum(['gcs_resumable', 'dev_proxy']);
@@ -81,7 +101,7 @@ export const CompleteDocumentUploadRequestSchema = z
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				path: ['filename'],
-				message: 'filename must end with .pdf, .png, .jpg, .jpeg, .tif, or .tiff',
+				message: 'filename must end with .pdf, .png, .jpg, .jpeg, .tif, .tiff, .txt, .md, or .markdown',
 			});
 			return;
 		}

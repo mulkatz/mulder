@@ -67,6 +67,7 @@ export type {
 	ExtractResult,
 	LayoutDocument,
 	PageExtraction,
+	PrimaryExtractionMethod,
 } from './extract/index.js';
 export { execute as executeExtract, layoutToMarkdown } from './extract/index.js';
 export type {
@@ -100,16 +101,22 @@ export type {
 	SourceDetectionResult,
 	SourceStorageExtension,
 	SupportedImageMediaType,
+	SupportedTextMediaType,
 } from './ingest/index.js';
 export {
 	buildImageFormatMetadata,
+	buildTextFormatMetadata,
+	decodeUtf8TextBuffer,
 	detectSourceType,
 	execute as executeIngest,
 	getCanonicalStorageExtensionForMediaType,
 	getOriginalExtension,
 	getStorageExtensionForDetection,
+	isReadableText,
 	isSupportedImageMediaType,
 	isSupportedIngestFilename,
+	isSupportedTextFilename,
+	isSupportedTextMediaType,
 	readImageDimensions,
 	resolveIngestFiles,
 	resolvePdfFiles,

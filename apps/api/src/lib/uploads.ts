@@ -92,13 +92,17 @@ function resolveUploadInput(input: { filename: string; contentType: string }): {
 	const contentTypeExtension = canonicalUploadExtensionForContentType(input.contentType);
 
 	if (!extension) {
-		throw new MulderError('Filename must end with .pdf, .png, .jpg, .jpeg, .tif, or .tiff', 'VALIDATION_ERROR', {
-			context: { filename: input.filename },
-		});
+		throw new MulderError(
+			'Filename must end with .pdf, .png, .jpg, .jpeg, .tif, .tiff, .txt, .md, or .markdown',
+			'VALIDATION_ERROR',
+			{
+				context: { filename: input.filename },
+			},
+		);
 	}
 
 	if (!contentTypeExtension) {
-		throw new MulderError('Only PDF, PNG, JPEG, and TIFF uploads are supported', 'VALIDATION_ERROR', {
+		throw new MulderError('Only PDF, PNG, JPEG, TIFF, TXT, and Markdown uploads are supported', 'VALIDATION_ERROR', {
 			context: { content_type: input.contentType },
 		});
 	}

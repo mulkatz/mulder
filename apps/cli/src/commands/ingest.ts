@@ -43,7 +43,7 @@ interface IngestOptions {
 export function registerIngestCommands(program: Command): void {
 	program
 		.command('ingest')
-		.description('Ingest PDFs or supported images — file or directory')
+		.description('Ingest PDFs, images, or supported text files — file or directory')
 		.argument('<path>', 'path to a supported file or directory containing supported files')
 		.option('--dry-run', 'validate without uploading or creating DB records')
 		.option('--tag <tag>', 'tag ingested sources (repeatable)', collect, [])

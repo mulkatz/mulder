@@ -28,6 +28,9 @@ export interface ExtractInput {
 /** The extraction method used for a given page. */
 export type ExtractionMethod = 'native' | 'document_ai' | 'vision_fallback';
 
+/** The source-level extraction path used for a completed extract step. */
+export type PrimaryExtractionMethod = 'native' | 'document_ai' | 'text';
+
 /** Per-page extraction details. */
 export interface PageExtraction {
 	/** 1-indexed page number. */
@@ -45,13 +48,13 @@ export interface ExtractionData {
 	/** Source UUID. */
 	sourceId: string;
 	/** GCS URI: extracted/{doc-id}/layout.json */
-	layoutUri: string;
+	layoutUri: string | null;
 	/** GCS URIs: extracted/{doc-id}/pages/page-NNN.png */
 	pageImageUris: string[];
 	/** Total number of pages. */
 	pageCount: number;
 	/** Primary extraction method (native or document_ai). */
-	primaryMethod: 'native' | 'document_ai';
+	primaryMethod: PrimaryExtractionMethod;
 	/** Per-page extraction details. */
 	pages: PageExtraction[];
 	/** How many pages used Gemini Vision fallback. */
@@ -98,7 +101,7 @@ export interface LayoutPage {
 export interface LayoutDocument {
 	sourceId: string;
 	pageCount: number;
-	primaryMethod: 'native' | 'document_ai';
+	primaryMethod: Exclude<PrimaryExtractionMethod, 'text'>;
 	extractedAt: string;
 	pages: LayoutPage[];
 	metadata: {
