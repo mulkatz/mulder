@@ -1,44 +1,279 @@
-# Mulder V1 Live Demo Deployment
+# Mulder Live Demo Deployment and Infrastructure Runbook
 
-This guide keeps production data clean: the live demo must be populated through the API/UI pipeline, never by SQL fixture seeding.
+This runbook describes what must be in place before the live demo is exposed to real users. It is intentionally configuration-neutral: do not commit private domains, GCP project IDs, sender addresses, customer names, private corpus choices, API keys, service-account keys, or production config files to this open-source repository.
 
-Keep deployment-specific domains, project IDs, sender addresses, and corpus choices outside the repository. Store them in GitHub Actions inputs/secrets, Secret Manager, DNS, hosting environment variables, or private operator notes.
+Use placeholders in repo-tracked documentation and code:
 
-## Architecture
+- `<app-origin>` for the Cloudflare frontend origin
+- `<api-origin>` for the public API origin
+- `<gcp-project-id>` for the GCP project
+- `<region>` for the Cloud Run and Artifact Registry region
+- `<owner@example.com>` for the first product owner
 
-- Frontend: static app host, for example Cloudflare Pages, `<app-origin>`
-- API: Cloud Run service, `<api-origin>`
-- Worker: Cloud Run service using `scripts/run-worker-service.mjs`, minimum one instance, CPU always allocated
-- Data: Cloud SQL Postgres, GCS, Firestore
-- Users: Mulder Postgres tables (`api_users`, `api_invitations`, `api_sessions`)
-- Invite delivery: API sends email through Resend in production; local/dev logs the invite link
+Store real values in Cloudflare settings, GitHub Actions secrets or variables, GCP Secret Manager, DNS, and private operator notes.
 
-## Required GCP Setup
+## Scope
 
-Enable these APIs in the target GCP project:
+The target live product UI is `demo-v2`. The older `demo/` app may remain useful as a local API-backed reference or E2E harness, but it is not the UI direction for the public live demo.
+
+The live demo must be populated through the product pipeline only:
+
+- no SQL fixture seeding in production
+- no checked-in production corpus configuration
+- no fixed demo UUID families
+- no `*.e2e@mulder.local` users
+- no `demo` or `full-functional-demo` metadata in production data
+
+## Target Architecture
+
+| Area | Target |
+| --- | --- |
+| Frontend | Cloudflare Pages serving `demo-v2` at `<app-origin>` |
+| API | GCP Cloud Run service at `<api-origin>` |
+| Worker | Separate Cloud Run worker service using the same container image |
+| Database | Cloud SQL Postgres |
+| Object storage | GCS bucket for document artifacts |
+| Observability projections | Firestore |
+| Auth | Product users in Postgres: `api_users`, `api_invitations`, `api_sessions` |
+| App login | Mulder auth, not GCP IAM |
+| Invite delivery | API sends email in production; local/dev logs invite links |
+
+## Current Repo State
+
+Already present:
+
+- API production container via `Dockerfile.api`
+- manual GitHub Actions workflow: `Deploy Live Demo`
+- API and worker Cloud Run deployment steps
+- Resend-backed invite delivery plumbing
+- owner invite helper: `pnpm invite:owner`
+- live smoke helper: `pnpm smoke:live`
+- one-command local dev stack: `pnpm dev`
+- `demo-v2` scaffold for the preferred product UI direction
+
+Still required before live:
+
+- make `demo-v2` API-backed instead of fixture-backed
+- make `demo-v2` a first-class deploy target
+- create and permission GCP infrastructure
+- create production secrets
+- run production database migrations
+- deploy API and worker
+- configure Cloudflare Pages
+- create the first owner invitation
+- upload real demo PDFs through the product
+- run production smoke and browser QA
+
+## Release Blockers
+
+Do not go live until all of these are true:
+
+- `demo-v2` no longer depends on `demo-v2/src/lib/fixtures.ts` for production screens.
+- Cloudflare production has `VITE_API_BASE_URL=<api-origin>`.
+- Cloudflare production has preview/mock bypass disabled.
+- The API health check at `<api-origin>/api/health` returns 200.
+- Production database migrations have completed successfully.
+- The worker is deployed and processing jobs outside HTTP request handlers.
+- Owner invite email delivery is verified.
+- A PDF uploaded through the UI completes the API and worker pipeline.
+- Browser QA passes on desktop and mobile for the main live routes.
+
+## Frontend Work Order: Cloudflare Pages
+
+### 1. Decide the public frontend origin
+
+Choose `<app-origin>` outside the repo, for example in private deployment notes. Create or approve the DNS records in Cloudflare.
+
+### 2. Create the Cloudflare Pages project
+
+Until `demo-v2` is added to the root pnpm workspace, use `demo-v2` as the Pages root:
+
+```text
+Root directory: demo-v2
+Install command: npm ci
+Build command: npm run build
+Build output directory: dist
+```
+
+If `demo-v2` later becomes a root workspace package, prefer the monorepo build path:
+
+```text
+Root directory: /
+Install command: pnpm install --frozen-lockfile
+Build command: pnpm --filter mulder-demo-v2 build
+Build output directory: demo-v2/dist
+```
+
+### 3. Configure Cloudflare environment variables
+
+Production:
+
+```text
+VITE_API_BASE_URL=<api-origin>
+VITE_PREVIEW_AUTH_BYPASS=false
+```
+
+If the final V2 frontend uses a differently named mock or preview flag, the production value must still disable mock data and auth bypass.
+
+### 4. Complete V2 API integration before production
+
+`demo-v2` currently starts as a prototype scaffold. Before assigning the production domain to it:
+
+- add an API client that reads `VITE_API_BASE_URL`
+- add session bootstrap against `GET /api/auth/session`
+- add login, logout, and invite acceptance screens
+- replace fixture-backed route data with API-backed loading, empty, success, and error states
+- keep prototype fixtures available only for local development or tests behind an explicit dev/test path
+- ensure production API errors are visible and not masked by fallback mock data
+- run `npm run build` from `demo-v2`
+
+### 5. Browser QA the deployed frontend
+
+Check desktop and mobile widths for:
+
+- login
+- invite acceptance
+- overview or desk route
+- evidence workspace or case-file route
+- upload route once connected
+- ask/search route once connected
+- board or analysis route once connected
+- audit drawer or activity route once connected
+
+For each route, verify:
+
+- no console errors
+- no overlapping UI
+- professional empty states for a fresh database
+- loading states do not shift the layout badly
+- API failures show product-appropriate errors
+- no preview or mock data appears in production
+
+## Backend Work Order: GCP API and Worker
+
+### 1. Choose deployment values privately
+
+Record these outside the repo:
+
+```text
+GCP project: <gcp-project-id>
+Region: <region>
+API origin: <api-origin>
+App origin: <app-origin>
+Runtime service account: mulder-runtime@<gcp-project-id>.iam.gserviceaccount.com
+```
+
+### 2. Enable required GCP APIs
+
+The deployment workflow currently enables only the core deploy APIs. Before live, make sure the full runtime set is enabled:
 
 ```bash
 gcloud services enable \
   artifactregistry.googleapis.com \
   cloudbuild.googleapis.com \
+  cloudresourcemanager.googleapis.com \
+  documentai.googleapis.com \
+  firestore.googleapis.com \
+  iam.googleapis.com \
   run.googleapis.com \
   secretmanager.googleapis.com \
+  serviceusage.googleapis.com \
   sqladmin.googleapis.com \
+  storage.googleapis.com \
+  aiplatform.googleapis.com \
   --project <gcp-project-id>
 ```
 
+### 3. Create GCP infrastructure
+
 Create:
 
-- Artifact Registry repository: `mulder`
-- Runtime service account: `mulder-runtime@<gcp-project-id>.iam.gserviceaccount.com`
-- Cloud SQL Postgres database with `vector`, `pg_trgm`, and `postgis`
-- Secret Manager secret `mulder-config-yaml`
-- Secret Manager secret `resend-api-key`
-- DNS record/domain mapping for `<api-origin>`
+- Artifact Registry Docker repository named `mulder`
+- runtime service account `mulder-runtime@<gcp-project-id>.iam.gserviceaccount.com`
+- Cloud SQL Postgres instance
+- production database and database user
+- GCS bucket for production document artifacts
+- Firestore database for observability projections
+- Document AI processor and location
+- Vertex AI runtime location and budget controls
+- API domain mapping for `<api-origin>`
+- DNS record for `<api-origin>`
 
-The runtime service account needs access to Cloud SQL, GCS, Firestore, Document AI, Vertex AI, and the two runtime secrets.
+Cloud SQL must have these extensions installed in the production database:
 
-## Production Environment
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS postgis;
+```
+
+### 4. Create production secrets
+
+Create Secret Manager entries for:
+
+- `mulder-config-yaml`
+- `resend-api-key` or the selected mail provider key
+- database password, either inside `mulder-config-yaml` or as a separate secret referenced by private config generation
+- browser session secret
+- operator API key
+
+The production `mulder.config.yaml` must not be committed. It should be based on `mulder.config.example.yaml` and stored in Secret Manager.
+
+Required production auth settings:
+
+```yaml
+api:
+  auth:
+    browser:
+      cookie_secure: true
+      same_site: "None"
+```
+
+Use `SameSite=None` because the frontend and API are expected to be on different origins. The session cookie should be `HttpOnly`, `Secure`, and scoped to the API host.
+
+### 5. Grant IAM permissions
+
+The runtime service account needs least-privilege access for:
+
+- Cloud SQL Client
+- Secret Manager Secret Accessor for the runtime secrets
+- GCS object access on the production artifact bucket
+- Firestore or Datastore user access for observability projections
+- Document AI API User
+- Vertex AI User
+- Logs Writer
+
+The deploy identity needs:
+
+- Artifact Registry Writer
+- Cloud Run Admin
+- Service Account User on the runtime service account
+- Service Usage Admin if the workflow is allowed to enable APIs
+- enough Secret Manager access to attach runtime secrets to Cloud Run
+
+For open-source safety, prefer GitHub Workload Identity Federation over long-lived JSON service-account keys. The current workflow supports `GCP_CREDENTIALS_JSON`; treat that as a temporary demo shortcut unless a private deployment policy explicitly accepts it.
+
+## Backend Deploy
+
+Use the manual GitHub Actions workflow `Deploy Live Demo`.
+
+Required GitHub configuration:
+
+```text
+Secret: GCP_CREDENTIALS_JSON
+Variable: MULDER_MAIL_FROM
+```
+
+Workflow inputs:
+
+```text
+project_id=<gcp-project-id>
+region=<region>
+api_domain=<api-origin>
+app_origin=<app-origin>
+```
+
+The workflow builds `Dockerfile.api`, pushes the image to Artifact Registry, deploys `mulder-api`, deploys `mulder-worker`, and runs the live smoke check.
 
 Cloud Run API environment:
 
@@ -49,40 +284,45 @@ MULDER_CORS_ORIGINS=<app-origin>
 MULDER_APP_BASE_URL=<app-origin>
 MULDER_INVITE_DELIVERY=resend
 MULDER_MAIL_FROM=<verified sender>
-RESEND_API_KEY=<secret mounted from Secret Manager>
+RESEND_API_KEY=<mounted secret>
 ```
 
-Production `mulder.config.yaml` browser auth must use:
-
-```yaml
-api:
-  auth:
-    browser:
-      cookie_secure: true
-      same_site: "None"
-```
-
-Cloudflare Pages environment:
+The API must allow CORS only for the production frontend origin:
 
 ```text
-VITE_API_BASE_URL=<api-origin>
-VITE_PREVIEW_AUTH_BYPASS=false
+Origin: <app-origin>
+Credentials: enabled
+Headers: Content-Type, Authorization, X-Request-Id
+Methods: app-used methods only
 ```
 
-## Deploy
+## Database Migrations
 
-Use the manual GitHub Actions workflow `Deploy Live Demo`.
+Production migrations are mandatory before first live traffic and before the first upload.
 
-Required GitHub settings:
+The current deploy workflow does not run migrations. Add one of these before go-live:
 
-- Secret `GCP_CREDENTIALS_JSON`
-- Variable `MULDER_MAIL_FROM`
+- a Cloud Run Job that runs the built CLI against `/secrets/mulder.config.yaml`
+- a dedicated GitHub Actions migration step using the same image and runtime service account
+- a one-off operator command from a trusted environment with production config access
 
-The workflow builds `Dockerfile.api`, pushes the image to Artifact Registry, deploys `mulder-api`, deploys `mulder-worker`, and runs the live smoke check.
+The CLI command is:
 
-## First Owner Invite
+```bash
+node apps/cli/dist/index.js db migrate /secrets/mulder.config.yaml
+```
 
-After the API is healthy, request the first owner invitation:
+Also verify status:
+
+```bash
+node apps/cli/dist/index.js db status /secrets/mulder.config.yaml
+```
+
+Treat a failed or skipped migration check as a release blocker.
+
+## First Owner Bootstrap
+
+After the API is deployed, healthy, and migrated, create the first owner invitation:
 
 ```bash
 MULDER_API_URL=<api-origin> \
@@ -91,28 +331,110 @@ MULDER_OPERATOR_API_KEY=<operator-api-key> \
 pnpm invite:owner
 ```
 
-The API sends the invite email in production. In local/dev with `MULDER_INVITE_DELIVERY=log`, the API logs the acceptance URL.
+The API sends the invite email in production. In local/dev with log delivery enabled, it logs the acceptance URL server-side.
 
-## Live Smoke
+After the first owner accepts the invitation, all future users should be invited from the product admin flow.
+
+## Live Demo Data
+
+Do not insert demo corpus rows directly into Cloud SQL.
+
+Populate the live corpus through the product:
+
+1. Log in as the owner.
+2. Upload the agreed demo PDFs through the UI.
+3. Let API and worker processing complete.
+4. Verify the documents, stories, entities, retrieval, and analysis views from the frontend.
+
+The checked-in PDFs in `fixtures/raw/` can be used for technical smoke only if they are acceptable for the demo. Any curated real demo corpus choice belongs in private operator notes, not in this repo.
+
+After processing, audit production for:
+
+```sql
+-- These are examples of the checks to perform. Adjust table names if the schema evolves.
+SELECT * FROM api_users WHERE email LIKE '%.e2e@mulder.local';
+SELECT * FROM sources WHERE id::text LIKE '11111111-%' OR id::text LIKE '22222222-%' OR id::text LIKE '33333333-%';
+```
+
+Also check metadata and tags for `demo` and `full-functional-demo`.
+
+## Production Smoke
+
+Run the unauthenticated smoke:
 
 ```bash
 MULDER_API_URL=<api-origin> \
 pnpm smoke:live
 ```
 
-For authenticated smoke:
+Run authenticated smoke after the owner accepts the invite:
 
 ```bash
+MULDER_API_URL=<api-origin> \
 MULDER_SMOKE_EMAIL=<owner@example.com> \
 MULDER_SMOKE_PASSWORD=<password> \
 pnpm smoke:live
 ```
 
-## Production Data Rules
+Minimum pass criteria:
 
-Do not insert demo corpus rows directly into Cloud SQL. Populate the demo by logging in as owner and uploading real PDFs through the product. After processing, audit production for:
+- `GET /api/health` returns 200
+- unauthenticated protected API calls return 401
+- login creates a secure browser session cookie
+- authenticated document calls return 200
+- owner can create an invite
+- recipient receives the invite email
+- PDF upload creates a source
+- worker advances queued jobs
+- processed documents appear in the V2 frontend
 
-- no `full-functional-demo` metadata
-- no `demo` fixture tags
-- no fixed `11111111`, `22222222`, or `33333333` UUID families
-- no `*.e2e@mulder.local` users
+## Infrastructure Checklist Before Go-Live
+
+Operator-owned:
+
+- Cloudflare account access confirmed
+- frontend custom domain created
+- API DNS record created
+- GCP project selected
+- GCP billing enabled
+- GCP region selected
+- required APIs enabled
+- Cloud SQL created, backed up, and extension-ready
+- production GCS bucket created
+- Firestore created
+- Document AI processor created
+- Vertex AI access verified
+- transactional email provider approved
+- sender domain or sender address verified
+- first owner email provided
+- initial live corpus selected privately
+
+Engineering-owned:
+
+- `demo-v2` API integration completed
+- `demo-v2` production build path configured
+- mock/fixture data disabled in production
+- Cloud Run API deployed
+- Cloud Run worker deployed
+- production migrations run
+- first owner invite created
+- live upload tested
+- production smoke passed
+- browser QA screenshots reviewed
+
+## Recommended Follow-Up PRs
+
+1. `demo-v2` API foundation
+   - Add API client, session bootstrap, auth routes, and typed route-level loading/error states.
+
+2. `demo-v2` production readiness
+   - Add `demo-v2` to the monorepo workspace or document the standalone Cloudflare build path.
+
+3. Production migration job
+   - Add a Cloud Run Job or GitHub Actions step that runs `db migrate` with production config.
+
+4. Deployment identity hardening
+   - Replace `GCP_CREDENTIALS_JSON` with GitHub Workload Identity Federation.
+
+5. Live QA automation
+   - Add Playwright smoke screenshots for desktop and mobile against `<app-origin>`.
