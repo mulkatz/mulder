@@ -49,13 +49,12 @@ Already present:
 - owner invite helper: `pnpm invite:owner`
 - live smoke helper: `pnpm smoke:live`
 - one-command local product-app dev entrypoint: `pnpm dev`
-- `apps/app` scaffold for the preferred product UI direction
+- API-backed `apps/app` shell with browser auth, loading, empty, and error states
 - product-app API integration notes in `docs/product-app-api-integration.md`
+- `wrangler.json` points Cloudflare assets at `apps/app/dist`
 
 Still required before live:
 
-- make `apps/app` API-backed instead of fixture-backed
-- make `apps/app` a first-class deploy target
 - create and permission GCP infrastructure
 - create production secrets
 - run production database migrations
@@ -71,7 +70,6 @@ Do not go live until all of these are true:
 
 - `apps/app` does not depend on checked-in fixture data for product screens.
 - Cloudflare production has `VITE_API_BASE_URL=<api-origin>`.
-- Cloudflare production has preview/mock bypass disabled.
 - The API health check at `<api-origin>/api/health` returns 200.
 - Production database migrations have completed successfully.
 - The worker is deployed and processing jobs outside HTTP request handlers.
@@ -110,23 +108,22 @@ Production:
 
 ```text
 VITE_API_BASE_URL=<api-origin>
-VITE_PREVIEW_AUTH_BYPASS=false
 ```
 
-If the product app uses a differently named mock or preview flag, the production value must still disable mock data and auth bypass.
+Do not add operator API keys, preview auth bypasses, mock data toggles, or fixture fallbacks to the browser bundle.
 
-### 4. Complete product app API integration before production
+### 4. Verify product app API integration before production
 
-`apps/app` currently starts from the product shell scaffold. Before assigning the production domain to it:
+Before assigning the production domain to `apps/app`, verify that the current API-backed product shell still has:
 
-- add an API client that reads `VITE_API_BASE_URL`
-- add session bootstrap against `GET /api/auth/session`
-- add login, logout, and invite acceptance screens
-- keep the browser bundle free of operator API keys
-- replace fixture-backed route data with API-backed loading, empty, success, and error states
-- keep any future fixed-data showcase as a separate surface, not inside `apps/app`
-- ensure production API errors are visible and not masked by fallback mock data
-- run `pnpm --filter @mulder/app build` from the repo root
+- API client support for `VITE_API_BASE_URL`
+- session bootstrap against `GET /api/auth/session`
+- login, logout, and invite acceptance screens
+- no operator API keys in the browser bundle
+- API-backed loading, empty, success, and error states
+- no checked-in fixture fallback for product screens
+- visible production API errors rather than masked fallback data
+- a green repo-root `pnpm --filter @mulder/app build`
 
 ### 5. Browser QA the deployed frontend
 
@@ -134,12 +131,12 @@ Check desktop and mobile widths for:
 
 - login
 - invite acceptance
-- overview or desk route
-- evidence workspace or case-file route
-- upload route once connected
-- ask/search route once connected
-- board or analysis route once connected
-- audit drawer or activity route once connected
+- overview
+- analysis runs
+- evidence workspace
+- documents and upload once connected
+- search once connected
+- graph and activity once connected
 
 For each route, verify:
 
@@ -359,6 +356,39 @@ SELECT * FROM sources WHERE id::text LIKE '11111111-%' OR id::text LIKE '2222222
 
 Also check metadata and tags for retired showcase labels.
 
+## No-Deploy Local Smoke
+
+Run this before any live deployment attempt.
+
+API smoke with a local API:
+
+```bash
+MULDER_API_URL=http://127.0.0.1:8080 \
+pnpm smoke:live
+```
+
+Authenticated API smoke after accepting a local invitation:
+
+```bash
+MULDER_API_URL=http://127.0.0.1:8080 \
+MULDER_SMOKE_EMAIL=<owner@example.com> \
+MULDER_SMOKE_PASSWORD=<password> \
+pnpm smoke:live
+```
+
+Browser smoke against the local product app:
+
+- unauthenticated `/` redirects to `/login`
+- login succeeds with the local owner account
+- protected `/`, `/runs`, and `/evidence` render without console errors
+- logout redirects back to `/login`
+
+Expected API smoke results:
+
+- `GET /api/health` returns 200
+- unauthenticated protected API calls return 401
+- authenticated document calls return 200
+
 ## Production Smoke
 
 Run the unauthenticated smoke:
@@ -414,7 +444,7 @@ Engineering-owned:
 
 - `apps/app` API integration completed
 - `apps/app` production build path configured
-- mock/fixture data disabled in production
+- no mock or fixture fallback in production product screens
 - Cloud Run API deployed
 - Cloud Run worker deployed
 - production migrations run
@@ -425,17 +455,14 @@ Engineering-owned:
 
 ## Recommended Follow-Up PRs
 
-1. `apps/app` API foundation
-   - Add API client, session bootstrap, auth routes, and typed route-level loading/error states.
-
-2. `apps/app` production readiness
+1. `apps/app` production readiness
    - Keep `apps/app` as the monorepo workspace package for the product UI.
 
-3. Production migration job
+2. Production migration job
    - Add a Cloud Run Job or GitHub Actions step that runs `db migrate` with production config.
 
-4. Deployment identity hardening
+3. Deployment identity hardening
    - Replace `GCP_CREDENTIALS_JSON` with GitHub Workload Identity Federation.
 
-5. Live QA automation
+4. Live QA automation
    - Add Playwright smoke screenshots for desktop and mobile against `<app-origin>`.

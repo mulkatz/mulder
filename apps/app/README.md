@@ -27,6 +27,17 @@ cp apps/app/.env.example apps/app/.env.local
 - Login route: `/login`
 - Invitation route: `/auth/invitations/:token`
 
+## Production Build
+
+Cloudflare Pages should build from the repository root:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm --filter @mulder/app build
+```
+
+Build output is `apps/app/dist`. Production only needs `VITE_API_BASE_URL=<api-origin>` in the browser environment.
+
 ## Design Tokens
 
 The product app look is controlled from `src/styles.css`.
