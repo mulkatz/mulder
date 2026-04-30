@@ -20,7 +20,7 @@ export function AuthFrame({
 						</div>
 						<div>
 							<p className="text-sm font-semibold text-text">Mulder</p>
-							<p className="font-mono text-[11px] text-text-subtle">product app</p>
+							<p className="font-mono text-[11px] text-text-subtle">app</p>
 						</div>
 					</div>
 

@@ -262,7 +262,7 @@ describe('Spec 77: Browser-safe email/password auth', () => {
 		}
 	});
 
-	it('QA-06: the product app bundle source does not reference VITE_MULDER_API_KEY', () => {
+	it('QA-06: the app bundle source does not reference VITE_MULDER_API_KEY', () => {
 		const apiClient = readFileSync(resolve(ROOT, 'apps/app/src/lib/api-client.ts'), 'utf8');
 		const authGate = readFileSync(resolve(ROOT, 'apps/app/src/app/AuthGate.tsx'), 'utf8');
 		expect(apiClient).not.toContain('VITE_MULDER_API_KEY');

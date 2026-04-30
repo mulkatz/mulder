@@ -1,8 +1,8 @@
 # Mulder App
 
-Product browser app for the cleaner, technical Mulder research workbench direction.
+Browser app for the cleaner, technical Mulder research workbench direction.
 
-`apps/app` is the only active browser product app. Product API integration decisions are captured in [`../../docs/product-app-api-integration.md`](../../docs/product-app-api-integration.md).
+`apps/app` is the only active browser app. API integration decisions are captured in [`../../docs/app-api-integration.md`](../../docs/app-api-integration.md).
 
 ## Commands
 
@@ -16,7 +16,7 @@ pnpm --filter @mulder/app preview
 
 ## API And Auth
 
-The product app uses Mulder's cookie-backed browser auth. It never embeds an operator API key.
+The app uses Mulder's cookie-backed browser auth. It never embeds an operator API key.
 
 ```bash
 cp apps/app/.env.example apps/app/.env.local
@@ -40,7 +40,7 @@ Build output is `apps/app/dist`. Production only needs `VITE_API_BASE_URL=<api-o
 
 ## Design Tokens
 
-The product app look is controlled from `src/styles.css`.
+The app's look is controlled from `src/styles.css`.
 
 - Surface tokens: `--canvas`, `--panel`, `--panel-raised`, `--field`
 - Text tokens: `--text`, `--text-muted`, `--text-subtle`, `--text-inverse`
@@ -49,10 +49,10 @@ The product app look is controlled from `src/styles.css`.
 - Status tokens: `--success`, `--warning`, `--danger`, `--info`
 - Density tokens: `--sidebar-width`, `--topbar-height`, `--radius-*`
 
-The app intentionally avoids the v1 editorial serif language. It is sans-first, light-first, research-focused, and optimized for dense analysis screens without becoming a developer-only console.
+The app intentionally avoids editorial serif language. It is sans-first, light-first, research-focused, and optimized for dense analysis screens without becoming a developer-only console.
 
-Primary product references:
+Primary app references:
 
-- [`../../docs/product-app-design-strategy.md`](../../docs/product-app-design-strategy.md)
-- [`../../docs/product-app-api-integration.md`](../../docs/product-app-api-integration.md)
-- [`../../docs/product-app-deployment.md`](../../docs/product-app-deployment.md)
+- [`../../docs/app-design-strategy.md`](../../docs/app-design-strategy.md)
+- [`../../docs/app-api-integration.md`](../../docs/app-api-integration.md)
+- [`../../docs/app-deployment.md`](../../docs/app-deployment.md)

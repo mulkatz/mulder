@@ -1,9 +1,9 @@
-# Mulder Product App API Integration Notes
+# Mulder App API Integration Notes
 
 **Status:** Active implementation reference for `apps/app`
-**Related:** [`product-app-design-strategy.md`](./product-app-design-strategy.md), [`product-app-deployment.md`](./product-app-deployment.md), [`api-architecture.md`](./api-architecture.md)
+**Related:** [`app-design-strategy.md`](./app-design-strategy.md), [`app-deployment.md`](./app-deployment.md), [`api-architecture.md`](./api-architecture.md)
 
-This document is the active API integration reference for the Mulder product app. It is not a visual or interaction-design reference. The product app must continue to follow the cleaner, research-first direction in `docs/product-app-design-strategy.md`.
+This document is the active API integration reference for the Mulder app. It is not a visual or interaction-design reference. The app must continue to follow the cleaner, research-first direction in `docs/app-design-strategy.md`.
 
 ## Integration Posture
 
@@ -16,9 +16,9 @@ The app should use:
 - `credentials: 'include'` for all authenticated API calls.
 - Cookie-backed browser sessions, not bundled bearer tokens.
 - Explicit loading, empty, unavailable, and error states.
-- No showcase IDs or checked-in product-screen fixtures in `apps/app`.
+- No checked-in static IDs or product-screen fixtures in `apps/app`.
 
-The product app API client should keep these properties:
+The app API client should keep these properties:
 
 - `ApiError` carries `status`, `code`, `message`, and optional `details`.
 - Error responses are parsed from `{ error: { code, message, details } }` when available.
@@ -34,11 +34,11 @@ React Query should use conservative defaults:
 - Limited retry for transient network/server failures.
 - Session expiry should be observable through a shared `auth:expired` event or equivalent app-level handling.
 
-The product app should expose:
+The app should expose:
 
 - `/login` for email/password authentication.
 - `/auth/invitations/:token` for invite acceptance, matching the API-generated invitation link shape.
-- Protected product routes behind `GET /api/auth/session`.
+- Protected app routes behind `GET /api/auth/session`.
 - Logout through `POST /api/auth/logout` and query-cache clearing.
 
 ## Usable HTTP Surface
@@ -48,7 +48,7 @@ These endpoints are the first candidates for `apps/app` because they already rep
 | Area | Endpoint | Notes |
 | --- | --- | --- |
 | Health | `GET /api/health` | Public service health. Useful for deployment smoke checks. |
-| Auth | `GET /api/auth/session` | Session bootstrap for protected product routes. |
+| Auth | `GET /api/auth/session` | Session bootstrap for protected app routes. |
 | Auth | `POST /api/auth/login` | Email/password login. |
 | Auth | `POST /api/auth/logout` | Ends the browser session. |
 | Auth | `POST /api/auth/invitations/accept` | Invite acceptance flow. |
@@ -81,9 +81,9 @@ These endpoints are the first candidates for `apps/app` because they already rep
 
 ## Hook Mapping
 
-This mapping captures the product app's hook-per-contract shape.
+This mapping captures the app's hook-per-contract shape.
 
-| Legacy hook | API contract | Product-app use |
+| Legacy hook | API contract | App use |
 | --- | --- | --- |
 | `useSession` | `GET /api/auth/session` | AuthGate/session bootstrap. |
 | `useLogin` | `POST /api/auth/login` | Login screen. |
@@ -107,17 +107,17 @@ This mapping captures the product app's hook-per-contract shape.
 | `useEvidenceReliabilitySources` | `GET /api/evidence/reliability/sources` | Trust/source panels. |
 | `useEvidenceChains` | `GET /api/evidence/chains` | Future evidence-chain drilldown. |
 | `useEvidenceClusters` | `GET /api/evidence/clusters` | Future spatial/temporal review. |
-| `useDocumentUpload` | upload initiate -> transport -> complete -> job polling | Future document ingest flow after product gates are satisfied. |
+| `useDocumentUpload` | upload initiate -> transport -> complete -> job polling | Future document ingest flow after release gates are satisfied. |
 
-## Known Product-App API Gaps
+## Known App API Gaps
 
 These gaps should be visible in the app capability registry instead of hidden behind fake data.
 
 | Capability | Current issue |
 | --- | --- |
-| Analysis run facade | Jobs exist, but product-shaped run summaries, artifacts, step timings, and retry affordances are still partial. |
-| Evidence claims | Summary and contradictions exist, but first-class claim records, review decisions, and assertion history need a product contract. |
-| Provenance and trust gate | M10 provenance, document quality, sensitivity/RBAC, custody, rollback, and source credibility are product gates for real archive ingest. |
+| Analysis run facade | Jobs exist, but app-shaped run summaries, artifacts, step timings, and retry affordances are still partial. |
+| Evidence claims | Summary and contradictions exist, but first-class claim records, review decisions, and assertion history need an app contract. |
+| Provenance and trust gate | M10 provenance, document quality, sensitivity/RBAC, custody, rollback, and source credibility are release gates for real archive ingest. |
 | Graph aggregate | Entity-local edges exist, but product graph views need an aggregate or batched graph read model. |
 | Activity feed | No cross-system event stream exists yet. |
 | Usage/cost surface | Status exposes budget pieces, but product usage views need a broader read model. |
@@ -135,20 +135,20 @@ These gaps should be visible in the app capability registry instead of hidden be
 
 ## What Not To Reuse
 
-- Old editorial visual language: serif typography, cinematic hero moments, dark dossier mood, or investor-showcase pacing.
+- Old editorial visual language: serif typography, cinematic hero moments, dark dossier mood, or investor-style pacing.
 - Old top-nav route structure: Desk, Archive, Board, Ask as the default product IA.
 - Fake hero interactions or fixture-backed product claims.
-- Showcase-specific copy, seeded users, fixed showcase IDs, or local-only data assumptions.
+- Static sample copy, seeded users, fixed local IDs, or local-only data assumptions.
 - Pipeline-first navigation that makes jobs feel like the main product object for non-technical researchers.
 
 ## First API Slice
 
-After the cleanup, the first product-app API implementation should stay narrow:
+After the cleanup, the first app API implementation should stay narrow:
 
 1. Add the API client, local API types, React Query provider, and capability registry to `apps/app`.
 2. Bind existing routes only: `/`, `/runs`, and `/evidence`.
 3. Use real loading/empty/error states.
-4. Do not use checked-in fixture data in product screens.
+4. Do not use checked-in fixture data in app screens.
 5. Do not add new product modules until the API foundation is green.
 
-If Mulder needs a public, stable showcase later, build it as a separate, explicitly labeled surface with fixed showcase data. That surface must not be the product app and must not point at a private production project.
+If Mulder needs a public example later, build it as a separate, explicitly labeled surface that does not point at a private production project and does not shape the production app.

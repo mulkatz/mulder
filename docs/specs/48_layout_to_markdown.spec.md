@@ -1,7 +1,7 @@
 ---
 spec: 48
 title: Layout-to-Markdown Converter
-roadmap_step: "off-roadmap (demoability)"
+roadmap_step: "off-roadmap (inspection tooling)"
 functional_spec: "§2.2 (extract step), §4.5 (service abstraction)"
 scope: single
 issue: https://github.com/mulkatz/mulder/issues/125
@@ -26,7 +26,7 @@ This is the first feature that makes the pipeline's output directly consumable b
 
 - New pure function `layoutToMarkdown(layout: LayoutDocument): string` in `packages/pipeline/src/extract/layout-to-markdown.ts`. Pure means: no I/O, no logger, no services, no mutation of input, no date-dependent output — same input always produces byte-identical output.
 - Extract step writes `layout.md` alongside `layout.json` to `services.storage` on every successful run (both real GCP and dev-mode fixtures). The Markdown write is additive — it does not replace `layout.json`, and failures in the Markdown write must not fail the overall Extract result.
-- CLI flag `mulder extract <source-id> --markdown-to <local-path>` that downloads the `layout.md` produced by that run and writes it to a local file path. Useful for demos and quick inspection.
+- CLI flag `mulder extract <source-id> --markdown-to <local-path>` that downloads the `layout.md` produced by that run and writes it to a local file path. Useful for quick inspection and review.
 - Running header/footer filtering via heuristic: blocks tagged `type: 'header'` or `type: 'footer'` are excluded from the Markdown output. (Cross-page repetition detection is handled by the Document AI parser, not this converter — see §2 Out of scope.)
 - Heading rendering: blocks tagged `type: 'heading'` become `#` headings. For a first pass, all headings are level 1 (`#`). Rendering hierarchy from relative font size is a V2 concern.
 - Table rendering: blocks tagged `type: 'table'` are parsed from their pipe-delimited `text` content into GitHub-Flavored Markdown tables (first row = header, `|---|` separator injected, rows padded). Tables that fail to parse fall back to a verbatim code block so no information is lost.
@@ -45,7 +45,7 @@ This is the first feature that makes the pipeline's output directly consumable b
 - **Image placement** — page images exist in storage at `extracted/{doc}/pages/page-NNN.png` but are NOT referenced from the Markdown. Image embedding is a future spec.
 - **Modifications to the Segment step** — Segment continues to produce per-story Markdown independently. This spec's whole-document Markdown is a separate artifact.
 - **`layoutToMarkdown` as a configurable function** — no config options, no feature flags. It is a pure function with one input and one output.
-- **A one-shot `mulder preview <pdf>` command that ingests + extracts in memory without DB** — deferred. For now, users run `mulder ingest foo.pdf && mulder extract <id> --markdown-to foo.md`. Two commands, each fast, acceptable for demos.
+- **A one-shot `mulder preview <pdf>` command that ingests + extracts in memory without DB** — deferred. For now, users run `mulder ingest foo.pdf && mulder extract <id> --markdown-to foo.md`. Two commands, each fast, acceptable for quick inspection.
 
 ### Interfaces affected
 
@@ -71,7 +71,7 @@ This is the first feature that makes the pipeline's output directly consumable b
 
 ### Required by (consumers)
 
-- Future **Viewer UI** spec (next in the demoability sequence). Depends on `layout.md` being a stable, deterministic artifact in storage.
+- Future **Viewer UI** spec (next in the inspection sequence). Depends on `layout.md` being a stable, deterministic artifact in storage.
 - Future **Document AI parser enrichment** spec — will enhance the inputs to this converter (richer block types for real GCP runs). Not a hard dependency in either direction; this spec ships first.
 
 ## 4. Blueprint
