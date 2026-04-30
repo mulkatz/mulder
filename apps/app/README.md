@@ -14,6 +14,19 @@ pnpm --filter @mulder/app preview
 
 `dev` and `preview` use port `5174`.
 
+## API And Auth
+
+The product app uses Mulder's cookie-backed browser auth. It never embeds an operator API key.
+
+```bash
+cp apps/app/.env.example apps/app/.env.local
+```
+
+- `VITE_API_BASE_URL`: public API origin for deployed builds.
+- `VITE_API_PROXY_TARGET`: local API target for the Vite `/api` proxy.
+- Login route: `/login`
+- Invitation route: `/auth/invitations/:token`
+
 ## Design Tokens
 
 The product app look is controlled from `src/styles.css`.

@@ -1,3 +1,18 @@
+export type UserRole = 'owner' | 'admin' | 'member';
+
+export interface UserSummary {
+	id: string;
+	email: string;
+	role: UserRole;
+}
+
+export interface SessionResponse {
+	data: {
+		user: UserSummary;
+		expires_at: string;
+	};
+}
+
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'dead_letter';
 
 export interface StatusResponse {

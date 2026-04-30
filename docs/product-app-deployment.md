@@ -122,6 +122,7 @@ If the product app uses a differently named mock or preview flag, the production
 - add an API client that reads `VITE_API_BASE_URL`
 - add session bootstrap against `GET /api/auth/session`
 - add login, logout, and invite acceptance screens
+- keep the browser bundle free of operator API keys
 - replace fixture-backed route data with API-backed loading, empty, success, and error states
 - keep any future fixed-shard showcase as a separate demo surface, not inside `apps/app`
 - ensure production API errors are visible and not masked by fallback mock data

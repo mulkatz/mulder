@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { ApiError } from '@/lib/api-client';
 
 function createQueryClient() {
@@ -29,6 +29,15 @@ function createQueryClient() {
 
 export function Providers({ children }: { children: ReactNode }) {
 	const [queryClient] = useState(createQueryClient);
+
+	useEffect(() => {
+		function handleAuthExpired() {
+			queryClient.removeQueries({ queryKey: ['auth'] });
+		}
+
+		window.addEventListener('auth:expired', handleAuthExpired);
+		return () => window.removeEventListener('auth:expired', handleAuthExpired);
+	}, [queryClient]);
 
 	return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }

@@ -13,6 +13,7 @@ This document preserves the useful API knowledge from the legacy V1 demo before 
 The app should use:
 
 - `VITE_API_BASE_URL` as the browser API origin.
+- `VITE_API_PROXY_TARGET` for local same-origin `/api` proxying during Vite development.
 - `credentials: 'include'` for all authenticated API calls.
 - Cookie-backed browser sessions, not bundled bearer tokens.
 - Explicit loading, empty, unavailable, and error states.
@@ -33,6 +34,13 @@ React Query should use conservative defaults:
 - No retry for `401`, `403`, or `404`.
 - Limited retry for transient network/server failures.
 - Session expiry should be observable through a shared `auth:expired` event or equivalent app-level handling.
+
+The product app should expose:
+
+- `/login` for email/password authentication.
+- `/auth/invitations/:token` for invite acceptance, matching the API-generated invitation link shape.
+- Protected product routes behind `GET /api/auth/session`.
+- Logout through `POST /api/auth/logout` and query-cache clearing.
 
 ## Usable HTTP Surface
 
