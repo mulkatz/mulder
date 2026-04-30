@@ -12,7 +12,12 @@ import {
 	type ReprocessableStep,
 	type Source,
 } from '@mulder/core';
-import { detectSourceType, isSupportedIngestFilename, type PipelineStepName } from '@mulder/pipeline';
+import {
+	detectSourceType,
+	isSupportedIngestFilename,
+	isSupportedTextFilename,
+	type PipelineStepName,
+} from '@mulder/pipeline';
 
 interface ReprocessEstimateSourcePlan {
 	sourceId: string;
@@ -97,8 +102,26 @@ export async function collectIngestSourceProfiles(inputPath: string): Promise<Es
 				continue;
 			}
 
+			if (detection.sourceType === 'text') {
+				if (!isSupportedTextFilename(filePath)) {
+					throw new IngestError(
+						`Unsupported text source extension for ${filePath}; supported text files must end with .txt, .md, or .markdown`,
+						INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+						{
+							context: { path: filePath, sourceType: detection.sourceType, confidence: detection.confidence },
+						},
+					);
+				}
+				sourceProfiles.push({
+					filename: filePath,
+					pageCount: 0,
+					nativeTextRatio: 0,
+				});
+				continue;
+			}
+
 			throw new IngestError(
-				`Unsupported source type "${detection.sourceType}" for ${filePath}; only pdf and image are supported in this step`,
+				`Unsupported source type "${detection.sourceType}" for ${filePath}; only pdf, image, and text are supported in this step`,
 				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
 				{
 					context: { path: filePath, sourceType: detection.sourceType, confidence: detection.confidence },

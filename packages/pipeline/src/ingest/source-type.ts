@@ -1,9 +1,11 @@
 import { extname } from 'node:path';
+import { TextDecoder } from 'node:util';
 import type { SourceFormatMetadata, SourceType } from '@mulder/core';
 
 export type SourceDetectionConfidence = 'magic' | 'extension' | 'content';
 export type SupportedImageMediaType = 'image/png' | 'image/jpeg' | 'image/tiff';
-export type SourceStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff';
+export type SupportedTextMediaType = 'text/plain' | 'text/markdown' | 'text/x-markdown';
+export type SourceStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff' | 'txt' | 'md';
 
 export interface SourceDetectionResult {
 	sourceType: SourceType;
@@ -27,6 +29,9 @@ const PDF_MEDIA_TYPE = 'application/pdf';
 const PNG_MEDIA_TYPE: SupportedImageMediaType = 'image/png';
 const JPEG_MEDIA_TYPE: SupportedImageMediaType = 'image/jpeg';
 const TIFF_MEDIA_TYPE: SupportedImageMediaType = 'image/tiff';
+const PLAIN_TEXT_MEDIA_TYPE: SupportedTextMediaType = 'text/plain';
+const MARKDOWN_MEDIA_TYPE: SupportedTextMediaType = 'text/markdown';
+const X_MARKDOWN_MEDIA_TYPE: SupportedTextMediaType = 'text/x-markdown';
 const DOCX_MEDIA_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MEDIA_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -36,7 +41,23 @@ const IMAGE_STORAGE_EXTENSIONS_BY_MEDIA_TYPE: Record<SupportedImageMediaType, So
 	'image/tiff': 'tiff',
 };
 
-const SUPPORTED_INGEST_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff']);
+const TEXT_STORAGE_EXTENSIONS_BY_MEDIA_TYPE: Record<SupportedTextMediaType, SourceStorageExtension> = {
+	'text/plain': 'txt',
+	'text/markdown': 'md',
+	'text/x-markdown': 'md',
+};
+
+const SUPPORTED_INGEST_EXTENSIONS = new Set([
+	'.pdf',
+	'.png',
+	'.jpg',
+	'.jpeg',
+	'.tif',
+	'.tiff',
+	'.txt',
+	'.md',
+	'.markdown',
+]);
 
 function hasPrefix(buffer: Buffer, signature: Buffer): boolean {
 	return buffer.length >= signature.length && buffer.subarray(0, signature.length).equals(signature);
@@ -56,6 +77,11 @@ export function isSupportedIngestFilename(input: string): boolean {
 	return SUPPORTED_INGEST_EXTENSIONS.has(getExtension(input));
 }
 
+export function isSupportedTextFilename(input: string): boolean {
+	const extension = getExtension(input);
+	return extension === '.txt' || extension === '.md' || extension === '.markdown';
+}
+
 export function getOriginalExtension(input: string): string {
 	return getExtension(input).replace(/^\./, '');
 }
@@ -64,12 +90,21 @@ export function isSupportedImageMediaType(mediaType: string | undefined): mediaT
 	return mediaType === PNG_MEDIA_TYPE || mediaType === JPEG_MEDIA_TYPE || mediaType === TIFF_MEDIA_TYPE;
 }
 
+export function isSupportedTextMediaType(mediaType: string | undefined): mediaType is SupportedTextMediaType {
+	return (
+		mediaType === PLAIN_TEXT_MEDIA_TYPE || mediaType === MARKDOWN_MEDIA_TYPE || mediaType === X_MARKDOWN_MEDIA_TYPE
+	);
+}
+
 export function getCanonicalStorageExtensionForMediaType(mediaType: string | undefined): SourceStorageExtension | null {
 	if (mediaType === PDF_MEDIA_TYPE) {
 		return 'pdf';
 	}
 	if (isSupportedImageMediaType(mediaType)) {
 		return IMAGE_STORAGE_EXTENSIONS_BY_MEDIA_TYPE[mediaType];
+	}
+	if (isSupportedTextMediaType(mediaType)) {
+		return TEXT_STORAGE_EXTENSIONS_BY_MEDIA_TYPE[mediaType];
 	}
 	return null;
 }
@@ -165,30 +200,73 @@ export function buildImageFormatMetadata(
 	return metadata;
 }
 
-function isReadableText(buffer: Buffer): boolean {
+export function decodeUtf8TextBuffer(buffer: Buffer): string | null {
+	try {
+		const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false });
+		return decoder.decode(buffer);
+	} catch {
+		return null;
+	}
+}
+
+export function isReadableText(buffer: Buffer): boolean {
 	if (buffer.length === 0) {
 		return false;
 	}
 
-	const sample = buffer.subarray(0, Math.min(buffer.length, 4096));
-	let suspiciousControlBytes = 0;
-	for (const byte of sample) {
-		if (byte === 0x00) {
-			return false;
-		}
-		const isAllowedWhitespace = byte === 0x09 || byte === 0x0a || byte === 0x0d;
-		if (byte < 0x20 && !isAllowedWhitespace) {
-			suspiciousControlBytes++;
-		}
-	}
-
-	if (suspiciousControlBytes / sample.length > 0.02) {
+	const decoded = decodeUtf8TextBuffer(buffer);
+	if (decoded === null || decoded.length === 0) {
 		return false;
 	}
 
-	const decoded = sample.toString('utf8');
+	for (let index = 0; index < decoded.length; index++) {
+		const codePoint = decoded.codePointAt(index);
+		if (codePoint === undefined) {
+			continue;
+		}
+		if (codePoint > 0xffff) {
+			index++;
+		}
+		if (codePoint === 0x00) {
+			return false;
+		}
+		const isAllowedWhitespace = codePoint === 0x09 || codePoint === 0x0a || codePoint === 0x0d;
+		const isControlCharacter = codePoint < 0x20 || (codePoint >= 0x7f && codePoint <= 0x9f);
+		if (isControlCharacter && !isAllowedWhitespace) {
+			return false;
+		}
+	}
+
 	const replacementCount = decoded.split('\uFFFD').length - 1;
 	return replacementCount / decoded.length <= 0.05;
+}
+
+export function buildTextFormatMetadata(
+	buffer: Buffer,
+	filename: string,
+	mediaType: SupportedTextMediaType,
+): SourceFormatMetadata | null {
+	const text = decodeUtf8TextBuffer(buffer);
+	if (text === null || !isReadableText(buffer)) {
+		return null;
+	}
+
+	return {
+		media_type: mediaType === X_MARKDOWN_MEDIA_TYPE ? MARKDOWN_MEDIA_TYPE : mediaType,
+		original_extension: getOriginalExtension(filename),
+		byte_size: buffer.length,
+		character_count: text.length,
+		line_count: countTextLines(text),
+		encoding: 'utf-8',
+	};
+}
+
+function countTextLines(text: string): number {
+	if (text.length === 0) {
+		return 0;
+	}
+	const lines = text.split(/\r\n|\r|\n/);
+	return lines.at(-1) === '' ? lines.length - 1 : lines.length;
 }
 
 function getTextSample(buffer: Buffer): string {
@@ -273,7 +351,7 @@ export function detectSourceType(
 			return { sourceType: 'email', confidence: 'extension', mediaType: 'message/rfc822' };
 		}
 
-		if (extension === '.txt' || extension === '.md' || extension === '.markdown') {
+		if ((extension === '.txt' || extension === '.md' || extension === '.markdown') && isReadableText(buffer)) {
 			return {
 				sourceType: 'text',
 				confidence: 'extension',

@@ -12,10 +12,12 @@
  * @see docs/functional-spec.md §2.2
  */
 
+import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type { DocumentAiResult, Logger, MulderConfig, Services, StepError } from '@mulder/core';
 import {
 	createChildLogger,
+	createStory,
 	EXTRACT_ERROR_CODES,
 	ExtractError,
 	findSourceById,
@@ -27,7 +29,12 @@ import {
 } from '@mulder/core';
 import { PDFParse } from 'pdf-parse';
 import type pg from 'pg';
-import { detectSourceType, isSupportedImageMediaType } from '../ingest/source-type.js';
+import {
+	decodeUtf8TextBuffer,
+	detectSourceType,
+	isReadableText,
+	isSupportedImageMediaType,
+} from '../ingest/source-type.js';
 import { layoutToMarkdown } from './layout-to-markdown.js';
 import type { ExtractInput, ExtractionData, ExtractResult, LayoutBlock, LayoutDocument, LayoutPage } from './types.js';
 
@@ -39,6 +46,7 @@ export type {
 	ExtractResult,
 	LayoutDocument,
 	PageExtraction,
+	PrimaryExtractionMethod,
 } from './types.js';
 
 // ────────────────────────────────────────────────────────────
@@ -165,6 +173,182 @@ function resolveSourceMediaType(
 	}
 
 	return null;
+}
+
+// ────────────────────────────────────────────────────────────
+// Text extraction helpers
+// ────────────────────────────────────────────────────────────
+
+interface TextStoryMetadataJson {
+	id: string;
+	document_id: string;
+	title: string;
+	subtitle: null;
+	language: string;
+	category: string;
+	pages: number[];
+	date_references: string[];
+	geographic_references: string[];
+	extraction_confidence: number;
+	source_type: 'text';
+	is_markdown: boolean;
+}
+
+function normalizeMarkdownLineEndings(text: string): string {
+	return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+function titleFromFilename(filename: string): string {
+	const basename = filename.split(/[\\/]/).pop() ?? filename;
+	const withoutExtension = basename.replace(/\.[^.]+$/, '');
+	const spaced = withoutExtension.replace(/[-_]+/g, ' ').trim();
+	return spaced.length > 0 ? spaced : 'Untitled text source';
+}
+
+function stripMarkdownInlineSyntax(value: string): string {
+	return value
+		.replace(/[`*_~[\]()]/g, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
+function deriveMarkdownTitle(markdown: string, filename: string): string {
+	const heading = markdown.match(/^#{1,6}\s+(.+?)\s*#*\s*$/m);
+	if (!heading?.[1]) {
+		return titleFromFilename(filename);
+	}
+	const title = stripMarkdownInlineSyntax(heading[1]);
+	return title.length > 0 ? title : titleFromFilename(filename);
+}
+
+function escapePlainTextForMarkdown(text: string): string {
+	return text
+		.split('\n')
+		.map((line) => line.replace(/([\\`*_{}[\]<>()#+.!|-])/g, '\\$1'))
+		.join('\n');
+}
+
+function isMarkdownMediaType(mediaType: unknown): boolean {
+	return mediaType === 'text/markdown' || mediaType === 'text/x-markdown';
+}
+
+function buildTextStoryMetadata(input: {
+	storyId: string;
+	sourceId: string;
+	title: string;
+	language: string;
+	isMarkdown: boolean;
+}): TextStoryMetadataJson {
+	return {
+		id: input.storyId,
+		document_id: input.sourceId,
+		title: input.title,
+		subtitle: null,
+		language: input.language,
+		category: 'document',
+		pages: [],
+		date_references: [],
+		geographic_references: [],
+		extraction_confidence: 1.0,
+		source_type: 'text',
+		is_markdown: input.isMarkdown,
+	};
+}
+
+async function extractTextSource(input: {
+	sourceId: string;
+	filename: string;
+	storagePath: string;
+	formatMetadata: Record<string, unknown>;
+	config: MulderConfig;
+	services: Services;
+	pool: pg.Pool;
+	stepConfigHash: string;
+	logger: Logger;
+}): Promise<ExtractionData> {
+	let buffer: Buffer;
+	try {
+		buffer = await input.services.storage.download(input.storagePath);
+	} catch (cause: unknown) {
+		throw new ExtractError(
+			`Failed to download text source original for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_STORAGE_FAILED,
+			{ cause, context: { sourceId: input.sourceId, storagePath: input.storagePath } },
+		);
+	}
+
+	const decoded = decodeUtf8TextBuffer(buffer);
+	if (decoded === null || !isReadableText(buffer)) {
+		throw new ExtractError(
+			`Text source is not readable UTF-8: ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_NATIVE_TEXT_FAILED,
+			{ context: { sourceId: input.sourceId, storagePath: input.storagePath } },
+		);
+	}
+
+	const normalizedText = normalizeMarkdownLineEndings(decoded);
+	const isMarkdown = isMarkdownMediaType(input.formatMetadata.media_type) || /\.m(?:d|arkdown)$/i.test(input.filename);
+	const title = isMarkdown ? deriveMarkdownTitle(normalizedText, input.filename) : titleFromFilename(input.filename);
+	const markdown = isMarkdown ? normalizedText : `# ${title}\n\n${escapePlainTextForMarkdown(normalizedText)}`;
+	const language = input.config.project.supported_locales[0] ?? 'en';
+	const storyId = randomUUID();
+	const markdownUri = `segments/${input.sourceId}/${storyId}.md`;
+	const metadataUri = `segments/${input.sourceId}/${storyId}.meta.json`;
+	const storyMetadata = buildTextStoryMetadata({
+		storyId,
+		sourceId: input.sourceId,
+		title,
+		language,
+		isMarkdown,
+	});
+
+	try {
+		await input.services.storage.upload(markdownUri, markdown, 'text/markdown');
+		await input.services.storage.upload(metadataUri, JSON.stringify(storyMetadata, null, 2), 'application/json');
+	} catch (cause: unknown) {
+		throw new ExtractError(
+			`Failed to write text story artifacts for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_STORAGE_FAILED,
+			{ cause, context: { sourceId: input.sourceId, markdownUri, metadataUri } },
+		);
+	}
+
+	await createStory(input.pool, {
+		id: storyId,
+		sourceId: input.sourceId,
+		title,
+		language,
+		category: 'document',
+		gcsMarkdownUri: markdownUri,
+		gcsMetadataUri: metadataUri,
+		extractionConfidence: 1.0,
+		metadata: {
+			source_type: 'text',
+			is_markdown: isMarkdown,
+			original_storage_path: input.storagePath,
+		},
+	});
+
+	await updateSourceStatus(input.pool, input.sourceId, 'extracted');
+	await upsertSourceStep(input.pool, {
+		sourceId: input.sourceId,
+		stepName: STEP_NAME,
+		status: 'completed',
+		configHash: input.stepConfigHash,
+	});
+
+	input.logger.debug({ storyId, markdownUri, isMarkdown }, 'Text source extracted into story Markdown');
+
+	return {
+		sourceId: input.sourceId,
+		layoutUri: null,
+		pageImageUris: [],
+		pageCount: 0,
+		primaryMethod: 'text',
+		pages: [],
+		visionFallbackCount: 0,
+		visionFallbackCapped: false,
+	};
 }
 
 // ────────────────────────────────────────────────────────────
@@ -393,6 +577,13 @@ async function forceCleanup(sourceId: string, services: Services, pool: pg.Pool,
 	}
 	logger.debug({ sourceId, deletedFiles: existing.paths.length }, 'Deleted existing extraction artifacts');
 
+	const segmentPrefix = `segments/${sourceId}/`;
+	const existingSegments = await services.storage.list(segmentPrefix);
+	for (const path of existingSegments.paths) {
+		await services.storage.delete(path);
+	}
+	logger.debug({ sourceId, deletedFiles: existingSegments.paths.length }, 'Deleted downstream segment artifacts');
+
 	// 2. Atomic DB reset — cascading-deletes stories, chunks, edges, ALL source_steps
 	await resetPipelineStep(pool, sourceId, 'extract');
 	logger.info({ sourceId }, 'Force cleanup complete — source status reset to ingested');
@@ -542,7 +733,27 @@ export async function execute(
 	let extractionData: ExtractionData;
 
 	// ── Path C: Fallback only ────────────────────────────
-	if (input.fallbackOnly) {
+	if (source.sourceType === 'text' && input.fallbackOnly) {
+		throw new ExtractError(
+			`Source type "${source.sourceType}" does not support vision fallback`,
+			EXTRACT_ERROR_CODES.EXTRACT_INVALID_STATUS,
+			{ context: { sourceId: input.sourceId, sourceType: source.sourceType } },
+		);
+	}
+
+	if (!input.fallbackOnly && source.sourceType === 'text') {
+		extractionData = await extractTextSource({
+			sourceId: input.sourceId,
+			filename: source.filename,
+			storagePath: source.storagePath,
+			formatMetadata: source.formatMetadata,
+			config,
+			services,
+			pool,
+			stepConfigHash,
+			logger: log,
+		});
+	} else if (input.fallbackOnly) {
 		log.info('Running vision fallback only on existing extraction');
 
 		// Download existing layout.json

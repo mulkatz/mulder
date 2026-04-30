@@ -101,6 +101,8 @@ function contentTypeForBucketPath(bucketPath: string): string {
 	if (lowerPath.endsWith('.png')) return 'image/png';
 	if (lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg')) return 'image/jpeg';
 	if (lowerPath.endsWith('.tif') || lowerPath.endsWith('.tiff')) return 'image/tiff';
+	if (lowerPath.endsWith('.txt')) return 'text/plain';
+	if (lowerPath.endsWith('.md') || lowerPath.endsWith('.markdown')) return 'text/markdown';
 	return 'application/octet-stream';
 }
 

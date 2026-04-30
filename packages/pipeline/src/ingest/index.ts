@@ -35,10 +35,13 @@ import {
 import type pg from 'pg';
 import {
 	buildImageFormatMetadata,
+	buildTextFormatMetadata,
 	detectSourceType,
 	getStorageExtensionForDetection,
 	isSupportedImageMediaType,
 	isSupportedIngestFilename,
+	isSupportedTextFilename,
+	isSupportedTextMediaType,
 } from './source-type.js';
 import type { IngestFileResult, IngestInput, IngestResult } from './types.js';
 
@@ -48,15 +51,21 @@ export type {
 	SourceDetectionResult,
 	SourceStorageExtension,
 	SupportedImageMediaType,
+	SupportedTextMediaType,
 } from './source-type.js';
 export {
 	buildImageFormatMetadata,
+	buildTextFormatMetadata,
+	decodeUtf8TextBuffer,
 	detectSourceType,
 	getCanonicalStorageExtensionForMediaType,
 	getOriginalExtension,
 	getStorageExtensionForDetection,
+	isReadableText,
 	isSupportedImageMediaType,
 	isSupportedIngestFilename,
+	isSupportedTextFilename,
+	isSupportedTextMediaType,
 	readImageDimensions,
 } from './source-type.js';
 export type { IngestFileResult, IngestInput, IngestResult } from './types.js';
@@ -69,7 +78,7 @@ const STEP_NAME = 'ingest';
 
 /**
  * Resolves the input path to a list of supported ingest file paths.
- * If the path is a directory, recursively finds PDFs and supported images.
+ * If the path is a directory, recursively finds supported ingest files.
  * If the path is a single file, returns it as-is so validation can report
  * an explicit unsupported-format error.
  */
@@ -146,7 +155,7 @@ interface ProcessFileContext {
 	dryRun: boolean;
 }
 
-type IngestibleSourceType = Extract<SourceType, 'pdf' | 'image'>;
+type IngestibleSourceType = Extract<SourceType, 'pdf' | 'image' | 'text'>;
 
 interface PreparedFileMetadata {
 	sourceType: IngestibleSourceType;
@@ -160,7 +169,7 @@ interface PreparedFileMetadata {
 }
 
 function isIngestibleSourceType(sourceType: SourceType): sourceType is IngestibleSourceType {
-	return sourceType === 'pdf' || sourceType === 'image';
+	return sourceType === 'pdf' || sourceType === 'image' || sourceType === 'text';
 }
 
 /**
@@ -203,7 +212,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 
 	if (!isIngestibleSourceType(detection.sourceType)) {
 		throw new IngestError(
-			`Unsupported source type "${detection.sourceType}" for ${filename}; only pdf and image are supported in this step`,
+			`Unsupported source type "${detection.sourceType}" for ${filename}; only pdf, image, and text are supported in this step`,
 			INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
 			{
 				context: { path: filePath, sourceType: detection.sourceType, confidence: detection.confidence },
@@ -265,7 +274,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			nativeTextRatio: textResult.nativeTextRatio,
 			pdfMetadata: pdfMeta,
 		};
-	} else {
+	} else if (detection.sourceType === 'image') {
 		if (!isSupportedImageMediaType(detection.mediaType)) {
 			throw new IngestError(
 				`Unsupported image media type for ${filename}`,
@@ -286,6 +295,48 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			nativeTextRatio: 0,
 		};
 		log.debug({ sourceType: 'image', mediaType: detection.mediaType, pageCount: 1 }, 'Image metadata prepared');
+	} else {
+		if (!isSupportedTextFilename(filename)) {
+			throw new IngestError(
+				`Unsupported text source extension for ${filename}; supported text files must end with .txt, .md, or .markdown`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { path: filePath, sourceType: detection.sourceType, confidence: detection.confidence },
+				},
+			);
+		}
+
+		if (!isSupportedTextMediaType(detection.mediaType)) {
+			throw new IngestError(
+				`Unsupported text media type for ${filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { path: filePath, mediaType: detection.mediaType },
+				},
+			);
+		}
+
+		const formatMetadata = buildTextFormatMetadata(buffer, filename, detection.mediaType);
+		if (!formatMetadata) {
+			throw new IngestError(
+				`Text source is not readable UTF-8: ${filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { path: filePath, mediaType: detection.mediaType },
+				},
+			);
+		}
+
+		prepared = {
+			sourceType: 'text',
+			mediaType: typeof formatMetadata.media_type === 'string' ? formatMetadata.media_type : detection.mediaType,
+			storageExtension,
+			formatMetadata,
+			pageCount: 0,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+		};
+		log.debug({ sourceType: 'text', mediaType: prepared.mediaType, pageCount: 0 }, 'Text metadata prepared');
 	}
 
 	// f. Compute SHA-256 hash

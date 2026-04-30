@@ -45,6 +45,7 @@ interface PipelineRunCliOptions {
 	dryRun?: boolean;
 	tag?: string;
 	costEstimate?: boolean;
+	sourceId?: string;
 }
 
 interface PipelineStatusCliOptions {
@@ -95,6 +96,7 @@ function registerRunSubcommand(parent: Command): void {
 		.option('--dry-run', 'Print the planned steps and source count without executing')
 		.option('--cost-estimate', 'show an estimated pipeline cost before executing')
 		.option('--tag <tag>', 'Tag this run for later lookup')
+		.option('--source-id <id>', 'Run against an existing source UUID instead of ingesting a path')
 		.addHelpText(
 			'after',
 			`
@@ -102,7 +104,8 @@ Examples:
   $ mulder pipeline run ./pdfs/                          # Full pipeline on every PDF in a directory
   $ mulder pipeline run paper.pdf --up-to enrich         # Stop after entity extraction
   $ mulder pipeline run paper.pdf --up-to graph          # Stop before global analyze
-  $ mulder pipeline run paper.pdf --from embed           # Resume after enrich on an existing source`,
+  $ mulder pipeline run paper.pdf --from embed           # Resume after enrich on an existing source
+  $ mulder pipeline run --from extract --source-id <id>  # Resume one existing source`,
 		)
 		.action(
 			withErrorHandler(async (path: string | undefined, options: PipelineRunCliOptions) => {
@@ -140,7 +143,17 @@ Examples:
 				}
 
 				const plannedStepsForEstimate = computePlannedStepsForEstimate(fromStep, upToStep);
-				if (!path && plannedStepsForEstimate.includes('ingest')) {
+				if (path && options.sourceId) {
+					printError('<path> and --source-id are mutually exclusive');
+					process.exit(1);
+					return;
+				}
+				if (options.sourceId && plannedStepsForEstimate.includes('ingest')) {
+					printError('--source-id requires --from to select an existing-source step');
+					process.exit(1);
+					return;
+				}
+				if (!path && !options.sourceId && plannedStepsForEstimate.includes('ingest')) {
 					printError('<path> is required unless --from selects existing sources');
 					process.exit(1);
 					return;
@@ -204,6 +217,7 @@ Examples:
 					if (fromStep) runOptions.from = fromStep;
 					if (options.tag) runOptions.tag = options.tag;
 					if (options.dryRun) runOptions.dryRun = true;
+					if (options.sourceId) runOptions.sourceIds = [options.sourceId];
 
 					const result = await executePipelineRun({ path, options: runOptions }, config, services, pool, logger);
 

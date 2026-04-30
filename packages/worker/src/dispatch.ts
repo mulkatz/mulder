@@ -27,6 +27,7 @@ import {
 } from '@mulder/core';
 import {
 	buildImageFormatMetadata,
+	buildTextFormatMetadata,
 	detectSourceType,
 	executeEmbed,
 	executeEnrich,
@@ -36,6 +37,8 @@ import {
 	executeSegment,
 	getStorageExtensionForDetection,
 	isSupportedImageMediaType,
+	isSupportedTextFilename,
+	isSupportedTextMediaType,
 	type PipelineRunOptions,
 } from '@mulder/pipeline';
 import {
@@ -95,7 +98,7 @@ function buildPdfMetadataJson(pdfMeta: Awaited<ReturnType<typeof extractPdfMetad
 	return pdfMetadataJson;
 }
 
-type FinalizableSourceType = Extract<SourceType, 'pdf' | 'image'>;
+type FinalizableSourceType = Extract<SourceType, 'pdf' | 'image' | 'text'>;
 
 interface FinalizedUploadMetadata {
 	sourceType: FinalizableSourceType;
@@ -108,7 +111,7 @@ interface FinalizedUploadMetadata {
 }
 
 function isFinalizableSourceType(sourceType: SourceType): sourceType is FinalizableSourceType {
-	return sourceType === 'pdf' || sourceType === 'image';
+	return sourceType === 'pdf' || sourceType === 'image' || sourceType === 'text';
 }
 
 async function runStoryStepForPayload(
@@ -217,7 +220,7 @@ async function finalizeUploadedDocument(
 	}
 	if (!isFinalizableSourceType(detection.sourceType)) {
 		throw new IngestError(
-			`Unsupported source type "${detection.sourceType}" for ${payload.filename}; only pdf and image are supported in this step`,
+			`Unsupported source type "${detection.sourceType}" for ${payload.filename}; only pdf, image, and text are supported in this step`,
 			INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
 			{
 				context: {
@@ -284,7 +287,7 @@ async function finalizeUploadedDocument(
 			mediaType: detection.mediaType,
 			storageExtension: canonicalStorageExtension,
 		};
-	} else {
+	} else if (detection.sourceType === 'image') {
 		if (!isSupportedImageMediaType(detection.mediaType)) {
 			throw new IngestError(
 				`Unsupported image media type for ${payload.filename}`,
@@ -301,6 +304,52 @@ async function finalizeUploadedDocument(
 			hasNativeText: false,
 			nativeTextRatio: 0,
 			mediaType: detection.mediaType,
+			storageExtension: canonicalStorageExtension,
+		};
+	} else {
+		if (!isSupportedTextFilename(payload.filename)) {
+			throw new IngestError(
+				`Unsupported text source extension for ${payload.filename}; supported text files must end with .txt, .md, or .markdown`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: {
+						storagePath: payload.storagePath,
+						sourceId: payload.sourceId,
+						sourceType: detection.sourceType,
+						confidence: detection.confidence,
+					},
+				},
+			);
+		}
+
+		if (!isSupportedTextMediaType(detection.mediaType)) {
+			throw new IngestError(
+				`Unsupported text media type for ${payload.filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { storagePath: payload.storagePath, sourceId: payload.sourceId, mediaType: detection.mediaType },
+				},
+			);
+		}
+
+		const formatMetadata = buildTextFormatMetadata(buffer, payload.filename, detection.mediaType);
+		if (!formatMetadata) {
+			throw new IngestError(
+				`Text source is not readable UTF-8: ${payload.filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { storagePath: payload.storagePath, sourceId: payload.sourceId, mediaType: detection.mediaType },
+				},
+			);
+		}
+
+		finalizedMetadata = {
+			sourceType: 'text',
+			formatMetadata,
+			pageCount: 0,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+			mediaType: typeof formatMetadata.media_type === 'string' ? formatMetadata.media_type : detection.mediaType,
 			storageExtension: canonicalStorageExtension,
 		};
 	}
