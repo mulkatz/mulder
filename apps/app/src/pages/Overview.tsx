@@ -3,14 +3,17 @@ import { type DataColumn, DataTable } from '@/components/DataTable';
 import { InspectorPanel, InspectorSection } from '@/components/InspectorPanel';
 import { MetricCard } from '@/components/MetricCard';
 import { PageHeader } from '@/components/PageHeader';
+import { StateNotice } from '@/components/StateNotice';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Toolbar } from '@/components/Toolbar';
-import { activity, findings, metrics, runs, trend } from '@/lib/fixtures';
+import { useDocuments } from '@/features/documents/useDocuments';
+import { useContradictions } from '@/features/evidence/useContradictions';
+import { useEvidenceSummary } from '@/features/evidence/useEvidenceSummary';
+import { useJobs } from '@/features/jobs/useJobs';
+import { useStatus } from '@/features/status/useStatus';
+import { getErrorMessage, hasQueryError } from '@/lib/query-state';
 import type { ActivityEvent, AnalysisRun, Finding } from '@/lib/types';
-
-const activeRuns = runs.filter(
-	(run) => run.status === 'running' || run.status === 'queued' || run.status === 'watching',
-);
+import { buildOverviewMetrics, contradictionsToFindings, jobsToActivity, jobToAnalysisRun } from '@/lib/view-models';
 
 const activeRunColumns: DataColumn<AnalysisRun>[] = [
 	{
@@ -30,14 +33,24 @@ const activeRunColumns: DataColumn<AnalysisRun>[] = [
 		header: 'Progress',
 		render: (run) => (
 			<div className="flex items-center gap-3">
-				<div className="h-1.5 w-28 overflow-hidden rounded-xs bg-field">
-					<div className="h-full rounded-xs bg-accent" style={{ width: `${run.progress}%` }} />
-				</div>
-				<span className="font-mono text-xs text-text-muted">{run.progress}%</span>
+				{run.progress === null ? (
+					<span className="font-mono text-xs text-text-subtle">not exposed</span>
+				) : (
+					<>
+						<div className="h-1.5 w-28 overflow-hidden rounded-xs bg-field">
+							<div className="h-full rounded-xs bg-accent" style={{ width: `${run.progress}%` }} />
+						</div>
+						<span className="font-mono text-xs text-text-muted">{run.progress}%</span>
+					</>
+				)}
 			</div>
 		),
 	},
-	{ key: 'findings', header: 'Findings', render: (run) => <span className="font-mono text-sm">{run.findings}</span> },
+	{
+		key: 'findings',
+		header: 'Findings',
+		render: (run) => <span className="font-mono text-sm">{run.findings ?? '—'}</span>,
+	},
 ];
 
 const activityColumns: DataColumn<ActivityEvent>[] = [
@@ -75,12 +88,47 @@ function FindingRow({ finding }: { finding: Finding }) {
 }
 
 export function OverviewPage() {
+	const statusQuery = useStatus();
+	const jobsQuery = useJobs({ limit: 8 });
+	const documentsQuery = useDocuments({ limit: 5 });
+	const evidenceQuery = useEvidenceSummary();
+	const contradictionsQuery = useContradictions({ limit: 5 });
+
+	const metrics = buildOverviewMetrics({
+		documents: documentsQuery.data,
+		evidence: evidenceQuery.data,
+		status: statusQuery.data,
+	});
+	const activeRuns = (jobsQuery.data?.data ?? [])
+		.map(jobToAnalysisRun)
+		.filter((run) => run.status === 'running' || run.status === 'queued' || run.status === 'watching');
+	const findings = contradictionsToFindings(contradictionsQuery.data?.data ?? []);
+	const activity = jobsToActivity(jobsQuery.data?.data ?? []);
+	const hasError = hasQueryError([
+		statusQuery.error,
+		jobsQuery.error,
+		documentsQuery.error,
+		evidenceQuery.error,
+		contradictionsQuery.error,
+	]);
+	const firstError =
+		statusQuery.error ?? jobsQuery.error ?? documentsQuery.error ?? evidenceQuery.error ?? contradictionsQuery.error;
+	const isLoading =
+		statusQuery.isLoading ||
+		jobsQuery.isLoading ||
+		documentsQuery.isLoading ||
+		evidenceQuery.isLoading ||
+		contradictionsQuery.isLoading;
+	const queue = statusQuery.data?.data.jobs;
+
 	return (
 		<>
 			<PageHeader
 				actions={
 					<button
-						className="inline-flex h-9 items-center gap-2 rounded-md bg-accent px-3 text-sm font-medium text-text-inverse transition-colors hover:bg-accent-hover"
+						className="inline-flex h-9 items-center gap-2 rounded-md bg-field px-3 text-sm font-medium text-text-subtle"
+						disabled
+						title="Pipeline actions will be wired after the API foundation is in place."
 						type="button"
 					>
 						<Play className="size-4" />
@@ -93,6 +141,13 @@ export function OverviewPage() {
 			/>
 
 			<div className="space-y-4 p-4 sm:p-6">
+				{isLoading ? <StateNotice tone="loading" title="Loading API-backed overview" /> : null}
+				{hasError ? (
+					<StateNotice tone="error" title="Overview API unavailable">
+						{getErrorMessage(firstError)}
+					</StateNotice>
+				) : null}
+
 				<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 					<MetricCard icon={<Archive className="size-4" />} metric={metrics[0]} />
 					<MetricCard icon={<Network className="size-4" />} metric={metrics[1]} />
@@ -109,42 +164,56 @@ export function OverviewPage() {
 							</div>
 							<span className="ml-auto font-mono text-xs text-text-subtle">{activeRuns.length} live</span>
 						</Toolbar>
-						<DataTable columns={activeRunColumns} getRowKey={(run) => run.id} minWidth={660} rows={activeRuns} />
+						<DataTable
+							columns={activeRunColumns}
+							emptyMessage="No active jobs returned by the API"
+							getRowKey={(run) => run.id}
+							minWidth={660}
+							rows={activeRuns}
+						/>
 					</section>
 
 					<InspectorPanel subtitle="Claims and entities needing attention" title="Recent findings">
 						<div className="-m-4">
-							{findings.map((finding) => (
-								<FindingRow finding={finding} key={finding.id} />
-							))}
+							{findings.length > 0 ? (
+								findings.map((finding) => <FindingRow finding={finding} key={finding.id} />)
+							) : (
+								<div className="p-4 text-sm text-text-muted">No contradiction findings returned by the API.</div>
+							)}
 						</div>
 					</InspectorPanel>
 				</div>
 
 				<div className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-					<InspectorPanel title="Corpus trend">
-						<InspectorSection title="Indexed documents">
-							<div className="flex h-36 items-end gap-2">
-								{trend.map((item) => (
-									<div className="flex flex-1 flex-col items-center gap-2" key={item.id}>
-										<div className="w-full rounded-t-sm bg-accent" style={{ height: `${Math.max(16, item.value)}%` }} />
-										<span className="font-mono text-[10px] text-text-faint">{item.label}</span>
-									</div>
-								))}
+					<InspectorPanel title="API readiness">
+						<InspectorSection title="Read models">
+							<div className="space-y-2">
+								<div className="flex items-center justify-between gap-3 rounded-md bg-field p-3">
+									<span className="text-sm text-text-muted">Status</span>
+									<StatusBadge status={statusQuery.isSuccess ? 'mounted-api' : 'missing'} />
+								</div>
+								<div className="flex items-center justify-between gap-3 rounded-md bg-field p-3">
+									<span className="text-sm text-text-muted">Jobs</span>
+									<StatusBadge status={jobsQuery.isSuccess ? 'mounted-api' : 'missing'} />
+								</div>
+								<div className="flex items-center justify-between gap-3 rounded-md bg-field p-3">
+									<span className="text-sm text-text-muted">Evidence</span>
+									<StatusBadge status={evidenceQuery.isSuccess ? 'mounted-api' : 'missing'} />
+								</div>
 							</div>
 						</InspectorSection>
 						<InspectorSection title="Queue">
 							<div className="grid grid-cols-3 gap-2">
 								<div className="rounded-md bg-field p-3">
-									<p className="font-mono text-lg font-semibold">04</p>
+									<p className="font-mono text-lg font-semibold">{queue?.running ?? '—'}</p>
 									<p className="text-xs text-text-muted">Running</p>
 								</div>
 								<div className="rounded-md bg-field p-3">
-									<p className="font-mono text-lg font-semibold">12</p>
+									<p className="font-mono text-lg font-semibold">{queue?.pending ?? '—'}</p>
 									<p className="text-xs text-text-muted">Queued</p>
 								</div>
 								<div className="rounded-md bg-field p-3">
-									<p className="font-mono text-lg font-semibold">02</p>
+									<p className="font-mono text-lg font-semibold">{queue ? queue.failed + queue.dead_letter : '—'}</p>
 									<p className="text-xs text-text-muted">Blocked</p>
 								</div>
 							</div>
@@ -155,7 +224,13 @@ export function OverviewPage() {
 						<Toolbar>
 							<h2 className="font-medium text-text">Activity</h2>
 						</Toolbar>
-						<DataTable columns={activityColumns} getRowKey={(event) => event.id} minWidth={640} rows={activity} />
+						<DataTable
+							columns={activityColumns}
+							emptyMessage="No job activity returned by the API"
+							getRowKey={(event) => event.id}
+							minWidth={640}
+							rows={activity}
+						/>
 					</section>
 				</div>
 			</div>

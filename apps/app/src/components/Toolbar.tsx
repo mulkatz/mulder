@@ -9,10 +9,22 @@ export function Toolbar({ children, className }: { children: ReactNode; classNam
 	);
 }
 
-export function SelectControl({ label, children }: { label: string; children: ReactNode }) {
+export function SelectControl({
+	children,
+	disabled = false,
+	label,
+	title,
+}: {
+	children: ReactNode;
+	disabled?: boolean;
+	label: string;
+	title?: string;
+}) {
 	return (
 		<button
-			className="field inline-flex h-9 items-center gap-2 px-3 text-sm text-text transition-colors hover:bg-field-hover"
+			className="field inline-flex h-9 items-center gap-2 px-3 text-sm text-text transition-colors hover:bg-field-hover disabled:text-text-faint disabled:hover:bg-field"
+			disabled={disabled}
+			title={title}
 			type="button"
 		>
 			<span className="text-text-subtle">{label}</span>

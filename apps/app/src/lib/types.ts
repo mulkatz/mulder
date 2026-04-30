@@ -31,12 +31,13 @@ export interface AnalysisRun {
 	corpus: string;
 	startedAt: string;
 	duration: string;
-	credits: number;
-	progress: number;
-	confidence: number;
-	findings: number;
+	attempts: string;
+	credits: number | null;
+	progress: number | null;
+	confidence: number | null;
+	findings: number | null;
 	query: string;
-	params: Record<string, string | number | boolean>;
+	params: Record<string, unknown>;
 	artifacts: Artifact[];
 	timeline: TimelineEvent[];
 	error?: string;

@@ -14,23 +14,55 @@ import {
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { IconButton } from '@/components/IconButton';
+import { type CapabilityId, getCapability } from '@/lib/capabilities';
 import { cn } from '@/lib/cn';
 
-const activeNav = [
-	{ to: '/', label: 'Overview', icon: Home },
-	{ to: '/runs', label: 'Analysis Runs', icon: Workflow },
-	{ to: '/evidence', label: 'Evidence Workspace', icon: ShieldCheck },
+const navGroups: {
+	label: string;
+	items: {
+		to?: string;
+		label: string;
+		icon: typeof Home;
+		capability: CapabilityId;
+	}[];
+}[] = [
+	{
+		label: 'Research',
+		items: [
+			{ to: '/', label: 'Overview', icon: Home, capability: 'status.overview' },
+			{ to: '/evidence', label: 'Evidence Workspace', icon: ShieldCheck, capability: 'evidence.contradictions' },
+			{ label: 'Documents', icon: FileText, capability: 'documents.viewer' },
+			{ label: 'Search', icon: Search, capability: 'search.hybrid' },
+		],
+	},
+	{
+		label: 'Knowledge',
+		items: [
+			{ label: 'Entities', icon: KeyRound, capability: 'entities.list' },
+			{ label: 'Graph', icon: Network, capability: 'graph.aggregate' },
+		],
+	},
+	{
+		label: 'Operations',
+		items: [
+			{ to: '/runs', label: 'Analysis Runs', icon: Workflow, capability: 'jobs.list' },
+			{ label: 'Activity', icon: Activity, capability: 'activity.feed' },
+			{ label: 'Usage', icon: BarChart3, capability: 'usage.cost' },
+		],
+	},
+	{
+		label: 'Admin',
+		items: [{ label: 'Settings', icon: Settings, capability: 'settings.admin' }],
+	},
 ];
 
-const futureNav = [
-	{ label: 'Documents', icon: FileText },
-	{ label: 'Entities', icon: KeyRound },
-	{ label: 'Graph', icon: Network },
-	{ label: 'Search', icon: Search },
-	{ label: 'Activity', icon: Activity },
-	{ label: 'Usage', icon: BarChart3 },
-	{ label: 'Settings', icon: Settings },
-];
+function stateLabel(capability: CapabilityId) {
+	const state = getCapability(capability).state;
+	if (state === 'mounted-api') return 'api';
+	if (state === 'mounted-partial') return 'partial';
+	if (state === 'missing') return 'gap';
+	return 'soon';
+}
 
 export function Sidebar({ onClose, mobile = false }: { onClose?: () => void; mobile?: boolean }) {
 	return (
@@ -57,69 +89,61 @@ export function Sidebar({ onClose, mobile = false }: { onClose?: () => void; mob
 					className="flex w-full items-center justify-between rounded-md border border-border bg-field px-3 py-2 text-left text-sm text-text transition-colors hover:bg-field-hover"
 					type="button"
 				>
-					<span>Research Ops</span>
-					<span className="rounded-sm bg-panel px-1.5 py-0.5 font-mono text-[11px] text-accent">PRO</span>
+					<span>Product App</span>
+					<span className="rounded-sm bg-panel px-1.5 py-0.5 font-mono text-[11px] text-accent">API</span>
 				</button>
 			</div>
 
 			<nav className="flex-1 overflow-y-auto p-3">
-				<div className="space-y-1">
-					{activeNav.map((item) => {
-						const Icon = item.icon;
-						return (
-							<NavLink
-								className={({ isActive }) =>
-									cn(
-										'flex h-9 items-center gap-3 rounded-md px-3 text-sm text-text-muted transition-colors hover:bg-field hover:text-text',
-										isActive && 'bg-accent-soft text-accent',
-									)
-								}
-								end={item.to === '/'}
-								key={item.to}
-								onClick={onClose}
-								to={item.to}
-							>
-								<Icon className="size-4 shrink-0" />
-								<span>{item.label}</span>
-							</NavLink>
-						);
-					})}
-				</div>
+				<div className="space-y-5">
+					{navGroups.map((group) => (
+						<div key={group.label}>
+							<p className="px-3 text-xs font-medium text-text-subtle">{group.label}</p>
+							<div className="mt-2 space-y-1">
+								{group.items.map((item) => {
+									const Icon = item.icon;
+									if (item.to) {
+										return (
+											<NavLink
+												className={({ isActive }) =>
+													cn(
+														'flex h-9 items-center gap-3 rounded-md px-3 text-sm text-text-muted transition-colors hover:bg-field hover:text-text',
+														isActive && 'bg-accent-soft text-accent',
+													)
+												}
+												end={item.to === '/'}
+												key={item.label}
+												onClick={onClose}
+												to={item.to}
+											>
+												<Icon className="size-4 shrink-0" />
+												<span>{item.label}</span>
+											</NavLink>
+										);
+									}
 
-				<div className="mt-5 border-t border-border pt-4">
-					<p className="px-3 text-xs font-medium text-text-subtle">Next</p>
-					<div className="mt-2 space-y-1">
-						{futureNav.map((item) => {
-							const Icon = item.icon;
-							return (
-								<button
-									aria-disabled="true"
-									className="flex h-9 w-full items-center justify-between gap-3 rounded-md px-3 text-left text-sm text-text-faint"
-									disabled
-									key={item.label}
-									type="button"
-								>
-									<span className="flex items-center gap-3">
-										<Icon className="size-4 shrink-0" />
-										{item.label}
-									</span>
-									<span className="font-mono text-[10px] text-text-faint">soon</span>
-								</button>
-							);
-						})}
-					</div>
+									return (
+										<button
+											aria-disabled="true"
+											className="flex h-9 w-full items-center justify-between gap-3 rounded-md px-3 text-left text-sm text-text-faint"
+											disabled
+											key={item.label}
+											title={getCapability(item.capability).note}
+											type="button"
+										>
+											<span className="flex items-center gap-3">
+												<Icon className="size-4 shrink-0" />
+												{item.label}
+											</span>
+											<span className="font-mono text-[10px] text-text-faint">{stateLabel(item.capability)}</span>
+										</button>
+									);
+								})}
+							</div>
+						</div>
+					))}
 				</div>
 			</nav>
-
-			<div className="border-t border-border p-3">
-				<div className="rounded-md border border-accent-line bg-accent-soft p-3">
-					<p className="text-sm font-medium text-text">Live pipeline</p>
-					<div className="mt-3 flex items-center gap-2">
-						<span className="size-2 rounded-full bg-success" />
-						<span className="text-sm text-text-muted">4 workers available</span>
-					</div>
-				</div>
-			</div>
 		</aside>
 	);
 }
