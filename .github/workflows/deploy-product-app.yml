@@ -98,4 +98,4 @@ jobs:
             --set-secrets "/secrets/mulder.config.yaml=mulder-config-yaml:latest,RESEND_API_KEY=resend-api-key:latest"
 
       - name: Smoke API
-        run: node scripts/smoke-live-demo.mjs --api-url "${{ inputs.api_domain }}"
+        run: node scripts/smoke-live-api.mjs --api-url "${{ inputs.api_domain }}"
