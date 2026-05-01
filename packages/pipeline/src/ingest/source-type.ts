@@ -5,7 +5,8 @@ import type { SourceFormatMetadata, SourceType } from '@mulder/core';
 export type SourceDetectionConfidence = 'magic' | 'extension' | 'content';
 export type SupportedImageMediaType = 'image/png' | 'image/jpeg' | 'image/tiff';
 export type SupportedTextMediaType = 'text/plain' | 'text/markdown' | 'text/x-markdown';
-export type SourceStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff' | 'txt' | 'md';
+export type SupportedDocxMediaType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+export type SourceStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff' | 'txt' | 'md' | 'docx';
 
 export interface SourceDetectionResult {
 	sourceType: SourceType;
@@ -32,7 +33,8 @@ const TIFF_MEDIA_TYPE: SupportedImageMediaType = 'image/tiff';
 const PLAIN_TEXT_MEDIA_TYPE: SupportedTextMediaType = 'text/plain';
 const MARKDOWN_MEDIA_TYPE: SupportedTextMediaType = 'text/markdown';
 const X_MARKDOWN_MEDIA_TYPE: SupportedTextMediaType = 'text/x-markdown';
-const DOCX_MEDIA_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+export const DOCX_MEDIA_TYPE: SupportedDocxMediaType =
+	'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MEDIA_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const IMAGE_STORAGE_EXTENSIONS_BY_MEDIA_TYPE: Record<SupportedImageMediaType, SourceStorageExtension> = {
@@ -57,6 +59,7 @@ const SUPPORTED_INGEST_EXTENSIONS = new Set([
 	'.txt',
 	'.md',
 	'.markdown',
+	'.docx',
 ]);
 
 function hasPrefix(buffer: Buffer, signature: Buffer): boolean {
@@ -82,6 +85,10 @@ export function isSupportedTextFilename(input: string): boolean {
 	return extension === '.txt' || extension === '.md' || extension === '.markdown';
 }
 
+export function isSupportedDocxFilename(input: string): boolean {
+	return getExtension(input) === '.docx';
+}
+
 export function getOriginalExtension(input: string): string {
 	return getExtension(input).replace(/^\./, '');
 }
@@ -96,6 +103,10 @@ export function isSupportedTextMediaType(mediaType: string | undefined): mediaTy
 	);
 }
 
+export function isSupportedDocxMediaType(mediaType: string | undefined): mediaType is SupportedDocxMediaType {
+	return mediaType === DOCX_MEDIA_TYPE;
+}
+
 export function getCanonicalStorageExtensionForMediaType(mediaType: string | undefined): SourceStorageExtension | null {
 	if (mediaType === PDF_MEDIA_TYPE) {
 		return 'pdf';
@@ -105,6 +116,9 @@ export function getCanonicalStorageExtensionForMediaType(mediaType: string | und
 	}
 	if (isSupportedTextMediaType(mediaType)) {
 		return TEXT_STORAGE_EXTENSIONS_BY_MEDIA_TYPE[mediaType];
+	}
+	if (isSupportedDocxMediaType(mediaType)) {
+		return 'docx';
 	}
 	return null;
 }
@@ -261,6 +275,17 @@ export function buildTextFormatMetadata(
 	};
 }
 
+export function buildDocxFormatMetadata(buffer: Buffer, filename: string): SourceFormatMetadata {
+	return {
+		media_type: DOCX_MEDIA_TYPE,
+		original_extension: getOriginalExtension(filename),
+		byte_size: buffer.length,
+		office_format: 'docx',
+		container: 'office_open_xml',
+		extraction_engine: 'mammoth',
+	};
+}
+
 function countTextLines(text: string): number {
 	if (text.length === 0) {
 		return 0;
@@ -303,6 +328,64 @@ function hasRfc822HeaderShape(buffer: Buffer): boolean {
 	return /^From:\s.+$/im.test(sample) && /^Date:\s.+$/im.test(sample) && /^Subject:\s.+$/im.test(sample);
 }
 
+function findEndOfCentralDirectoryOffset(buffer: Buffer): number {
+	const signature = 0x06054b50;
+	const maxCommentLength = 0xffff;
+	const start = Math.max(0, buffer.length - (maxCommentLength + 22));
+
+	for (let offset = buffer.length - 22; offset >= start; offset--) {
+		if (buffer.readUInt32LE(offset) === signature) {
+			return offset;
+		}
+	}
+
+	return -1;
+}
+
+function listZipCentralDirectoryEntries(buffer: Buffer): string[] {
+	const eocdOffset = findEndOfCentralDirectoryOffset(buffer);
+	if (eocdOffset < 0 || eocdOffset + 22 > buffer.length) {
+		return [];
+	}
+
+	const entryCount = buffer.readUInt16LE(eocdOffset + 10);
+	const centralDirectoryOffset = buffer.readUInt32LE(eocdOffset + 16);
+	if (centralDirectoryOffset >= buffer.length) {
+		return [];
+	}
+
+	const entries: string[] = [];
+	let offset = centralDirectoryOffset;
+	for (let index = 0; index < entryCount && offset + 46 <= buffer.length; index++) {
+		if (buffer.readUInt32LE(offset) !== 0x02014b50) {
+			break;
+		}
+
+		const filenameLength = buffer.readUInt16LE(offset + 28);
+		const extraLength = buffer.readUInt16LE(offset + 30);
+		const commentLength = buffer.readUInt16LE(offset + 32);
+		const filenameStart = offset + 46;
+		const filenameEnd = filenameStart + filenameLength;
+		if (filenameEnd > buffer.length) {
+			break;
+		}
+
+		entries.push(buffer.subarray(filenameStart, filenameEnd).toString('utf8'));
+		offset = filenameEnd + extraLength + commentLength;
+	}
+
+	return entries;
+}
+
+export function isOfficeOpenXmlDocx(buffer: Buffer): boolean {
+	if (!hasPrefix(buffer, ZIP_LOCAL_FILE_HEADER_SIGNATURE)) {
+		return false;
+	}
+
+	const entries = new Set(listZipCentralDirectoryEntries(buffer).map((entry) => entry.replaceAll('\\', '/')));
+	return entries.has('[Content_Types].xml') && entries.has('word/document.xml');
+}
+
 export function detectSourceType(
 	buffer: Buffer | null | undefined,
 	filenameOrInput: string,
@@ -331,7 +414,7 @@ export function detectSourceType(
 		}
 
 		if (hasPrefix(buffer, ZIP_LOCAL_FILE_HEADER_SIGNATURE)) {
-			if (extension === '.docx') {
+			if (extension === '.docx' && isOfficeOpenXmlDocx(buffer)) {
 				return { sourceType: 'docx', confidence: 'magic', mediaType: DOCX_MEDIA_TYPE };
 			}
 			if (extension === '.xlsx') {

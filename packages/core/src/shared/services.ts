@@ -93,6 +93,27 @@ export interface DocumentAiService {
 }
 
 // ────────────────────────────────────────────────────────────
+// Office Document Extractor Service
+// ────────────────────────────────────────────────────────────
+
+export interface OfficeDocumentExtractionMessage {
+	type: 'warning' | 'error';
+	message: string;
+}
+
+export interface OfficeDocumentExtractionResult {
+	markdown: string;
+	title?: string;
+	extractionEngine: 'mammoth';
+	messages: OfficeDocumentExtractionMessage[];
+}
+
+export interface OfficeDocumentExtractorService {
+	/** Convert a DOCX Office Open XML document into deterministic Markdown. */
+	extractDocx(documentContent: Buffer, sourceId: string): Promise<OfficeDocumentExtractionResult>;
+}
+
+// ────────────────────────────────────────────────────────────
 // LLM Service
 // ────────────────────────────────────────────────────────────
 
@@ -218,6 +239,7 @@ export interface FirestoreService {
 export interface Services {
 	storage: StorageService;
 	documentAi: DocumentAiService;
+	officeDocuments: OfficeDocumentExtractorService;
 	llm: LlmService;
 	embedding: EmbeddingService;
 	firestore: FirestoreService;

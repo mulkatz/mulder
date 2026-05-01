@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync,
 import { join, relative } from 'node:path';
 import type { MulderConfig } from '../config/types.js';
 import type { Logger } from './logger.js';
+import { createOfficeDocumentExtractorService } from './office-document-extractor.js';
 import type {
 	CreateStorageUploadSessionOptions,
 	DocumentAiResult,
@@ -103,6 +104,7 @@ function contentTypeForBucketPath(bucketPath: string): string {
 	if (lowerPath.endsWith('.tif') || lowerPath.endsWith('.tiff')) return 'image/tiff';
 	if (lowerPath.endsWith('.txt')) return 'text/plain';
 	if (lowerPath.endsWith('.md') || lowerPath.endsWith('.markdown')) return 'text/markdown';
+	if (lowerPath.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 	return 'application/octet-stream';
 }
 
@@ -643,6 +645,7 @@ export function createDevServices(_config: MulderConfig, logger: Logger): Servic
 	return {
 		storage: new DevStorageService(storagePath, fixturesPath, logger),
 		documentAi: new DevDocumentAiService(fixturesPath, logger),
+		officeDocuments: createOfficeDocumentExtractorService(logger),
 		llm: new DevLlmService(fixturesPath, logger),
 		embedding: new DevEmbeddingService(fixturesPath, logger),
 		firestore: new DevFirestoreService(logger),

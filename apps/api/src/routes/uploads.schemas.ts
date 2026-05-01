@@ -10,6 +10,7 @@ const SUPPORTED_UPLOAD_EXTENSIONS = new Map([
 	['txt', 'txt'],
 	['md', 'md'],
 	['markdown', 'md'],
+	['docx', 'docx'],
 ]);
 
 const SUPPORTED_UPLOAD_CONTENT_TYPES = new Map([
@@ -20,9 +21,10 @@ const SUPPORTED_UPLOAD_CONTENT_TYPES = new Map([
 	['text/plain', 'txt'],
 	['text/markdown', 'md'],
 	['text/x-markdown', 'md'],
+	['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx'],
 ]);
 
-export type UploadStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff' | 'txt' | 'md';
+export type UploadStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff' | 'txt' | 'md' | 'docx';
 
 function filenameExtension(filename: string): string {
 	const basename = filename.split(/[\\/]/).pop() ?? filename;
@@ -37,7 +39,8 @@ export function canonicalUploadExtensionForFilename(filename: string): UploadSto
 		extension === 'jpg' ||
 		extension === 'tiff' ||
 		extension === 'txt' ||
-		extension === 'md'
+		extension === 'md' ||
+		extension === 'docx'
 		? extension
 		: null;
 }
@@ -50,13 +53,14 @@ export function canonicalUploadExtensionForContentType(contentType: string): Upl
 		extension === 'jpg' ||
 		extension === 'tiff' ||
 		extension === 'txt' ||
-		extension === 'md'
+		extension === 'md' ||
+		extension === 'docx'
 		? extension
 		: null;
 }
 
 export function isSupportedOriginalStoragePath(storagePath: string): boolean {
-	return /^raw\/[^/]+\/original\.(pdf|png|jpg|tiff|txt|md)$/i.test(storagePath);
+	return /^raw\/[^/]+\/original\.(pdf|png|jpg|tiff|txt|md|docx)$/i.test(storagePath);
 }
 
 export const UploadTransportSchema = z.enum(['gcs_resumable', 'dev_proxy']);
@@ -101,7 +105,7 @@ export const CompleteDocumentUploadRequestSchema = z
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				path: ['filename'],
-				message: 'filename must end with .pdf, .png, .jpg, .jpeg, .tif, .tiff, .txt, .md, or .markdown',
+				message: 'filename must end with .pdf, .png, .jpg, .jpeg, .tif, .tiff, .txt, .md, .markdown, or .docx',
 			});
 			return;
 		}

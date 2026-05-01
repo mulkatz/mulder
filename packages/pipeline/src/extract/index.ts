@@ -205,6 +205,13 @@ function titleFromFilename(filename: string): string {
 	return spaced.length > 0 ? spaced : 'Untitled text source';
 }
 
+function titleFromFilenameWithFallback(filename: string, fallback: string): string {
+	const basename = filename.split(/[\\/]/).pop() ?? filename;
+	const withoutExtension = basename.replace(/\.[^.]+$/, '');
+	const spaced = withoutExtension.replace(/[-_]+/g, ' ').trim();
+	return spaced.length > 0 ? spaced : fallback;
+}
+
 function stripMarkdownInlineSyntax(value: string): string {
 	return value
 		.replace(/[`*_~[\]()]/g, '')
@@ -212,13 +219,13 @@ function stripMarkdownInlineSyntax(value: string): string {
 		.trim();
 }
 
-function deriveMarkdownTitle(markdown: string, filename: string): string {
+function deriveMarkdownTitle(markdown: string, filename: string, fallback = 'Untitled text source'): string {
 	const heading = markdown.match(/^#{1,6}\s+(.+?)\s*#*\s*$/m);
 	if (!heading?.[1]) {
-		return titleFromFilename(filename);
+		return titleFromFilenameWithFallback(filename, fallback);
 	}
 	const title = stripMarkdownInlineSyntax(heading[1]);
-	return title.length > 0 ? title : titleFromFilename(filename);
+	return title.length > 0 ? title : titleFromFilenameWithFallback(filename, fallback);
 }
 
 function escapePlainTextForMarkdown(text: string): string {
@@ -345,6 +352,149 @@ async function extractTextSource(input: {
 		pageImageUris: [],
 		pageCount: 0,
 		primaryMethod: 'text',
+		pages: [],
+		visionFallbackCount: 0,
+		visionFallbackCapped: false,
+	};
+}
+
+interface DocxStoryMetadataJson {
+	id: string;
+	document_id: string;
+	title: string;
+	subtitle: null;
+	language: string;
+	category: string;
+	pages: number[];
+	date_references: string[];
+	geographic_references: string[];
+	extraction_confidence: number;
+	source_type: 'docx';
+	office_format: 'docx';
+	extraction_engine: string;
+	parser_messages: Array<{ type: string; message: string }>;
+}
+
+function buildDocxStoryMetadata(input: {
+	storyId: string;
+	sourceId: string;
+	title: string;
+	language: string;
+	extractionEngine: string;
+	parserMessages: Array<{ type: string; message: string }>;
+}): DocxStoryMetadataJson {
+	return {
+		id: input.storyId,
+		document_id: input.sourceId,
+		title: input.title,
+		subtitle: null,
+		language: input.language,
+		category: 'document',
+		pages: [],
+		date_references: [],
+		geographic_references: [],
+		extraction_confidence: 1.0,
+		source_type: 'docx',
+		office_format: 'docx',
+		extraction_engine: input.extractionEngine,
+		parser_messages: input.parserMessages,
+	};
+}
+
+async function extractDocxSource(input: {
+	sourceId: string;
+	filename: string;
+	storagePath: string;
+	config: MulderConfig;
+	services: Services;
+	pool: pg.Pool;
+	stepConfigHash: string;
+	logger: Logger;
+}): Promise<ExtractionData> {
+	let buffer: Buffer;
+	try {
+		buffer = await input.services.storage.download(input.storagePath);
+	} catch (cause: unknown) {
+		throw new ExtractError(
+			`Failed to download DOCX source original for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_STORAGE_FAILED,
+			{ cause, context: { sourceId: input.sourceId, storagePath: input.storagePath } },
+		);
+	}
+
+	let officeResult: Awaited<ReturnType<Services['officeDocuments']['extractDocx']>>;
+	try {
+		officeResult = await input.services.officeDocuments.extractDocx(buffer, input.sourceId);
+	} catch (cause: unknown) {
+		throw new ExtractError(
+			`DOCX extraction failed for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_OFFICE_DOCUMENT_FAILED,
+			{ cause, context: { sourceId: input.sourceId, storagePath: input.storagePath } },
+		);
+	}
+
+	const markdown = normalizeMarkdownLineEndings(officeResult.markdown);
+	const title = officeResult.title ?? deriveMarkdownTitle(markdown, input.filename, 'Untitled DOCX source');
+	const language = input.config.project.supported_locales[0] ?? 'en';
+	const storyId = randomUUID();
+	const markdownUri = `segments/${input.sourceId}/${storyId}.md`;
+	const metadataUri = `segments/${input.sourceId}/${storyId}.meta.json`;
+	const storyMetadata = buildDocxStoryMetadata({
+		storyId,
+		sourceId: input.sourceId,
+		title,
+		language,
+		extractionEngine: officeResult.extractionEngine,
+		parserMessages: officeResult.messages,
+	});
+
+	try {
+		await input.services.storage.upload(markdownUri, markdown, 'text/markdown');
+		await input.services.storage.upload(metadataUri, JSON.stringify(storyMetadata, null, 2), 'application/json');
+	} catch (cause: unknown) {
+		throw new ExtractError(
+			`Failed to write DOCX story artifacts for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_STORAGE_FAILED,
+			{ cause, context: { sourceId: input.sourceId, markdownUri, metadataUri } },
+		);
+	}
+
+	await createStory(input.pool, {
+		id: storyId,
+		sourceId: input.sourceId,
+		title,
+		language,
+		category: 'document',
+		gcsMarkdownUri: markdownUri,
+		gcsMetadataUri: metadataUri,
+		extractionConfidence: 1.0,
+		metadata: {
+			source_type: 'docx',
+			office_format: 'docx',
+			extraction_engine: officeResult.extractionEngine,
+			original_storage_path: input.storagePath,
+		},
+	});
+
+	await updateSourceStatus(input.pool, input.sourceId, 'extracted');
+	await upsertSourceStep(input.pool, {
+		sourceId: input.sourceId,
+		stepName: STEP_NAME,
+		status: 'completed',
+		configHash: input.stepConfigHash,
+	});
+
+	input.logger.debug(
+		{ storyId, markdownUri, warningCount: officeResult.messages.length },
+		'DOCX source extracted into story Markdown',
+	);
+
+	return {
+		sourceId: input.sourceId,
+		layoutUri: null,
+		pageImageUris: [],
+		pageCount: 0,
+		primaryMethod: 'docx',
 		pages: [],
 		visionFallbackCount: 0,
 		visionFallbackCapped: false,
@@ -733,7 +883,7 @@ export async function execute(
 	let extractionData: ExtractionData;
 
 	// ── Path C: Fallback only ────────────────────────────
-	if (source.sourceType === 'text' && input.fallbackOnly) {
+	if ((source.sourceType === 'text' || source.sourceType === 'docx') && input.fallbackOnly) {
 		throw new ExtractError(
 			`Source type "${source.sourceType}" does not support vision fallback`,
 			EXTRACT_ERROR_CODES.EXTRACT_INVALID_STATUS,
@@ -747,6 +897,17 @@ export async function execute(
 			filename: source.filename,
 			storagePath: source.storagePath,
 			formatMetadata: source.formatMetadata,
+			config,
+			services,
+			pool,
+			stepConfigHash,
+			logger: log,
+		});
+	} else if (!input.fallbackOnly && source.sourceType === 'docx') {
+		extractionData = await extractDocxSource({
+			sourceId: input.sourceId,
+			filename: source.filename,
+			storagePath: source.storagePath,
 			config,
 			services,
 			pool,

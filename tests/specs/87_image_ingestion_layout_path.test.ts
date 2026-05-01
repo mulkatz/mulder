@@ -522,7 +522,9 @@ describe('Spec 87 — Image Ingestion on the Layout Extraction Path', () => {
 		writeFileSync(docxFile, Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00]));
 		const result = runCli(['ingest', docxFile]);
 		expect(result.exitCode).not.toBe(0);
-		expect(`${result.stdout}\n${result.stderr}`).toMatch(/unsupported source type|INGEST_UNSUPPORTED_SOURCE_TYPE/i);
+		expect(`${result.stdout}\n${result.stderr}`).toMatch(
+			/unsupported (?:source type|or unknown source format)|INGEST_(?:UNSUPPORTED|UNKNOWN)_SOURCE_TYPE/i,
+		);
 		expect(db.runSql('SELECT COUNT(*) FROM sources;')).toBe('0');
 	});
 });

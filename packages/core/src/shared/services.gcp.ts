@@ -20,6 +20,7 @@ import { createVertexClient, type VertexClient } from '../vertex.js';
 import { ExternalServiceError } from './errors.js';
 import { closeGcpClients, getDocumentAIClient, getFirestoreClient, getGenAI, getStorageClient } from './gcp.js';
 import type { Logger } from './logger.js';
+import { createOfficeDocumentExtractorService } from './office-document-extractor.js';
 import { withRetry } from './retry.js';
 import type {
 	CreateStorageUploadSessionOptions,
@@ -496,6 +497,7 @@ export function createGcpServices(config: MulderConfig, logger: Logger): Service
 	return {
 		storage: new GcpStorageService(storageClient, bucket, logger),
 		documentAi: new GcpDocumentAiService(documentAiClient, processorName, logger),
+		officeDocuments: createOfficeDocumentExtractorService(logger),
 		llm: new GcpLlmService(vertexClient, logger),
 		embedding: new GcpEmbeddingService(vertexClient, embeddingModel, embeddingDimensions, logger),
 		firestore: new GcpFirestoreService(firestoreClient, logger),
