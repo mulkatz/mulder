@@ -16,6 +16,7 @@
 		"@google-cloud/storage": "^7.19.0",
 		"@google/genai": "^1.47.0",
 		"better-sqlite3": "^12.8.0",
+		"mammoth": "^1.12.0",
 		"p-limit": "^7.3.0",
 		"pdf-lib": "^1.17.1",
 		"pdf-parse": "^2.4.5",

@@ -34,6 +34,7 @@ import {
 } from '@mulder/core';
 import type pg from 'pg';
 import {
+	buildDocxFormatMetadata,
 	buildImageFormatMetadata,
 	buildTextFormatMetadata,
 	detectSourceType,
@@ -50,18 +51,24 @@ export type {
 	SourceDetectionConfidence,
 	SourceDetectionResult,
 	SourceStorageExtension,
+	SupportedDocxMediaType,
 	SupportedImageMediaType,
 	SupportedTextMediaType,
 } from './source-type.js';
 export {
+	buildDocxFormatMetadata,
 	buildImageFormatMetadata,
 	buildTextFormatMetadata,
+	DOCX_MEDIA_TYPE,
 	decodeUtf8TextBuffer,
 	detectSourceType,
 	getCanonicalStorageExtensionForMediaType,
 	getOriginalExtension,
 	getStorageExtensionForDetection,
+	isOfficeOpenXmlDocx,
 	isReadableText,
+	isSupportedDocxFilename,
+	isSupportedDocxMediaType,
 	isSupportedImageMediaType,
 	isSupportedIngestFilename,
 	isSupportedTextFilename,
@@ -155,7 +162,7 @@ interface ProcessFileContext {
 	dryRun: boolean;
 }
 
-type IngestibleSourceType = Extract<SourceType, 'pdf' | 'image' | 'text'>;
+type IngestibleSourceType = Extract<SourceType, 'pdf' | 'image' | 'text' | 'docx'>;
 
 interface PreparedFileMetadata {
 	sourceType: IngestibleSourceType;
@@ -169,7 +176,7 @@ interface PreparedFileMetadata {
 }
 
 function isIngestibleSourceType(sourceType: SourceType): sourceType is IngestibleSourceType {
-	return sourceType === 'pdf' || sourceType === 'image' || sourceType === 'text';
+	return sourceType === 'pdf' || sourceType === 'image' || sourceType === 'text' || sourceType === 'docx';
 }
 
 /**
@@ -201,6 +208,15 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 				},
 			);
 		}
+		if (filename.toLowerCase().endsWith('.docx')) {
+			throw new IngestError(
+				`Not a valid DOCX file (missing Office Open XML document entries): ${filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { path: filePath },
+				},
+			);
+		}
 		throw new IngestError(
 			`Unsupported or unknown source format for ${filename}`,
 			INGEST_ERROR_CODES.INGEST_UNKNOWN_SOURCE_TYPE,
@@ -212,7 +228,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 
 	if (!isIngestibleSourceType(detection.sourceType)) {
 		throw new IngestError(
-			`Unsupported source type "${detection.sourceType}" for ${filename}; only pdf, image, and text are supported in this step`,
+			`Unsupported source type "${detection.sourceType}" for ${filename}; only pdf, image, text, and docx are supported in this step`,
 			INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
 			{
 				context: { path: filePath, sourceType: detection.sourceType, confidence: detection.confidence },
@@ -295,7 +311,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			nativeTextRatio: 0,
 		};
 		log.debug({ sourceType: 'image', mediaType: detection.mediaType, pageCount: 1 }, 'Image metadata prepared');
-	} else {
+	} else if (detection.sourceType === 'text') {
 		if (!isSupportedTextFilename(filename)) {
 			throw new IngestError(
 				`Unsupported text source extension for ${filename}; supported text files must end with .txt, .md, or .markdown`,
@@ -337,6 +353,17 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			nativeTextRatio: 0,
 		};
 		log.debug({ sourceType: 'text', mediaType: prepared.mediaType, pageCount: 0 }, 'Text metadata prepared');
+	} else {
+		prepared = {
+			sourceType: 'docx',
+			mediaType: detection.mediaType,
+			storageExtension,
+			formatMetadata: buildDocxFormatMetadata(buffer, filename),
+			pageCount: 0,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+		};
+		log.debug({ sourceType: 'docx', mediaType: detection.mediaType, pageCount: 0 }, 'DOCX metadata prepared');
 	}
 
 	// f. Compute SHA-256 hash

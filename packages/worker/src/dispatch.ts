@@ -26,6 +26,7 @@ import {
 	upsertSourceStep,
 } from '@mulder/core';
 import {
+	buildDocxFormatMetadata,
 	buildImageFormatMetadata,
 	buildTextFormatMetadata,
 	detectSourceType,
@@ -98,7 +99,7 @@ function buildPdfMetadataJson(pdfMeta: Awaited<ReturnType<typeof extractPdfMetad
 	return pdfMetadataJson;
 }
 
-type FinalizableSourceType = Extract<SourceType, 'pdf' | 'image' | 'text'>;
+type FinalizableSourceType = Extract<SourceType, 'pdf' | 'image' | 'text' | 'docx'>;
 
 interface FinalizedUploadMetadata {
 	sourceType: FinalizableSourceType;
@@ -111,7 +112,7 @@ interface FinalizedUploadMetadata {
 }
 
 function isFinalizableSourceType(sourceType: SourceType): sourceType is FinalizableSourceType {
-	return sourceType === 'pdf' || sourceType === 'image' || sourceType === 'text';
+	return sourceType === 'pdf' || sourceType === 'image' || sourceType === 'text' || sourceType === 'docx';
 }
 
 async function runStoryStepForPayload(
@@ -220,7 +221,7 @@ async function finalizeUploadedDocument(
 	}
 	if (!isFinalizableSourceType(detection.sourceType)) {
 		throw new IngestError(
-			`Unsupported source type "${detection.sourceType}" for ${payload.filename}; only pdf, image, and text are supported in this step`,
+			`Unsupported source type "${detection.sourceType}" for ${payload.filename}; only pdf, image, text, and docx are supported in this step`,
 			INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
 			{
 				context: {
@@ -306,7 +307,7 @@ async function finalizeUploadedDocument(
 			mediaType: detection.mediaType,
 			storageExtension: canonicalStorageExtension,
 		};
-	} else {
+	} else if (detection.sourceType === 'text') {
 		if (!isSupportedTextFilename(payload.filename)) {
 			throw new IngestError(
 				`Unsupported text source extension for ${payload.filename}; supported text files must end with .txt, .md, or .markdown`,
@@ -350,6 +351,16 @@ async function finalizeUploadedDocument(
 			hasNativeText: false,
 			nativeTextRatio: 0,
 			mediaType: typeof formatMetadata.media_type === 'string' ? formatMetadata.media_type : detection.mediaType,
+			storageExtension: canonicalStorageExtension,
+		};
+	} else {
+		finalizedMetadata = {
+			sourceType: 'docx',
+			formatMetadata: buildDocxFormatMetadata(buffer, payload.filename),
+			pageCount: 0,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+			mediaType: detection.mediaType,
 			storageExtension: canonicalStorageExtension,
 		};
 	}
