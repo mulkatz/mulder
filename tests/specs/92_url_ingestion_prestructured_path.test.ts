@@ -171,7 +171,11 @@ beforeAll(async () => {
 		}
 		if (url === '/robots-final.txt') {
 			response.writeHead(200, { 'content-type': 'text/plain' });
-			response.end(['User-agent: MulderUrlFetcher', 'Disallow: /blocked', 'Allow: /'].join('\n'));
+			response.end(
+				['User-agent: *', 'Allow: /blocked', 'User-agent: MulderUrlFetcher', 'Disallow: /blocked', 'Allow: /'].join(
+					'\n',
+				),
+			);
 			return;
 		}
 		if (url === '/article') {
@@ -351,6 +355,17 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 				expect(blockedPageRequests).toBe(blockedBefore);
 			}
 		}
+	});
+
+	it('QA-05: Mulder-specific robots disallow overrides a generic allow before source creation', async () => {
+		if (!pgAvailable) return;
+
+		const blockedBefore = blockedPageRequests;
+		const result = await runCli(['ingest', `${baseUrl}/blocked`]);
+		expect(result.exitCode, `${result.stdout}\n${result.stderr}`).not.toBe(0);
+		expect(`${result.stdout}\n${result.stderr}`).toMatch(/robots|URL fetch/i);
+		expect(blockedPageRequests).toBe(blockedBefore);
+		expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
 	});
 
 	it('QA-04: URL ingest rejects credentialed direct and redirect targets without leaking credentials', async () => {

@@ -424,17 +424,36 @@ function parseRobots(text: string): RobotsGroup[] {
 	return groups;
 }
 
-function agentMatches(agent: string): boolean {
+function matchingAgentSpecificity(agent: string): number | null {
 	const normalized = agent.toLowerCase();
-	return normalized === '*' || USER_AGENT.toLowerCase().startsWith(normalized) || normalized.includes('mulder');
+	if (normalized === '*') {
+		return 0;
+	}
+	if (USER_AGENT.toLowerCase().startsWith(normalized) || normalized.includes('mulder')) {
+		return normalized.length;
+	}
+	return null;
 }
 
 function isPathAllowedByRobots(groups: RobotsGroup[], path: string): { allowed: boolean; rule: string | null } {
-	const matchingRules = groups
-		.filter((group) => group.agents.some(agentMatches))
+	const matchingGroups = groups
+		.map((group) => ({
+			group,
+			specificity: Math.max(
+				...group.agents.map((agent) => matchingAgentSpecificity(agent)).filter((score) => score !== null),
+			),
+		}))
+		.filter((match) => Number.isFinite(match.specificity));
+	const highestSpecificity = Math.max(...matchingGroups.map((match) => match.specificity));
+	const matchingRules = matchingGroups
+		.filter((match) => match.specificity === highestSpecificity)
+		.map((match) => match.group)
 		.flatMap((group) => group.rules)
 		.filter((rule) => rule.path.length > 0 && path.startsWith(rule.path))
-		.sort((a, b) => b.path.length - a.path.length);
+		.sort(
+			(a, b) =>
+				b.path.length - a.path.length || (a.directive === b.directive ? 0 : a.directive === 'disallow' ? -1 : 1),
+		);
 	const rule = matchingRules[0];
 	if (!rule) {
 		return { allowed: true, rule: null };
