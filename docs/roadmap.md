@@ -256,7 +256,7 @@ Images, Office docs, emails, URLs — every format converges to the same Markdow
 | 🟢 | J3 | Image ingestion — JPG, PNG, TIFF via Document AI / Gemini Vision | §2.1, §2.2 |
 | 🟢 | J4 | Plain text ingestion — .txt, .md pass-through (no OCR, no segment) | §2.1 |
 | 🟢 | J5 | DOCX ingestion — Office document extraction via `mammoth` / `docx-parser` | §2.1 |
-| 🟡 | J6 | CSV/Excel ingestion — tabular data → Markdown tables, row-level entity hints | §2.1 |
+| 🟢 | J6 | CSV/Excel ingestion — tabular data → Markdown tables, row-level entity hints | §2.1 |
 | ⚪ | J7 | Email ingestion — .eml/.msg parsing, header metadata → entities (sender, recipient, date, thread) | §2.1 |
 | ⚪ | J8 | URL ingestion — fetch + snapshot to GCS, Readability extraction → Markdown | §2.1 |
 | ⚪ | J9 | URL rendering — Playwright fallback for JS-rendered pages | §2.1 |
