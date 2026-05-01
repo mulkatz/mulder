@@ -43,8 +43,8 @@ interface IngestOptions {
 export function registerIngestCommands(program: Command): void {
 	program
 		.command('ingest')
-		.description('Ingest PDFs, images, text, DOCX, spreadsheets, or email messages — file or directory')
-		.argument('<path>', 'path to a supported file or directory containing supported files')
+		.description('Ingest PDFs, images, text, DOCX, spreadsheets, email messages, or one URL')
+		.argument('<path>', 'path to a supported file/directory, or one http(s) URL')
 		.option('--dry-run', 'validate without uploading or creating DB records')
 		.option('--tag <tag>', 'tag ingested sources (repeatable)', collect, [])
 		.option('--cost-estimate', 'show an estimated downstream pipeline cost before executing')
@@ -54,7 +54,8 @@ export function registerIngestCommands(program: Command): void {
 Examples:
   $ mulder ingest ./incoming/                      # Ingest supported files in a directory
   $ mulder ingest paper.pdf --tag review --tag q1  # Tag a single ingest with two tags
-  $ mulder ingest paper.pdf --dry-run              # Validate without writing to GCS or the DB`,
+  $ mulder ingest paper.pdf --dry-run              # Validate without writing to GCS or the DB
+  $ mulder ingest https://example.com/article      # Fetch and snapshot one HTML page`,
 		)
 		.action(
 			withErrorHandler(async (inputPath: string, options: IngestOptions) => {

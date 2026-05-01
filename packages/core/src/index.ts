@@ -437,8 +437,16 @@ export type {
 	StorageService,
 	StructuredGenerateOptions,
 	TextGenerateOptions,
+	UrlEntityHint,
+	UrlExtractionResult,
+	UrlExtractorService,
+	UrlFetcherService,
+	UrlFetchOptions,
+	UrlFetchResult,
 } from './shared/services.js';
 export type { StepError } from './shared/types.js';
+export { createUrlExtractorService } from './shared/url-extractor.js';
+export { createUrlFetcherService } from './shared/url-fetcher.js';
 // ── Vertex AI wrapper ────────────────────────────────────────
 export type { VertexClient, VertexClientOptions } from './vertex.js';
 export { createVertexClient } from './vertex.js';

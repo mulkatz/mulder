@@ -34,6 +34,8 @@ import type {
 	TextGenerateOptions,
 } from './services.js';
 import { createSpreadsheetExtractorService } from './spreadsheet-extractor.js';
+import { createUrlExtractorService } from './url-extractor.js';
+import { createUrlFetcherService } from './url-fetcher.js';
 
 // ────────────────────────────────────────────────────────────
 // Helpers
@@ -654,6 +656,8 @@ export function createDevServices(_config: MulderConfig, logger: Logger): Servic
 		officeDocuments: createOfficeDocumentExtractorService(logger),
 		spreadsheets: createSpreadsheetExtractorService(),
 		emails: createEmailExtractorService(),
+		urls: createUrlFetcherService(),
+		urlExtractors: createUrlExtractorService(),
 		llm: new DevLlmService(fixturesPath, logger),
 		embedding: new DevEmbeddingService(fixturesPath, logger),
 		firestore: new DevFirestoreService(logger),

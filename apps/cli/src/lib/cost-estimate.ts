@@ -16,6 +16,7 @@ import {
 	detectSourceType,
 	isSupportedIngestFilename,
 	isSupportedTextFilename,
+	isSupportedUrlInput,
 	type PipelineStepName,
 } from '@mulder/pipeline';
 
@@ -27,6 +28,10 @@ interface ReprocessEstimateSourcePlan {
 const ESTIMATE_STEP_ORDER: readonly EstimatedStep[] = ['extract', 'segment', 'enrich', 'ground', 'embed', 'graph'];
 
 export async function resolveIngestFiles(inputPath: string): Promise<string[]> {
+	if (isSupportedUrlInput(inputPath)) {
+		return [inputPath.trim()];
+	}
+
 	const resolved = resolve(inputPath);
 	const stats = await stat(resolved).catch(() => null);
 
@@ -65,6 +70,15 @@ export const resolvePdfFiles = resolveIngestFiles;
 export async function collectIngestSourceProfiles(inputPath: string): Promise<EstimatedSourceProfile[]> {
 	const ingestFiles = await resolveIngestFiles(inputPath);
 	const sourceProfiles: EstimatedSourceProfile[] = [];
+	if (isSupportedUrlInput(inputPath)) {
+		return [
+			{
+				filename: inputPath.trim(),
+				pageCount: 0,
+				nativeTextRatio: 0,
+			},
+		];
+	}
 	const inputStats = await stat(resolve(inputPath)).catch(() => null);
 	const allowPartial = inputStats?.isDirectory() ?? false;
 	let firstError: Error | null = null;

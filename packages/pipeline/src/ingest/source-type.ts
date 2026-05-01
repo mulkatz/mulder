@@ -5,6 +5,7 @@ import type {
 	SourceFormatMetadata,
 	SourceType,
 	SpreadsheetExtractionResult,
+	UrlFetchResult,
 } from '@mulder/core';
 
 export type SourceDetectionConfidence = 'magic' | 'extension' | 'content';
@@ -15,6 +16,7 @@ export type SupportedSpreadsheetMediaType =
 	| 'text/csv'
 	| 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 export type SupportedEmailMediaType = 'message/rfc822' | 'application/vnd.ms-outlook';
+export type SupportedUrlSnapshotMediaType = 'text/html';
 export type SourceStorageExtension =
 	| 'pdf'
 	| 'png'
@@ -26,7 +28,8 @@ export type SourceStorageExtension =
 	| 'csv'
 	| 'xlsx'
 	| 'eml'
-	| 'msg';
+	| 'msg'
+	| 'html';
 
 export interface SourceDetectionResult {
 	sourceType: SourceType;
@@ -61,6 +64,7 @@ export const XLSX_MEDIA_TYPE: SupportedSpreadsheetMediaType =
 	'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 export const EML_MEDIA_TYPE: SupportedEmailMediaType = 'message/rfc822';
 export const MSG_MEDIA_TYPE: SupportedEmailMediaType = 'application/vnd.ms-outlook';
+export const URL_SNAPSHOT_MEDIA_TYPE: SupportedUrlSnapshotMediaType = 'text/html';
 
 const IMAGE_STORAGE_EXTENSIONS_BY_MEDIA_TYPE: Record<SupportedImageMediaType, SourceStorageExtension> = {
 	'image/png': 'png',
@@ -113,6 +117,23 @@ function getExtension(input: string): string {
 
 function hasHttpUrlShape(input: string): boolean {
 	return /^https?:\/\/\S+$/i.test(input.trim());
+}
+
+export function isSupportedUrlInput(input: string): boolean {
+	return detectSourceType(null, input)?.sourceType === 'url';
+}
+
+export function normalizeUrlInput(input: string): string | null {
+	try {
+		const url = new URL(input.trim());
+		if ((url.protocol !== 'http:' && url.protocol !== 'https:') || !url.hostname) {
+			return null;
+		}
+		url.hash = '';
+		return url.toString();
+	} catch {
+		return null;
+	}
 }
 
 export function isSupportedIngestFilename(input: string): boolean {
@@ -184,6 +205,9 @@ export function getCanonicalStorageExtensionForMediaType(mediaType: string | und
 	}
 	if (isSupportedEmailMediaType(mediaType)) {
 		return EMAIL_STORAGE_EXTENSIONS_BY_MEDIA_TYPE[mediaType];
+	}
+	if (mediaType === URL_SNAPSHOT_MEDIA_TYPE) {
+		return 'html';
 	}
 	return null;
 }
@@ -421,6 +445,28 @@ export function buildEmailFormatMetadata(
 				content_id: attachment.contentId,
 				child_source_id: attachment.childSourceId ?? null,
 			})) ?? [],
+	};
+}
+
+export function buildUrlFormatMetadata(fetchResult: UrlFetchResult, title?: string): SourceFormatMetadata {
+	return {
+		original_url: fetchResult.originalUrl,
+		normalized_url: fetchResult.normalizedUrl,
+		final_url: fetchResult.finalUrl,
+		fetch_date: fetchResult.fetchedAt,
+		last_fetched: fetchResult.fetchedAt,
+		http_status: fetchResult.httpStatus,
+		content_type: fetchResult.contentType,
+		etag: fetchResult.headers.etag ?? null,
+		last_modified: fetchResult.headers['last-modified'] ?? null,
+		byte_size: fetchResult.html.length,
+		snapshot_media_type: URL_SNAPSHOT_MEDIA_TYPE,
+		snapshot_encoding: fetchResult.snapshotEncoding ?? 'utf-8',
+		parser_engine: 'mozilla-readability-jsdom-turndown',
+		robots_allowed: fetchResult.robots.allowed,
+		robots_url: fetchResult.robots.robotsUrl,
+		redirect_count: fetchResult.redirectCount,
+		title: title ?? null,
 	};
 }
 

@@ -42,6 +42,8 @@ import type {
 	TextGenerateOptions,
 } from './services.js';
 import { createSpreadsheetExtractorService } from './spreadsheet-extractor.js';
+import { createUrlExtractorService } from './url-extractor.js';
+import { createUrlFetcherService } from './url-fetcher.js';
 
 // ────────────────────────────────────────────────────────────
 // Helpers
@@ -502,6 +504,8 @@ export function createGcpServices(config: MulderConfig, logger: Logger): Service
 		officeDocuments: createOfficeDocumentExtractorService(logger),
 		spreadsheets: createSpreadsheetExtractorService(),
 		emails: createEmailExtractorService(),
+		urls: createUrlFetcherService(),
+		urlExtractors: createUrlExtractorService(),
 		llm: new GcpLlmService(vertexClient, logger),
 		embedding: new GcpEmbeddingService(vertexClient, embeddingModel, embeddingDimensions, logger),
 		firestore: new GcpFirestoreService(firestoreClient, logger),
