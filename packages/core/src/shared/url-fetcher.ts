@@ -1,5 +1,8 @@
+import type { LookupAddress } from 'node:dns';
 import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
+import { request as httpRequest, type IncomingHttpHeaders, type IncomingMessage } from 'node:http';
+import { type RequestOptions as HttpsRequestOptions, request as httpsRequest } from 'node:https';
+import { isIP, type LookupFunction } from 'node:net';
 import { MulderError } from './errors.js';
 import type { RobotsDecision, UrlFetcherService, UrlFetchOptions, UrlFetchResult } from './services.js';
 
@@ -7,6 +10,25 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_REDIRECT_LIMIT = 5;
 const USER_AGENT = 'MulderUrlFetcher/1.0';
 const HTML_CONTENT_TYPES = new Set(['text/html', 'application/xhtml+xml']);
+
+interface VettedAddress {
+	address: string;
+	family: number;
+}
+
+interface VettedTarget {
+	url: URL;
+	addresses: VettedAddress[];
+	lookup: LookupFunction;
+}
+
+interface NodeFetchResponse {
+	status: number;
+	ok: boolean;
+	headers: IncomingHttpHeaders;
+	body: IncomingMessage;
+	release: () => void;
+}
 
 function testUnsafeOverrideEnabled(): boolean {
 	return process.env.NODE_ENV === 'test' && process.env.MULDER_ALLOW_UNSAFE_URLS_FOR_TESTS === 'true';
@@ -130,7 +152,66 @@ function isUnsafeAddress(address: string): boolean {
 	return true;
 }
 
-async function assertPublicHttpTarget(url: URL): Promise<void> {
+function addressLiteralFromHostname(hostname: string): string | null {
+	const unbracketed = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+	return isIP(unbracketed) === 0 ? null : unbracketed;
+}
+
+function connectionHostname(hostname: string): string {
+	return addressLiteralFromHostname(hostname) ?? hostname;
+}
+
+function normalizeLookupFamily(family: number | string | undefined): number {
+	if (family === 'IPv4') {
+		return 4;
+	}
+	if (family === 'IPv6') {
+		return 6;
+	}
+	return typeof family === 'number' ? family : 0;
+}
+
+function createPinnedLookup(addresses: VettedAddress[]): LookupFunction {
+	return (_hostname, options, callback) => {
+		const requestedFamily = normalizeLookupFamily(options.family);
+		const matchingAddresses =
+			requestedFamily === 4 || requestedFamily === 6
+				? addresses.filter((address) => address.family === requestedFamily)
+				: addresses;
+		if (matchingAddresses.length === 0) {
+			const error: NodeJS.ErrnoException = new Error('No validated DNS address matches the requested family');
+			error.code = 'ENOTFOUND';
+			callback(error, '', requestedFamily);
+			return;
+		}
+		if (options.all) {
+			callback(
+				null,
+				matchingAddresses.map((address) => ({ address: address.address, family: address.family })),
+			);
+			return;
+		}
+		const [address] = matchingAddresses;
+		callback(null, address.address, address.family);
+	};
+}
+
+function createVettedTarget(url: URL, addresses: VettedAddress[]): VettedTarget {
+	return { url, addresses, lookup: createPinnedLookup(addresses) };
+}
+
+async function resolveTargetAddresses(hostname: string): Promise<LookupAddress[]> {
+	try {
+		return await lookup(hostname, { all: true, verbatim: true });
+	} catch (cause: unknown) {
+		throw new MulderError('URL hostname could not be resolved safely', 'URL_DNS_FAILED', {
+			cause,
+			context: { hostname },
+		});
+	}
+}
+
+async function validatePublicHttpTarget(url: URL): Promise<VettedTarget> {
 	if (url.protocol !== 'http:' && url.protocol !== 'https:') {
 		throw new MulderError('Redirect target must use HTTP(S)', 'URL_UNSUPPORTED_SCHEME', {
 			context: { url: url.toString(), protocol: url.protocol },
@@ -141,31 +222,31 @@ async function assertPublicHttpTarget(url: URL): Promise<void> {
 			context: { hostname: url.hostname },
 		});
 	}
-	if (testUnsafeOverrideEnabled()) {
-		return;
-	}
-	if (isIP(url.hostname) !== 0) {
-		if (isUnsafeAddress(url.hostname)) {
+	const literalAddress = addressLiteralFromHostname(url.hostname);
+	if (literalAddress) {
+		if (isUnsafeAddress(literalAddress) && !testUnsafeOverrideEnabled()) {
 			throw new MulderError('URL target resolves to an unsafe address', 'URL_UNSAFE_TARGET', {
-				context: { hostname: url.hostname, address: url.hostname },
+				context: { hostname: url.hostname, address: literalAddress },
 			});
 		}
-		return;
+		return createVettedTarget(url, [{ address: literalAddress, family: isIP(literalAddress) }]);
 	}
-	let addresses: Array<{ address: string; family: number }>;
-	try {
-		addresses = await lookup(url.hostname, { all: true, verbatim: true });
-	} catch (cause: unknown) {
-		throw new MulderError('URL hostname could not be resolved safely', 'URL_DNS_FAILED', {
-			cause,
+	const addresses = await resolveTargetAddresses(url.hostname);
+	if (addresses.length === 0) {
+		throw new MulderError('URL hostname did not resolve to any address', 'URL_DNS_FAILED', {
 			context: { hostname: url.hostname },
 		});
 	}
-	if (addresses.length === 0 || addresses.every((address) => isUnsafeAddress(address.address))) {
-		throw new MulderError('URL hostname resolves only to unsafe addresses', 'URL_UNSAFE_TARGET', {
+	const unsafeAddresses = addresses.filter((address) => isUnsafeAddress(address.address));
+	if (unsafeAddresses.length > 0 && !testUnsafeOverrideEnabled()) {
+		throw new MulderError('URL hostname resolves to an unsafe address', 'URL_UNSAFE_TARGET', {
 			context: { hostname: url.hostname, addresses: addresses.map((address) => address.address) },
 		});
 	}
+	return createVettedTarget(
+		url,
+		addresses.map((address) => ({ address: address.address, family: address.family })),
+	);
 }
 
 function parseContentType(value: string | null): { mediaType: string; charset: string | null } {
@@ -177,60 +258,123 @@ function parseContentType(value: string | null): { mediaType: string; charset: s
 	};
 }
 
-async function readBoundedResponse(response: Response, maxBytes: number): Promise<Buffer> {
-	if (!response.body) {
-		return Buffer.alloc(0);
+function headerValue(headers: IncomingHttpHeaders, name: string): string | null {
+	const value = headers[name.toLowerCase()];
+	if (Array.isArray(value)) {
+		return value[0] ?? null;
 	}
-	const reader = response.body.getReader();
-	const chunks: Uint8Array[] = [];
+	return value ?? null;
+}
+
+async function readBoundedResponse(response: NodeFetchResponse, maxBytes: number): Promise<Buffer> {
+	const chunks: Buffer[] = [];
 	let total = 0;
 	try {
-		while (true) {
-			const next = await reader.read();
-			if (next.done) {
-				break;
-			}
-			total += next.value.byteLength;
+		for await (const chunk of response.body) {
+			const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+			total += buffer.byteLength;
 			if (total > maxBytes) {
+				response.body.destroy();
 				throw new MulderError('URL response exceeded maximum ingest size', 'URL_TOO_LARGE', {
 					context: { maxBytes, receivedBytes: total },
 				});
 			}
-			chunks.push(next.value);
+			chunks.push(buffer);
 		}
 	} finally {
-		reader.releaseLock();
+		response.release();
 	}
-	return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+	return Buffer.concat(chunks);
 }
 
-async function fetchOnce(url: URL, options: { timeoutMs: number }): Promise<Response> {
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
-	try {
-		return await fetch(url, {
-			redirect: 'manual',
-			signal: controller.signal,
-			headers: {
-				'User-Agent': USER_AGENT,
-				Accept: 'text/html, application/xhtml+xml;q=0.9',
-			},
-		});
-	} finally {
-		clearTimeout(timeout);
+async function fetchOnce(target: VettedTarget, options: { timeoutMs: number }): Promise<NodeFetchResponse> {
+	const { url } = target;
+	const requestOptions: HttpsRequestOptions = {
+		protocol: url.protocol,
+		hostname: connectionHostname(url.hostname),
+		port: url.port || undefined,
+		method: 'GET',
+		path: `${url.pathname}${url.search}`,
+		headers: {
+			Host: url.host,
+			'User-Agent': USER_AGENT,
+			Accept: 'text/html, application/xhtml+xml;q=0.9',
+		},
+		lookup: target.lookup,
+		agent: false,
+	};
+	const servername = addressLiteralFromHostname(url.hostname) ? undefined : url.hostname;
+	if (url.protocol === 'https:' && servername) {
+		requestOptions.servername = servername;
 	}
+	return await new Promise((resolve, reject) => {
+		let released = false;
+		let timeout: NodeJS.Timeout | null = null;
+		const release = () => {
+			if (released) {
+				return;
+			}
+			released = true;
+			if (timeout) {
+				clearTimeout(timeout);
+				timeout = null;
+			}
+		};
+		const onResponse = (body: IncomingMessage) => {
+			body.once('end', release);
+			body.once('close', release);
+			body.once('error', release);
+			const status = body.statusCode ?? 0;
+			resolve({
+				status,
+				ok: status >= 200 && status <= 299,
+				headers: body.headers,
+				body,
+				release,
+			});
+		};
+		const request =
+			url.protocol === 'https:' ? httpsRequest(requestOptions, onResponse) : httpRequest(requestOptions, onResponse);
+		timeout = setTimeout(() => {
+			request.destroy(
+				new MulderError('URL fetch timed out', 'URL_TIMEOUT', {
+					context: { url: url.toString(), timeoutMs: options.timeoutMs },
+				}),
+			);
+		}, options.timeoutMs);
+		request.on('error', (cause: unknown) => {
+			release();
+			reject(cause);
+		});
+		request.end();
+	});
+}
+
+function discardResponse(response: NodeFetchResponse): void {
+	response.release();
+	response.body.destroy();
+}
+
+function headersToRecord(headers: IncomingHttpHeaders): Record<string, string> {
+	const result: Record<string, string> = {};
+	for (const [key, value] of Object.entries(headers)) {
+		if (Array.isArray(value)) {
+			result[key.toLowerCase()] = value.join(', ');
+			continue;
+		}
+		if (value !== undefined) {
+			result[key.toLowerCase()] = value;
+		}
+	}
+	return result;
+}
+
+function responseHeader(response: NodeFetchResponse, name: string): string | null {
+	return headerValue(response.headers, name);
 }
 
 function isRedirectStatus(status: number): boolean {
 	return [301, 302, 303, 307, 308].includes(status);
-}
-
-function headersToRecord(headers: Headers): Record<string, string> {
-	const result: Record<string, string> = {};
-	for (const [key, value] of headers.entries()) {
-		result[key.toLowerCase()] = value;
-	}
-	return result;
 }
 
 function stripRobotsComment(line: string): string {
@@ -296,35 +440,40 @@ async function fetchRobots(
 ): Promise<RobotsDecision> {
 	const initialRobotsUrl = new URL('/robots.txt', url.origin);
 	let robotsUrl = initialRobotsUrl;
-	await assertPublicHttpTarget(robotsUrl);
+	let robotsTarget = await validatePublicHttpTarget(robotsUrl);
 	try {
 		let redirectCount = 0;
-		let response: Response;
+		let response: NodeFetchResponse;
 		while (true) {
-			response = await fetchOnce(robotsUrl, { timeoutMs: options.timeoutMs });
+			response = await fetchOnce(robotsTarget, { timeoutMs: options.timeoutMs });
 			if (!isRedirectStatus(response.status)) {
 				break;
 			}
-			const location = response.headers.get('location');
+			const location = responseHeader(response, 'location');
 			if (!location) {
+				discardResponse(response);
 				throw new MulderError('robots.txt redirect response did not include a Location header', 'URL_REDIRECT_FAILED', {
 					context: { url: robotsUrl.toString(), status: response.status },
 				});
 			}
 			if (redirectCount >= options.redirectLimit) {
+				discardResponse(response);
 				throw new MulderError('robots.txt redirect limit exceeded', 'URL_REDIRECT_LIMIT', {
 					context: { url: initialRobotsUrl.toString(), redirectLimit: options.redirectLimit },
 				});
 			}
+			discardResponse(response);
 			robotsUrl = new URL(location, robotsUrl);
 			robotsUrl.hash = '';
-			await assertPublicHttpTarget(robotsUrl);
+			robotsTarget = await validatePublicHttpTarget(robotsUrl);
 			redirectCount++;
 		}
 		if (response.status === 404 || response.status === 410) {
+			discardResponse(response);
 			return { allowed: true, robotsUrl: robotsUrl.toString(), matchedUserAgent: null, matchedRule: null };
 		}
 		if (!response.ok) {
+			discardResponse(response);
 			return { allowed: true, robotsUrl: robotsUrl.toString(), matchedUserAgent: null, matchedRule: null };
 		}
 		const body = await readBoundedResponse(response, Math.min(options.maxBytes, 512 * 1024));
@@ -349,7 +498,7 @@ class LocalUrlFetcherService implements UrlFetcherService {
 		let currentUrl = new URL(normalizedUrl);
 		const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		const redirectLimit = options.redirectLimit ?? DEFAULT_REDIRECT_LIMIT;
-		await assertPublicHttpTarget(currentUrl);
+		let currentTarget = await validatePublicHttpTarget(currentUrl);
 		let robots = await fetchRobots(currentUrl, { timeoutMs, maxBytes: options.maxBytes, redirectLimit });
 		if (!robots.allowed) {
 			throw new MulderError('URL fetch disallowed by robots.txt', 'URL_ROBOTS_DISALLOWED', {
@@ -358,26 +507,29 @@ class LocalUrlFetcherService implements UrlFetcherService {
 		}
 
 		let redirectCount = 0;
-		let response: Response;
+		let response: NodeFetchResponse;
 		while (true) {
-			response = await fetchOnce(currentUrl, { timeoutMs });
+			response = await fetchOnce(currentTarget, { timeoutMs });
 			if (!isRedirectStatus(response.status)) {
 				break;
 			}
-			const location = response.headers.get('location');
+			const location = responseHeader(response, 'location');
 			if (!location) {
+				discardResponse(response);
 				throw new MulderError('URL redirect response did not include a Location header', 'URL_REDIRECT_FAILED', {
 					context: { url: currentUrl.toString(), status: response.status },
 				});
 			}
 			if (redirectCount >= redirectLimit) {
+				discardResponse(response);
 				throw new MulderError('URL redirect limit exceeded', 'URL_REDIRECT_LIMIT', {
 					context: { url: normalizedUrl, redirectLimit },
 				});
 			}
+			discardResponse(response);
 			currentUrl = new URL(location, currentUrl);
 			currentUrl.hash = '';
-			await assertPublicHttpTarget(currentUrl);
+			currentTarget = await validatePublicHttpTarget(currentUrl);
 			robots = await fetchRobots(currentUrl, { timeoutMs, maxBytes: options.maxBytes, redirectLimit });
 			if (!robots.allowed) {
 				throw new MulderError('URL fetch disallowed by robots.txt', 'URL_ROBOTS_DISALLOWED', {
@@ -388,20 +540,24 @@ class LocalUrlFetcherService implements UrlFetcherService {
 		}
 
 		if (!response.ok) {
+			discardResponse(response);
 			throw new MulderError('URL fetch failed with non-success status', 'URL_HTTP_STATUS', {
 				context: { url: currentUrl.toString(), status: response.status },
 			});
 		}
-		const contentLength = Number.parseInt(response.headers.get('content-length') ?? '', 10);
+		const contentLength = Number.parseInt(responseHeader(response, 'content-length') ?? '', 10);
 		if (Number.isFinite(contentLength) && contentLength > options.maxBytes) {
+			discardResponse(response);
 			throw new MulderError('URL response exceeded maximum ingest size', 'URL_TOO_LARGE', {
 				context: { maxBytes: options.maxBytes, contentLength },
 			});
 		}
-		const contentType = parseContentType(response.headers.get('content-type'));
+		const rawContentType = responseHeader(response, 'content-type');
+		const contentType = parseContentType(rawContentType);
 		if (!HTML_CONTENT_TYPES.has(contentType.mediaType)) {
+			discardResponse(response);
 			throw new MulderError('URL response content type is not HTML', 'URL_UNSUPPORTED_CONTENT_TYPE', {
-				context: { url: currentUrl.toString(), contentType: response.headers.get('content-type') },
+				context: { url: currentUrl.toString(), contentType: rawContentType },
 			});
 		}
 		const html = await readBoundedResponse(response, options.maxBytes);
@@ -412,7 +568,7 @@ class LocalUrlFetcherService implements UrlFetcherService {
 			httpStatus: response.status,
 			headers: headersToRecord(response.headers),
 			html,
-			contentType: response.headers.get('content-type') ?? contentType.mediaType,
+			contentType: rawContentType ?? contentType.mediaType,
 			redirectCount,
 			fetchedAt: new Date().toISOString(),
 			robots,

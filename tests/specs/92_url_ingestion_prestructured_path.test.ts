@@ -368,6 +368,43 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 		}
 	});
 
+	it('QA-04: URL fetch rejects mixed public and unsafe DNS answers before body fetch', async () => {
+		const fetchCalls: string[] = [];
+		vi.doMock('node:dns/promises', () => ({
+			lookup: vi.fn(async () => [
+				{ address: '93.184.216.34', family: 4 },
+				{ address: '127.0.0.1', family: 4 },
+			]),
+		}));
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((input: string | URL | Request) => {
+				fetchCalls.push(String(input));
+				return Promise.resolve(new Response(articleHtml('Unexpected mixed-DNS fetch'), { status: 200 }));
+			}),
+		);
+		vi.resetModules();
+		try {
+			const moduleUrl = `${pathToFileURL(resolve(CORE_DIR, 'dist/shared/url-fetcher.js')).href}?mixed-dns`;
+			const fetcherModule: typeof import('../../packages/core/dist/shared/url-fetcher.js') = await import(moduleUrl);
+			await expect(
+				fetcherModule.createUrlFetcherService().fetchUrl('https://mixed-unsafe.example/article', {
+					maxBytes: 1024,
+					timeoutMs: 100,
+					redirectLimit: 0,
+				}),
+			).rejects.toMatchObject({ code: 'URL_UNSAFE_TARGET' });
+			expect(fetchCalls).toEqual([]);
+			if (pgAvailable) {
+				expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
+			}
+		} finally {
+			vi.unstubAllGlobals();
+			vi.doUnmock('node:dns/promises');
+			vi.resetModules();
+		}
+	});
+
 	it('QA-08/09/10: URL extract creates one readable story with URL hints and fails unreadable shells clearly', async () => {
 		if (!pgAvailable) return;
 
