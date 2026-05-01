@@ -119,8 +119,12 @@ function hasHttpUrlShape(input: string): boolean {
 	return /^https?:\/\//i.test(input.trim());
 }
 
+function hasAbsoluteUriScheme(input: string): boolean {
+	return /^[a-z][a-z0-9+.-]*:/i.test(input.trim());
+}
+
 export function isUrlLikeInput(input: string): boolean {
-	return /^[a-z][a-z0-9+.-]*:\/\//i.test(input.trim());
+	return hasAbsoluteUriScheme(input);
 }
 
 export function isSupportedUrlInput(input: string): boolean {
@@ -130,6 +134,9 @@ export function isSupportedUrlInput(input: string): boolean {
 export function sanitizeUrlInputForDisplay(input: string): string {
 	try {
 		const url = new URL(input.trim());
+		if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+			return url.hostname ? `${url.protocol}//${url.hostname}` : `${url.protocol}[redacted]`;
+		}
 		url.username = '';
 		url.password = '';
 		return url.toString();

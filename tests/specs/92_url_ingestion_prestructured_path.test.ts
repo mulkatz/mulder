@@ -447,6 +447,32 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 		expect(unsupportedPipelineOutput).not.toMatch(/Path not found/i);
 		expectCredentialSecretsNotLeaked(unsupportedPipelineOutput);
 
+		const opaqueUnsupported = `mailto:${CREDENTIAL_USERNAME}:${CREDENTIAL_PASSWORD}@example.com`;
+		const opaqueIngest = await runCli(['ingest', '--dry-run', opaqueUnsupported], { allowUnsafeUrls: false });
+		const opaqueIngestOutput = `${opaqueIngest.stdout}\n${opaqueIngest.stderr}`;
+		expect(opaqueIngest.exitCode, opaqueIngestOutput).not.toBe(0);
+		expect(opaqueIngestOutput).toMatch(/URL|unsupported/i);
+		expect(opaqueIngestOutput).not.toMatch(/Path not found/i);
+		expectCredentialSecretsNotLeaked(opaqueIngestOutput);
+
+		const opaquePipeline = await runCli(['pipeline', 'run', '--dry-run', opaqueUnsupported], {
+			allowUnsafeUrls: false,
+		});
+		const opaquePipelineOutput = `${opaquePipeline.stdout}\n${opaquePipeline.stderr}`;
+		expect(opaquePipeline.exitCode, opaquePipelineOutput).not.toBe(0);
+		expect(opaquePipelineOutput).toMatch(/URL|unsupported/i);
+		expect(opaquePipelineOutput).not.toMatch(/Path not found/i);
+		expectCredentialSecretsNotLeaked(opaquePipelineOutput);
+
+		const opaqueCostOnly = await runCli(['ingest', '--dry-run', '--cost-estimate', opaqueUnsupported], {
+			allowUnsafeUrls: false,
+		});
+		const opaqueCostOnlyOutput = `${opaqueCostOnly.stdout}\n${opaqueCostOnly.stderr}`;
+		expect(opaqueCostOnly.exitCode, opaqueCostOnlyOutput).not.toBe(0);
+		expect(opaqueCostOnlyOutput).toMatch(/URL|unsupported/i);
+		expect(opaqueCostOnlyOutput).not.toMatch(/Path not found|Cost estimate/i);
+		expectCredentialSecretsNotLeaked(opaqueCostOnlyOutput);
+
 		const credentialedHttp = `https://${CREDENTIAL_USERNAME}:${CREDENTIAL_PASSWORD}@example.com/article`;
 		const credentialedCostOnly = await runCli(['ingest', '--dry-run', '--cost-estimate', credentialedHttp], {
 			allowUnsafeUrls: false,
