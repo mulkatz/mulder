@@ -129,8 +129,17 @@ export async function collectIngestSourceProfiles(inputPath: string): Promise<Es
 				continue;
 			}
 
+			if (detection.sourceType === 'spreadsheet') {
+				sourceProfiles.push({
+					filename: filePath,
+					pageCount: 0,
+					nativeTextRatio: 0,
+				});
+				continue;
+			}
+
 			throw new IngestError(
-				`Unsupported source type "${detection.sourceType}" for ${filePath}; only pdf, image, text, and docx are supported in this step`,
+				`Unsupported source type "${detection.sourceType}" for ${filePath}; only pdf, image, text, docx, and spreadsheet are supported in this step`,
 				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
 				{
 					context: { path: filePath, sourceType: detection.sourceType, confidence: detection.confidence },

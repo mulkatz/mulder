@@ -114,6 +114,51 @@ export interface OfficeDocumentExtractorService {
 }
 
 // ────────────────────────────────────────────────────────────
+// Spreadsheet Extractor Service
+// ────────────────────────────────────────────────────────────
+
+export type SpreadsheetTabularFormat = 'csv' | 'xlsx';
+
+export interface SpreadsheetRowGroup {
+	index: number;
+	rowStart: number;
+	rowEnd: number;
+}
+
+export interface SpreadsheetTableSummary {
+	sheetName: string;
+	rowCount: number;
+	columnCount: number;
+	rowGroupCount: number;
+}
+
+export interface SpreadsheetSheet {
+	name: string;
+	headers: string[];
+	rows: string[][];
+	rowGroups: SpreadsheetRowGroup[];
+	summary: SpreadsheetTableSummary;
+}
+
+export interface SpreadsheetExtractionResult {
+	tabularFormat: SpreadsheetTabularFormat;
+	parserEngine: 'mulder-csv' | 'sheetjs-xlsx';
+	delimiter?: ',' | ';' | '\t';
+	sheets: SpreadsheetSheet[];
+	sheetSummaries: SpreadsheetTableSummary[];
+	warnings: string[];
+}
+
+export interface SpreadsheetExtractorService {
+	/** Parse CSV/XLSX bytes into normalized sheet rows for deterministic Markdown extraction. */
+	extractSpreadsheet(
+		documentContent: Buffer,
+		sourceId: string,
+		format: SpreadsheetTabularFormat,
+	): Promise<SpreadsheetExtractionResult>;
+}
+
+// ────────────────────────────────────────────────────────────
 // LLM Service
 // ────────────────────────────────────────────────────────────
 
@@ -240,6 +285,7 @@ export interface Services {
 	storage: StorageService;
 	documentAi: DocumentAiService;
 	officeDocuments: OfficeDocumentExtractorService;
+	spreadsheets: SpreadsheetExtractorService;
 	llm: LlmService;
 	embedding: EmbeddingService;
 	firestore: FirestoreService;

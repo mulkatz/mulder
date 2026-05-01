@@ -1,12 +1,15 @@
 import { extname } from 'node:path';
 import { TextDecoder } from 'node:util';
-import type { SourceFormatMetadata, SourceType } from '@mulder/core';
+import type { SourceFormatMetadata, SourceType, SpreadsheetExtractionResult } from '@mulder/core';
 
 export type SourceDetectionConfidence = 'magic' | 'extension' | 'content';
 export type SupportedImageMediaType = 'image/png' | 'image/jpeg' | 'image/tiff';
 export type SupportedTextMediaType = 'text/plain' | 'text/markdown' | 'text/x-markdown';
 export type SupportedDocxMediaType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-export type SourceStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff' | 'txt' | 'md' | 'docx';
+export type SupportedSpreadsheetMediaType =
+	| 'text/csv'
+	| 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+export type SourceStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff' | 'txt' | 'md' | 'docx' | 'csv' | 'xlsx';
 
 export interface SourceDetectionResult {
 	sourceType: SourceType;
@@ -35,7 +38,9 @@ const MARKDOWN_MEDIA_TYPE: SupportedTextMediaType = 'text/markdown';
 const X_MARKDOWN_MEDIA_TYPE: SupportedTextMediaType = 'text/x-markdown';
 export const DOCX_MEDIA_TYPE: SupportedDocxMediaType =
 	'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-const XLSX_MEDIA_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+export const CSV_MEDIA_TYPE: SupportedSpreadsheetMediaType = 'text/csv';
+export const XLSX_MEDIA_TYPE: SupportedSpreadsheetMediaType =
+	'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const IMAGE_STORAGE_EXTENSIONS_BY_MEDIA_TYPE: Record<SupportedImageMediaType, SourceStorageExtension> = {
 	'image/png': 'png',
@@ -49,6 +54,11 @@ const TEXT_STORAGE_EXTENSIONS_BY_MEDIA_TYPE: Record<SupportedTextMediaType, Sour
 	'text/x-markdown': 'md',
 };
 
+const SPREADSHEET_STORAGE_EXTENSIONS_BY_MEDIA_TYPE: Record<SupportedSpreadsheetMediaType, SourceStorageExtension> = {
+	'text/csv': 'csv',
+	'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+};
+
 const SUPPORTED_INGEST_EXTENSIONS = new Set([
 	'.pdf',
 	'.png',
@@ -60,6 +70,8 @@ const SUPPORTED_INGEST_EXTENSIONS = new Set([
 	'.md',
 	'.markdown',
 	'.docx',
+	'.csv',
+	'.xlsx',
 ]);
 
 function hasPrefix(buffer: Buffer, signature: Buffer): boolean {
@@ -89,6 +101,11 @@ export function isSupportedDocxFilename(input: string): boolean {
 	return getExtension(input) === '.docx';
 }
 
+export function isSupportedSpreadsheetFilename(input: string): boolean {
+	const extension = getExtension(input);
+	return extension === '.csv' || extension === '.xlsx';
+}
+
 export function getOriginalExtension(input: string): string {
 	return getExtension(input).replace(/^\./, '');
 }
@@ -107,6 +124,12 @@ export function isSupportedDocxMediaType(mediaType: string | undefined): mediaTy
 	return mediaType === DOCX_MEDIA_TYPE;
 }
 
+export function isSupportedSpreadsheetMediaType(
+	mediaType: string | undefined,
+): mediaType is SupportedSpreadsheetMediaType {
+	return mediaType === CSV_MEDIA_TYPE || mediaType === XLSX_MEDIA_TYPE;
+}
+
 export function getCanonicalStorageExtensionForMediaType(mediaType: string | undefined): SourceStorageExtension | null {
 	if (mediaType === PDF_MEDIA_TYPE) {
 		return 'pdf';
@@ -119,6 +142,9 @@ export function getCanonicalStorageExtensionForMediaType(mediaType: string | und
 	}
 	if (isSupportedDocxMediaType(mediaType)) {
 		return 'docx';
+	}
+	if (isSupportedSpreadsheetMediaType(mediaType)) {
+		return SPREADSHEET_STORAGE_EXTENSIONS_BY_MEDIA_TYPE[mediaType];
 	}
 	return null;
 }
@@ -286,6 +312,40 @@ export function buildDocxFormatMetadata(buffer: Buffer, filename: string): Sourc
 	};
 }
 
+export function buildSpreadsheetFormatMetadata(
+	buffer: Buffer,
+	filename: string,
+	mediaType: SupportedSpreadsheetMediaType,
+	extractionResult?: SpreadsheetExtractionResult,
+): SourceFormatMetadata {
+	const tabularFormat = mediaType === CSV_MEDIA_TYPE ? 'csv' : 'xlsx';
+	const metadata: SourceFormatMetadata = {
+		media_type: mediaType,
+		original_extension: getOriginalExtension(filename),
+		byte_size: buffer.length,
+		tabular_format: tabularFormat,
+		container: tabularFormat === 'csv' ? 'delimited_text' : 'office_open_xml',
+		parser_engine: extractionResult?.parserEngine ?? (tabularFormat === 'csv' ? 'mulder-csv' : 'sheetjs-xlsx'),
+		sheet_count: extractionResult?.sheetSummaries.length ?? (tabularFormat === 'csv' ? 1 : 0),
+		sheet_names:
+			extractionResult?.sheetSummaries.map((summary) => summary.sheetName) ?? (tabularFormat === 'csv' ? ['CSV'] : []),
+		table_summaries:
+			extractionResult?.sheetSummaries.map((summary) => ({
+				sheet_name: summary.sheetName,
+				row_count: summary.rowCount,
+				column_count: summary.columnCount,
+				row_group_count: summary.rowGroupCount,
+			})) ?? [],
+	};
+
+	if (tabularFormat === 'csv') {
+		metadata.encoding = 'utf-8';
+		metadata.delimiter = extractionResult?.delimiter ?? detectCsvDelimiter(buffer);
+	}
+
+	return metadata;
+}
+
 function countTextLines(text: string): number {
 	if (text.length === 0) {
 		return 0;
@@ -298,9 +358,9 @@ function getTextSample(buffer: Buffer): string {
 	return buffer.subarray(0, Math.min(buffer.length, 4096)).toString('utf8');
 }
 
-function hasDelimitedTextShape(buffer: Buffer): boolean {
+export function detectCsvDelimiter(buffer: Buffer): ',' | ';' | '\t' | null {
 	if (!isReadableText(buffer)) {
-		return false;
+		return null;
 	}
 
 	const lines = getTextSample(buffer)
@@ -310,13 +370,22 @@ function hasDelimitedTextShape(buffer: Buffer): boolean {
 		.slice(0, 5);
 
 	if (lines.length < 2) {
-		return false;
+		return null;
 	}
 
-	return [',', ';', '\t'].some((delimiter) => {
-		const delimitedLines = lines.filter((line) => line.split(delimiter).length > 1);
-		return delimitedLines.length >= 2;
-	});
+	for (const delimiter of [',', ';', '\t'] as const) {
+		const columnCounts = lines.map((line) => line.split(delimiter).length);
+		const firstCount = columnCounts[0] ?? 0;
+		if (firstCount > 1 && columnCounts.every((count) => count === firstCount)) {
+			return delimiter;
+		}
+	}
+
+	return null;
+}
+
+function hasDelimitedTextShape(buffer: Buffer): boolean {
+	return detectCsvDelimiter(buffer) !== null;
 }
 
 function hasRfc822HeaderShape(buffer: Buffer): boolean {
@@ -386,6 +455,15 @@ export function isOfficeOpenXmlDocx(buffer: Buffer): boolean {
 	return entries.has('[Content_Types].xml') && entries.has('word/document.xml');
 }
 
+export function isOfficeOpenXmlSpreadsheet(buffer: Buffer): boolean {
+	if (!hasPrefix(buffer, ZIP_LOCAL_FILE_HEADER_SIGNATURE)) {
+		return false;
+	}
+
+	const entries = new Set(listZipCentralDirectoryEntries(buffer).map((entry) => entry.replaceAll('\\', '/')));
+	return entries.has('[Content_Types].xml') && entries.has('xl/workbook.xml');
+}
+
 export function detectSourceType(
 	buffer: Buffer | null | undefined,
 	filenameOrInput: string,
@@ -414,16 +492,23 @@ export function detectSourceType(
 		}
 
 		if (hasPrefix(buffer, ZIP_LOCAL_FILE_HEADER_SIGNATURE)) {
-			if (extension === '.docx' && isOfficeOpenXmlDocx(buffer)) {
+			if (isOfficeOpenXmlDocx(buffer)) {
 				return { sourceType: 'docx', confidence: 'magic', mediaType: DOCX_MEDIA_TYPE };
 			}
-			if (extension === '.xlsx') {
+			if (extension === '.xlsx' && isOfficeOpenXmlSpreadsheet(buffer)) {
 				return { sourceType: 'spreadsheet', confidence: 'magic', mediaType: XLSX_MEDIA_TYPE };
+			}
+			if (extension === '.xlsx') {
+				return null;
 			}
 		}
 
 		if (extension === '.csv' && hasDelimitedTextShape(buffer)) {
 			return { sourceType: 'spreadsheet', confidence: 'content', mediaType: 'text/csv' };
+		}
+
+		if (extension === '.csv') {
+			return null;
 		}
 
 		if (hasRfc822HeaderShape(buffer)) {

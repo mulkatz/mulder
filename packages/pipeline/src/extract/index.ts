@@ -14,7 +14,16 @@
 
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import type { DocumentAiResult, Logger, MulderConfig, Services, StepError } from '@mulder/core';
+import type {
+	DocumentAiResult,
+	Logger,
+	MulderConfig,
+	Services,
+	SpreadsheetExtractionResult,
+	SpreadsheetSheet,
+	SpreadsheetTabularFormat,
+	StepError,
+} from '@mulder/core';
 import {
 	createChildLogger,
 	createStory,
@@ -24,6 +33,7 @@ import {
 	getStepConfigHash,
 	renderPrompt,
 	resetPipelineStep,
+	updateSource,
 	updateSourceStatus,
 	upsertSourceStep,
 } from '@mulder/core';
@@ -34,6 +44,7 @@ import {
 	detectSourceType,
 	isReadableText,
 	isSupportedImageMediaType,
+	isSupportedSpreadsheetMediaType,
 } from '../ingest/source-type.js';
 import { layoutToMarkdown } from './layout-to-markdown.js';
 import type { ExtractInput, ExtractionData, ExtractResult, LayoutBlock, LayoutDocument, LayoutPage } from './types.js';
@@ -502,6 +513,409 @@ async function extractDocxSource(input: {
 }
 
 // ────────────────────────────────────────────────────────────
+// Spreadsheet extraction helpers
+// ────────────────────────────────────────────────────────────
+
+type SpreadsheetHintType = 'email' | 'url' | 'date' | 'identifier' | 'person_name' | 'organization' | 'location';
+type SpreadsheetHintSource = 'header' | 'value' | 'header_value';
+
+interface SpreadsheetEntityHint {
+	row_number: number;
+	sheet_name: string;
+	column_name: string;
+	hint_type: SpreadsheetHintType;
+	value: string;
+	confidence: number;
+	source: SpreadsheetHintSource;
+}
+
+interface SpreadsheetStoryMetadataJson {
+	id: string;
+	document_id: string;
+	title: string;
+	subtitle: null;
+	language: string;
+	category: string;
+	pages: number[];
+	date_references: string[];
+	geographic_references: string[];
+	extraction_confidence: number;
+	source_type: 'spreadsheet';
+	tabular_format: SpreadsheetTabularFormat;
+	sheet_name: string;
+	row_start: number;
+	row_end: number;
+	row_count: number;
+	column_count: number;
+	entity_hints: SpreadsheetEntityHint[];
+}
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const URL_PATTERN = /^https?:\/\/\S+$/i;
+const DATE_PATTERNS = [/^\d{4}-\d{2}-\d{2}$/, /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/];
+
+function normalizeHeaderForHints(header: string): string {
+	return header.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+}
+
+function hintTypeForHeader(header: string): SpreadsheetHintType | null {
+	const normalized = normalizeHeaderForHints(header);
+	if (/(^|_)(id|case|invoice|reference|ref|number|no)(_|$)/.test(normalized)) {
+		return 'identifier';
+	}
+	if (/(^|_)(name|person|author|contact)(_|$)/.test(normalized)) {
+		return 'person_name';
+	}
+	if (/(^|_)(company|organization|organisation|agency|institution)(_|$)/.test(normalized)) {
+		return 'organization';
+	}
+	if (/(^|_)(city|country|address|location|place)(_|$)/.test(normalized)) {
+		return 'location';
+	}
+	if (/(^|_)(date|day|time)(_|$)/.test(normalized)) {
+		return 'date';
+	}
+	return null;
+}
+
+function hintTypeForValue(value: string): SpreadsheetHintType | null {
+	if (EMAIL_PATTERN.test(value)) {
+		return 'email';
+	}
+	if (URL_PATTERN.test(value)) {
+		return 'url';
+	}
+	if (DATE_PATTERNS.some((pattern) => pattern.test(value))) {
+		return 'date';
+	}
+	return null;
+}
+
+function extractSpreadsheetHints(input: {
+	sheetName: string;
+	headers: string[];
+	rows: string[][];
+	rowStart: number;
+}): SpreadsheetEntityHint[] {
+	const hints: SpreadsheetEntityHint[] = [];
+	for (let rowIndex = 0; rowIndex < input.rows.length; rowIndex++) {
+		const row = input.rows[rowIndex];
+		const rowNumber = input.rowStart + rowIndex;
+		for (let columnIndex = 0; columnIndex < input.headers.length; columnIndex++) {
+			const value = (row[columnIndex] ?? '').trim();
+			if (value.length === 0) {
+				continue;
+			}
+			const columnName = input.headers[columnIndex] ?? `Column ${columnIndex + 1}`;
+			const valueHint = hintTypeForValue(value);
+			const headerHint = hintTypeForHeader(columnName);
+			const hintType = valueHint ?? headerHint;
+			if (!hintType) {
+				continue;
+			}
+			hints.push({
+				row_number: rowNumber,
+				sheet_name: input.sheetName,
+				column_name: columnName,
+				hint_type: hintType,
+				value,
+				confidence: valueHint && headerHint ? 0.95 : valueHint ? 0.9 : 0.7,
+				source: valueHint && headerHint ? 'header_value' : valueHint ? 'value' : 'header',
+			});
+		}
+	}
+	return hints;
+}
+
+function escapeMarkdownTableCell(value: string): string {
+	return value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
+}
+
+function renderMarkdownTable(headers: string[], rows: string[][]): string {
+	const headerLine = `| ${headers.map(escapeMarkdownTableCell).join(' | ')} |`;
+	const separatorLine = `| ${headers.map(() => '---').join(' | ')} |`;
+	const dataLines = rows.map((row) => {
+		const cells = headers.map((_, index) => escapeMarkdownTableCell(row[index] ?? ''));
+		return `| ${cells.join(' | ')} |`;
+	});
+	return [headerLine, separatorLine, ...dataLines].join('\n');
+}
+
+function renderHintSection(hints: SpreadsheetEntityHint[]): string {
+	if (hints.length === 0) {
+		return '';
+	}
+	const lines = hints.map(
+		(hint) => `- Row ${hint.row_number}, ${hint.column_name}: ${hint.value} (${hint.hint_type}, ${hint.source})`,
+	);
+	return `\n\n## Row Entity Hints\n\n${lines.join('\n')}`;
+}
+
+function spreadsheetTitle(input: {
+	filename: string;
+	sheetName: string;
+	rowStart: number;
+	rowEnd: number;
+	rowGroupCount: number;
+}): string {
+	const base = titleFromFilenameWithFallback(input.filename, 'Untitled spreadsheet source');
+	const sheet = input.sheetName === 'CSV' ? base : `${base} - ${input.sheetName}`;
+	return input.rowGroupCount > 1 ? `${sheet} (rows ${input.rowStart}-${input.rowEnd})` : sheet;
+}
+
+function buildSpreadsheetStoryMetadata(input: {
+	storyId: string;
+	sourceId: string;
+	title: string;
+	language: string;
+	tabularFormat: SpreadsheetTabularFormat;
+	sheetName: string;
+	rowStart: number;
+	rowEnd: number;
+	rowCount: number;
+	columnCount: number;
+	hints: SpreadsheetEntityHint[];
+}): SpreadsheetStoryMetadataJson {
+	return {
+		id: input.storyId,
+		document_id: input.sourceId,
+		title: input.title,
+		subtitle: null,
+		language: input.language,
+		category: 'document',
+		pages: [],
+		date_references: [],
+		geographic_references: [],
+		extraction_confidence: 1.0,
+		source_type: 'spreadsheet',
+		tabular_format: input.tabularFormat,
+		sheet_name: input.sheetName,
+		row_start: input.rowStart,
+		row_end: input.rowEnd,
+		row_count: input.rowCount,
+		column_count: input.columnCount,
+		entity_hints: input.hints,
+	};
+}
+
+function buildSpreadsheetFormatMetadata(input: {
+	buffer: Buffer;
+	filename: string;
+	extractionResult: SpreadsheetExtractionResult;
+	mediaType: string;
+}): Record<string, unknown> {
+	const metadata: Record<string, unknown> = {
+		media_type: input.mediaType,
+		original_extension: input.filename.split('.').pop()?.toLowerCase() ?? '',
+		byte_size: input.buffer.length,
+		tabular_format: input.extractionResult.tabularFormat,
+		container: input.extractionResult.tabularFormat === 'csv' ? 'delimited_text' : 'office_open_xml',
+		parser_engine: input.extractionResult.parserEngine,
+		sheet_count: input.extractionResult.sheetSummaries.length,
+		sheet_names: input.extractionResult.sheetSummaries.map((summary) => summary.sheetName),
+		table_summaries: input.extractionResult.sheetSummaries.map((summary) => ({
+			sheet_name: summary.sheetName,
+			row_count: summary.rowCount,
+			column_count: summary.columnCount,
+			row_group_count: summary.rowGroupCount,
+		})),
+		parser_warnings: input.extractionResult.warnings,
+	};
+	if (input.extractionResult.tabularFormat === 'csv') {
+		metadata.encoding = 'utf-8';
+		metadata.delimiter = input.extractionResult.delimiter;
+	}
+	return metadata;
+}
+
+async function writeSpreadsheetStory(input: {
+	sourceId: string;
+	filename: string;
+	sheet: SpreadsheetSheet;
+	tabularFormat: SpreadsheetTabularFormat;
+	rowStart: number;
+	rowEnd: number;
+	language: string;
+	services: Services;
+	pool: pg.Pool;
+	storagePath: string;
+}): Promise<void> {
+	const rows = input.sheet.rows.slice(input.rowStart - 1, input.rowEnd);
+	const hints = extractSpreadsheetHints({
+		sheetName: input.sheet.name,
+		headers: input.sheet.headers,
+		rows,
+		rowStart: input.rowStart,
+	});
+	const title = spreadsheetTitle({
+		filename: input.filename,
+		sheetName: input.sheet.name,
+		rowStart: input.rowStart,
+		rowEnd: input.rowEnd,
+		rowGroupCount: input.sheet.rowGroups.length,
+	});
+	const markdown = [
+		`# ${title}`,
+		'',
+		`Sheet: ${input.sheet.name}`,
+		`Rows: ${input.rowStart}-${input.rowEnd}`,
+		'',
+		renderMarkdownTable(input.sheet.headers, rows),
+		renderHintSection(hints),
+	].join('\n');
+	const storyId = randomUUID();
+	const markdownUri = `segments/${input.sourceId}/${storyId}.md`;
+	const metadataUri = `segments/${input.sourceId}/${storyId}.meta.json`;
+	const storyMetadata = buildSpreadsheetStoryMetadata({
+		storyId,
+		sourceId: input.sourceId,
+		title,
+		language: input.language,
+		tabularFormat: input.tabularFormat,
+		sheetName: input.sheet.name,
+		rowStart: input.rowStart,
+		rowEnd: input.rowEnd,
+		rowCount: rows.length,
+		columnCount: input.sheet.headers.length,
+		hints,
+	});
+
+	await input.services.storage.upload(markdownUri, markdown, 'text/markdown');
+	await input.services.storage.upload(metadataUri, JSON.stringify(storyMetadata, null, 2), 'application/json');
+	await createStory(input.pool, {
+		id: storyId,
+		sourceId: input.sourceId,
+		title,
+		language: input.language,
+		category: 'document',
+		gcsMarkdownUri: markdownUri,
+		gcsMetadataUri: metadataUri,
+		extractionConfidence: 1.0,
+		metadata: {
+			source_type: 'spreadsheet',
+			tabular_format: input.tabularFormat,
+			sheet_name: input.sheet.name,
+			row_start: input.rowStart,
+			row_end: input.rowEnd,
+			row_count: rows.length,
+			column_count: input.sheet.headers.length,
+			entity_hints: hints,
+			original_storage_path: input.storagePath,
+		},
+	});
+}
+
+async function extractSpreadsheetSource(input: {
+	sourceId: string;
+	filename: string;
+	storagePath: string;
+	formatMetadata: Record<string, unknown>;
+	config: MulderConfig;
+	services: Services;
+	pool: pg.Pool;
+	stepConfigHash: string;
+	logger: Logger;
+}): Promise<ExtractionData> {
+	let buffer: Buffer;
+	try {
+		buffer = await input.services.storage.download(input.storagePath);
+	} catch (cause: unknown) {
+		throw new ExtractError(
+			`Failed to download spreadsheet source original for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_STORAGE_FAILED,
+			{ cause, context: { sourceId: input.sourceId, storagePath: input.storagePath } },
+		);
+	}
+
+	const mediaType = typeof input.formatMetadata.media_type === 'string' ? input.formatMetadata.media_type : undefined;
+	if (!isSupportedSpreadsheetMediaType(mediaType)) {
+		throw new ExtractError(
+			`Spreadsheet source has unsupported media type for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_SPREADSHEET_FAILED,
+			{ context: { sourceId: input.sourceId, mediaType } },
+		);
+	}
+
+	let extractionResult: SpreadsheetExtractionResult;
+	try {
+		extractionResult = await input.services.spreadsheets.extractSpreadsheet(
+			buffer,
+			input.sourceId,
+			mediaType === 'text/csv' ? 'csv' : 'xlsx',
+		);
+	} catch (cause: unknown) {
+		throw new ExtractError(
+			`Spreadsheet extraction failed for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_SPREADSHEET_FAILED,
+			{ cause, context: { sourceId: input.sourceId, storagePath: input.storagePath } },
+		);
+	}
+
+	const language = input.config.project.supported_locales[0] ?? 'en';
+	let storyCount = 0;
+	try {
+		for (const sheet of extractionResult.sheets) {
+			for (const group of sheet.rowGroups) {
+				await writeSpreadsheetStory({
+					sourceId: input.sourceId,
+					filename: input.filename,
+					sheet,
+					tabularFormat: extractionResult.tabularFormat,
+					rowStart: group.rowStart,
+					rowEnd: group.rowEnd,
+					language,
+					services: input.services,
+					pool: input.pool,
+					storagePath: input.storagePath,
+				});
+				storyCount++;
+			}
+		}
+	} catch (cause: unknown) {
+		throw new ExtractError(
+			`Failed to write spreadsheet story artifacts for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_STORAGE_FAILED,
+			{ cause, context: { sourceId: input.sourceId } },
+		);
+	}
+
+	await updateSource(input.pool, input.sourceId, {
+		formatMetadata: buildSpreadsheetFormatMetadata({
+			buffer,
+			filename: input.filename,
+			extractionResult,
+			mediaType,
+		}),
+		metadata: buildSpreadsheetFormatMetadata({
+			buffer,
+			filename: input.filename,
+			extractionResult,
+			mediaType,
+		}),
+		status: 'extracted',
+	});
+	await upsertSourceStep(input.pool, {
+		sourceId: input.sourceId,
+		stepName: STEP_NAME,
+		status: 'completed',
+		configHash: input.stepConfigHash,
+	});
+
+	input.logger.debug({ storyCount, sheetCount: extractionResult.sheets.length }, 'Spreadsheet source extracted');
+
+	return {
+		sourceId: input.sourceId,
+		layoutUri: null,
+		pageImageUris: [],
+		pageCount: 0,
+		primaryMethod: 'spreadsheet',
+		pages: [],
+		visionFallbackCount: 0,
+		visionFallbackCapped: false,
+	};
+}
+
+// ────────────────────────────────────────────────────────────
 // Document AI parsing helpers
 // ────────────────────────────────────────────────────────────
 
@@ -883,7 +1297,10 @@ export async function execute(
 	let extractionData: ExtractionData;
 
 	// ── Path C: Fallback only ────────────────────────────
-	if ((source.sourceType === 'text' || source.sourceType === 'docx') && input.fallbackOnly) {
+	if (
+		(source.sourceType === 'text' || source.sourceType === 'docx' || source.sourceType === 'spreadsheet') &&
+		input.fallbackOnly
+	) {
 		throw new ExtractError(
 			`Source type "${source.sourceType}" does not support vision fallback`,
 			EXTRACT_ERROR_CODES.EXTRACT_INVALID_STATUS,
@@ -908,6 +1325,18 @@ export async function execute(
 			sourceId: input.sourceId,
 			filename: source.filename,
 			storagePath: source.storagePath,
+			config,
+			services,
+			pool,
+			stepConfigHash,
+			logger: log,
+		});
+	} else if (!input.fallbackOnly && source.sourceType === 'spreadsheet') {
+		extractionData = await extractSpreadsheetSource({
+			sourceId: input.sourceId,
+			filename: source.filename,
+			storagePath: source.storagePath,
+			formatMetadata: source.formatMetadata,
 			config,
 			services,
 			pool,

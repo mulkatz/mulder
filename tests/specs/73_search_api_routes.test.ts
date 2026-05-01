@@ -104,6 +104,16 @@ function buildMockServices(): Services {
 				messages: [],
 			}),
 		},
+		spreadsheets: {
+			extractSpreadsheet: async () => ({
+				tabularFormat: 'csv',
+				parserEngine: 'mulder-csv',
+				delimiter: ',',
+				sheets: [],
+				sheetSummaries: [],
+				warnings: [],
+			}),
+		},
 		llm,
 		embedding,
 		firestore: {

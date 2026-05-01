@@ -40,6 +40,7 @@ import type {
 	StructuredGenerateOptions,
 	TextGenerateOptions,
 } from './services.js';
+import { createSpreadsheetExtractorService } from './spreadsheet-extractor.js';
 
 // ────────────────────────────────────────────────────────────
 // Helpers
@@ -498,6 +499,7 @@ export function createGcpServices(config: MulderConfig, logger: Logger): Service
 		storage: new GcpStorageService(storageClient, bucket, logger),
 		documentAi: new GcpDocumentAiService(documentAiClient, processorName, logger),
 		officeDocuments: createOfficeDocumentExtractorService(logger),
+		spreadsheets: createSpreadsheetExtractorService(),
 		llm: new GcpLlmService(vertexClient, logger),
 		embedding: new GcpEmbeddingService(vertexClient, embeddingModel, embeddingDimensions, logger),
 		firestore: new GcpFirestoreService(firestoreClient, logger),

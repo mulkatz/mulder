@@ -29,7 +29,7 @@ export interface ExtractInput {
 export type ExtractionMethod = 'native' | 'document_ai' | 'vision_fallback';
 
 /** The source-level extraction path used for a completed extract step. */
-export type PrimaryExtractionMethod = 'native' | 'document_ai' | 'text' | 'docx';
+export type PrimaryExtractionMethod = 'native' | 'document_ai' | 'text' | 'docx' | 'spreadsheet';
 
 /** Per-page extraction details. */
 export interface PageExtraction {
@@ -101,7 +101,7 @@ export interface LayoutPage {
 export interface LayoutDocument {
 	sourceId: string;
 	pageCount: number;
-	primaryMethod: Exclude<PrimaryExtractionMethod, 'text' | 'docx'>;
+	primaryMethod: Exclude<PrimaryExtractionMethod, 'text' | 'docx' | 'spreadsheet'>;
 	extractedAt: string;
 	pages: LayoutPage[];
 	metadata: {
