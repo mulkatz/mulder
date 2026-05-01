@@ -83,14 +83,14 @@ try {
 
 	const encodedSql = process.argv[3] ?? '';
 	const sql = Buffer.from(encodedSql, 'base64').toString('utf8');
-	const result = normalizeResult(await client.query(sql));
+	const result = normalizeResult(await client.query({ text: sql, rowMode: 'array' }));
 
 	if (!result || !Array.isArray(result.rows) || result.rows.length === 0) {
 		process.stdout.write('');
 		process.exit(0);
 	}
 
-	const rows = result.rows.map((row) => Object.values(row).map(formatField).join('|')).join('\n');
+	const rows = result.rows.map((row) => row.map(formatField).join('|')).join('\n');
 	process.stdout.write(rows);
 } catch (error) {
 	const message = error instanceof Error ? error.message : String(error);
