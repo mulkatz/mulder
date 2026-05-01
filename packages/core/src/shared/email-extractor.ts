@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { createRequire } from 'node:module';
 import type { AttachmentData, FieldsData } from '@kenjiuno/msgreader';
+import * as MsgReaderModule from '@kenjiuno/msgreader/lib/MsgReader.js';
 import type { AddressObject } from 'mailparser';
 import { simpleParser } from 'mailparser';
 import { MulderError } from './errors.js';
@@ -17,11 +17,8 @@ type MsgReaderInstance = {
 	getFileData(): FieldsData;
 	getAttachment(attach: number | FieldsData): AttachmentData;
 };
-type MsgReaderConstructor = new (arrayBuffer: ArrayBuffer | DataView) => MsgReaderInstance;
 
-const require = createRequire(import.meta.url);
-const msgReaderModule = require('@kenjiuno/msgreader') as { default?: MsgReaderConstructor };
-const MsgReader = msgReaderModule.default ?? (msgReaderModule as unknown as MsgReaderConstructor);
+const MsgReader = MsgReaderModule.default.default;
 
 function cleanString(value: string | null | undefined): string | null {
 	const normalized = value?.replace(/\s+/g, ' ').trim();
