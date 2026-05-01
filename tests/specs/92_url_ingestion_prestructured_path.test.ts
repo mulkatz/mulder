@@ -24,6 +24,7 @@ let pgAvailable = false;
 let rawSnapshot: StorageSnapshot | null = null;
 let extractedSnapshot: StorageSnapshot | null = null;
 let segmentsSnapshot: StorageSnapshot | null = null;
+let blockedPageRequests = 0;
 
 function articleHtml(body: string): string {
 	return `<!doctype html>
@@ -180,6 +181,7 @@ beforeAll(async () => {
 			return;
 		}
 		if (url === '/blocked') {
+			blockedPageRequests++;
 			response.writeHead(200, { 'content-type': 'text/html' });
 			response.end(articleHtml('Robots should prevent this page from being fetched.'));
 			return;
@@ -227,6 +229,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
 	mutableArticleBody = 'Original immutable article paragraph for Spec 92 URL extraction.';
+	blockedPageRequests = 0;
 	if (!pgAvailable) return;
 	cleanState();
 	resetStorage();
@@ -259,6 +262,17 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 			const pipelineDryRun = await runCli(['pipeline', 'run', `${baseUrl}/article`, '--dry-run']);
 			expect(pipelineDryRun.exitCode, `${pipelineDryRun.stdout}\n${pipelineDryRun.stderr}`).toBe(0);
 			expect(`${pipelineDryRun.stdout}\n${pipelineDryRun.stderr}`).toMatch(/Sources to process:\s*1/i);
+			expect(`${pipelineDryRun.stdout}\n${pipelineDryRun.stderr}`).toMatch(/\(url\)/i);
+			expect(`${pipelineDryRun.stdout}\n${pipelineDryRun.stderr}`).toMatch(/skipped\s+segment/i);
+			expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
+
+			const blockedBefore = blockedPageRequests;
+			const blockedPipelineDryRun = await runCli(['pipeline', 'run', `${baseUrl}/redirect-blocked`, '--dry-run']);
+			expect(blockedPipelineDryRun.exitCode).not.toBe(0);
+			expect(`${blockedPipelineDryRun.stdout}\n${blockedPipelineDryRun.stderr}`).toMatch(
+				/robots|URL fetch|validation/i,
+			);
+			expect(blockedPageRequests).toBe(blockedBefore);
 			expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
 		}
 
@@ -304,10 +318,14 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 		if (!pgAvailable) return;
 
 		for (const path of ['/blocked', '/redirect-blocked', '/plain', '/oversized']) {
+			const blockedBefore = blockedPageRequests;
 			const result = await runCli(['ingest', `${baseUrl}${path}`]);
 			expect(result.exitCode, `${path}\n${result.stdout}\n${result.stderr}`).not.toBe(0);
 			expect(`${result.stdout}\n${result.stderr}`).toMatch(/URL|robots|content type|size|HTML/i);
 			expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
+			if (path === '/blocked' || path === '/redirect-blocked') {
+				expect(blockedPageRequests).toBe(blockedBefore);
+			}
 		}
 	});
 

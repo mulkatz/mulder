@@ -346,16 +346,13 @@ class LocalUrlFetcherService implements UrlFetcherService {
 			currentUrl = new URL(location, currentUrl);
 			currentUrl.hash = '';
 			await assertPublicHttpTarget(currentUrl);
-			redirectCount++;
-		}
-
-		if (redirectCount > 0) {
 			robots = await fetchRobots(currentUrl, { timeoutMs, maxBytes: options.maxBytes, redirectLimit });
 			if (!robots.allowed) {
 				throw new MulderError('URL fetch disallowed by robots.txt', 'URL_ROBOTS_DISALLOWED', {
 					context: { url: currentUrl.toString(), robotsUrl: robots.robotsUrl, matchedRule: robots.matchedRule },
 				});
 			}
+			redirectCount++;
 		}
 
 		if (!response.ok) {
