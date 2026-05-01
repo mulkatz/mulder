@@ -1,6 +1,11 @@
 import { extname } from 'node:path';
 import { TextDecoder } from 'node:util';
-import type { SourceFormatMetadata, SourceType, SpreadsheetExtractionResult } from '@mulder/core';
+import type {
+	EmailExtractionResult,
+	SourceFormatMetadata,
+	SourceType,
+	SpreadsheetExtractionResult,
+} from '@mulder/core';
 
 export type SourceDetectionConfidence = 'magic' | 'extension' | 'content';
 export type SupportedImageMediaType = 'image/png' | 'image/jpeg' | 'image/tiff';
@@ -9,7 +14,19 @@ export type SupportedDocxMediaType = 'application/vnd.openxmlformats-officedocum
 export type SupportedSpreadsheetMediaType =
 	| 'text/csv'
 	| 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-export type SourceStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff' | 'txt' | 'md' | 'docx' | 'csv' | 'xlsx';
+export type SupportedEmailMediaType = 'message/rfc822' | 'application/vnd.ms-outlook';
+export type SourceStorageExtension =
+	| 'pdf'
+	| 'png'
+	| 'jpg'
+	| 'tiff'
+	| 'txt'
+	| 'md'
+	| 'docx'
+	| 'csv'
+	| 'xlsx'
+	| 'eml'
+	| 'msg';
 
 export interface SourceDetectionResult {
 	sourceType: SourceType;
@@ -28,6 +45,7 @@ const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
 const TIFF_LITTLE_ENDIAN_SIGNATURE = Buffer.from([0x49, 0x49, 0x2a, 0x00]);
 const TIFF_BIG_ENDIAN_SIGNATURE = Buffer.from([0x4d, 0x4d, 0x00, 0x2a]);
 const ZIP_LOCAL_FILE_HEADER_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+const OLE_COMPOUND_DOCUMENT_SIGNATURE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
 
 const PDF_MEDIA_TYPE = 'application/pdf';
 const PNG_MEDIA_TYPE: SupportedImageMediaType = 'image/png';
@@ -41,6 +59,8 @@ export const DOCX_MEDIA_TYPE: SupportedDocxMediaType =
 export const CSV_MEDIA_TYPE: SupportedSpreadsheetMediaType = 'text/csv';
 export const XLSX_MEDIA_TYPE: SupportedSpreadsheetMediaType =
 	'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+export const EML_MEDIA_TYPE: SupportedEmailMediaType = 'message/rfc822';
+export const MSG_MEDIA_TYPE: SupportedEmailMediaType = 'application/vnd.ms-outlook';
 
 const IMAGE_STORAGE_EXTENSIONS_BY_MEDIA_TYPE: Record<SupportedImageMediaType, SourceStorageExtension> = {
 	'image/png': 'png',
@@ -59,6 +79,11 @@ const SPREADSHEET_STORAGE_EXTENSIONS_BY_MEDIA_TYPE: Record<SupportedSpreadsheetM
 	'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
 };
 
+const EMAIL_STORAGE_EXTENSIONS_BY_MEDIA_TYPE: Record<SupportedEmailMediaType, SourceStorageExtension> = {
+	'message/rfc822': 'eml',
+	'application/vnd.ms-outlook': 'msg',
+};
+
 const SUPPORTED_INGEST_EXTENSIONS = new Set([
 	'.pdf',
 	'.png',
@@ -72,6 +97,8 @@ const SUPPORTED_INGEST_EXTENSIONS = new Set([
 	'.docx',
 	'.csv',
 	'.xlsx',
+	'.eml',
+	'.msg',
 ]);
 
 function hasPrefix(buffer: Buffer, signature: Buffer): boolean {
@@ -106,6 +133,11 @@ export function isSupportedSpreadsheetFilename(input: string): boolean {
 	return extension === '.csv' || extension === '.xlsx';
 }
 
+export function isSupportedEmailFilename(input: string): boolean {
+	const extension = getExtension(input);
+	return extension === '.eml' || extension === '.msg';
+}
+
 export function getOriginalExtension(input: string): string {
 	return getExtension(input).replace(/^\./, '');
 }
@@ -130,6 +162,10 @@ export function isSupportedSpreadsheetMediaType(
 	return mediaType === CSV_MEDIA_TYPE || mediaType === XLSX_MEDIA_TYPE;
 }
 
+export function isSupportedEmailMediaType(mediaType: string | undefined): mediaType is SupportedEmailMediaType {
+	return mediaType === EML_MEDIA_TYPE || mediaType === MSG_MEDIA_TYPE;
+}
+
 export function getCanonicalStorageExtensionForMediaType(mediaType: string | undefined): SourceStorageExtension | null {
 	if (mediaType === PDF_MEDIA_TYPE) {
 		return 'pdf';
@@ -145,6 +181,9 @@ export function getCanonicalStorageExtensionForMediaType(mediaType: string | und
 	}
 	if (isSupportedSpreadsheetMediaType(mediaType)) {
 		return SPREADSHEET_STORAGE_EXTENSIONS_BY_MEDIA_TYPE[mediaType];
+	}
+	if (isSupportedEmailMediaType(mediaType)) {
+		return EMAIL_STORAGE_EXTENSIONS_BY_MEDIA_TYPE[mediaType];
 	}
 	return null;
 }
@@ -346,6 +385,45 @@ export function buildSpreadsheetFormatMetadata(
 	return metadata;
 }
 
+export function buildEmailFormatMetadata(
+	buffer: Buffer,
+	filename: string,
+	mediaType: SupportedEmailMediaType,
+	extractionResult?: EmailExtractionResult,
+): SourceFormatMetadata {
+	const emailFormat = mediaType === EML_MEDIA_TYPE ? 'eml' : 'msg';
+	const headers = extractionResult?.headers;
+	return {
+		media_type: mediaType,
+		original_extension: getOriginalExtension(filename),
+		byte_size: buffer.length,
+		email_format: emailFormat,
+		container: extractionResult?.container ?? (emailFormat === 'eml' ? 'rfc822_mime' : 'outlook_msg'),
+		parser_engine: extractionResult?.parserEngine ?? (emailFormat === 'eml' ? 'mailparser' : 'msgreader'),
+		message_id: headers?.messageId ?? null,
+		thread_id: headers?.threadId ?? null,
+		subject: headers?.subject ?? null,
+		from: headers?.from.map((address) => address.display) ?? [],
+		to: headers?.to.map((address) => address.display) ?? [],
+		cc: headers?.cc.map((address) => address.display) ?? [],
+		bcc: headers?.bcc.map((address) => address.display) ?? [],
+		sent_at: headers?.sentAt ?? null,
+		reply_to: headers?.replyTo.map((address) => address.display) ?? [],
+		in_reply_to: headers?.inReplyTo ?? null,
+		references: headers?.references ?? [],
+		attachment_count: extractionResult?.attachments.length ?? 0,
+		attachments:
+			extractionResult?.attachments.map((attachment) => ({
+				filename: attachment.filename,
+				media_type: attachment.mediaType,
+				size: attachment.sizeBytes,
+				disposition: attachment.disposition,
+				content_id: attachment.contentId,
+				child_source_id: attachment.childSourceId ?? null,
+			})) ?? [],
+	};
+}
+
 function countTextLines(text: string): number {
 	if (text.length === 0) {
 		return 0;
@@ -394,7 +472,19 @@ function hasRfc822HeaderShape(buffer: Buffer): boolean {
 	}
 
 	const sample = getTextSample(buffer);
-	return /^From:\s.+$/im.test(sample) && /^Date:\s.+$/im.test(sample) && /^Subject:\s.+$/im.test(sample);
+	const headerEnd = sample.search(/\r?\n\r?\n/);
+	if (headerEnd <= 0) {
+		return false;
+	}
+	const headers = sample.slice(0, headerEnd);
+	if (!/^[!-9;-~]+:\s*.+$/m.test(headers)) {
+		return false;
+	}
+	const hasFrom = /^From:\s.+$/im.test(headers);
+	const hasDate = /^Date:\s.+$/im.test(headers);
+	const hasSubject = /^Subject:\s.+$/im.test(headers);
+	const hasMessageId = /^Message-ID:\s*<[^<>]+>$/im.test(headers);
+	return hasFrom && (hasDate || hasSubject || hasMessageId);
 }
 
 function findEndOfCentralDirectoryOffset(buffer: Buffer): number {
@@ -503,6 +593,10 @@ export function detectSourceType(
 			}
 		}
 
+		if (extension === '.msg' && hasPrefix(buffer, OLE_COMPOUND_DOCUMENT_SIGNATURE)) {
+			return { sourceType: 'email', confidence: 'magic', mediaType: MSG_MEDIA_TYPE };
+		}
+
 		if (extension === '.csv' && hasDelimitedTextShape(buffer)) {
 			return { sourceType: 'spreadsheet', confidence: 'content', mediaType: 'text/csv' };
 		}
@@ -511,12 +605,12 @@ export function detectSourceType(
 			return null;
 		}
 
-		if (hasRfc822HeaderShape(buffer)) {
-			return { sourceType: 'email', confidence: 'content', mediaType: 'message/rfc822' };
+		if (extension === '.eml' && hasRfc822HeaderShape(buffer)) {
+			return { sourceType: 'email', confidence: 'content', mediaType: EML_MEDIA_TYPE };
 		}
 
-		if ((extension === '.eml' || extension === '.msg') && isReadableText(buffer)) {
-			return { sourceType: 'email', confidence: 'extension', mediaType: 'message/rfc822' };
+		if (extension === '.eml' || extension === '.msg') {
+			return null;
 		}
 
 		if ((extension === '.txt' || extension === '.md' || extension === '.markdown') && isReadableText(buffer)) {

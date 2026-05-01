@@ -27,6 +27,7 @@ import {
 } from '@mulder/core';
 import {
 	buildDocxFormatMetadata,
+	buildEmailFormatMetadata,
 	buildImageFormatMetadata,
 	buildSpreadsheetFormatMetadata,
 	buildTextFormatMetadata,
@@ -39,6 +40,7 @@ import {
 	executePipelineRun,
 	executeSegment,
 	getStorageExtensionForDetection,
+	isSupportedEmailMediaType,
 	isSupportedImageMediaType,
 	isSupportedSpreadsheetMediaType,
 	isSupportedTextFilename,
@@ -102,7 +104,7 @@ function buildPdfMetadataJson(pdfMeta: Awaited<ReturnType<typeof extractPdfMetad
 	return pdfMetadataJson;
 }
 
-type FinalizableSourceType = Extract<SourceType, 'pdf' | 'image' | 'text' | 'docx' | 'spreadsheet'>;
+type FinalizableSourceType = Extract<SourceType, 'pdf' | 'image' | 'text' | 'docx' | 'spreadsheet' | 'email'>;
 
 interface FinalizedUploadMetadata {
 	sourceType: FinalizableSourceType;
@@ -120,7 +122,8 @@ function isFinalizableSourceType(sourceType: SourceType): sourceType is Finaliza
 		sourceType === 'image' ||
 		sourceType === 'text' ||
 		sourceType === 'docx' ||
-		sourceType === 'spreadsheet'
+		sourceType === 'spreadsheet' ||
+		sourceType === 'email'
 	);
 }
 
@@ -230,7 +233,7 @@ async function finalizeUploadedDocument(
 	}
 	if (!isFinalizableSourceType(detection.sourceType)) {
 		throw new IngestError(
-			`Unsupported source type "${detection.sourceType}" for ${payload.filename}; only pdf, image, text, docx, and spreadsheet are supported in this step`,
+			`Unsupported source type "${detection.sourceType}" for ${payload.filename}; only pdf, image, text, docx, spreadsheet, and email are supported in this step`,
 			INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
 			{
 				context: {
@@ -372,7 +375,7 @@ async function finalizeUploadedDocument(
 			mediaType: detection.mediaType,
 			storageExtension: canonicalStorageExtension,
 		};
-	} else {
+	} else if (detection.sourceType === 'spreadsheet') {
 		if (!isSupportedSpreadsheetMediaType(detection.mediaType)) {
 			throw new IngestError(
 				`Unsupported spreadsheet media type for ${payload.filename}`,
@@ -404,6 +407,44 @@ async function finalizeUploadedDocument(
 		finalizedMetadata = {
 			sourceType: 'spreadsheet',
 			formatMetadata: buildSpreadsheetFormatMetadata(buffer, payload.filename, detection.mediaType, extractionResult),
+			pageCount: 0,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+			mediaType: detection.mediaType,
+			storageExtension: canonicalStorageExtension,
+		};
+	} else {
+		if (!isSupportedEmailMediaType(detection.mediaType)) {
+			throw new IngestError(
+				`Unsupported email media type for ${payload.filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { storagePath: payload.storagePath, sourceId: payload.sourceId, mediaType: detection.mediaType },
+				},
+			);
+		}
+
+		let extractionResult: Awaited<ReturnType<Services['emails']['extractEmail']>>;
+		try {
+			extractionResult = await services.emails.extractEmail(
+				buffer,
+				payload.sourceId,
+				detection.mediaType === 'message/rfc822' ? 'eml' : 'msg',
+			);
+		} catch (cause: unknown) {
+			throw new IngestError(
+				`Invalid email upload: ${payload.filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					cause,
+					context: { storagePath: payload.storagePath, sourceId: payload.sourceId, mediaType: detection.mediaType },
+				},
+			);
+		}
+
+		finalizedMetadata = {
+			sourceType: 'email',
+			formatMetadata: buildEmailFormatMetadata(buffer, payload.filename, detection.mediaType, extractionResult),
 			pageCount: 0,
 			hasNativeText: false,
 			nativeTextRatio: 0,

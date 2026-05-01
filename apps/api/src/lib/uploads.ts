@@ -93,7 +93,7 @@ function resolveUploadInput(input: { filename: string; contentType: string }): {
 
 	if (!extension) {
 		throw new MulderError(
-			'Filename must end with .pdf, .png, .jpg, .jpeg, .tif, .tiff, .txt, .md, .markdown, .docx, .csv, or .xlsx',
+			'Filename must end with .pdf, .png, .jpg, .jpeg, .tif, .tiff, .txt, .md, .markdown, .docx, .csv, .xlsx, .eml, or .msg',
 			'VALIDATION_ERROR',
 			{
 				context: { filename: input.filename },
@@ -103,7 +103,7 @@ function resolveUploadInput(input: { filename: string; contentType: string }): {
 
 	if (!contentTypeExtension) {
 		throw new MulderError(
-			'Only PDF, PNG, JPEG, TIFF, TXT, Markdown, DOCX, CSV, and XLSX uploads are supported',
+			'Only PDF, PNG, JPEG, TIFF, TXT, Markdown, DOCX, CSV, XLSX, EML, and MSG uploads are supported',
 			'VALIDATION_ERROR',
 			{
 				context: { content_type: input.contentType },

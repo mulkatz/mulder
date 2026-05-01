@@ -43,6 +43,7 @@ interface SourceRow {
 	filename: string;
 	storage_path: string;
 	file_hash: string;
+	parent_source_id: string | null;
 	source_type: SourceType | null;
 	format_metadata: SourceFormatMetadata | null;
 	page_count: number | null;
@@ -79,6 +80,7 @@ function mapSourceRow(row: SourceRow): Source {
 		filename: row.filename,
 		storagePath: row.storage_path,
 		fileHash: row.file_hash,
+		parentSourceId: row.parent_source_id,
 		sourceType: row.source_type ?? 'pdf',
 		formatMetadata: row.format_metadata ?? {},
 		pageCount: row.page_count,
@@ -175,6 +177,7 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				'filename',
 				'storage_path',
 				'file_hash',
+				'parent_source_id',
 				'source_type',
 				'format_metadata',
 				'page_count',
@@ -187,6 +190,7 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				'filename',
 				'storage_path',
 				'file_hash',
+				'parent_source_id',
 				'source_type',
 				'format_metadata',
 				'page_count',
@@ -201,6 +205,7 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				input.filename,
 				input.storagePath,
 				input.fileHash,
+				input.parentSourceId ?? null,
 				input.sourceType ?? 'pdf',
 				JSON.stringify(input.formatMetadata ?? {}),
 				input.pageCount ?? null,
@@ -213,6 +218,7 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				input.filename,
 				input.storagePath,
 				input.fileHash,
+				input.parentSourceId ?? null,
 				input.sourceType ?? 'pdf',
 				JSON.stringify(input.formatMetadata ?? {}),
 				input.pageCount ?? null,
@@ -393,6 +399,7 @@ export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourc
 	const fieldMap: Array<[keyof UpdateSourceInput, string]> = [
 		['filename', 'filename'],
 		['storagePath', 'storage_path'],
+		['parentSourceId', 'parent_source_id'],
 		['sourceType', 'source_type'],
 		['pageCount', 'page_count'],
 		['hasNativeText', 'has_native_text'],
@@ -591,6 +598,7 @@ export async function findSourcesWithSteps(pool: pg.Pool, filter?: SourceWithSte
       s.filename,
       s.storage_path,
       s.file_hash,
+      s.parent_source_id,
       s.source_type,
       s.format_metadata,
       s.page_count,

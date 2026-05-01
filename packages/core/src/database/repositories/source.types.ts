@@ -34,6 +34,7 @@ export interface Source {
 	filename: string;
 	storagePath: string;
 	fileHash: string;
+	parentSourceId: string | null;
 	sourceType: SourceType;
 	formatMetadata: SourceFormatMetadata;
 	pageCount: number | null;
@@ -53,6 +54,7 @@ export interface CreateSourceInput {
 	filename: string;
 	storagePath: string;
 	fileHash: string;
+	parentSourceId?: string | null;
 	sourceType?: SourceType;
 	formatMetadata?: SourceFormatMetadata;
 	pageCount?: number;
@@ -66,6 +68,7 @@ export interface CreateSourceInput {
 export interface UpdateSourceInput {
 	filename?: string;
 	storagePath?: string;
+	parentSourceId?: string | null;
 	sourceType?: SourceType;
 	formatMetadata?: SourceFormatMetadata;
 	pageCount?: number;

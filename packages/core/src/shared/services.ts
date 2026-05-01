@@ -159,6 +159,61 @@ export interface SpreadsheetExtractorService {
 }
 
 // ────────────────────────────────────────────────────────────
+// Email Extractor Service
+// ────────────────────────────────────────────────────────────
+
+export type EmailFormat = 'eml' | 'msg';
+
+export interface EmailAddress {
+	name: string | null;
+	address: string;
+	display: string;
+}
+
+export interface EmailAttachmentSummary {
+	filename: string | null;
+	mediaType: string | null;
+	sizeBytes: number;
+	disposition: string | null;
+	contentId: string | null;
+	childSourceId?: string;
+}
+
+export interface EmailAttachment extends EmailAttachmentSummary {
+	content?: Buffer;
+}
+
+export interface EmailHeaders {
+	messageId: string | null;
+	threadId: string;
+	subject: string | null;
+	from: EmailAddress[];
+	to: EmailAddress[];
+	cc: EmailAddress[];
+	bcc: EmailAddress[];
+	replyTo: EmailAddress[];
+	sentAt: string | null;
+	inReplyTo: string | null;
+	references: string[];
+}
+
+export interface EmailExtractionResult {
+	emailFormat: EmailFormat;
+	container: 'rfc822_mime' | 'outlook_msg';
+	parserEngine: 'mailparser' | 'msgreader';
+	headers: EmailHeaders;
+	bodyText: string;
+	bodyHtmlText: string | null;
+	attachments: EmailAttachment[];
+	warnings: string[];
+}
+
+export interface EmailExtractorService {
+	/** Parse EML/MSG bytes into normalized headers, body text, and attachment summaries. */
+	extractEmail(documentContent: Buffer, sourceId: string, format: EmailFormat): Promise<EmailExtractionResult>;
+}
+
+// ────────────────────────────────────────────────────────────
 // LLM Service
 // ────────────────────────────────────────────────────────────
 
@@ -286,6 +341,7 @@ export interface Services {
 	documentAi: DocumentAiService;
 	officeDocuments: OfficeDocumentExtractorService;
 	spreadsheets: SpreadsheetExtractorService;
+	emails: EmailExtractorService;
 	llm: LlmService;
 	embedding: EmbeddingService;
 	firestore: FirestoreService;
