@@ -423,7 +423,7 @@ describe('Spec 89 — DOCX Ingestion on the Pre-Structured Path', () => {
 		const sourceId = sourceIdForFilename(basename(briefDocx));
 		const row = db
 			.runSql(
-				`SELECT source_type::text, page_count, has_native_text, native_text_ratio, storage_path, format_metadata->>'media_type', format_metadata->>'original_extension', format_metadata->>'byte_size', format_metadata->>'office_format', format_metadata->>'container', format_metadata->>'extraction_engine' FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
+				`SELECT source_type::text, page_count, has_native_text, native_text_ratio, storage_path, format_metadata->>'media_type' AS media_type, format_metadata->>'original_extension' AS original_extension, format_metadata->>'byte_size' AS byte_size, format_metadata->>'office_format' AS office_format, format_metadata->>'container' AS container, format_metadata->>'extraction_engine' AS extraction_engine FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
 			)
 			.split('|');
 		expect(row).toEqual([
@@ -433,6 +433,7 @@ describe('Spec 89 — DOCX Ingestion on the Pre-Structured Path', () => {
 			'0',
 			`raw/${sourceId}/original.docx`,
 			DOCX_MEDIA_TYPE,
+			'docx',
 			String(readFileSync(briefDocx).byteLength),
 			'docx',
 			'office_open_xml',
@@ -585,10 +586,21 @@ describe('Spec 89 — DOCX Ingestion on the Pre-Structured Path', () => {
 
 		const processed = await processOneJob();
 		expect(processed.state).toBe('completed');
-		const sourceRow = db.runSql(
-			`SELECT source_type::text, storage_path, format_metadata->>'media_type' FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
-		);
-		expect(sourceRow).toBe(`docx|raw/${sourceId}/original.docx|${DOCX_MEDIA_TYPE}`);
+		const sourceRow = db
+			.runSql(
+				`SELECT source_type::text, storage_path, format_metadata->>'media_type' AS media_type, format_metadata->>'original_extension' AS original_extension, format_metadata->>'byte_size' AS byte_size, format_metadata->>'office_format' AS office_format, format_metadata->>'container' AS container, format_metadata->>'extraction_engine' AS extraction_engine FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
+			)
+			.split('|');
+		expect(sourceRow).toEqual([
+			'docx',
+			`raw/${sourceId}/original.docx`,
+			DOCX_MEDIA_TYPE,
+			'docx',
+			String(content.byteLength),
+			'docx',
+			'office_open_xml',
+			'mammoth',
+		]);
 		expect(
 			db.runSql(
 				`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
