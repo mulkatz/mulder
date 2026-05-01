@@ -840,9 +840,10 @@ export async function execute(
 
 		// 6. Finalisation (Phase 3).
 		let runStatus: 'success' | 'partial' | 'failed';
+		const hasIngestErrors = ingestErrors.length > 0;
 		if (sources.length === 0) {
-			runStatus = 'success';
-		} else if (failedCount === 0) {
+			runStatus = hasIngestErrors ? 'failed' : 'success';
+		} else if (failedCount === 0 && !hasIngestErrors) {
 			runStatus = 'success';
 		} else if (completedCount === 0) {
 			runStatus = 'failed';

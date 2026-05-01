@@ -330,6 +330,18 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 		}
 	});
 
+	it('QA-05/06: pipeline run reports failed status for rejected URL ingest with no sources', async () => {
+		if (!pgAvailable) return;
+
+		const result = await runCli(['pipeline', 'run', `${baseUrl}/plain`, '--up-to', 'extract']);
+		const combined = `${result.stdout}\n${result.stderr}`;
+		expect(result.exitCode, combined).not.toBe(0);
+		expect(combined).toMatch(/Pipeline failed/i);
+		expect(combined).not.toMatch(/Pipeline complete/i);
+		expect(db.runSql('SELECT status FROM pipeline_runs ORDER BY created_at DESC LIMIT 1;')).toBe('failed');
+		expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
+	});
+
 	it('QA-04: URL fetch rejects IPv4-mapped IPv6 DNS answers before fetch', async () => {
 		for (const mappedAddress of ['::ffff:127.0.0.1', '::ffff:10.0.0.1']) {
 			const fetchCalls: string[] = [];
