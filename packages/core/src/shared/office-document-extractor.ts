@@ -173,6 +173,7 @@ class MammothOfficeDocumentExtractorService implements OfficeDocumentExtractorSe
 	constructor(private readonly logger: Logger) {
 		// Mammoth ships convertToMarkdown at runtime, but its declaration file
 		// omits it. Keep the bridge localized to this adapter.
+		// mulder-allow-type-assertion: Mammoth runtime exposes convertToMarkdown, but its declarations omit it.
 		this.mammothMarkdown = mammoth as unknown as MammothMarkdownModule;
 	}
 
