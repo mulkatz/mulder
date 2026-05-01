@@ -3,12 +3,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { Source } from '@mulder/core';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as db from '../lib/db.js';
 import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CORE_DIR = resolve(ROOT, 'packages/core');
+const CORE_DIST = resolve(CORE_DIR, 'dist/index.js');
 const PIPELINE_DIR = resolve(ROOT, 'packages/pipeline');
 const CLI_DIR = resolve(ROOT, 'apps/cli');
 const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
@@ -455,6 +457,28 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 		expect(credentialedCostOnlyOutput).not.toMatch(/Path not found|Cost estimate/i);
 		expectCredentialSecretsNotLeaked(credentialedCostOnlyOutput);
 
+		const credentialedHttpWithSpace = `https://${CREDENTIAL_USERNAME}:${CREDENTIAL_PASSWORD}@example.com/a b`;
+		const credentialedPipelineDryRun = await runCli(['pipeline', 'run', '--dry-run', credentialedHttpWithSpace], {
+			allowUnsafeUrls: false,
+		});
+		const credentialedPipelineOutput = `${credentialedPipelineDryRun.stdout}\n${credentialedPipelineDryRun.stderr}`;
+		expect(credentialedPipelineDryRun.exitCode, credentialedPipelineOutput).not.toBe(0);
+		expect(credentialedPipelineOutput).toMatch(/URL|unsupported/i);
+		expect(credentialedPipelineOutput).not.toMatch(/Path not found/i);
+		expectCredentialSecretsNotLeaked(credentialedPipelineOutput);
+
+		const credentialedCostWithSpace = await runCli(
+			['ingest', '--dry-run', '--cost-estimate', credentialedHttpWithSpace],
+			{
+				allowUnsafeUrls: false,
+			},
+		);
+		const credentialedCostWithSpaceOutput = `${credentialedCostWithSpace.stdout}\n${credentialedCostWithSpace.stderr}`;
+		expect(credentialedCostWithSpace.exitCode, credentialedCostWithSpaceOutput).not.toBe(0);
+		expect(credentialedCostWithSpaceOutput).toMatch(/URL|unsupported/i);
+		expect(credentialedCostWithSpaceOutput).not.toMatch(/Path not found|Cost estimate/i);
+		expectCredentialSecretsNotLeaked(credentialedCostWithSpaceOutput);
+
 		const malformed = `https://${CREDENTIAL_USERNAME}:${CREDENTIAL_PASSWORD}@`;
 		const malformedIngest = await runCli(['ingest', '--dry-run', malformed], { allowUnsafeUrls: false });
 		const malformedOutput = `${malformedIngest.stdout}\n${malformedIngest.stderr}`;
@@ -596,6 +620,62 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 		expect(unreadableExtract.exitCode).not.toBe(0);
 		expect(`${unreadableExtract.stdout}\n${unreadableExtract.stderr}`).toMatch(/URL extraction|readable|unreadable/i);
 		expect(db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = ${sqlLiteral(unreadableSourceId)};`)).toBe('0');
+	});
+
+	it('§6: URL extract-through-graph budget omits layout and segment charges', async () => {
+		const { estimateBudgetForSourceRun } = await import(pathToFileURL(CORE_DIST).href);
+		const source: Source = {
+			id: 'spec-92-url-budget-source',
+			filename: 'spec-92-url-budget.html',
+			storagePath: 'raw/spec-92-url-budget-source/original.html',
+			fileHash: 'spec-92-url-budget-hash',
+			parentSourceId: null,
+			sourceType: 'url',
+			formatMetadata: {
+				original_url: 'https://example.com/article',
+				normalized_url: 'https://example.com/article',
+				final_url: 'https://example.com/article',
+				snapshot_media_type: 'text/html',
+			},
+			pageCount: 0,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+			status: 'ingested',
+			reliabilityScore: null,
+			tags: [],
+			metadata: {},
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		};
+
+		const estimate = estimateBudgetForSourceRun({
+			source,
+			plannedSteps: ['extract', 'segment', 'enrich', 'embed', 'graph'],
+			budget: {
+				enabled: true,
+				monthly_limit_usd: 50,
+				extract_per_page_usd: 0.006,
+				segment_per_page_usd: 0.002,
+				enrich_per_source_usd: 0.015,
+				embed_per_source_usd: 0.004,
+				graph_per_source_usd: 0.001,
+			},
+			extraction: {
+				native_text_threshold: 0.9,
+				confidence_threshold: 0.85,
+				max_vision_pages: 20,
+				segmentation: { model: 'gemini-2.5-flash' },
+			},
+		});
+
+		expect(estimate.byStep).toEqual({
+			extract: 0,
+			segment: 0,
+			enrich: 0.015,
+			embed: 0.004,
+			graph: 0.001,
+		});
+		expect(estimate.totalUsd).toBeCloseTo(0.02, 5);
 	});
 
 	it('QA-11: pipeline run records segment skipped for URL sources after extract', async () => {

@@ -116,11 +116,11 @@ function getExtension(input: string): string {
 }
 
 function hasHttpUrlShape(input: string): boolean {
-	return /^https?:\/\/\S+$/i.test(input.trim());
+	return /^https?:\/\//i.test(input.trim());
 }
 
 export function isUrlLikeInput(input: string): boolean {
-	return /^[a-z][a-z0-9+.-]*:\/\/\S*$/i.test(input.trim());
+	return /^[a-z][a-z0-9+.-]*:\/\//i.test(input.trim());
 }
 
 export function isSupportedUrlInput(input: string): boolean {

@@ -1,5 +1,6 @@
 import type { ApiBudgetConfig, ExtractionConfig } from '../config/types.js';
 import type { Source, SourceStatus } from '../database/repositories/source.types.js';
+import { isLayoutSourceType } from './pipeline-step-plan.js';
 
 export const BUDGETABLE_PIPELINE_STEP_VALUES = ['extract', 'segment', 'enrich', 'embed', 'graph'] as const;
 
@@ -64,7 +65,7 @@ function emptyBreakdown(): Record<BudgetablePipelineStep, number> {
 }
 
 function sourceSkipsLayoutBudget(source: Source): boolean {
-	return source.sourceType === 'docx';
+	return !isLayoutSourceType(source.sourceType);
 }
 
 function shouldChargeExtract(source: Source, extraction: ExtractionConfig): boolean {
