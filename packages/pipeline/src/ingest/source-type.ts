@@ -119,14 +119,29 @@ function hasHttpUrlShape(input: string): boolean {
 	return /^https?:\/\/\S+$/i.test(input.trim());
 }
 
+export function isUrlLikeInput(input: string): boolean {
+	return /^[a-z][a-z0-9+.-]*:\/\/\S*$/i.test(input.trim());
+}
+
 export function isSupportedUrlInput(input: string): boolean {
 	return detectSourceType(null, input)?.sourceType === 'url';
+}
+
+export function sanitizeUrlInputForDisplay(input: string): string {
+	try {
+		const url = new URL(input.trim());
+		url.username = '';
+		url.password = '';
+		return url.toString();
+	} catch {
+		return 'URL input';
+	}
 }
 
 export function normalizeUrlInput(input: string): string | null {
 	try {
 		const url = new URL(input.trim());
-		if ((url.protocol !== 'http:' && url.protocol !== 'https:') || !url.hostname) {
+		if ((url.protocol !== 'http:' && url.protocol !== 'https:') || !url.hostname || url.username || url.password) {
 			return null;
 		}
 		url.hash = '';

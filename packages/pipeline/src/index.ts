@@ -137,11 +137,13 @@ export {
 	isSupportedTextFilename,
 	isSupportedTextMediaType,
 	isSupportedUrlInput,
+	isUrlLikeInput,
 	MSG_MEDIA_TYPE,
 	normalizeUrlInput,
 	readImageDimensions,
 	resolveIngestFiles,
 	resolvePdfFiles,
+	sanitizeUrlInputForDisplay,
 	URL_SNAPSHOT_MEDIA_TYPE,
 	XLSX_MEDIA_TYPE,
 } from './ingest/index.js';

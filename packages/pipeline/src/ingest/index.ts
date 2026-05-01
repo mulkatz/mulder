@@ -49,8 +49,9 @@ import {
 	isSupportedSpreadsheetMediaType,
 	isSupportedTextFilename,
 	isSupportedTextMediaType,
-	isSupportedUrlInput,
+	isUrlLikeInput,
 	normalizeUrlInput,
+	sanitizeUrlInputForDisplay,
 	URL_SNAPSHOT_MEDIA_TYPE,
 } from './source-type.js';
 import type { IngestFileResult, IngestInput, IngestResult } from './types.js';
@@ -96,9 +97,11 @@ export {
 	isSupportedTextFilename,
 	isSupportedTextMediaType,
 	isSupportedUrlInput,
+	isUrlLikeInput,
 	MSG_MEDIA_TYPE,
 	normalizeUrlInput,
 	readImageDimensions,
+	sanitizeUrlInputForDisplay,
 	URL_SNAPSHOT_MEDIA_TYPE,
 	XLSX_MEDIA_TYPE,
 } from './source-type.js';
@@ -117,6 +120,10 @@ const STEP_NAME = 'ingest';
  * an explicit unsupported-format error.
  */
 export async function resolveIngestFiles(inputPath: string): Promise<string[]> {
+	if (isUrlLikeInput(inputPath)) {
+		return [inputPath.trim()];
+	}
+
 	const resolved = resolve(inputPath);
 	const stats = await stat(resolved).catch(() => null);
 
@@ -241,20 +248,9 @@ function filenameForUrl(fetchResult: Awaited<ReturnType<Services['urls']['fetchU
 	return `${slugifyFilenamePart(basis)}.html`;
 }
 
-function urlForErrorDisplay(input: string): string {
-	try {
-		const url = new URL(input.trim());
-		url.username = '';
-		url.password = '';
-		return url.toString();
-	} catch {
-		return 'URL input';
-	}
-}
-
 async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<IngestFileResult> {
 	const normalizedUrl = normalizeUrlInput(inputUrl);
-	const displayUrl = normalizedUrl ? urlForErrorDisplay(normalizedUrl) : urlForErrorDisplay(inputUrl);
+	const displayUrl = normalizedUrl ? sanitizeUrlInputForDisplay(normalizedUrl) : sanitizeUrlInputForDisplay(inputUrl);
 	if (!normalizedUrl) {
 		throw new IngestError(`Unsupported URL input: ${displayUrl}`, INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE, {
 			context: { input: displayUrl },
@@ -880,8 +876,8 @@ export async function execute(
 ): Promise<IngestResult> {
 	const log = createChildLogger(logger, { step: STEP_NAME });
 	const startTime = performance.now();
-	const urlInput = isSupportedUrlInput(input.path);
-	const inputPathForDisplay = urlInput ? urlForErrorDisplay(input.path) : input.path;
+	const urlInput = isUrlLikeInput(input.path);
+	const inputPathForDisplay = urlInput ? sanitizeUrlInputForDisplay(input.path) : input.path;
 
 	log.info({ path: inputPathForDisplay, dryRun: input.dryRun ?? false }, 'Ingest step started');
 
@@ -927,7 +923,7 @@ export async function execute(
 				itemsSkipped++;
 			}
 		} catch (error: unknown) {
-			const fileForDisplay = urlInput ? urlForErrorDisplay(filePath) : filePath;
+			const fileForDisplay = urlInput ? sanitizeUrlInputForDisplay(filePath) : filePath;
 			const stepError: StepError = {
 				file: fileForDisplay,
 				code: error instanceof IngestError ? error.code : 'INGEST_UNKNOWN',

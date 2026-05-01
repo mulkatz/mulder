@@ -429,6 +429,45 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 		expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
 	});
 
+	it('QA-04: unsupported and malformed URL-shaped inputs fail as sanitized URL errors before filesystem resolution', async () => {
+		const unsupported = `ftp://${CREDENTIAL_USERNAME}:${CREDENTIAL_PASSWORD}@example.com/article`;
+		const unsupportedIngest = await runCli(['ingest', '--dry-run', unsupported], { allowUnsafeUrls: false });
+		const unsupportedIngestOutput = `${unsupportedIngest.stdout}\n${unsupportedIngest.stderr}`;
+		expect(unsupportedIngest.exitCode, unsupportedIngestOutput).not.toBe(0);
+		expect(unsupportedIngestOutput).toMatch(/URL|unsupported/i);
+		expect(unsupportedIngestOutput).not.toMatch(/Path not found/i);
+		expectCredentialSecretsNotLeaked(unsupportedIngestOutput);
+
+		const unsupportedPipeline = await runCli(['pipeline', 'run', '--dry-run', unsupported], { allowUnsafeUrls: false });
+		const unsupportedPipelineOutput = `${unsupportedPipeline.stdout}\n${unsupportedPipeline.stderr}`;
+		expect(unsupportedPipeline.exitCode, unsupportedPipelineOutput).not.toBe(0);
+		expect(unsupportedPipelineOutput).toMatch(/URL|unsupported/i);
+		expect(unsupportedPipelineOutput).not.toMatch(/Path not found/i);
+		expectCredentialSecretsNotLeaked(unsupportedPipelineOutput);
+
+		const credentialedHttp = `https://${CREDENTIAL_USERNAME}:${CREDENTIAL_PASSWORD}@example.com/article`;
+		const credentialedCostOnly = await runCli(['ingest', '--dry-run', '--cost-estimate', credentialedHttp], {
+			allowUnsafeUrls: false,
+		});
+		const credentialedCostOnlyOutput = `${credentialedCostOnly.stdout}\n${credentialedCostOnly.stderr}`;
+		expect(credentialedCostOnly.exitCode, credentialedCostOnlyOutput).not.toBe(0);
+		expect(credentialedCostOnlyOutput).toMatch(/URL|unsupported/i);
+		expect(credentialedCostOnlyOutput).not.toMatch(/Path not found|Cost estimate/i);
+		expectCredentialSecretsNotLeaked(credentialedCostOnlyOutput);
+
+		const malformed = `https://${CREDENTIAL_USERNAME}:${CREDENTIAL_PASSWORD}@`;
+		const malformedIngest = await runCli(['ingest', '--dry-run', malformed], { allowUnsafeUrls: false });
+		const malformedOutput = `${malformedIngest.stdout}\n${malformedIngest.stderr}`;
+		expect(malformedIngest.exitCode, malformedOutput).not.toBe(0);
+		expect(malformedOutput).toMatch(/URL|unsupported/i);
+		expect(malformedOutput).not.toMatch(/Path not found/i);
+		expectCredentialSecretsNotLeaked(malformedOutput);
+
+		if (pgAvailable) {
+			expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
+		}
+	});
+
 	it('QA-05/06: pipeline run reports failed status for rejected URL ingest with no sources', async () => {
 		if (!pgAvailable) return;
 
