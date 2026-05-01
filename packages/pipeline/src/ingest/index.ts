@@ -36,11 +36,14 @@ import type pg from 'pg';
 import {
 	buildDocxFormatMetadata,
 	buildImageFormatMetadata,
+	buildSpreadsheetFormatMetadata,
 	buildTextFormatMetadata,
+	CSV_MEDIA_TYPE,
 	detectSourceType,
 	getStorageExtensionForDetection,
 	isSupportedImageMediaType,
 	isSupportedIngestFilename,
+	isSupportedSpreadsheetMediaType,
 	isSupportedTextFilename,
 	isSupportedTextMediaType,
 } from './source-type.js';
@@ -53,12 +56,15 @@ export type {
 	SourceStorageExtension,
 	SupportedDocxMediaType,
 	SupportedImageMediaType,
+	SupportedSpreadsheetMediaType,
 	SupportedTextMediaType,
 } from './source-type.js';
 export {
 	buildDocxFormatMetadata,
 	buildImageFormatMetadata,
+	buildSpreadsheetFormatMetadata,
 	buildTextFormatMetadata,
+	CSV_MEDIA_TYPE,
 	DOCX_MEDIA_TYPE,
 	decodeUtf8TextBuffer,
 	detectSourceType,
@@ -66,14 +72,18 @@ export {
 	getOriginalExtension,
 	getStorageExtensionForDetection,
 	isOfficeOpenXmlDocx,
+	isOfficeOpenXmlSpreadsheet,
 	isReadableText,
 	isSupportedDocxFilename,
 	isSupportedDocxMediaType,
 	isSupportedImageMediaType,
 	isSupportedIngestFilename,
+	isSupportedSpreadsheetFilename,
+	isSupportedSpreadsheetMediaType,
 	isSupportedTextFilename,
 	isSupportedTextMediaType,
 	readImageDimensions,
+	XLSX_MEDIA_TYPE,
 } from './source-type.js';
 export type { IngestFileResult, IngestInput, IngestResult } from './types.js';
 
@@ -162,7 +172,7 @@ interface ProcessFileContext {
 	dryRun: boolean;
 }
 
-type IngestibleSourceType = Extract<SourceType, 'pdf' | 'image' | 'text' | 'docx'>;
+type IngestibleSourceType = Extract<SourceType, 'pdf' | 'image' | 'text' | 'docx' | 'spreadsheet'>;
 
 interface PreparedFileMetadata {
 	sourceType: IngestibleSourceType;
@@ -176,7 +186,13 @@ interface PreparedFileMetadata {
 }
 
 function isIngestibleSourceType(sourceType: SourceType): sourceType is IngestibleSourceType {
-	return sourceType === 'pdf' || sourceType === 'image' || sourceType === 'text' || sourceType === 'docx';
+	return (
+		sourceType === 'pdf' ||
+		sourceType === 'image' ||
+		sourceType === 'text' ||
+		sourceType === 'docx' ||
+		sourceType === 'spreadsheet'
+	);
 }
 
 /**
@@ -217,6 +233,24 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 				},
 			);
 		}
+		if (filename.toLowerCase().endsWith('.xlsx')) {
+			throw new IngestError(
+				`Not a valid XLSX spreadsheet (missing Office Open XML spreadsheet entries): ${filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { path: filePath },
+				},
+			);
+		}
+		if (filename.toLowerCase().endsWith('.csv')) {
+			throw new IngestError(
+				`Not a valid CSV spreadsheet (requires readable UTF-8 delimited rows): ${filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { path: filePath },
+				},
+			);
+		}
 		throw new IngestError(
 			`Unsupported or unknown source format for ${filename}`,
 			INGEST_ERROR_CODES.INGEST_UNKNOWN_SOURCE_TYPE,
@@ -228,7 +262,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 
 	if (!isIngestibleSourceType(detection.sourceType)) {
 		throw new IngestError(
-			`Unsupported source type "${detection.sourceType}" for ${filename}; only pdf, image, text, and docx are supported in this step`,
+			`Unsupported source type "${detection.sourceType}" for ${filename}; only pdf, image, text, docx, and spreadsheet are supported in this step`,
 			INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
 			{
 				context: { path: filePath, sourceType: detection.sourceType, confidence: detection.confidence },
@@ -353,7 +387,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			nativeTextRatio: 0,
 		};
 		log.debug({ sourceType: 'text', mediaType: prepared.mediaType, pageCount: 0 }, 'Text metadata prepared');
-	} else {
+	} else if (detection.sourceType === 'docx') {
 		prepared = {
 			sourceType: 'docx',
 			mediaType: detection.mediaType,
@@ -364,6 +398,48 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			nativeTextRatio: 0,
 		};
 		log.debug({ sourceType: 'docx', mediaType: detection.mediaType, pageCount: 0 }, 'DOCX metadata prepared');
+	} else {
+		if (!isSupportedSpreadsheetMediaType(detection.mediaType)) {
+			throw new IngestError(
+				`Unsupported spreadsheet media type for ${filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { path: filePath, mediaType: detection.mediaType },
+				},
+			);
+		}
+
+		let extractionResult: Awaited<ReturnType<Services['spreadsheets']['extractSpreadsheet']>>;
+		try {
+			extractionResult = await ctx.services.spreadsheets.extractSpreadsheet(
+				buffer,
+				filename,
+				detection.mediaType === CSV_MEDIA_TYPE ? 'csv' : 'xlsx',
+			);
+		} catch (cause: unknown) {
+			throw new IngestError(
+				`Invalid spreadsheet source: ${filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					cause,
+					context: { path: filePath, mediaType: detection.mediaType },
+				},
+			);
+		}
+
+		prepared = {
+			sourceType: 'spreadsheet',
+			mediaType: detection.mediaType,
+			storageExtension,
+			formatMetadata: buildSpreadsheetFormatMetadata(buffer, filename, detection.mediaType, extractionResult),
+			pageCount: 0,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+		};
+		log.debug(
+			{ sourceType: 'spreadsheet', mediaType: detection.mediaType, sheetCount: extractionResult.sheets.length },
+			'Spreadsheet metadata prepared',
+		);
 	}
 
 	// f. Compute SHA-256 hash

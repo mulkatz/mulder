@@ -28,7 +28,9 @@ import {
 import {
 	buildDocxFormatMetadata,
 	buildImageFormatMetadata,
+	buildSpreadsheetFormatMetadata,
 	buildTextFormatMetadata,
+	CSV_MEDIA_TYPE,
 	detectSourceType,
 	executeEmbed,
 	executeEnrich,
@@ -38,6 +40,7 @@ import {
 	executeSegment,
 	getStorageExtensionForDetection,
 	isSupportedImageMediaType,
+	isSupportedSpreadsheetMediaType,
 	isSupportedTextFilename,
 	isSupportedTextMediaType,
 	type PipelineRunOptions,
@@ -99,7 +102,7 @@ function buildPdfMetadataJson(pdfMeta: Awaited<ReturnType<typeof extractPdfMetad
 	return pdfMetadataJson;
 }
 
-type FinalizableSourceType = Extract<SourceType, 'pdf' | 'image' | 'text' | 'docx'>;
+type FinalizableSourceType = Extract<SourceType, 'pdf' | 'image' | 'text' | 'docx' | 'spreadsheet'>;
 
 interface FinalizedUploadMetadata {
 	sourceType: FinalizableSourceType;
@@ -112,7 +115,13 @@ interface FinalizedUploadMetadata {
 }
 
 function isFinalizableSourceType(sourceType: SourceType): sourceType is FinalizableSourceType {
-	return sourceType === 'pdf' || sourceType === 'image' || sourceType === 'text' || sourceType === 'docx';
+	return (
+		sourceType === 'pdf' ||
+		sourceType === 'image' ||
+		sourceType === 'text' ||
+		sourceType === 'docx' ||
+		sourceType === 'spreadsheet'
+	);
 }
 
 async function runStoryStepForPayload(
@@ -221,7 +230,7 @@ async function finalizeUploadedDocument(
 	}
 	if (!isFinalizableSourceType(detection.sourceType)) {
 		throw new IngestError(
-			`Unsupported source type "${detection.sourceType}" for ${payload.filename}; only pdf, image, text, and docx are supported in this step`,
+			`Unsupported source type "${detection.sourceType}" for ${payload.filename}; only pdf, image, text, docx, and spreadsheet are supported in this step`,
 			INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
 			{
 				context: {
@@ -353,10 +362,48 @@ async function finalizeUploadedDocument(
 			mediaType: typeof formatMetadata.media_type === 'string' ? formatMetadata.media_type : detection.mediaType,
 			storageExtension: canonicalStorageExtension,
 		};
-	} else {
+	} else if (detection.sourceType === 'docx') {
 		finalizedMetadata = {
 			sourceType: 'docx',
 			formatMetadata: buildDocxFormatMetadata(buffer, payload.filename),
+			pageCount: 0,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+			mediaType: detection.mediaType,
+			storageExtension: canonicalStorageExtension,
+		};
+	} else {
+		if (!isSupportedSpreadsheetMediaType(detection.mediaType)) {
+			throw new IngestError(
+				`Unsupported spreadsheet media type for ${payload.filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { storagePath: payload.storagePath, sourceId: payload.sourceId, mediaType: detection.mediaType },
+				},
+			);
+		}
+
+		let extractionResult: Awaited<ReturnType<Services['spreadsheets']['extractSpreadsheet']>>;
+		try {
+			extractionResult = await services.spreadsheets.extractSpreadsheet(
+				buffer,
+				payload.sourceId,
+				detection.mediaType === CSV_MEDIA_TYPE ? 'csv' : 'xlsx',
+			);
+		} catch (cause: unknown) {
+			throw new IngestError(
+				`Invalid spreadsheet upload: ${payload.filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					cause,
+					context: { storagePath: payload.storagePath, sourceId: payload.sourceId, mediaType: detection.mediaType },
+				},
+			);
+		}
+
+		finalizedMetadata = {
+			sourceType: 'spreadsheet',
+			formatMetadata: buildSpreadsheetFormatMetadata(buffer, payload.filename, detection.mediaType, extractionResult),
 			pageCount: 0,
 			hasNativeText: false,
 			nativeTextRatio: 0,

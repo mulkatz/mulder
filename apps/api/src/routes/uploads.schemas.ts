@@ -11,6 +11,8 @@ const SUPPORTED_UPLOAD_EXTENSIONS = new Map([
 	['md', 'md'],
 	['markdown', 'md'],
 	['docx', 'docx'],
+	['csv', 'csv'],
+	['xlsx', 'xlsx'],
 ]);
 
 const SUPPORTED_UPLOAD_CONTENT_TYPES = new Map([
@@ -22,9 +24,11 @@ const SUPPORTED_UPLOAD_CONTENT_TYPES = new Map([
 	['text/markdown', 'md'],
 	['text/x-markdown', 'md'],
 	['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx'],
+	['text/csv', 'csv'],
+	['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx'],
 ]);
 
-export type UploadStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff' | 'txt' | 'md' | 'docx';
+export type UploadStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff' | 'txt' | 'md' | 'docx' | 'csv' | 'xlsx';
 
 function filenameExtension(filename: string): string {
 	const basename = filename.split(/[\\/]/).pop() ?? filename;
@@ -40,7 +44,9 @@ export function canonicalUploadExtensionForFilename(filename: string): UploadSto
 		extension === 'tiff' ||
 		extension === 'txt' ||
 		extension === 'md' ||
-		extension === 'docx'
+		extension === 'docx' ||
+		extension === 'csv' ||
+		extension === 'xlsx'
 		? extension
 		: null;
 }
@@ -54,13 +60,15 @@ export function canonicalUploadExtensionForContentType(contentType: string): Upl
 		extension === 'tiff' ||
 		extension === 'txt' ||
 		extension === 'md' ||
-		extension === 'docx'
+		extension === 'docx' ||
+		extension === 'csv' ||
+		extension === 'xlsx'
 		? extension
 		: null;
 }
 
 export function isSupportedOriginalStoragePath(storagePath: string): boolean {
-	return /^raw\/[^/]+\/original\.(pdf|png|jpg|tiff|txt|md|docx)$/i.test(storagePath);
+	return /^raw\/[^/]+\/original\.(pdf|png|jpg|tiff|txt|md|docx|csv|xlsx)$/i.test(storagePath);
 }
 
 export const UploadTransportSchema = z.enum(['gcs_resumable', 'dev_proxy']);
@@ -105,7 +113,8 @@ export const CompleteDocumentUploadRequestSchema = z
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				path: ['filename'],
-				message: 'filename must end with .pdf, .png, .jpg, .jpeg, .tif, .tiff, .txt, .md, .markdown, or .docx',
+				message:
+					'filename must end with .pdf, .png, .jpg, .jpeg, .tif, .tiff, .txt, .md, .markdown, .docx, .csv, or .xlsx',
 			});
 			return;
 		}

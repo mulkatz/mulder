@@ -32,6 +32,7 @@ import type {
 	StructuredGenerateOptions,
 	TextGenerateOptions,
 } from './services.js';
+import { createSpreadsheetExtractorService } from './spreadsheet-extractor.js';
 
 // ────────────────────────────────────────────────────────────
 // Helpers
@@ -105,6 +106,8 @@ function contentTypeForBucketPath(bucketPath: string): string {
 	if (lowerPath.endsWith('.txt')) return 'text/plain';
 	if (lowerPath.endsWith('.md') || lowerPath.endsWith('.markdown')) return 'text/markdown';
 	if (lowerPath.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+	if (lowerPath.endsWith('.csv')) return 'text/csv';
+	if (lowerPath.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 	return 'application/octet-stream';
 }
 
@@ -646,6 +649,7 @@ export function createDevServices(_config: MulderConfig, logger: Logger): Servic
 		storage: new DevStorageService(storagePath, fixturesPath, logger),
 		documentAi: new DevDocumentAiService(fixturesPath, logger),
 		officeDocuments: createOfficeDocumentExtractorService(logger),
+		spreadsheets: createSpreadsheetExtractorService(),
 		llm: new DevLlmService(fixturesPath, logger),
 		embedding: new DevEmbeddingService(fixturesPath, logger),
 		firestore: new DevFirestoreService(logger),
