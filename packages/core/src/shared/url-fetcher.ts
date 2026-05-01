@@ -429,7 +429,7 @@ function matchingAgentSpecificity(agent: string): number | null {
 	if (normalized === '*') {
 		return 0;
 	}
-	if (USER_AGENT.toLowerCase().startsWith(normalized) || normalized.includes('mulder')) {
+	if (normalized.length > 0 && USER_AGENT.toLowerCase().includes(normalized)) {
 		return normalized.length;
 	}
 	return null;

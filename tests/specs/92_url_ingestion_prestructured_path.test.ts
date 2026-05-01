@@ -368,6 +368,46 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 		expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
 	});
 
+	it('QA-05: unrelated robots user-agent groups do not override generic disallow', async () => {
+		if (!pgAvailable) return;
+
+		let unrelatedBlockedRequests = 0;
+		const unrelatedServer = createServer((request, response) => {
+			const url = request.url ?? '/';
+			if (url === '/robots.txt') {
+				response.writeHead(200, { 'content-type': 'text/plain' });
+				response.end(['User-agent: *', 'Disallow: /blocked', 'User-agent: NotMulder', 'Allow: /blocked'].join('\n'));
+				return;
+			}
+			if (url === '/blocked') {
+				unrelatedBlockedRequests++;
+				response.writeHead(200, { 'content-type': 'text/html' });
+				response.end(articleHtml('The unrelated robots group must not allow this body to be fetched.'));
+				return;
+			}
+			response.writeHead(404, { 'content-type': 'text/plain' });
+			response.end('not found');
+		});
+		await new Promise<void>((resolveServer) => {
+			unrelatedServer.listen(0, '127.0.0.1', resolveServer);
+		});
+		try {
+			const address = unrelatedServer.address();
+			if (typeof address !== 'object' || !address) {
+				throw new Error('Spec 92 unrelated robots test server did not expose a TCP address');
+			}
+			const result = await runCli(['ingest', `http://127.0.0.1:${address.port}/blocked`]);
+			expect(result.exitCode, `${result.stdout}\n${result.stderr}`).not.toBe(0);
+			expect(`${result.stdout}\n${result.stderr}`).toMatch(/robots|URL fetch/i);
+			expect(unrelatedBlockedRequests).toBe(0);
+			expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
+		} finally {
+			await new Promise<void>((resolveServer) => {
+				unrelatedServer.close(() => resolveServer());
+			});
+		}
+	});
+
 	it('QA-04: URL ingest rejects credentialed direct and redirect targets without leaking credentials', async () => {
 		if (!pgAvailable) return;
 
