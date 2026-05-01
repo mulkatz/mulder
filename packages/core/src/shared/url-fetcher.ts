@@ -42,6 +42,7 @@ function normalizeUrlInput(input: string): string {
 	} catch (cause: unknown) {
 		throw new MulderError('URL input must be an absolute HTTP(S) URL', 'URL_INVALID', { cause });
 	}
+	rejectCredentialedUrl(url, 'URL input');
 	if (url.protocol !== 'http:' && url.protocol !== 'https:') {
 		throw new MulderError('URL input must use http:// or https://', 'URL_UNSUPPORTED_SCHEME', {
 			context: { protocol: url.protocol },
@@ -52,6 +53,12 @@ function normalizeUrlInput(input: string): string {
 	}
 	url.hash = '';
 	return url.toString();
+}
+
+function rejectCredentialedUrl(url: URL, label: string): void {
+	if (url.username || url.password) {
+		throw new MulderError(`${label} must not include embedded credentials`, 'URL_CREDENTIALS_UNSUPPORTED');
+	}
 }
 
 function isLocalhostName(hostname: string): boolean {
@@ -212,6 +219,7 @@ async function resolveTargetAddresses(hostname: string): Promise<LookupAddress[]
 }
 
 async function validatePublicHttpTarget(url: URL): Promise<VettedTarget> {
+	rejectCredentialedUrl(url, 'URL target');
 	if (url.protocol !== 'http:' && url.protocol !== 'https:') {
 		throw new MulderError('Redirect target must use HTTP(S)', 'URL_UNSUPPORTED_SCHEME', {
 			context: { url: url.toString(), protocol: url.protocol },

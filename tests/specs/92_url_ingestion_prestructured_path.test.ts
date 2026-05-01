@@ -17,6 +17,8 @@ const STORAGE_DIR = resolve(ROOT, '.local/storage');
 const RAW_STORAGE_DIR = resolve(STORAGE_DIR, 'raw');
 const EXTRACTED_STORAGE_DIR = resolve(STORAGE_DIR, 'extracted');
 const SEGMENTS_STORAGE_DIR = resolve(STORAGE_DIR, 'segments');
+const CREDENTIAL_USERNAME = 'mulderusersecret';
+const CREDENTIAL_PASSWORD = 'mulderpasssecret';
 
 let server: Server;
 let baseUrl = '';
@@ -26,6 +28,7 @@ let rawSnapshot: StorageSnapshot | null = null;
 let extractedSnapshot: StorageSnapshot | null = null;
 let segmentsSnapshot: StorageSnapshot | null = null;
 let blockedPageRequests = 0;
+let credentialedTargetRequests = 0;
 
 function articleHtml(body: string): string {
 	return `<!doctype html>
@@ -153,6 +156,11 @@ function storyMetadataForSource(sourceId: string): Record<string, unknown> {
 	return JSON.parse(readFileSync(resolve(STORAGE_DIR, uri), 'utf-8')) as Record<string, unknown>;
 }
 
+function expectCredentialSecretsNotLeaked(output: string): void {
+	expect(output).not.toContain(CREDENTIAL_USERNAME);
+	expect(output).not.toContain(CREDENTIAL_PASSWORD);
+}
+
 beforeAll(async () => {
 	server = createServer((request, response) => {
 		const url = request.url ?? '/';
@@ -181,10 +189,24 @@ beforeAll(async () => {
 			response.end();
 			return;
 		}
+		if (url === '/redirect-credentialed') {
+			const host = request.headers.host ?? '';
+			response.writeHead(302, {
+				location: `http://${CREDENTIAL_USERNAME}:${CREDENTIAL_PASSWORD}@${host}/credential-target`,
+			});
+			response.end();
+			return;
+		}
 		if (url === '/blocked') {
 			blockedPageRequests++;
 			response.writeHead(200, { 'content-type': 'text/html' });
 			response.end(articleHtml('Robots should prevent this page from being fetched.'));
+			return;
+		}
+		if (url === '/credential-target') {
+			credentialedTargetRequests++;
+			response.writeHead(200, { 'content-type': 'text/html' });
+			response.end(articleHtml('Credentialed redirect targets must not be fetched.'));
 			return;
 		}
 		if (url === '/plain') {
@@ -231,6 +253,7 @@ beforeAll(async () => {
 beforeEach(() => {
 	mutableArticleBody = 'Original immutable article paragraph for Spec 92 URL extraction.';
 	blockedPageRequests = 0;
+	credentialedTargetRequests = 0;
 	if (!pgAvailable) return;
 	cleanState();
 	resetStorage();
@@ -328,6 +351,27 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 				expect(blockedPageRequests).toBe(blockedBefore);
 			}
 		}
+	});
+
+	it('QA-04: URL ingest rejects credentialed direct and redirect targets without leaking credentials', async () => {
+		if (!pgAvailable) return;
+
+		const credentialedInput = baseUrl.replace('http://', `http://${CREDENTIAL_USERNAME}:${CREDENTIAL_PASSWORD}@`);
+		const direct = await runCli(['ingest', credentialedInput]);
+		const directOutput = `${direct.stdout}\n${direct.stderr}`;
+		expect(direct.exitCode, directOutput).not.toBe(0);
+		expect(directOutput).toMatch(/URL|credential|auth/i);
+		expectCredentialSecretsNotLeaked(directOutput);
+		expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
+
+		const requestsBeforeRedirect = credentialedTargetRequests;
+		const redirect = await runCli(['ingest', `${baseUrl}/redirect-credentialed`]);
+		const redirectOutput = `${redirect.stdout}\n${redirect.stderr}`;
+		expect(redirect.exitCode, redirectOutput).not.toBe(0);
+		expect(redirectOutput).toMatch(/URL|credential|auth/i);
+		expectCredentialSecretsNotLeaked(redirectOutput);
+		expect(credentialedTargetRequests).toBe(requestsBeforeRedirect);
+		expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
 	});
 
 	it('QA-05/06: pipeline run reports failed status for rejected URL ingest with no sources', async () => {

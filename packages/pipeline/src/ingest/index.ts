@@ -241,24 +241,36 @@ function filenameForUrl(fetchResult: Awaited<ReturnType<Services['urls']['fetchU
 	return `${slugifyFilenamePart(basis)}.html`;
 }
 
+function urlForErrorDisplay(input: string): string {
+	try {
+		const url = new URL(input.trim());
+		url.username = '';
+		url.password = '';
+		return url.toString();
+	} catch {
+		return 'URL input';
+	}
+}
+
 async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<IngestFileResult> {
 	const normalizedUrl = normalizeUrlInput(inputUrl);
+	const displayUrl = normalizedUrl ? urlForErrorDisplay(normalizedUrl) : urlForErrorDisplay(inputUrl);
 	if (!normalizedUrl) {
-		throw new IngestError(`Unsupported URL input: ${inputUrl}`, INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE, {
-			context: { input: inputUrl },
+		throw new IngestError(`Unsupported URL input: ${displayUrl}`, INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE, {
+			context: { input: displayUrl },
 		});
 	}
 
-	const log = createChildLogger(ctx.logger, { step: STEP_NAME, url: normalizedUrl });
+	const log = createChildLogger(ctx.logger, { step: STEP_NAME, url: displayUrl });
 	let fetchResult: Awaited<ReturnType<Services['urls']['fetchUrl']>>;
 	try {
 		fetchResult = await ctx.services.urls.fetchUrl(inputUrl, {
 			maxBytes: ctx.config.ingestion.max_file_size_mb * 1024 * 1024,
 		});
 	} catch (cause: unknown) {
-		throw new IngestError(`URL fetch failed for ${normalizedUrl}`, INGEST_ERROR_CODES.INGEST_URL_FETCH_FAILED, {
+		throw new IngestError(`URL fetch failed for ${displayUrl}`, INGEST_ERROR_CODES.INGEST_URL_FETCH_FAILED, {
 			cause,
-			context: { url: normalizedUrl },
+			context: { url: displayUrl },
 		});
 	}
 
@@ -309,7 +321,7 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 			'Database pool is required for non-dry-run URL ingest',
 			INGEST_ERROR_CODES.INGEST_UPLOAD_FAILED,
 			{
-				context: { url: normalizedUrl },
+				context: { url: displayUrl },
 			},
 		);
 	}
@@ -317,9 +329,9 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 	try {
 		await ctx.services.storage.upload(storagePath, fetchResult.html, URL_SNAPSHOT_MEDIA_TYPE);
 	} catch (cause: unknown) {
-		throw new IngestError(`Upload failed for URL snapshot ${normalizedUrl}`, INGEST_ERROR_CODES.INGEST_UPLOAD_FAILED, {
+		throw new IngestError(`Upload failed for URL snapshot ${displayUrl}`, INGEST_ERROR_CODES.INGEST_UPLOAD_FAILED, {
 			cause,
-			context: { url: normalizedUrl, storagePath },
+			context: { url: displayUrl, storagePath },
 		});
 	}
 
@@ -868,11 +880,12 @@ export async function execute(
 ): Promise<IngestResult> {
 	const log = createChildLogger(logger, { step: STEP_NAME });
 	const startTime = performance.now();
+	const urlInput = isSupportedUrlInput(input.path);
+	const inputPathForDisplay = urlInput ? urlForErrorDisplay(input.path) : input.path;
 
-	log.info({ path: input.path, dryRun: input.dryRun ?? false }, 'Ingest step started');
+	log.info({ path: inputPathForDisplay, dryRun: input.dryRun ?? false }, 'Ingest step started');
 
 	// 1. Resolve URL or files. URL strings bypass filesystem stat completely.
-	const urlInput = isSupportedUrlInput(input.path);
 	const filePaths = urlInput ? [input.path] : await resolveIngestFiles(input.path);
 
 	if (filePaths.length === 0) {
@@ -914,13 +927,14 @@ export async function execute(
 				itemsSkipped++;
 			}
 		} catch (error: unknown) {
+			const fileForDisplay = urlInput ? urlForErrorDisplay(filePath) : filePath;
 			const stepError: StepError = {
-				file: filePath,
+				file: fileForDisplay,
 				code: error instanceof IngestError ? error.code : 'INGEST_UNKNOWN',
 				message: error instanceof Error ? error.message : String(error),
 			};
 			errors.push(stepError);
-			log.error({ err: error, file: filePath }, 'Failed to ingest file');
+			log.error({ err: error, file: fileForDisplay }, 'Failed to ingest file');
 		}
 	}
 
