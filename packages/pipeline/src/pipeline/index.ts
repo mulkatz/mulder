@@ -18,7 +18,17 @@
  */
 
 import { performance } from 'node:perf_hooks';
-import type { Logger, MulderConfig, Services, Source, SourceStatus, StepError, Story, StoryStatus } from '@mulder/core';
+import type {
+	Logger,
+	MulderConfig,
+	Services,
+	Source,
+	SourceStatus,
+	SourceType,
+	StepError,
+	Story,
+	StoryStatus,
+} from '@mulder/core';
 import {
 	completedStepsFromProgress,
 	createChildLogger,
@@ -42,7 +52,7 @@ import { execute as executeEmbed } from '../embed/index.js';
 import { execute as executeEnrich } from '../enrich/index.js';
 import { execute as executeExtract } from '../extract/index.js';
 import { execute as executeGraph } from '../graph/index.js';
-import { execute as executeIngest, resolvePdfFiles } from '../ingest/index.js';
+import { execute as executeIngest, isPreStructuredType, resolvePdfFiles } from '../ingest/index.js';
 import { execute as executeSegment } from '../segment/index.js';
 import type {
 	PipelineGlobalAnalysisOutcome,
@@ -182,10 +192,17 @@ export function shouldRun(
 	sourceStatus: SourceStatus,
 	storyStatuses: StoryStatus[],
 	options: PipelineRunOptions,
+	sourceType?: SourceType,
 ): boolean {
 	if (step === 'ingest') {
 		// Ingest is handled outside the per-source loop. Should never be
 		// asked of `shouldRun`, but defensively return false.
+		return false;
+	}
+
+	// Pre-structured types never have a segment step — skip unconditionally,
+	// even with `--force` (there is no segment implementation to retry).
+	if (step === 'segment' && sourceType !== undefined && isPreStructuredType(sourceType)) {
 		return false;
 	}
 
@@ -219,6 +236,8 @@ export function shouldRun(
 
 	if (step === 'enrich') {
 		if (sourceStatus === 'segmented') return true;
+		// Pre-structured types skip segment, so they enter enrich at `extracted`.
+		if (sourceType !== undefined && isPreStructuredType(sourceType) && sourceStatus === 'extracted') return true;
 		return storyStatuses.some((s) => storyStatusIndex(s) < targetStoryIdx);
 	}
 	if (step === 'embed') {
@@ -395,7 +414,8 @@ async function enumerateSources(
 			eligibleStatuses.push('extracted');
 			break;
 		case 'enrich':
-			eligibleStatuses.push('segmented');
+			// 'extracted' covers pre-structured types that skip segment.
+			eligibleStatuses.push('segmented', 'extracted');
 			break;
 		case 'embed':
 			eligibleStatuses.push('enriched', 'segmented');
@@ -472,7 +492,7 @@ async function processSource(source: Source, ctx: ProcessSourceContext): Promise
 		const stories = await findStoriesBySourceId(ctx.pool, currentSource.id);
 		const storyStatuses = stories.map((s) => s.status);
 
-		if (!shouldRun(step, currentSource.status, storyStatuses, ctx.options)) {
+		if (!shouldRun(step, currentSource.status, storyStatuses, ctx.options, currentSource.sourceType)) {
 			sourceLog.debug({ step, sourceStatus: currentSource.status }, 'pipeline.source.step.skipped');
 			continue;
 		}
@@ -624,7 +644,8 @@ export async function execute(
 					eligibleStatuses.push('extracted');
 					break;
 				case 'enrich':
-					eligibleStatuses.push('segmented');
+					// 'extracted' covers pre-structured types that skip segment.
+					eligibleStatuses.push('segmented', 'extracted');
 					break;
 				case 'embed':
 					eligibleStatuses.push('enriched', 'segmented');
