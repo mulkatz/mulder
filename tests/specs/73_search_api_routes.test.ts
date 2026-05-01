@@ -97,6 +97,13 @@ function buildMockServices(): Services {
 				pageImages: [],
 			}),
 		},
+		officeDocuments: {
+			extractDocx: async () => ({
+				markdown: '',
+				extractionEngine: 'mammoth',
+				messages: [],
+			}),
+		},
 		llm,
 		embedding,
 		firestore: {
