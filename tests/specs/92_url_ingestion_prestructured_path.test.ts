@@ -2,7 +2,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { resolve } from 'node:path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { pathToFileURL } from 'node:url';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as db from '../lib/db.js';
 import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir } from '../lib/storage.js';
 
@@ -325,6 +326,44 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 			expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
 			if (path === '/blocked' || path === '/redirect-blocked') {
 				expect(blockedPageRequests).toBe(blockedBefore);
+			}
+		}
+	});
+
+	it('QA-04: URL fetch rejects IPv4-mapped IPv6 DNS answers before fetch', async () => {
+		for (const mappedAddress of ['::ffff:127.0.0.1', '::ffff:10.0.0.1']) {
+			const fetchCalls: string[] = [];
+			vi.doMock('node:dns/promises', () => ({
+				lookup: vi.fn(async () => [{ address: mappedAddress, family: 6 }]),
+			}));
+			vi.stubGlobal(
+				'fetch',
+				vi.fn((input: string | URL | Request) => {
+					fetchCalls.push(String(input));
+					return Promise.resolve(new Response(articleHtml('Unexpected fetch'), { status: 200 }));
+				}),
+			);
+			vi.resetModules();
+			try {
+				const moduleUrl = `${
+					pathToFileURL(resolve(CORE_DIR, 'dist/shared/url-fetcher.js')).href
+				}?mapped-ipv6=${encodeURIComponent(mappedAddress)}`;
+				const fetcherModule: typeof import('../../packages/core/dist/shared/url-fetcher.js') = await import(moduleUrl);
+				await expect(
+					fetcherModule.createUrlFetcherService().fetchUrl('https://mapped-unsafe.example/article', {
+						maxBytes: 1024,
+						timeoutMs: 100,
+						redirectLimit: 0,
+					}),
+				).rejects.toMatchObject({ code: 'URL_UNSAFE_TARGET' });
+				expect(fetchCalls).toEqual([]);
+				if (pgAvailable) {
+					expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
+				}
+			} finally {
+				vi.unstubAllGlobals();
+				vi.doUnmock('node:dns/promises');
+				vi.resetModules();
 			}
 		}
 	});

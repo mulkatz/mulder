@@ -71,7 +71,39 @@ function normalizeIpv6(ip: string): string {
 	return ip.toLowerCase();
 }
 
+function ipv4FromMappedHexTail(tail: string): string | null {
+	const parts = tail.split(':');
+	if (parts.length !== 2 || parts.some((part) => !/^[0-9a-f]{1,4}$/.test(part))) {
+		return null;
+	}
+	const high = Number.parseInt(parts[0] ?? '', 16);
+	const low = Number.parseInt(parts[1] ?? '', 16);
+	if (!Number.isInteger(high) || !Number.isInteger(low) || high > 0xffff || low > 0xffff) {
+		return null;
+	}
+	return `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`;
+}
+
+function ipv4FromIpv4MappedIpv6(ip: string): string | null {
+	const normalized = normalizeIpv6(ip);
+	for (const prefix of ['::ffff:', '0:0:0:0:0:ffff:']) {
+		if (!normalized.startsWith(prefix)) {
+			continue;
+		}
+		const tail = normalized.slice(prefix.length);
+		if (isIP(tail) === 4) {
+			return tail;
+		}
+		return ipv4FromMappedHexTail(tail);
+	}
+	return null;
+}
+
 function isUnsafeIpv6(ip: string): boolean {
+	const mappedIpv4 = ipv4FromIpv4MappedIpv6(ip);
+	if (mappedIpv4) {
+		return isUnsafeIpv4(mappedIpv4);
+	}
 	const normalized = normalizeIpv6(ip);
 	return (
 		normalized === '::' ||
