@@ -12,13 +12,16 @@
  * @see docs/functional-spec.md §2.2
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type {
 	DocumentAiResult,
+	EmailAttachmentSummary,
+	EmailExtractionResult,
 	Logger,
 	MulderConfig,
 	Services,
+	SourceFormatMetadata,
 	SpreadsheetExtractionResult,
 	SpreadsheetSheet,
 	SpreadsheetTabularFormat,
@@ -26,9 +29,13 @@ import type {
 } from '@mulder/core';
 import {
 	createChildLogger,
+	createSource,
 	createStory,
+	detectNativeText,
 	EXTRACT_ERROR_CODES,
 	ExtractError,
+	extractPdfMetadata,
+	findSourceByHash,
 	findSourceById,
 	getStepConfigHash,
 	renderPrompt,
@@ -40,11 +47,20 @@ import {
 import { PDFParse } from 'pdf-parse';
 import type pg from 'pg';
 import {
+	buildDocxFormatMetadata,
+	buildEmailFormatMetadata,
+	buildImageFormatMetadata,
+	buildSpreadsheetFormatMetadata as buildIngestSpreadsheetFormatMetadata,
+	buildTextFormatMetadata,
 	decodeUtf8TextBuffer,
 	detectSourceType,
+	getStorageExtensionForDetection,
 	isReadableText,
+	isSupportedEmailMediaType,
 	isSupportedImageMediaType,
 	isSupportedSpreadsheetMediaType,
+	isSupportedTextFilename,
+	isSupportedTextMediaType,
 } from '../ingest/source-type.js';
 import { layoutToMarkdown } from './layout-to-markdown.js';
 import type { ExtractInput, ExtractionData, ExtractResult, LayoutBlock, LayoutDocument, LayoutPage } from './types.js';
@@ -916,6 +932,543 @@ async function extractSpreadsheetSource(input: {
 }
 
 // ────────────────────────────────────────────────────────────
+// Email extraction helpers
+// ────────────────────────────────────────────────────────────
+
+type EmailHintType = 'sender' | 'recipient' | 'sent_date' | 'subject' | 'message_id' | 'thread_id' | 'attachment';
+type EmailHintSource = 'header' | 'thread' | 'attachment';
+
+interface EmailEntityHint {
+	hint_type: EmailHintType;
+	field_name: string;
+	value: string;
+	confidence: number;
+	source: EmailHintSource;
+}
+
+interface EmailStoryMetadataJson {
+	id: string;
+	document_id: string;
+	title: string;
+	subtitle: null;
+	language: string;
+	category: string;
+	pages: number[];
+	date_references: string[];
+	geographic_references: string[];
+	extraction_confidence: number;
+	source_type: 'email';
+	email_format: 'eml' | 'msg';
+	message_id: string | null;
+	thread_id: string;
+	subject: string | null;
+	sent_at: string | null;
+	from: string[];
+	to: string[];
+	cc: string[];
+	bcc: string[];
+	reply_to: string[];
+	in_reply_to: string | null;
+	references: string[];
+	attachments: EmailAttachmentSummary[];
+	entity_hints: EmailEntityHint[];
+}
+
+function computeFileHash(buffer: Buffer): string {
+	return createHash('sha256').update(buffer).digest('hex');
+}
+
+function escapeMarkdownTableValue(value: string): string {
+	return value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
+}
+
+function formatHeaderList(values: string[]): string {
+	return values.length > 0 ? values.join(', ') : '';
+}
+
+function emailStoryTitle(filename: string, result: EmailExtractionResult): string {
+	const subject = result.headers.subject?.trim();
+	const datePrefix = result.headers.sentAt ? result.headers.sentAt.slice(0, 10) : null;
+	const fallback = titleFromFilenameWithFallback(filename, 'Untitled email source');
+	return [datePrefix, subject && subject.length > 0 ? subject : fallback].filter(Boolean).join(' - ');
+}
+
+function buildEmailHints(result: EmailExtractionResult, attachments: EmailAttachmentSummary[]): EmailEntityHint[] {
+	const hints: EmailEntityHint[] = [];
+	for (const address of result.headers.from) {
+		hints.push({ hint_type: 'sender', field_name: 'from', value: address.display, confidence: 1, source: 'header' });
+	}
+	for (const [fieldName, addresses] of [
+		['to', result.headers.to],
+		['cc', result.headers.cc],
+		['bcc', result.headers.bcc],
+		['reply_to', result.headers.replyTo],
+	] as const) {
+		for (const address of addresses) {
+			hints.push({
+				hint_type: 'recipient',
+				field_name: fieldName,
+				value: address.display,
+				confidence: 0.95,
+				source: 'header',
+			});
+		}
+	}
+	if (result.headers.sentAt) {
+		hints.push({
+			hint_type: 'sent_date',
+			field_name: 'sent_at',
+			value: result.headers.sentAt,
+			confidence: 1,
+			source: 'header',
+		});
+	}
+	if (result.headers.subject) {
+		hints.push({
+			hint_type: 'subject',
+			field_name: 'subject',
+			value: result.headers.subject,
+			confidence: 0.8,
+			source: 'header',
+		});
+	}
+	if (result.headers.messageId) {
+		hints.push({
+			hint_type: 'message_id',
+			field_name: 'message_id',
+			value: result.headers.messageId,
+			confidence: 1,
+			source: 'header',
+		});
+	}
+	hints.push({
+		hint_type: 'thread_id',
+		field_name: 'thread_id',
+		value: result.headers.threadId,
+		confidence: 1,
+		source: 'thread',
+	});
+	for (const attachment of attachments) {
+		if (attachment.filename) {
+			hints.push({
+				hint_type: 'attachment',
+				field_name: attachment.childSourceId ? 'attachment_child_source' : 'attachment_filename',
+				value: attachment.childSourceId ? `${attachment.filename} (${attachment.childSourceId})` : attachment.filename,
+				confidence: 0.8,
+				source: 'attachment',
+			});
+		}
+	}
+	return hints;
+}
+
+function renderEmailMarkdown(input: {
+	title: string;
+	result: EmailExtractionResult;
+	attachments: EmailAttachmentSummary[];
+	hints: EmailEntityHint[];
+}): string {
+	const headers = input.result.headers;
+	const rows = [
+		['Subject', headers.subject ?? ''],
+		['From', formatHeaderList(headers.from.map((address) => address.display))],
+		['To', formatHeaderList(headers.to.map((address) => address.display))],
+		['Cc', formatHeaderList(headers.cc.map((address) => address.display))],
+		['Bcc', formatHeaderList(headers.bcc.map((address) => address.display))],
+		['Reply-To', formatHeaderList(headers.replyTo.map((address) => address.display))],
+		['Sent At', headers.sentAt ?? ''],
+		['Message ID', headers.messageId ?? ''],
+		['Thread ID', headers.threadId],
+		['In-Reply-To', headers.inReplyTo ?? ''],
+		['References', headers.references.join(' ')],
+	].filter(([, value]) => value.length > 0);
+	const headerTable = [
+		'| Field | Value |',
+		'| --- | --- |',
+		...rows.map(([field, value]) => `| ${field} | ${escapeMarkdownTableValue(value)} |`),
+	].join('\n');
+	const sections = [
+		`# ${input.title}`,
+		'',
+		'## Headers',
+		'',
+		headerTable,
+		'',
+		'## Body',
+		'',
+		input.result.bodyText.trim(),
+	];
+
+	if (input.attachments.length > 0) {
+		sections.push(
+			'',
+			'## Attachments',
+			'',
+			...input.attachments.map((attachment) => {
+				const details = [
+					attachment.mediaType ?? 'unknown media type',
+					`${attachment.sizeBytes} bytes`,
+					attachment.childSourceId ? `child source ${attachment.childSourceId}` : null,
+				].filter(Boolean);
+				return `- ${attachment.filename ?? 'unnamed attachment'} (${details.join(', ')})`;
+			}),
+		);
+	}
+
+	if (input.hints.length > 0) {
+		sections.push(
+			'',
+			'## Email Entity Hints',
+			'',
+			...input.hints.map((hint) => `- ${hint.field_name}: ${hint.value} (${hint.hint_type}, ${hint.source})`),
+		);
+	}
+
+	return sections.join('\n');
+}
+
+function buildEmailStoryMetadata(input: {
+	storyId: string;
+	sourceId: string;
+	title: string;
+	language: string;
+	result: EmailExtractionResult;
+	attachments: EmailAttachmentSummary[];
+	hints: EmailEntityHint[];
+}): EmailStoryMetadataJson {
+	const headers = input.result.headers;
+	return {
+		id: input.storyId,
+		document_id: input.sourceId,
+		title: input.title,
+		subtitle: null,
+		language: input.language,
+		category: 'document',
+		pages: [],
+		date_references: headers.sentAt ? [headers.sentAt] : [],
+		geographic_references: [],
+		extraction_confidence: 1.0,
+		source_type: 'email',
+		email_format: input.result.emailFormat,
+		message_id: headers.messageId,
+		thread_id: headers.threadId,
+		subject: headers.subject,
+		sent_at: headers.sentAt,
+		from: headers.from.map((address) => address.display),
+		to: headers.to.map((address) => address.display),
+		cc: headers.cc.map((address) => address.display),
+		bcc: headers.bcc.map((address) => address.display),
+		reply_to: headers.replyTo.map((address) => address.display),
+		in_reply_to: headers.inReplyTo,
+		references: headers.references,
+		attachments: input.attachments,
+		entity_hints: input.hints,
+	};
+}
+
+async function metadataForAttachment(input: {
+	buffer: Buffer;
+	filename: string;
+	mediaType: string;
+	sourceType: string;
+	services: Services;
+	sourceId: string;
+}): Promise<{
+	formatMetadata: SourceFormatMetadata;
+	pageCount: number;
+	hasNativeText: boolean;
+	nativeTextRatio: number;
+}> {
+	if (input.sourceType === 'pdf') {
+		const pdfMeta = await extractPdfMetadata(input.buffer);
+		const textResult = await detectNativeText(input.buffer);
+		const formatMetadata: SourceFormatMetadata = {};
+		if (pdfMeta.pdfVersion) formatMetadata.pdf_version = pdfMeta.pdfVersion;
+		if (pdfMeta.title) formatMetadata.title = pdfMeta.title;
+		if (pdfMeta.author) formatMetadata.author = pdfMeta.author;
+		if (pdfMeta.creator) formatMetadata.creator = pdfMeta.creator;
+		if (pdfMeta.producer) formatMetadata.producer = pdfMeta.producer;
+		if (pdfMeta.creationDate) formatMetadata.creation_date = pdfMeta.creationDate.toISOString();
+		if (pdfMeta.modificationDate) formatMetadata.modification_date = pdfMeta.modificationDate.toISOString();
+		if (pdfMeta.encrypted !== undefined) formatMetadata.encrypted = pdfMeta.encrypted;
+		return {
+			formatMetadata,
+			pageCount: textResult.pageCount,
+			hasNativeText: textResult.hasNativeText,
+			nativeTextRatio: textResult.nativeTextRatio,
+		};
+	}
+	if (input.sourceType === 'image' && isSupportedImageMediaType(input.mediaType)) {
+		return {
+			formatMetadata: buildImageFormatMetadata(input.buffer, input.filename, input.mediaType),
+			pageCount: 1,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+		};
+	}
+	if (
+		input.sourceType === 'text' &&
+		isSupportedTextFilename(input.filename) &&
+		isSupportedTextMediaType(input.mediaType)
+	) {
+		const formatMetadata = buildTextFormatMetadata(input.buffer, input.filename, input.mediaType);
+		if (!formatMetadata) {
+			throw new ExtractError('Attachment text source is unreadable', EXTRACT_ERROR_CODES.EXTRACT_EMAIL_FAILED);
+		}
+		return { formatMetadata, pageCount: 0, hasNativeText: false, nativeTextRatio: 0 };
+	}
+	if (input.sourceType === 'docx') {
+		return {
+			formatMetadata: buildDocxFormatMetadata(input.buffer, input.filename),
+			pageCount: 0,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+		};
+	}
+	if (input.sourceType === 'spreadsheet' && isSupportedSpreadsheetMediaType(input.mediaType)) {
+		const extractionResult = await input.services.spreadsheets.extractSpreadsheet(
+			input.buffer,
+			input.sourceId,
+			input.mediaType === 'text/csv' ? 'csv' : 'xlsx',
+		);
+		return {
+			formatMetadata: buildIngestSpreadsheetFormatMetadata(
+				input.buffer,
+				input.filename,
+				input.mediaType,
+				extractionResult,
+			),
+			pageCount: 0,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+		};
+	}
+	throw new ExtractError('Unsupported email attachment source type', EXTRACT_ERROR_CODES.EXTRACT_EMAIL_FAILED, {
+		context: { filename: input.filename, sourceType: input.sourceType, mediaType: input.mediaType },
+	});
+}
+
+async function registerAttachmentChildSources(input: {
+	sourceId: string;
+	attachments: EmailExtractionResult['attachments'];
+	services: Services;
+	pool: pg.Pool;
+	logger: Logger;
+}): Promise<EmailAttachmentSummary[]> {
+	const summaries: EmailAttachmentSummary[] = [];
+	for (const attachment of input.attachments) {
+		const summary: EmailAttachmentSummary = {
+			filename: attachment.filename,
+			mediaType: attachment.mediaType,
+			sizeBytes: attachment.sizeBytes,
+			disposition: attachment.disposition,
+			contentId: attachment.contentId,
+		};
+		if (!attachment.content || !attachment.filename) {
+			summaries.push(summary);
+			continue;
+		}
+
+		const detection = detectSourceType(attachment.content, attachment.filename);
+		if (!detection || detection.sourceType === 'email' || detection.sourceType === 'url' || !detection.mediaType) {
+			summaries.push(summary);
+			continue;
+		}
+
+		const storageExtension = getStorageExtensionForDetection(detection);
+		if (!storageExtension) {
+			summaries.push(summary);
+			continue;
+		}
+
+		const fileHash = computeFileHash(attachment.content);
+		const existing = await findSourceByHash(input.pool, fileHash);
+		if (existing) {
+			summaries.push({ ...summary, childSourceId: existing.id });
+			continue;
+		}
+
+		const childSourceId = randomUUID();
+		const storagePath = `raw/${childSourceId}/original.${storageExtension}`;
+		try {
+			const childMetadata = await metadataForAttachment({
+				buffer: attachment.content,
+				filename: attachment.filename,
+				mediaType: detection.mediaType,
+				sourceType: detection.sourceType,
+				services: input.services,
+				sourceId: childSourceId,
+			});
+			await input.services.storage.upload(storagePath, attachment.content, detection.mediaType);
+			const child = await createSource(input.pool, {
+				id: childSourceId,
+				filename: attachment.filename,
+				storagePath,
+				fileHash,
+				parentSourceId: input.sourceId,
+				sourceType: detection.sourceType,
+				formatMetadata: childMetadata.formatMetadata,
+				pageCount: childMetadata.pageCount,
+				hasNativeText: childMetadata.hasNativeText,
+				nativeTextRatio: childMetadata.nativeTextRatio,
+				metadata: childMetadata.formatMetadata,
+			});
+			if (child.id !== childSourceId) {
+				await input.services.storage.delete(storagePath).catch(() => undefined);
+			}
+			summaries.push({ ...summary, childSourceId: child.id });
+		} catch (cause: unknown) {
+			input.logger.warn(
+				{ err: cause, filename: attachment.filename },
+				'Email attachment child source registration failed',
+			);
+			await input.services.storage.delete(storagePath).catch(() => undefined);
+			summaries.push(summary);
+		}
+	}
+	return summaries;
+}
+
+async function extractEmailSource(input: {
+	sourceId: string;
+	filename: string;
+	storagePath: string;
+	formatMetadata: Record<string, unknown>;
+	config: MulderConfig;
+	services: Services;
+	pool: pg.Pool;
+	stepConfigHash: string;
+	logger: Logger;
+}): Promise<ExtractionData> {
+	let buffer: Buffer;
+	try {
+		buffer = await input.services.storage.download(input.storagePath);
+	} catch (cause: unknown) {
+		throw new ExtractError(
+			`Failed to download email source original for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_STORAGE_FAILED,
+			{ cause, context: { sourceId: input.sourceId, storagePath: input.storagePath } },
+		);
+	}
+
+	const mediaType = typeof input.formatMetadata.media_type === 'string' ? input.formatMetadata.media_type : undefined;
+	if (!isSupportedEmailMediaType(mediaType)) {
+		throw new ExtractError(
+			`Email source has unsupported media type for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_EMAIL_FAILED,
+			{ context: { sourceId: input.sourceId, mediaType } },
+		);
+	}
+
+	let emailResult: EmailExtractionResult;
+	try {
+		emailResult = await input.services.emails.extractEmail(
+			buffer,
+			input.sourceId,
+			mediaType === 'message/rfc822' ? 'eml' : 'msg',
+		);
+	} catch (cause: unknown) {
+		throw new ExtractError(
+			`Email extraction failed for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_EMAIL_FAILED,
+			{
+				cause,
+				context: { sourceId: input.sourceId, storagePath: input.storagePath },
+			},
+		);
+	}
+
+	const attachments = await registerAttachmentChildSources({
+		sourceId: input.sourceId,
+		attachments: emailResult.attachments,
+		services: input.services,
+		pool: input.pool,
+		logger: input.logger,
+	});
+	const title = emailStoryTitle(input.filename, emailResult);
+	const language = input.config.project.supported_locales[0] ?? 'en';
+	const hints = buildEmailHints(emailResult, attachments);
+	const storyId = randomUUID();
+	const markdownUri = `segments/${input.sourceId}/${storyId}.md`;
+	const metadataUri = `segments/${input.sourceId}/${storyId}.meta.json`;
+	const storyMetadata = buildEmailStoryMetadata({
+		storyId,
+		sourceId: input.sourceId,
+		title,
+		language,
+		result: emailResult,
+		attachments,
+		hints,
+	});
+	const markdown = renderEmailMarkdown({ title, result: emailResult, attachments, hints });
+
+	try {
+		await input.services.storage.upload(markdownUri, markdown, 'text/markdown');
+		await input.services.storage.upload(metadataUri, JSON.stringify(storyMetadata, null, 2), 'application/json');
+	} catch (cause: unknown) {
+		throw new ExtractError(
+			`Failed to write email story artifacts for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_STORAGE_FAILED,
+			{ cause, context: { sourceId: input.sourceId, markdownUri, metadataUri } },
+		);
+	}
+
+	await createStory(input.pool, {
+		id: storyId,
+		sourceId: input.sourceId,
+		title,
+		language,
+		category: 'document',
+		gcsMarkdownUri: markdownUri,
+		gcsMetadataUri: metadataUri,
+		extractionConfidence: 1.0,
+		metadata: {
+			source_type: 'email',
+			email_format: emailResult.emailFormat,
+			message_id: emailResult.headers.messageId,
+			thread_id: emailResult.headers.threadId,
+			subject: emailResult.headers.subject,
+			sent_at: emailResult.headers.sentAt,
+			attachments,
+			entity_hints: hints,
+			original_storage_path: input.storagePath,
+		},
+	});
+
+	const updatedFormatMetadata = buildEmailFormatMetadata(buffer, input.filename, mediaType, {
+		...emailResult,
+		attachments: emailResult.attachments.map((attachment, index) => ({
+			...attachment,
+			childSourceId: attachments[index]?.childSourceId,
+		})),
+	});
+	await updateSource(input.pool, input.sourceId, {
+		formatMetadata: updatedFormatMetadata,
+		metadata: updatedFormatMetadata,
+		status: 'extracted',
+	});
+	await upsertSourceStep(input.pool, {
+		sourceId: input.sourceId,
+		stepName: STEP_NAME,
+		status: 'completed',
+		configHash: input.stepConfigHash,
+	});
+
+	input.logger.debug({ storyId, attachmentCount: attachments.length }, 'Email source extracted into story Markdown');
+
+	return {
+		sourceId: input.sourceId,
+		layoutUri: null,
+		pageImageUris: [],
+		pageCount: 0,
+		primaryMethod: 'email',
+		pages: [],
+		visionFallbackCount: 0,
+		visionFallbackCapped: false,
+	};
+}
+
+// ────────────────────────────────────────────────────────────
 // Document AI parsing helpers
 // ────────────────────────────────────────────────────────────
 
@@ -1298,7 +1851,10 @@ export async function execute(
 
 	// ── Path C: Fallback only ────────────────────────────
 	if (
-		(source.sourceType === 'text' || source.sourceType === 'docx' || source.sourceType === 'spreadsheet') &&
+		(source.sourceType === 'text' ||
+			source.sourceType === 'docx' ||
+			source.sourceType === 'spreadsheet' ||
+			source.sourceType === 'email') &&
 		input.fallbackOnly
 	) {
 		throw new ExtractError(
@@ -1333,6 +1889,18 @@ export async function execute(
 		});
 	} else if (!input.fallbackOnly && source.sourceType === 'spreadsheet') {
 		extractionData = await extractSpreadsheetSource({
+			sourceId: input.sourceId,
+			filename: source.filename,
+			storagePath: source.storagePath,
+			formatMetadata: source.formatMetadata,
+			config,
+			services,
+			pool,
+			stepConfigHash,
+			logger: log,
+		});
+	} else if (!input.fallbackOnly && source.sourceType === 'email') {
+		extractionData = await extractEmailSource({
 			sourceId: input.sourceId,
 			filename: source.filename,
 			storagePath: source.storagePath,

@@ -12,6 +12,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { MulderConfig } from '../config/types.js';
+import { createEmailExtractorService } from './email-extractor.js';
 import type { Logger } from './logger.js';
 import { createOfficeDocumentExtractorService } from './office-document-extractor.js';
 import type {
@@ -108,6 +109,8 @@ function contentTypeForBucketPath(bucketPath: string): string {
 	if (lowerPath.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 	if (lowerPath.endsWith('.csv')) return 'text/csv';
 	if (lowerPath.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+	if (lowerPath.endsWith('.eml')) return 'message/rfc822';
+	if (lowerPath.endsWith('.msg')) return 'application/vnd.ms-outlook';
 	return 'application/octet-stream';
 }
 
@@ -650,6 +653,7 @@ export function createDevServices(_config: MulderConfig, logger: Logger): Servic
 		documentAi: new DevDocumentAiService(fixturesPath, logger),
 		officeDocuments: createOfficeDocumentExtractorService(logger),
 		spreadsheets: createSpreadsheetExtractorService(),
+		emails: createEmailExtractorService(),
 		llm: new DevLlmService(fixturesPath, logger),
 		embedding: new DevEmbeddingService(fixturesPath, logger),
 		firestore: new DevFirestoreService(logger),

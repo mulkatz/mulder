@@ -13,6 +13,8 @@ const SUPPORTED_UPLOAD_EXTENSIONS = new Map([
 	['docx', 'docx'],
 	['csv', 'csv'],
 	['xlsx', 'xlsx'],
+	['eml', 'eml'],
+	['msg', 'msg'],
 ]);
 
 const SUPPORTED_UPLOAD_CONTENT_TYPES = new Map([
@@ -26,9 +28,22 @@ const SUPPORTED_UPLOAD_CONTENT_TYPES = new Map([
 	['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx'],
 	['text/csv', 'csv'],
 	['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx'],
+	['message/rfc822', 'eml'],
+	['application/vnd.ms-outlook', 'msg'],
 ]);
 
-export type UploadStorageExtension = 'pdf' | 'png' | 'jpg' | 'tiff' | 'txt' | 'md' | 'docx' | 'csv' | 'xlsx';
+export type UploadStorageExtension =
+	| 'pdf'
+	| 'png'
+	| 'jpg'
+	| 'tiff'
+	| 'txt'
+	| 'md'
+	| 'docx'
+	| 'csv'
+	| 'xlsx'
+	| 'eml'
+	| 'msg';
 
 function filenameExtension(filename: string): string {
 	const basename = filename.split(/[\\/]/).pop() ?? filename;
@@ -46,7 +61,9 @@ export function canonicalUploadExtensionForFilename(filename: string): UploadSto
 		extension === 'md' ||
 		extension === 'docx' ||
 		extension === 'csv' ||
-		extension === 'xlsx'
+		extension === 'xlsx' ||
+		extension === 'eml' ||
+		extension === 'msg'
 		? extension
 		: null;
 }
@@ -62,13 +79,15 @@ export function canonicalUploadExtensionForContentType(contentType: string): Upl
 		extension === 'md' ||
 		extension === 'docx' ||
 		extension === 'csv' ||
-		extension === 'xlsx'
+		extension === 'xlsx' ||
+		extension === 'eml' ||
+		extension === 'msg'
 		? extension
 		: null;
 }
 
 export function isSupportedOriginalStoragePath(storagePath: string): boolean {
-	return /^raw\/[^/]+\/original\.(pdf|png|jpg|tiff|txt|md|docx|csv|xlsx)$/i.test(storagePath);
+	return /^raw\/[^/]+\/original\.(pdf|png|jpg|tiff|txt|md|docx|csv|xlsx|eml|msg)$/i.test(storagePath);
 }
 
 export const UploadTransportSchema = z.enum(['gcs_resumable', 'dev_proxy']);
@@ -114,7 +133,7 @@ export const CompleteDocumentUploadRequestSchema = z
 				code: z.ZodIssueCode.custom,
 				path: ['filename'],
 				message:
-					'filename must end with .pdf, .png, .jpg, .jpeg, .tif, .tiff, .txt, .md, .markdown, .docx, .csv, or .xlsx',
+					'filename must end with .pdf, .png, .jpg, .jpeg, .tif, .tiff, .txt, .md, .markdown, .docx, .csv, .xlsx, .eml, or .msg',
 			});
 			return;
 		}

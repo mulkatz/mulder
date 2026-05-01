@@ -17,6 +17,7 @@ import type { Storage } from '@google-cloud/storage';
 import type { MulderConfig } from '../config/types.js';
 import { createLlmCache, DEFAULT_CACHE_DB_PATH } from '../llm-cache.js';
 import { createVertexClient, type VertexClient } from '../vertex.js';
+import { createEmailExtractorService } from './email-extractor.js';
 import { ExternalServiceError } from './errors.js';
 import { closeGcpClients, getDocumentAIClient, getFirestoreClient, getGenAI, getStorageClient } from './gcp.js';
 import type { Logger } from './logger.js';
@@ -500,6 +501,7 @@ export function createGcpServices(config: MulderConfig, logger: Logger): Service
 		documentAi: new GcpDocumentAiService(documentAiClient, processorName, logger),
 		officeDocuments: createOfficeDocumentExtractorService(logger),
 		spreadsheets: createSpreadsheetExtractorService(),
+		emails: createEmailExtractorService(),
 		llm: new GcpLlmService(vertexClient, logger),
 		embedding: new GcpEmbeddingService(vertexClient, embeddingModel, embeddingDimensions, logger),
 		firestore: new GcpFirestoreService(firestoreClient, logger),

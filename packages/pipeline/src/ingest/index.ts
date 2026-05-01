@@ -35,12 +35,14 @@ import {
 import type pg from 'pg';
 import {
 	buildDocxFormatMetadata,
+	buildEmailFormatMetadata,
 	buildImageFormatMetadata,
 	buildSpreadsheetFormatMetadata,
 	buildTextFormatMetadata,
 	CSV_MEDIA_TYPE,
 	detectSourceType,
 	getStorageExtensionForDetection,
+	isSupportedEmailMediaType,
 	isSupportedImageMediaType,
 	isSupportedIngestFilename,
 	isSupportedSpreadsheetMediaType,
@@ -55,12 +57,14 @@ export type {
 	SourceDetectionResult,
 	SourceStorageExtension,
 	SupportedDocxMediaType,
+	SupportedEmailMediaType,
 	SupportedImageMediaType,
 	SupportedSpreadsheetMediaType,
 	SupportedTextMediaType,
 } from './source-type.js';
 export {
 	buildDocxFormatMetadata,
+	buildEmailFormatMetadata,
 	buildImageFormatMetadata,
 	buildSpreadsheetFormatMetadata,
 	buildTextFormatMetadata,
@@ -68,6 +72,7 @@ export {
 	DOCX_MEDIA_TYPE,
 	decodeUtf8TextBuffer,
 	detectSourceType,
+	EML_MEDIA_TYPE,
 	getCanonicalStorageExtensionForMediaType,
 	getOriginalExtension,
 	getStorageExtensionForDetection,
@@ -76,12 +81,15 @@ export {
 	isReadableText,
 	isSupportedDocxFilename,
 	isSupportedDocxMediaType,
+	isSupportedEmailFilename,
+	isSupportedEmailMediaType,
 	isSupportedImageMediaType,
 	isSupportedIngestFilename,
 	isSupportedSpreadsheetFilename,
 	isSupportedSpreadsheetMediaType,
 	isSupportedTextFilename,
 	isSupportedTextMediaType,
+	MSG_MEDIA_TYPE,
 	readImageDimensions,
 	XLSX_MEDIA_TYPE,
 } from './source-type.js';
@@ -172,7 +180,7 @@ interface ProcessFileContext {
 	dryRun: boolean;
 }
 
-type IngestibleSourceType = Extract<SourceType, 'pdf' | 'image' | 'text' | 'docx' | 'spreadsheet'>;
+type IngestibleSourceType = Extract<SourceType, 'pdf' | 'image' | 'text' | 'docx' | 'spreadsheet' | 'email'>;
 
 interface PreparedFileMetadata {
 	sourceType: IngestibleSourceType;
@@ -191,7 +199,8 @@ function isIngestibleSourceType(sourceType: SourceType): sourceType is Ingestibl
 		sourceType === 'image' ||
 		sourceType === 'text' ||
 		sourceType === 'docx' ||
-		sourceType === 'spreadsheet'
+		sourceType === 'spreadsheet' ||
+		sourceType === 'email'
 	);
 }
 
@@ -251,6 +260,24 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 				},
 			);
 		}
+		if (filename.toLowerCase().endsWith('.eml')) {
+			throw new IngestError(
+				`Not a valid EML email message (requires RFC 822/MIME headers and body): ${filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { path: filePath },
+				},
+			);
+		}
+		if (filename.toLowerCase().endsWith('.msg')) {
+			throw new IngestError(
+				`Not a valid Outlook MSG email message (requires OLE compound message evidence): ${filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { path: filePath },
+				},
+			);
+		}
 		throw new IngestError(
 			`Unsupported or unknown source format for ${filename}`,
 			INGEST_ERROR_CODES.INGEST_UNKNOWN_SOURCE_TYPE,
@@ -262,7 +289,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 
 	if (!isIngestibleSourceType(detection.sourceType)) {
 		throw new IngestError(
-			`Unsupported source type "${detection.sourceType}" for ${filename}; only pdf, image, text, docx, and spreadsheet are supported in this step`,
+			`Unsupported source type "${detection.sourceType}" for ${filename}; only pdf, image, text, docx, spreadsheet, and email are supported in this step`,
 			INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
 			{
 				context: { path: filePath, sourceType: detection.sourceType, confidence: detection.confidence },
@@ -398,7 +425,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			nativeTextRatio: 0,
 		};
 		log.debug({ sourceType: 'docx', mediaType: detection.mediaType, pageCount: 0 }, 'DOCX metadata prepared');
-	} else {
+	} else if (detection.sourceType === 'spreadsheet') {
 		if (!isSupportedSpreadsheetMediaType(detection.mediaType)) {
 			throw new IngestError(
 				`Unsupported spreadsheet media type for ${filename}`,
@@ -439,6 +466,44 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		log.debug(
 			{ sourceType: 'spreadsheet', mediaType: detection.mediaType, sheetCount: extractionResult.sheets.length },
 			'Spreadsheet metadata prepared',
+		);
+	} else {
+		if (!isSupportedEmailMediaType(detection.mediaType)) {
+			throw new IngestError(
+				`Unsupported email media type for ${filename}`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { path: filePath, mediaType: detection.mediaType },
+				},
+			);
+		}
+
+		let extractionResult: Awaited<ReturnType<Services['emails']['extractEmail']>>;
+		try {
+			extractionResult = await ctx.services.emails.extractEmail(
+				buffer,
+				filename,
+				detection.mediaType === 'message/rfc822' ? 'eml' : 'msg',
+			);
+		} catch (cause: unknown) {
+			throw new IngestError(`Invalid email source: ${filename}`, INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE, {
+				cause,
+				context: { path: filePath, mediaType: detection.mediaType },
+			});
+		}
+
+		prepared = {
+			sourceType: 'email',
+			mediaType: detection.mediaType,
+			storageExtension,
+			formatMetadata: buildEmailFormatMetadata(buffer, filename, detection.mediaType, extractionResult),
+			pageCount: 0,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+		};
+		log.debug(
+			{ sourceType: 'email', mediaType: detection.mediaType, attachmentCount: extractionResult.attachments.length },
+			'Email metadata prepared',
 		);
 	}
 

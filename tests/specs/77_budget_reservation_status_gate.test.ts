@@ -399,6 +399,7 @@ describe('Spec 77 — Budget reservation status gate', () => {
 			filename: 'partial.pdf',
 			storagePath: '/tmp/partial.pdf',
 			fileHash: 'hash',
+			parentSourceId: null,
 			sourceType: 'pdf',
 			formatMetadata: {},
 			pageCount: 10,
@@ -572,6 +573,7 @@ describe('Spec 77 — Budget reservation status gate', () => {
 			filename: 'budget-test.docx',
 			storagePath: 'raw/budget-test/original.docx',
 			fileHash: 'hash',
+			parentSourceId: null,
 			sourceType: 'docx',
 			formatMetadata: {
 				media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

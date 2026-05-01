@@ -15,7 +15,9 @@
 		"@google-cloud/firestore": "^8.3.0",
 		"@google-cloud/storage": "^7.19.0",
 		"@google/genai": "^1.47.0",
+		"@kenjiuno/msgreader": "^1.28.0",
 		"better-sqlite3": "^12.8.0",
+		"mailparser": "^3.9.8",
 		"mammoth": "^1.12.0",
 		"p-limit": "^7.3.0",
 		"pdf-lib": "^1.17.1",
@@ -28,6 +30,7 @@
 	},
 	"devDependencies": {
 		"@types/better-sqlite3": "^7.6.13",
+		"@types/mailparser": "^3.4.6",
 		"@types/node": "^25.5.0",
 		"@types/pg": "^8.20.0",
 		"pino-pretty": "^13.1.3"

@@ -321,6 +321,7 @@ export type {
 	EstimatedStep,
 } from './shared/cost-estimator.js';
 export { estimatePipelineCost } from './shared/cost-estimator.js';
+export { createEmailExtractorService } from './shared/email-extractor.js';
 export type {
 	AnalyzeErrorCode,
 	ConfigErrorCode,
@@ -408,6 +409,13 @@ export { createGcpServices } from './shared/services.gcp.js';
 export type {
 	DocumentAiResult,
 	DocumentAiService,
+	EmailAddress,
+	EmailAttachment,
+	EmailAttachmentSummary,
+	EmailExtractionResult,
+	EmailExtractorService,
+	EmailFormat,
+	EmailHeaders,
 	EmbeddingResult,
 	EmbeddingService,
 	FirestoreService,
