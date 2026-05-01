@@ -189,6 +189,10 @@ async function fetchOnce(url: URL, options: { timeoutMs: number }): Promise<Resp
 	}
 }
 
+function isRedirectStatus(status: number): boolean {
+	return [301, 302, 303, 307, 308].includes(status);
+}
+
 function headersToRecord(headers: Headers): Record<string, string> {
 	const result: Record<string, string> = {};
 	for (const [key, value] of headers.entries()) {
@@ -254,11 +258,37 @@ function isPathAllowedByRobots(groups: RobotsGroup[], path: string): { allowed: 
 	return { allowed: rule.directive === 'allow', rule: `${rule.directive}: ${rule.path}` };
 }
 
-async function fetchRobots(url: URL, options: { timeoutMs: number; maxBytes: number }): Promise<RobotsDecision> {
-	const robotsUrl = new URL('/robots.txt', url.origin);
+async function fetchRobots(
+	url: URL,
+	options: { timeoutMs: number; maxBytes: number; redirectLimit: number },
+): Promise<RobotsDecision> {
+	const initialRobotsUrl = new URL('/robots.txt', url.origin);
+	let robotsUrl = initialRobotsUrl;
 	await assertPublicHttpTarget(robotsUrl);
 	try {
-		const response = await fetchOnce(robotsUrl, { timeoutMs: options.timeoutMs });
+		let redirectCount = 0;
+		let response: Response;
+		while (true) {
+			response = await fetchOnce(robotsUrl, { timeoutMs: options.timeoutMs });
+			if (!isRedirectStatus(response.status)) {
+				break;
+			}
+			const location = response.headers.get('location');
+			if (!location) {
+				throw new MulderError('robots.txt redirect response did not include a Location header', 'URL_REDIRECT_FAILED', {
+					context: { url: robotsUrl.toString(), status: response.status },
+				});
+			}
+			if (redirectCount >= options.redirectLimit) {
+				throw new MulderError('robots.txt redirect limit exceeded', 'URL_REDIRECT_LIMIT', {
+					context: { url: initialRobotsUrl.toString(), redirectLimit: options.redirectLimit },
+				});
+			}
+			robotsUrl = new URL(location, robotsUrl);
+			robotsUrl.hash = '';
+			await assertPublicHttpTarget(robotsUrl);
+			redirectCount++;
+		}
 		if (response.status === 404 || response.status === 410) {
 			return { allowed: true, robotsUrl: robotsUrl.toString(), matchedUserAgent: null, matchedRule: null };
 		}
@@ -288,7 +318,7 @@ class LocalUrlFetcherService implements UrlFetcherService {
 		const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		const redirectLimit = options.redirectLimit ?? DEFAULT_REDIRECT_LIMIT;
 		await assertPublicHttpTarget(currentUrl);
-		const robots = await fetchRobots(currentUrl, { timeoutMs, maxBytes: options.maxBytes });
+		let robots = await fetchRobots(currentUrl, { timeoutMs, maxBytes: options.maxBytes, redirectLimit });
 		if (!robots.allowed) {
 			throw new MulderError('URL fetch disallowed by robots.txt', 'URL_ROBOTS_DISALLOWED', {
 				context: { url: normalizedUrl, robotsUrl: robots.robotsUrl, matchedRule: robots.matchedRule },
@@ -299,7 +329,7 @@ class LocalUrlFetcherService implements UrlFetcherService {
 		let response: Response;
 		while (true) {
 			response = await fetchOnce(currentUrl, { timeoutMs });
-			if (![301, 302, 303, 307, 308].includes(response.status)) {
+			if (!isRedirectStatus(response.status)) {
 				break;
 			}
 			const location = response.headers.get('location');
@@ -317,6 +347,15 @@ class LocalUrlFetcherService implements UrlFetcherService {
 			currentUrl.hash = '';
 			await assertPublicHttpTarget(currentUrl);
 			redirectCount++;
+		}
+
+		if (redirectCount > 0) {
+			robots = await fetchRobots(currentUrl, { timeoutMs, maxBytes: options.maxBytes, redirectLimit });
+			if (!robots.allowed) {
+				throw new MulderError('URL fetch disallowed by robots.txt', 'URL_ROBOTS_DISALLOWED', {
+					context: { url: currentUrl.toString(), robotsUrl: robots.robotsUrl, matchedRule: robots.matchedRule },
+				});
+			}
 		}
 
 		if (!response.ok) {

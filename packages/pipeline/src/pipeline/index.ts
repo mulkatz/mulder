@@ -50,7 +50,7 @@ import { execute as executeEmbed } from '../embed/index.js';
 import { execute as executeEnrich } from '../enrich/index.js';
 import { execute as executeExtract } from '../extract/index.js';
 import { execute as executeGraph } from '../graph/index.js';
-import { execute as executeIngest, resolvePdfFiles } from '../ingest/index.js';
+import { execute as executeIngest, isSupportedUrlInput, resolvePdfFiles } from '../ingest/index.js';
 import { execute as executeSegment } from '../segment/index.js';
 import type {
 	PipelineGlobalAnalysisOutcome,
@@ -629,7 +629,7 @@ export async function execute(
 				dryRunSourceCount = options.sourceIds.length;
 			}
 		} else if (input.path && plannedSteps.includes('ingest')) {
-			dryRunSourceCount = (await resolvePdfFiles(input.path)).length;
+			dryRunSourceCount = isSupportedUrlInput(input.path) ? 1 : (await resolvePdfFiles(input.path)).length;
 		} else if (pool && !plannedSteps.includes('ingest')) {
 			dryRunSources = (await enumerateSources(input, plannedSteps, pool, config, services, log)).sources;
 			dryRunSourceCount = dryRunSources.length;

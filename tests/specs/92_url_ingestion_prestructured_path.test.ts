@@ -155,6 +155,11 @@ beforeAll(async () => {
 	server = createServer((request, response) => {
 		const url = request.url ?? '/';
 		if (url === '/robots.txt') {
+			response.writeHead(302, { location: '/robots-final.txt' });
+			response.end();
+			return;
+		}
+		if (url === '/robots-final.txt') {
 			response.writeHead(200, { 'content-type': 'text/plain' });
 			response.end(['User-agent: MulderUrlFetcher', 'Disallow: /blocked', 'Allow: /'].join('\n'));
 			return;
@@ -166,6 +171,11 @@ beforeAll(async () => {
 		}
 		if (url === '/redirect') {
 			response.writeHead(302, { location: '/article' });
+			response.end();
+			return;
+		}
+		if (url === '/redirect-blocked') {
+			response.writeHead(302, { location: '/blocked' });
 			response.end();
 			return;
 		}
@@ -245,6 +255,11 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 		expect(accepted.stdout).toMatch(/\b0\b/);
 		if (pgAvailable) {
 			expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
+
+			const pipelineDryRun = await runCli(['pipeline', 'run', `${baseUrl}/article`, '--dry-run']);
+			expect(pipelineDryRun.exitCode, `${pipelineDryRun.stdout}\n${pipelineDryRun.stderr}`).toBe(0);
+			expect(`${pipelineDryRun.stdout}\n${pipelineDryRun.stderr}`).toMatch(/Sources to process:\s*1/i);
+			expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
 		}
 
 		const rejected = await runCli(['ingest', '--dry-run', `${baseUrl}/article`], { allowUnsafeUrls: false });
@@ -288,7 +303,7 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 	it('QA-05/06: URL ingest rejects robots-disallowed, non-HTML, and oversized responses before source creation', async () => {
 		if (!pgAvailable) return;
 
-		for (const path of ['/blocked', '/plain', '/oversized']) {
+		for (const path of ['/blocked', '/redirect-blocked', '/plain', '/oversized']) {
 			const result = await runCli(['ingest', `${baseUrl}${path}`]);
 			expect(result.exitCode, `${path}\n${result.stdout}\n${result.stderr}`).not.toBe(0);
 			expect(`${result.stdout}\n${result.stderr}`).toMatch(/URL|robots|content type|size|HTML/i);
