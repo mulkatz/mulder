@@ -1,12 +1,25 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MotionConfig } from 'framer-motion';
 import { type ReactNode, useEffect, useState } from 'react';
 import { appTransition } from '@/app/motion';
 import { PreferencesProvider } from '@/app/preferences';
 import { ApiError } from '@/lib/api-client';
 
+function emitAuthExpired(error: unknown) {
+	if (error instanceof ApiError && error.status === 401) {
+		if (typeof window === 'undefined') return;
+		window.dispatchEvent(new Event('auth:expired'));
+	}
+}
+
 function createQueryClient() {
 	return new QueryClient({
+		queryCache: new QueryCache({
+			onError: emitAuthExpired,
+		}),
+		mutationCache: new MutationCache({
+			onError: emitAuthExpired,
+		}),
 		defaultOptions: {
 			queries: {
 				staleTime: 30_000,
@@ -18,13 +31,6 @@ function createQueryClient() {
 					return count < 2;
 				},
 				refetchOnWindowFocus: false,
-			},
-			mutations: {
-				onError: (error) => {
-					if (error instanceof ApiError && error.status === 401) {
-						window.dispatchEvent(new Event('auth:expired'));
-					}
-				},
 			},
 		},
 	});

@@ -2,6 +2,7 @@ import { ApiError } from '@/lib/api-client';
 
 export function getErrorMessage(error: unknown, fallback = 'The API request failed.') {
 	if (error instanceof ApiError) {
+		if (error.status === 0) return fallback;
 		return `${error.status} ${error.message}`;
 	}
 	if (error instanceof Error) {

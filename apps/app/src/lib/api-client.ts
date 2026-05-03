@@ -22,6 +22,15 @@ export class ApiError extends Error {
 	}
 }
 
+function toNetworkError(error: unknown) {
+	return new ApiError(
+		0,
+		'NETWORK_ERROR',
+		error instanceof Error ? error.message : 'The API could not be reached.',
+		error instanceof Error ? { name: error.name } : undefined,
+	);
+}
+
 async function parseErrorBody(response: Response): Promise<ApiErrorBody> {
 	try {
 		return (await response.json()) as ApiErrorBody;
@@ -38,12 +47,20 @@ function buildJsonHeaders(init?: RequestInit) {
 	return headers;
 }
 
+async function fetchApi(path: string, init?: RequestInit) {
+	try {
+		return await fetch(buildApiUrl(path), {
+			credentials: 'include',
+			...init,
+			headers: buildJsonHeaders(init),
+		});
+	} catch (error) {
+		throw toNetworkError(error);
+	}
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-	const response = await fetch(buildApiUrl(path), {
-		credentials: 'include',
-		...init,
-		headers: buildJsonHeaders(init),
-	});
+	const response = await fetchApi(path, init);
 
 	if (!response.ok) {
 		const body = await parseErrorBody(response);
@@ -76,11 +93,16 @@ export async function apiFetchText(path: string, init?: RequestInit): Promise<st
 		headers.set('Accept', 'text/markdown, text/plain');
 	}
 
-	const response = await fetch(buildApiUrl(path), {
-		credentials: 'include',
-		...init,
-		headers,
-	});
+	let response: Response;
+	try {
+		response = await fetch(buildApiUrl(path), {
+			credentials: 'include',
+			...init,
+			headers,
+		});
+	} catch (error) {
+		throw toNetworkError(error);
+	}
 
 	if (!response.ok) {
 		const body = await parseErrorBody(response);
