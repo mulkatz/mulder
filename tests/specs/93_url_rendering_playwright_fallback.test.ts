@@ -290,7 +290,15 @@ describe('Spec 93 — URL Rendering Playwright Fallback', () => {
 		expect(row[2]).toContain('Spec 93 Static Article');
 	});
 
-	it('QA-02/08: JavaScript shells render before source creation and deduplicate by rendered hash', async () => {
+	it('QA-02/07/08: JavaScript shells render before source creation and deduplicate by rendered hash', async () => {
+		const dryRun = await runCli(['ingest', '--dry-run', `${baseUrl}/js-shell`]);
+		expect(dryRun.exitCode, `${dryRun.stdout}\n${dryRun.stderr}`).toBe(0);
+		expect(dryRun.stdout).toMatch(/\burl\b/);
+		expect(dryRun.stdout).toMatch(/\b0\b/);
+		if (pgAvailable) {
+			expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
+		}
+
 		if (!pgAvailable) return;
 		const ingest = await runCli(['ingest', `${baseUrl}/js-shell`]);
 		expect(ingest.exitCode, `${ingest.stdout}\n${ingest.stderr}`).toBe(0);
