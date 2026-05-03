@@ -22,6 +22,7 @@ The app API client should keep these properties:
 
 - `ApiError` carries `status`, `code`, `message`, and optional `details`.
 - Error responses are parsed from `{ error: { code, message, details } }` when available.
+- Network, CORS, and unreachable-origin failures are normalized to structured API-unavailable errors.
 - JSON helpers set `Content-Type: application/json`.
 - Text helpers use `Accept: text/markdown, text/plain`.
 - `buildApiUrl(path)` passes through absolute URLs and prefixes relative API paths with `VITE_API_BASE_URL`.
@@ -32,7 +33,8 @@ React Query should use conservative defaults:
 - No refetch on window focus by default.
 - No retry for `401`, `403`, or `404`.
 - Limited retry for transient network/server failures.
-- Session expiry should be observable through a shared `auth:expired` event or equivalent app-level handling.
+- Session expiry is observable through shared app-level handling for both queries and mutations.
+- API-unavailable states must remain visible product states and must not be treated as logout.
 
 The app should expose:
 
@@ -40,6 +42,7 @@ The app should expose:
 - `/auth/invitations/:token` for invite acceptance, matching the API-generated invitation link shape.
 - Protected app routes behind `GET /api/auth/session`.
 - Logout through `POST /api/auth/logout` and query-cache clearing.
+- Any `401` from a protected app query or mutation should invalidate auth state and force the session gate to re-check.
 
 ## Usable HTTP Surface
 
@@ -148,7 +151,8 @@ After the cleanup, the first app API implementation should stay narrow:
 1. Add the API client, local API types, React Query provider, and capability registry to `apps/app`.
 2. Bind existing routes only: `/`, `/runs`, and `/evidence`.
 3. Use real loading/empty/error states.
-4. Do not use checked-in fixture data in app screens.
-5. Do not add new product modules until the API foundation is green.
+4. Keep auth/session behavior honest: `401` means unauthenticated, while network/CORS/5xx states remain unavailable/error UI.
+5. Do not use checked-in fixture data in app screens.
+6. Do not add new product modules until the API foundation is green.
 
 If Mulder needs a public example later, build it as a separate, explicitly labeled surface that does not point at a private production project and does not shape the production app.
