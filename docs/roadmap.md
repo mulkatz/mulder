@@ -243,7 +243,7 @@ Images, Office docs, emails, URLs — every format converges to the same Markdow
 | Status | Step | What | Spec |
 |--------|------|------|------|
 | 🟢 | J1 | Source type discriminator — `source_type` column, JSONB `format_metadata`, magic-byte detection | §4.3 (sources table), §2.1 |
-| 🟡 | J2 | Pipeline step skipping — orchestrator supports `skip_to` so pre-structured formats bypass segment | §3.1, §3.2 |
+| 🟢 | J2 | Pipeline step skipping — orchestrator supports `skip_to` so pre-structured formats bypass segment | §3.1, §3.2 |
 | ⚪ | J3 | Image ingestion — JPG, PNG, TIFF via Document AI / Gemini Vision | §2.1, §2.2 |
 | ⚪ | J4 | Plain text ingestion — .txt, .md pass-through (no OCR, no segment) | §2.1 |
 | ⚪ | J5 | DOCX ingestion — Office document extraction via `mammoth` / `docx-parser` | §2.1 |
