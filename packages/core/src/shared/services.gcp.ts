@@ -44,6 +44,7 @@ import type {
 import { createSpreadsheetExtractorService } from './spreadsheet-extractor.js';
 import { createUrlExtractorService } from './url-extractor.js';
 import { createUrlFetcherService } from './url-fetcher.js';
+import { createUrlRendererService } from './url-renderer.js';
 
 // ────────────────────────────────────────────────────────────
 // Helpers
@@ -505,6 +506,7 @@ export function createGcpServices(config: MulderConfig, logger: Logger): Service
 		spreadsheets: createSpreadsheetExtractorService(),
 		emails: createEmailExtractorService(),
 		urls: createUrlFetcherService(),
+		urlRenderers: createUrlRendererService(),
 		urlExtractors: createUrlExtractorService(),
 		llm: new GcpLlmService(vertexClient, logger),
 		embedding: new GcpEmbeddingService(vertexClient, embeddingModel, embeddingDimensions, logger),

@@ -249,6 +249,27 @@ export interface UrlFetcherService {
 	fetchUrl(url: string, options: UrlFetchOptions): Promise<UrlFetchResult>;
 }
 
+export interface UrlRenderOptions {
+	maxBytes: number;
+	timeoutMs?: number;
+	redirectLimit?: number;
+}
+
+export interface UrlRenderResult {
+	html: Buffer;
+	finalUrl: string;
+	renderedAt: string;
+	durationMs: number;
+	engine: 'playwright-chromium' | 'fixture';
+	blockedRequestCount: number;
+	warnings: string[];
+}
+
+export interface UrlRendererService {
+	/** Render one safe public HTTP(S) HTML URL through an ephemeral browser context. */
+	renderUrl(url: string, options: UrlRenderOptions): Promise<UrlRenderResult>;
+}
+
 export interface UrlEntityHint {
 	hint_type: 'url' | 'host' | 'title' | 'byline' | 'published_date' | 'modified_date' | 'canonical_url';
 	field_name: string;
@@ -407,6 +428,7 @@ export interface Services {
 	spreadsheets: SpreadsheetExtractorService;
 	emails: EmailExtractorService;
 	urls: UrlFetcherService;
+	urlRenderers: UrlRendererService;
 	urlExtractors: UrlExtractorService;
 	llm: LlmService;
 	embedding: EmbeddingService;

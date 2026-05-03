@@ -443,10 +443,14 @@ export type {
 	UrlFetcherService,
 	UrlFetchOptions,
 	UrlFetchResult,
+	UrlRendererService,
+	UrlRenderOptions,
+	UrlRenderResult,
 } from './shared/services.js';
 export type { StepError } from './shared/types.js';
 export { createUrlExtractorService } from './shared/url-extractor.js';
 export { createUrlFetcherService } from './shared/url-fetcher.js';
+export { createUrlRendererService } from './shared/url-renderer.js';
 // ── Vertex AI wrapper ────────────────────────────────────────
 export type { VertexClient, VertexClientOptions } from './vertex.js';
 export { createVertexClient } from './vertex.js';

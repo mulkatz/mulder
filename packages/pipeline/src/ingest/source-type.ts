@@ -6,6 +6,7 @@ import type {
 	SourceType,
 	SpreadsheetExtractionResult,
 	UrlFetchResult,
+	UrlRenderResult,
 } from '@mulder/core';
 
 export type SourceDetectionConfidence = 'magic' | 'extension' | 'content';
@@ -470,24 +471,48 @@ export function buildEmailFormatMetadata(
 	};
 }
 
-export function buildUrlFormatMetadata(fetchResult: UrlFetchResult, title?: string): SourceFormatMetadata {
+export interface UrlRenderingMetadataInput {
+	result: UrlRenderResult;
+	fallbackReason: string;
+	staticReadabilityError: string;
+	renderedFromUrl: string;
+}
+
+export function buildUrlFormatMetadata(
+	fetchResult: UrlFetchResult,
+	title?: string,
+	rendering?: UrlRenderingMetadataInput,
+): SourceFormatMetadata {
+	const snapshotHtml = rendering?.result.html ?? fetchResult.html;
+	const finalUrl = rendering?.result.finalUrl ?? fetchResult.finalUrl;
 	return {
 		original_url: fetchResult.originalUrl,
 		normalized_url: fetchResult.normalizedUrl,
-		final_url: fetchResult.finalUrl,
+		final_url: finalUrl,
 		fetch_date: fetchResult.fetchedAt,
 		last_fetched: fetchResult.fetchedAt,
 		http_status: fetchResult.httpStatus,
 		content_type: fetchResult.contentType,
 		etag: fetchResult.headers.etag ?? null,
 		last_modified: fetchResult.headers['last-modified'] ?? null,
-		byte_size: fetchResult.html.length,
+		byte_size: snapshotHtml.length,
 		snapshot_media_type: URL_SNAPSHOT_MEDIA_TYPE,
 		snapshot_encoding: fetchResult.snapshotEncoding ?? 'utf-8',
 		parser_engine: 'mozilla-readability-jsdom-turndown',
 		robots_allowed: fetchResult.robots.allowed,
 		robots_url: fetchResult.robots.robotsUrl,
 		redirect_count: fetchResult.redirectCount,
+		rendering_method: rendering ? 'playwright' : 'static',
+		rendering_engine: rendering?.result.engine ?? null,
+		rendered_at: rendering?.result.renderedAt ?? null,
+		render_duration_ms: rendering?.result.durationMs ?? null,
+		render_fallback_reason: rendering?.fallbackReason ?? null,
+		static_readability_error: rendering?.staticReadabilityError ?? null,
+		rendered_from_url: rendering?.renderedFromUrl ?? null,
+		rendered_final_url: rendering?.result.finalUrl ?? null,
+		rendered_byte_size: rendering?.result.html.length ?? null,
+		blocked_render_request_count: rendering?.result.blockedRequestCount ?? 0,
+		render_warnings: rendering?.result.warnings ?? [],
 		title: title ?? null,
 	};
 }
