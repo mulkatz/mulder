@@ -359,6 +359,36 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 		}
 	});
 
+	it('QA-01/04/05/06: URL dry-run cost estimates still run URL safety validation', async () => {
+		const cases = [
+			{
+				args: ['ingest', '--dry-run', '--cost-estimate', `${baseUrl}/article`],
+				options: { allowUnsafeUrls: false },
+				expected: /unsafe|localhost|URL fetch/i,
+			},
+			{
+				args: ['ingest', '--dry-run', '--cost-estimate', `${baseUrl}/blocked`],
+				expected: /robots|URL fetch/i,
+			},
+			{
+				args: ['ingest', '--dry-run', '--cost-estimate', `${baseUrl}/plain`],
+				expected: /content type|HTML|URL fetch/i,
+			},
+		];
+
+		for (const testCase of cases) {
+			const result = await runCli(testCase.args, testCase.options);
+			const combined = `${result.stdout}\n${result.stderr}`;
+			expect(result.exitCode, combined).not.toBe(0);
+			expect(combined).toMatch(/Cost estimate/i);
+			expect(combined).toMatch(testCase.expected);
+			expect(combined).not.toMatch(/Ingest complete/i);
+			if (pgAvailable) {
+				expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
+			}
+		}
+	});
+
 	it('QA-05: Mulder-specific robots disallow overrides a generic allow before source creation', async () => {
 		if (!pgAvailable) return;
 

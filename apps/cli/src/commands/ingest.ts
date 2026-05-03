@@ -10,7 +10,7 @@
  */
 
 import { closeAllPools, createLogger, createServiceRegistry, getWorkerPool, loadConfig } from '@mulder/core';
-import { executeIngest } from '@mulder/pipeline';
+import { executeIngest, isSupportedUrlInput } from '@mulder/pipeline';
 import type { Command } from 'commander';
 import {
 	collectIngestSourceProfiles,
@@ -78,7 +78,7 @@ Examples:
 					printCostEstimate('Cost estimate for ingest-triggered pipeline', estimate);
 				}
 
-				if (options.dryRun && showEstimate) {
+				if (options.dryRun && showEstimate && !isSupportedUrlInput(inputPath)) {
 					return;
 				}
 
