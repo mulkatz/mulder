@@ -3,7 +3,13 @@ import { performance } from 'node:perf_hooks';
 import type { Browser, BrowserContext, Page, Request, Route } from 'playwright';
 import { MulderError } from './errors.js';
 import type { UrlRendererService, UrlRenderOptions, UrlRenderResult } from './services.js';
-import { normalizeUrlInput, URL_USER_AGENT, validatePublicHttpTarget } from './url-safety.js';
+import {
+	addressLiteralFromHostname,
+	normalizeUrlInput,
+	URL_USER_AGENT,
+	type VettedTarget,
+	validatePublicHttpTarget,
+} from './url-safety.js';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_REDIRECT_LIMIT = 5;
@@ -122,9 +128,26 @@ function isMainFrameNavigation(request: Request, page: Page): boolean {
 	return request.isNavigationRequest() && request.frame() === page.mainFrame();
 }
 
-async function validateBrowserRequestUrl(requestUrl: string): Promise<URL> {
+function chromiumHostResolverArgs(target: VettedTarget): string[] {
+	if (addressLiteralFromHostname(target.url.hostname)) {
+		return [];
+	}
+	const [address] = target.addresses;
+	if (!address) {
+		return [];
+	}
+	const mappedAddress = address.family === 6 ? `[${address.address}]` : address.address;
+	return [`--host-resolver-rules=MAP ${target.url.hostname} ${mappedAddress}`];
+}
+
+async function validateBrowserRequestUrl(requestUrl: string, allowedHostname: string): Promise<URL> {
 	const url = new URL(requestUrl);
 	url.hash = '';
+	if (url.hostname.toLowerCase() !== allowedHostname) {
+		throw new MulderError('URL render blocked cross-host browser request', 'URL_RENDER_CROSS_HOST_BLOCKED', {
+			context: { url: url.toString(), allowedHostname },
+		});
+	}
 	await validatePublicHttpTarget(url);
 	return url;
 }
@@ -133,7 +156,8 @@ class PlaywrightUrlRendererService implements UrlRendererService {
 	async renderUrl(inputUrl: string, options: UrlRenderOptions): Promise<UrlRenderResult> {
 		const normalizedUrl = normalizeUrlInput(inputUrl);
 		const initialUrl = new URL(normalizedUrl);
-		await validatePublicHttpTarget(initialUrl);
+		const initialTarget = await validatePublicHttpTarget(initialUrl);
+		const allowedHostname = initialUrl.hostname.toLowerCase();
 		const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		const redirectLimit = options.redirectLimit ?? DEFAULT_REDIRECT_LIMIT;
 		const start = performance.now();
@@ -146,7 +170,7 @@ class PlaywrightUrlRendererService implements UrlRendererService {
 
 		try {
 			const { chromium } = await import('playwright');
-			browser = await chromium.launch({ headless: true });
+			browser = await chromium.launch({ headless: true, args: chromiumHostResolverArgs(initialTarget) });
 			context = await browser.newContext({
 				acceptDownloads: false,
 				javaScriptEnabled: true,
@@ -158,7 +182,7 @@ class PlaywrightUrlRendererService implements UrlRendererService {
 
 			await context.route('**/*', async (route: Route, request: Request) => {
 				try {
-					await validateBrowserRequestUrl(request.url());
+					await validateBrowserRequestUrl(request.url(), allowedHostname);
 					if (isMainFrameNavigation(request, page)) {
 						mainFrameNavigationCount++;
 						if (mainFrameNavigationCount > redirectLimit + 1) {
