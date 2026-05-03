@@ -36,6 +36,7 @@ import type {
 import { createSpreadsheetExtractorService } from './spreadsheet-extractor.js';
 import { createUrlExtractorService } from './url-extractor.js';
 import { createUrlFetcherService } from './url-fetcher.js';
+import { createUrlRendererService } from './url-renderer.js';
 
 // ────────────────────────────────────────────────────────────
 // Helpers
@@ -657,6 +658,7 @@ export function createDevServices(_config: MulderConfig, logger: Logger): Servic
 		spreadsheets: createSpreadsheetExtractorService(),
 		emails: createEmailExtractorService(),
 		urls: createUrlFetcherService(),
+		urlRenderers: createUrlRendererService(),
 		urlExtractors: createUrlExtractorService(),
 		llm: new DevLlmService(fixturesPath, logger),
 		embedding: new DevEmbeddingService(fixturesPath, logger),

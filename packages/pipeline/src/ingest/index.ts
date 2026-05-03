@@ -21,6 +21,9 @@ import type {
 	SourceFormatMetadata,
 	SourceType,
 	StepError,
+	UrlExtractionResult,
+	UrlFetchResult,
+	UrlRenderResult,
 } from '@mulder/core';
 import {
 	createChildLogger,
@@ -30,6 +33,7 @@ import {
 	findSourceByHash,
 	INGEST_ERROR_CODES,
 	IngestError,
+	MulderError,
 	upsertSourceStep,
 } from '@mulder/core';
 import type pg from 'pg';
@@ -240,12 +244,122 @@ function slugifyFilenamePart(value: string): string {
 	);
 }
 
-function filenameForUrl(fetchResult: Awaited<ReturnType<Services['urls']['fetchUrl']>>): string {
-	const title = htmlTitle(fetchResult.html);
-	const final = new URL(fetchResult.finalUrl);
+function filenameForUrlSnapshot(html: Buffer, finalUrl: string, extractedTitle?: string): string {
+	const title = extractedTitle ?? htmlTitle(html);
+	const final = new URL(finalUrl);
 	const pathPart = final.pathname === '/' ? final.hostname : `${final.hostname}${final.pathname}`;
 	const basis = title ? `${title}-${final.hostname}` : pathPart;
 	return `${slugifyFilenamePart(basis)}.html`;
+}
+
+interface PreparedUrlSnapshot {
+	html: Buffer;
+	finalUrl: string;
+	title: string | null;
+	formatMetadata: SourceFormatMetadata;
+	renderingMethod: 'static' | 'playwright';
+}
+
+function errorCode(error: unknown): string {
+	return error instanceof MulderError ? error.code : error instanceof Error ? error.name : 'UNKNOWN';
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+async function probeUrlSnapshot(input: {
+	services: Services;
+	html: Buffer;
+	sourceId: string;
+	fetchMetadata: SourceFormatMetadata;
+}): Promise<UrlExtractionResult> {
+	return await input.services.urlExtractors.extractUrl(input.html, input.sourceId, input.fetchMetadata);
+}
+
+async function prepareUrlSnapshot(
+	fetchResult: UrlFetchResult,
+	ctx: ProcessFileContext,
+	displayUrl: string,
+	log: Logger,
+): Promise<PreparedUrlSnapshot> {
+	const staticTitle = htmlTitle(fetchResult.html);
+	const staticMetadata = buildUrlFormatMetadata(fetchResult, staticTitle ?? undefined);
+	try {
+		const staticProbe = await probeUrlSnapshot({
+			services: ctx.services,
+			html: fetchResult.html,
+			sourceId: 'url-static-readability-probe',
+			fetchMetadata: staticMetadata,
+		});
+		return {
+			html: fetchResult.html,
+			finalUrl: fetchResult.finalUrl,
+			title: staticProbe.title || staticTitle,
+			formatMetadata: buildUrlFormatMetadata(fetchResult, staticProbe.title || staticTitle || undefined),
+			renderingMethod: 'static',
+		};
+	} catch (staticError: unknown) {
+		const staticReadabilityError = errorCode(staticError);
+		log.info({ staticReadabilityError }, 'Static URL snapshot unreadable, attempting render fallback');
+		let renderResult: UrlRenderResult;
+		try {
+			renderResult = await ctx.services.urlRenderers.renderUrl(fetchResult.finalUrl, {
+				maxBytes: ctx.config.ingestion.max_file_size_mb * 1024 * 1024,
+			});
+		} catch (cause: unknown) {
+			throw new IngestError(
+				`URL render fallback failed for ${displayUrl}`,
+				INGEST_ERROR_CODES.INGEST_URL_RENDER_FAILED,
+				{
+					cause,
+					context: { url: displayUrl, staticReadabilityError },
+				},
+			);
+		}
+		const renderingMetadata = {
+			result: renderResult,
+			fallbackReason: 'static_unreadable',
+			staticReadabilityError,
+			renderedFromUrl: fetchResult.finalUrl,
+		};
+		const renderedTitle = htmlTitle(renderResult.html);
+		const renderedMetadata = buildUrlFormatMetadata(fetchResult, renderedTitle ?? undefined, renderingMetadata);
+		let renderedProbe: UrlExtractionResult;
+		try {
+			renderedProbe = await probeUrlSnapshot({
+				services: ctx.services,
+				html: renderResult.html,
+				sourceId: 'url-rendered-readability-probe',
+				fetchMetadata: renderedMetadata,
+			});
+		} catch (cause: unknown) {
+			throw new IngestError(
+				`Rendered URL snapshot was not readable for ${displayUrl}`,
+				INGEST_ERROR_CODES.INGEST_URL_RENDER_FAILED,
+				{
+					cause,
+					context: {
+						url: displayUrl,
+						staticReadabilityError,
+						renderedReadabilityError: errorCode(cause),
+						renderedErrorMessage: errorMessage(cause),
+					},
+				},
+			);
+		}
+		return {
+			html: renderResult.html,
+			finalUrl: renderResult.finalUrl,
+			title: renderedProbe.title || renderedTitle,
+			formatMetadata: buildUrlFormatMetadata(
+				fetchResult,
+				renderedProbe.title || renderedTitle || undefined,
+				renderingMetadata,
+			),
+			renderingMethod: 'playwright',
+		};
+	}
 }
 
 async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<IngestFileResult> {
@@ -270,10 +384,10 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 		});
 	}
 
-	const title = htmlTitle(fetchResult.html);
-	const filename = filenameForUrl(fetchResult);
-	const fileHash = computeFileHash(fetchResult.html);
-	const formatMetadata = buildUrlFormatMetadata(fetchResult, title ?? undefined);
+	const prepared = await prepareUrlSnapshot(fetchResult, ctx, displayUrl, log);
+	const filename = filenameForUrlSnapshot(prepared.html, prepared.finalUrl, prepared.title ?? undefined);
+	const fileHash = computeFileHash(prepared.html);
+	const formatMetadata = prepared.formatMetadata;
 
 	if (ctx.pool) {
 		const existing = await findSourceByHash(ctx.pool, fileHash);
@@ -297,7 +411,10 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 	const sourceId = randomUUID();
 	const storagePath = `raw/${sourceId}/original.html`;
 	if (ctx.dryRun) {
-		log.info({ sourceId, filename }, 'Dry run — skipping URL snapshot upload and DB insert');
+		log.info(
+			{ sourceId, filename, renderingMethod: prepared.renderingMethod },
+			'Dry run — skipping URL snapshot upload and DB insert',
+		);
 		return {
 			sourceId,
 			filename,
@@ -323,7 +440,7 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 	}
 
 	try {
-		await ctx.services.storage.upload(storagePath, fetchResult.html, URL_SNAPSHOT_MEDIA_TYPE);
+		await ctx.services.storage.upload(storagePath, prepared.html, URL_SNAPSHOT_MEDIA_TYPE);
 	} catch (cause: unknown) {
 		throw new IngestError(`Upload failed for URL snapshot ${displayUrl}`, INGEST_ERROR_CODES.INGEST_UPLOAD_FAILED, {
 			cause,

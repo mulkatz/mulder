@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Source } from '@mulder/core';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,6 +19,7 @@ const STORAGE_DIR = resolve(ROOT, '.local/storage');
 const RAW_STORAGE_DIR = resolve(STORAGE_DIR, 'raw');
 const EXTRACTED_STORAGE_DIR = resolve(STORAGE_DIR, 'extracted');
 const SEGMENTS_STORAGE_DIR = resolve(STORAGE_DIR, 'segments');
+const RENDER_FIXTURE_FILE = resolve(ROOT, '.local/spec-92-url-render-fixtures.json');
 const CREDENTIAL_USERNAME = 'mulderusersecret';
 const CREDENTIAL_PASSWORD = 'mulderpasssecret';
 
@@ -58,6 +59,23 @@ function unreadableHtml(): string {
 	return '<!doctype html><html><head><title>Shell</title></head><body><script>window.app = true;</script></body></html>';
 }
 
+function writeRenderFixtures(): void {
+	mkdirSync(dirname(RENDER_FIXTURE_FILE), { recursive: true });
+	writeFileSync(
+		RENDER_FIXTURE_FILE,
+		JSON.stringify(
+			{
+				'/unreadable': {
+					html: unreadableHtml(),
+					finalUrl: `${baseUrl}/unreadable`,
+				},
+			},
+			null,
+			2,
+		),
+	);
+}
+
 function buildPackage(packageDir: string): void {
 	const result = spawnSync('pnpm', ['build'], {
 		cwd: packageDir,
@@ -79,6 +97,7 @@ async function runCli(
 		...process.env,
 		MULDER_CONFIG: EXAMPLE_CONFIG,
 		MULDER_LOG_LEVEL: 'silent',
+		MULDER_URL_RENDERER_FIXTURE_FILE: RENDER_FIXTURE_FILE,
 		NODE_ENV: 'test',
 		PGPASSWORD: db.TEST_PG_PASSWORD,
 	};
@@ -240,6 +259,7 @@ beforeAll(async () => {
 	if (typeof address === 'object' && address) {
 		baseUrl = `http://127.0.0.1:${address.port}`;
 	}
+	writeRenderFixtures();
 
 	rawSnapshot = snapshotStorageDir(RAW_STORAGE_DIR);
 	extractedSnapshot = snapshotStorageDir(EXTRACTED_STORAGE_DIR);
@@ -260,6 +280,7 @@ beforeEach(() => {
 	mutableArticleBody = 'Original immutable article paragraph for Spec 92 URL extraction.';
 	blockedPageRequests = 0;
 	credentialedTargetRequests = 0;
+	writeRenderFixtures();
 	if (!pgAvailable) return;
 	cleanState();
 	resetStorage();
@@ -635,7 +656,7 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 		}
 	});
 
-	it('QA-08/09/10: URL extract creates one readable story with URL hints and fails unreadable shells clearly', async () => {
+	it('QA-08/09/10: URL extract creates one readable story with URL hints and rejects unreadable shells clearly', async () => {
 		if (!pgAvailable) return;
 
 		const ingest = await runCli(['ingest', `${baseUrl}/article`]);
@@ -670,12 +691,10 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 		cleanState();
 		resetStorage();
 		const unreadableIngest = await runCli(['ingest', `${baseUrl}/unreadable`]);
-		expect(unreadableIngest.exitCode, `${unreadableIngest.stdout}\n${unreadableIngest.stderr}`).toBe(0);
-		const unreadableSourceId = latestUrlSourceId();
-		const unreadableExtract = await runCli(['extract', unreadableSourceId]);
-		expect(unreadableExtract.exitCode).not.toBe(0);
-		expect(`${unreadableExtract.stdout}\n${unreadableExtract.stderr}`).toMatch(/URL extraction|readable|unreadable/i);
-		expect(db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = ${sqlLiteral(unreadableSourceId)};`)).toBe('0');
+		expect(unreadableIngest.exitCode).not.toBe(0);
+		expect(`${unreadableIngest.stdout}\n${unreadableIngest.stderr}`).toMatch(/URL render|readable|unreadable/i);
+		expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
+		expect(db.runSql('SELECT COUNT(*) FROM stories;')).toBe('0');
 	});
 
 	it('§6: URL extract-through-graph budget omits layout and segment charges', async () => {

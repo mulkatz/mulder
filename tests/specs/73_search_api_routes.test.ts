@@ -158,6 +158,17 @@ function buildMockServices(): Services {
 				snapshotEncoding: 'utf-8',
 			}),
 		},
+		urlRenderers: {
+			renderUrl: async () => ({
+				html: Buffer.from('<html><body></body></html>'),
+				finalUrl: 'https://example.com/article',
+				renderedAt: new Date(0).toISOString(),
+				durationMs: 0,
+				engine: 'fixture',
+				blockedRequestCount: 0,
+				warnings: [],
+			}),
+		},
 		urlExtractors: {
 			extractUrl: async () => ({
 				title: 'Example Article',

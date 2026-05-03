@@ -1494,6 +1494,8 @@ interface UrlStoryMetadataJson {
 	byline: string | null;
 	published_time: string | null;
 	modified_time: string | null;
+	rendering_method: string | null;
+	rendering_engine: string | null;
 	parser_engine: string;
 	text_length: number;
 	entity_hints: UrlEntityHint[];
@@ -1525,6 +1527,8 @@ function renderUrlMetadataTable(input: {
 	publishedTime: string | null;
 	modifiedTime: string | null;
 	fetchDate: string | null;
+	renderingMethod: string | null;
+	renderingEngine: string | null;
 }): string {
 	const rows = [
 		['Original URL', input.originalUrl],
@@ -1536,6 +1540,8 @@ function renderUrlMetadataTable(input: {
 		['Published', input.publishedTime],
 		['Modified', input.modifiedTime],
 		['Fetched', input.fetchDate],
+		['Rendering', input.renderingMethod],
+		['Renderer', input.renderingEngine],
 	].filter((row): row is [string, string] => typeof row[1] === 'string' && row[1].length > 0);
 	if (rows.length === 0) {
 		return '';
@@ -1578,6 +1584,8 @@ function renderUrlMarkdown(input: {
 			publishedTime: input.result.publishedTime,
 			modifiedTime: input.result.modifiedTime,
 			fetchDate: urlMetadataString(input.fetchMetadata, 'fetch_date'),
+			renderingMethod: urlMetadataString(input.fetchMetadata, 'rendering_method'),
+			renderingEngine: urlMetadataString(input.fetchMetadata, 'rendering_engine'),
 		}),
 		'',
 		input.result.markdown,
@@ -1620,6 +1628,8 @@ function buildUrlStoryMetadata(input: {
 		byline: input.result.byline,
 		published_time: input.result.publishedTime,
 		modified_time: input.result.modifiedTime,
+		rendering_method: urlMetadataString(input.fetchMetadata, 'rendering_method'),
+		rendering_engine: urlMetadataString(input.fetchMetadata, 'rendering_engine'),
 		parser_engine: input.result.parserEngine,
 		text_length: input.result.textLength,
 		entity_hints: input.result.entityHints,
@@ -1707,6 +1717,8 @@ async function extractUrlSource(input: {
 			byline: storyMetadata.byline,
 			published_time: storyMetadata.published_time,
 			modified_time: storyMetadata.modified_time,
+			rendering_method: storyMetadata.rendering_method,
+			rendering_engine: storyMetadata.rendering_engine,
 			parser_engine: urlResult.parserEngine,
 			entity_hints: urlResult.entityHints,
 			original_storage_path: input.storagePath,
