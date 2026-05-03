@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 
 const toneByStatus: Record<string, string> = {
@@ -22,6 +23,9 @@ const toneByStatus: Record<string, string> = {
 };
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {
+	const { t } = useTranslation();
+	const statusKey = status.replaceAll('-', '_').replaceAll('_', '_');
+
 	return (
 		<span
 			className={cn(
@@ -30,7 +34,7 @@ export function StatusBadge({ status, className }: { status: string; className?:
 				className,
 			)}
 		>
-			{status.replaceAll('_', ' ')}
+			{t(`status.${statusKey}`, { defaultValue: status.replaceAll('_', ' ') })}
 		</span>
 	);
 }

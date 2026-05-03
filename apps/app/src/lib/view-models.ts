@@ -1,3 +1,5 @@
+import type { TFunction } from 'i18next';
+import { i18n } from '@/i18n';
 import type {
 	ContradictionRecord,
 	DocumentListResponse,
@@ -10,19 +12,29 @@ import type {
 } from '@/lib/api-types';
 import type { ActivityEvent, AnalysisRun, EvidenceClaim, Finding, Metric, RunStatus, Severity } from '@/lib/types';
 
-const numberFormatter = new Intl.NumberFormat('en-US');
-
 type JobForAnalysis = JobSummary | (JobDetailRecord & { progress?: JobProgress | null });
 
-function formatNumber(value: number | null | undefined) {
-	return typeof value === 'number' ? numberFormatter.format(value) : '—';
+interface ViewModelContext {
+	t: TFunction;
+	locale: string;
 }
 
-function formatDateTime(value: string | null | undefined) {
-	if (!value) return 'Not started';
+function getContext(context?: Partial<ViewModelContext>): ViewModelContext {
+	return {
+		locale: context?.locale ?? i18n.language ?? 'en',
+		t: context?.t ?? i18n.t.bind(i18n),
+	};
+}
+
+function formatNumber(value: number | null | undefined, locale: string) {
+	return typeof value === 'number' ? new Intl.NumberFormat(locale).format(value) : '—';
+}
+
+function formatDateTime(value: string | null | undefined, context: ViewModelContext) {
+	if (!value) return context.t('viewModel.notStarted');
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) return value;
-	return new Intl.DateTimeFormat('en-US', {
+	return new Intl.DateTimeFormat(context.locale, {
 		month: 'short',
 		day: '2-digit',
 		hour: '2-digit',
@@ -30,21 +42,25 @@ function formatDateTime(value: string | null | undefined) {
 	}).format(date);
 }
 
-function formatClock(value: string | null | undefined) {
+function formatClock(value: string | null | undefined, locale: string) {
 	if (!value) return '—';
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) return '—';
-	return new Intl.DateTimeFormat('en-US', {
+	return new Intl.DateTimeFormat(locale, {
 		hour: '2-digit',
 		minute: '2-digit',
 	}).format(date);
 }
 
-function formatDuration(start: string | null | undefined, finish: string | null | undefined) {
-	if (!start) return 'Not started';
+function formatDuration(
+	start: string | null | undefined,
+	finish: string | null | undefined,
+	context: ViewModelContext,
+) {
+	if (!start) return context.t('viewModel.notStarted');
 	const startedAt = new Date(start).getTime();
 	const finishedAt = finish ? new Date(finish).getTime() : Date.now();
-	if (Number.isNaN(startedAt) || Number.isNaN(finishedAt) || finishedAt < startedAt) return 'Unknown';
+	if (Number.isNaN(startedAt) || Number.isNaN(finishedAt) || finishedAt < startedAt) return context.t('common.unknown');
 	const totalSeconds = Math.round((finishedAt - startedAt) / 1000);
 	const minutes = Math.floor(totalSeconds / 60);
 	const seconds = totalSeconds % 60;
@@ -76,21 +92,23 @@ function progressFromJob(job: JobForAnalysis) {
 	return null;
 }
 
-function timelineFromJob(job: JobForAnalysis) {
+function timelineFromJob(job: JobForAnalysis, context: ViewModelContext) {
 	const timeline: AnalysisRun['timeline'] = [
 		{
-			time: formatClock(job.created_at),
-			label: 'Job accepted',
-			detail: `Queue accepted ${job.type}.`,
+			time: formatClock(job.created_at, context.locale),
+			label: context.t('viewModel.jobAccepted'),
+			detail: context.t('viewModel.jobAcceptedDetail', { type: job.type }),
 			status: 'completed',
 		},
 	];
 
 	if (job.started_at) {
 		timeline.push({
-			time: formatClock(job.started_at),
-			label: 'Worker started',
-			detail: job.worker_id ? `Worker ${job.worker_id} claimed the job.` : 'A worker claimed the job.',
+			time: formatClock(job.started_at, context.locale),
+			label: context.t('viewModel.workerStarted'),
+			detail: job.worker_id
+				? context.t('viewModel.workerStartedDetail', { workerId: job.worker_id })
+				: context.t('viewModel.workerStartedFallback'),
 			status: job.finished_at ? 'completed' : mapJobStatus(job.status),
 		});
 	}
@@ -98,7 +116,7 @@ function timelineFromJob(job: JobForAnalysis) {
 	if ('progress' in job && job.progress) {
 		for (const source of job.progress.sources.slice(0, 4)) {
 			timeline.push({
-				time: formatClock(source.updated_at),
+				time: formatClock(source.updated_at, context.locale),
 				label: source.current_step,
 				detail: source.error_message ?? source.source_id,
 				status:
@@ -115,9 +133,12 @@ function timelineFromJob(job: JobForAnalysis) {
 
 	if (job.finished_at) {
 		timeline.push({
-			time: formatClock(job.finished_at),
-			label: job.status === 'completed' ? 'Job completed' : 'Job stopped',
-			detail: job.status === 'completed' ? 'Worker reported a completed job.' : 'Worker reported a terminal failure.',
+			time: formatClock(job.finished_at, context.locale),
+			label: job.status === 'completed' ? context.t('viewModel.jobCompleted') : context.t('viewModel.jobStopped'),
+			detail:
+				job.status === 'completed'
+					? context.t('viewModel.jobCompletedDetail')
+					: context.t('viewModel.jobStoppedDetail'),
 			status: mapJobStatus(job.status),
 		});
 	}
@@ -125,7 +146,8 @@ function timelineFromJob(job: JobForAnalysis) {
 	return timeline;
 }
 
-export function jobToAnalysisRun(job: JobForAnalysis): AnalysisRun {
+export function jobToAnalysisRun(job: JobForAnalysis, contextInput?: Partial<ViewModelContext>): AnalysisRun {
+	const context = getContext(contextInput);
 	const payload = 'payload' in job ? job.payload : { type: job.type };
 	const error = 'error_log' in job ? job.error_log : null;
 
@@ -134,36 +156,45 @@ export function jobToAnalysisRun(job: JobForAnalysis): AnalysisRun {
 		title: titleFromJobType(job.type),
 		mode: job.type,
 		status: mapJobStatus(job.status),
-		owner: job.worker_id ?? 'Unassigned',
-		corpus: 'Pipeline queue',
-		startedAt: formatDateTime(job.started_at ?? job.created_at),
-		duration: formatDuration(job.started_at, job.finished_at),
+		owner: job.worker_id ?? context.t('viewModel.unassigned'),
+		corpus: context.t('viewModel.pipelineQueue'),
+		startedAt: formatDateTime(job.started_at ?? job.created_at, context),
+		duration: formatDuration(job.started_at, job.finished_at, context),
 		attempts: `${job.attempts}/${job.max_attempts}`,
 		credits: null,
 		progress: progressFromJob(job),
 		confidence: null,
 		findings: null,
-		query: 'Product-shaped analysis run summaries are not exposed yet. This view is backed by the jobs API.',
+		query: context.t('viewModel.analysisRunQuery'),
 		params: payload,
 		artifacts: [],
-		timeline: timelineFromJob(job),
+		timeline: timelineFromJob(job, context),
 		error: error ?? undefined,
 	};
 }
 
-export function jobDetailToAnalysisRun(detail: JobDetailResponse['data']): AnalysisRun {
-	return jobToAnalysisRun({
-		...detail.job,
-		progress: detail.progress,
-	});
+export function jobDetailToAnalysisRun(
+	detail: JobDetailResponse['data'],
+	contextInput?: Partial<ViewModelContext>,
+): AnalysisRun {
+	return jobToAnalysisRun(
+		{
+			...detail.job,
+			progress: detail.progress,
+		},
+		contextInput,
+	);
 }
 
-export function jobsToActivity(jobs: JobSummary[]): ActivityEvent[] {
+export function jobsToActivity(jobs: JobSummary[], contextInput?: Partial<ViewModelContext>): ActivityEvent[] {
+	const context = getContext(contextInput);
 	return jobs.slice(0, 6).map((job) => ({
 		id: `activity-${job.id}`,
 		label: titleFromJobType(job.type),
-		detail: job.worker_id ? `Worker ${job.worker_id}` : 'Waiting for worker assignment',
-		time: formatDateTime(job.finished_at ?? job.started_at ?? job.created_at),
+		detail: job.worker_id
+			? context.t('viewModel.workerStartedDetail', { workerId: job.worker_id })
+			: context.t('viewModel.waitingForWorker'),
+		time: formatDateTime(job.finished_at ?? job.started_at ?? job.created_at, context),
 		status: mapJobStatus(job.status),
 	}));
 }
@@ -174,23 +205,33 @@ function contradictionSeverity(record: ContradictionRecord): Severity {
 	return 'medium';
 }
 
-export function contradictionsToFindings(records: ContradictionRecord[]): Finding[] {
+export function contradictionsToFindings(
+	records: ContradictionRecord[],
+	contextInput?: Partial<ViewModelContext>,
+): Finding[] {
+	const context = getContext(contextInput);
 	return records.slice(0, 5).map((record) => ({
 		id: record.id,
 		title:
 			record.edge_type === 'CONFIRMED_CONTRADICTION'
-				? 'Confirmed contradiction'
+				? context.t('viewModel.confirmedContradiction')
 				: record.edge_type === 'DISMISSED_CONTRADICTION'
-					? 'Dismissed contradiction'
-					: 'Potential contradiction',
-		summary: record.analysis?.explanation ?? `Relationship conflict on ${record.relationship}.`,
+					? context.t('viewModel.dismissedContradiction')
+					: context.t('viewModel.potentialContradiction'),
+		summary:
+			record.analysis?.explanation ??
+			context.t('viewModel.relationshipConflict', { relationship: record.relationship }),
 		severity: contradictionSeverity(record),
 		entity: `${record.source_entity_id} -> ${record.target_entity_id}`,
-		createdAt: record.story_id ?? 'No story link',
+		createdAt: record.story_id ?? context.t('viewModel.noStoryLink'),
 	}));
 }
 
-export function contradictionToClaim(record: ContradictionRecord): EvidenceClaim {
+export function contradictionToClaim(
+	record: ContradictionRecord,
+	contextInput?: Partial<ViewModelContext>,
+): EvidenceClaim {
+	const context = getContext(contextInput);
 	const status =
 		record.edge_type === 'CONFIRMED_CONTRADICTION'
 			? 'contradicted'
@@ -199,59 +240,77 @@ export function contradictionToClaim(record: ContradictionRecord): EvidenceClaim
 				: 'watching';
 	const confidence = record.analysis?.confidence ?? record.confidence ?? 0;
 	const attributeSignal = record.attributes.attribute
-		? `Attribute: ${record.attributes.attribute}`
-		: 'Attribute pending';
-	const verdictSignal = record.analysis ? `Verdict: ${record.analysis.verdict}` : 'Needs review';
+		? context.t('viewModel.attribute', { attribute: record.attributes.attribute })
+		: context.t('viewModel.attributePending');
+	const verdictSignal = record.analysis
+		? context.t('viewModel.verdict', { verdict: record.analysis.verdict })
+		: context.t('viewModel.needsReview');
 
 	return {
 		id: record.id,
-		claim: record.analysis?.explanation ?? `Contradiction candidate for ${record.relationship}.`,
+		claim:
+			record.analysis?.explanation ??
+			context.t('viewModel.contradictionCandidate', { relationship: record.relationship }),
 		entity: `${record.source_entity_id} -> ${record.target_entity_id}`,
 		status,
 		confidence,
-		lastSeen: record.story_id ?? 'No story link',
+		lastSeen: record.story_id ?? context.t('viewModel.noStoryLink'),
 		sourceCount: 2,
 		citations: [],
 		signals: [attributeSignal, verdictSignal, record.relationship],
 	};
 }
 
-export function buildOverviewMetrics({
-	documents,
-	evidence,
-	status,
-}: {
-	documents?: DocumentListResponse;
-	evidence?: EvidenceSummaryResponse;
-	status?: StatusResponse;
-}): Metric[] {
+export function buildOverviewMetrics(
+	{
+		documents,
+		evidence,
+		status,
+	}: {
+		documents?: DocumentListResponse;
+		evidence?: EvidenceSummaryResponse;
+		status?: StatusResponse;
+	},
+	contextInput?: Partial<ViewModelContext>,
+): Metric[] {
+	const context = getContext(contextInput);
 	const openContradictions = evidence
 		? evidence.data.contradictions.potential + evidence.data.contradictions.confirmed
 		: null;
 
 	return [
 		{
-			label: 'Documents indexed',
-			value: formatNumber(documents?.meta.count),
-			delta: documents ? `${formatNumber(documents.data.length)} loaded` : 'API pending',
+			label: context.t('viewModel.documentsIndexed'),
+			value: formatNumber(documents?.meta.count, context.locale),
+			delta: documents
+				? context.t('viewModel.loaded', { count: formatNumber(documents.data.length, context.locale) })
+				: context.t('common.apiPending'),
 			tone: documents ? 'neutral' : 'warning',
 		},
 		{
-			label: 'Entities resolved',
-			value: formatNumber(evidence?.data.entities.total),
-			delta: evidence ? `${formatNumber(evidence.data.entities.scored)} scored` : 'API pending',
+			label: context.t('viewModel.entitiesResolved'),
+			value: formatNumber(evidence?.data.entities.total, context.locale),
+			delta: evidence
+				? context.t('viewModel.scored', { count: formatNumber(evidence.data.entities.scored, context.locale) })
+				: context.t('common.apiPending'),
 			tone: evidence ? 'good' : 'warning',
 		},
 		{
-			label: 'Open contradictions',
-			value: formatNumber(openContradictions),
-			delta: evidence ? `${formatNumber(evidence.data.contradictions.confirmed)} confirmed` : 'API pending',
+			label: context.t('viewModel.openContradictions'),
+			value: formatNumber(openContradictions, context.locale),
+			delta: evidence
+				? context.t('viewModel.confirmed', {
+						count: formatNumber(evidence.data.contradictions.confirmed, context.locale),
+					})
+				: context.t('common.apiPending'),
 			tone: openContradictions && openContradictions > 0 ? 'danger' : 'neutral',
 		},
 		{
-			label: 'Queue running',
-			value: formatNumber(status?.data.jobs.running),
-			delta: status ? `${formatNumber(status.data.jobs.pending)} pending` : 'API pending',
+			label: context.t('viewModel.queueRunning'),
+			value: formatNumber(status?.data.jobs.running, context.locale),
+			delta: status
+				? context.t('viewModel.pending', { count: formatNumber(status.data.jobs.pending, context.locale) })
+				: context.t('common.apiPending'),
 			tone: status && status.data.jobs.failed + status.data.jobs.dead_letter > 0 ? 'warning' : 'neutral',
 		},
 	];

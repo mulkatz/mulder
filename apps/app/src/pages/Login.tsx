@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthFrame } from '@/components/AuthFrame';
 import { StateNotice } from '@/components/StateNotice';
@@ -11,6 +12,7 @@ interface LocationState {
 }
 
 export function LoginPage() {
+	const { t } = useTranslation();
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
 	const login = useLogin();
@@ -37,14 +39,11 @@ export function LoginPage() {
 	}
 
 	return (
-		<AuthFrame
-			description="Use your Mulder account to access documents, evidence, jobs, and research workflows."
-			title="Sign in to Mulder"
-		>
+		<AuthFrame description={t('auth.loginDescription')} title={t('auth.loginTitle')}>
 			<form className="space-y-4" onSubmit={handleSubmit}>
 				<div>
 					<label className="text-sm font-medium text-text" htmlFor="email">
-						Email
+						{t('common.email')}
 					</label>
 					<input
 						autoComplete="email"
@@ -59,7 +58,7 @@ export function LoginPage() {
 
 				<div>
 					<label className="text-sm font-medium text-text" htmlFor="password">
-						Password
+						{t('common.password')}
 					</label>
 					<input
 						autoComplete="current-password"
@@ -73,8 +72,8 @@ export function LoginPage() {
 				</div>
 
 				{login.error ? (
-					<StateNotice tone="error" title="Could not sign in">
-						{getErrorMessage(login.error)}
+					<StateNotice tone="error" title={t('auth.loginErrorTitle')}>
+						{getErrorMessage(login.error, t('common.apiRequestFailed'))}
 					</StateNotice>
 				) : null}
 
@@ -83,7 +82,7 @@ export function LoginPage() {
 					disabled={login.isPending}
 					type="submit"
 				>
-					{login.isPending ? 'Signing in...' : 'Sign in'}
+					{login.isPending ? t('auth.loginSubmitting') : t('auth.loginSubmit')}
 				</button>
 			</form>
 		</AuthFrame>

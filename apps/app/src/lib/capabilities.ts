@@ -47,7 +47,7 @@ export const capabilities = {
 		id: 'jobs.detail',
 		label: 'Job detail',
 		state: 'mounted-partial',
-		note: 'GET /api/jobs/:id exists, but product run artifacts and timings need a stronger facade.',
+		note: 'GET /api/jobs/:id exists, but app run artifacts and timings need a stronger facade.',
 	},
 	'documents.list': {
 		id: 'documents.list',
@@ -59,7 +59,7 @@ export const capabilities = {
 		id: 'documents.viewer',
 		label: 'Document viewer',
 		state: 'mounted-partial',
-		note: 'PDF, layout, pages, stories, and observability exist, but product ingest is gated by M10 trust work.',
+		note: 'PDF, layout, pages, stories, and observability exist, but archive ingest is gated by M10 trust work.',
 	},
 	'evidence.summary': {
 		id: 'evidence.summary',
@@ -77,7 +77,7 @@ export const capabilities = {
 		id: 'evidence.claims',
 		label: 'Claim review',
 		state: 'missing',
-		note: 'First-class claims, assertions, and review actions need a product API contract.',
+		note: 'First-class claims, assertions, and review actions need an app API contract.',
 	},
 	'search.hybrid': {
 		id: 'search.hybrid',
@@ -107,7 +107,7 @@ export const capabilities = {
 		id: 'usage.cost',
 		label: 'Usage',
 		state: 'mounted-partial',
-		note: 'Status exposes budget pieces; a broader product usage view is still needed.',
+		note: 'Status exposes budget pieces; a broader usage view is still needed.',
 	},
 	'settings.admin': {
 		id: 'settings.admin',

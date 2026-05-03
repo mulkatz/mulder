@@ -3,6 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (() => {
+        try {
+          const storedLocale = window.localStorage.getItem('mulder.locale');
+          const locale =
+            storedLocale === 'en' || storedLocale === 'de'
+              ? storedLocale
+              : window.navigator.language.toLowerCase().indexOf('de') === 0
+                ? 'de'
+                : 'en';
+          const storedTheme = window.localStorage.getItem('mulder.theme');
+          const themePreference =
+            storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system' ? storedTheme : 'system';
+          const systemTheme =
+            typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light';
+          const resolvedTheme = themePreference === 'system' ? systemTheme : themePreference;
+
+          document.documentElement.lang = locale;
+          document.documentElement.dataset.theme = resolvedTheme;
+          document.documentElement.style.colorScheme = resolvedTheme;
+        } catch (_) {
+          document.documentElement.dataset.theme = 'light';
+          document.documentElement.style.colorScheme = 'light';
+        }
+      })();
+    </script>
     <title>Mulder App</title>
   </head>
   <body>

@@ -180,7 +180,7 @@ Recommended usage:
 
 ### Color
 
-The palette should stay light-first and neutral:
+The palette should stay light-first and neutral, with a complete dark mode available from the same semantic token system:
 
 - Off-white canvas.
 - White panels.
@@ -191,6 +191,16 @@ The palette should stay light-first and neutral:
 - Semantic colors for success, warning, danger, and info.
 
 Orange should be strong enough to create product identity, but sparse enough to preserve seriousness.
+
+Theme support must stay token-driven. Components should consume semantic tokens such as `bg-panel`, `text-text`, and `border-border`; they should not contain light/dark layout branches. Light values live on `:root`, dark values live under `html[data-theme="dark"]`, and theme selection is application state rather than component styling logic.
+
+### Internationalization
+
+English and German are first-class app languages. UI copy should go through `i18next` resources in `apps/app/src/i18n/resources.ts`; new components should not introduce hard-coded user-facing strings. API/domain values may remain raw when they are data, but labels, headings, empty states, tooltips, button text, and error fallbacks belong in the locale resources.
+
+### Motion
+
+Motion should be part of the app foundation, not added ad hoc component by component. Use `framer-motion` through the shared `MotionConfig` and local motion primitives. Animations should be restrained: fast fades, small translations, drawer transitions, and state changes that help orientation. Avoid decorative motion, long durations, scrolljacking, or animation that makes dense research work slower. Respect `prefers-reduced-motion` everywhere.
 
 ### Layout
 

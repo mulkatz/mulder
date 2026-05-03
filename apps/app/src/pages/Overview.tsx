@@ -1,4 +1,6 @@
+import type { TFunction } from 'i18next';
 import { AlertTriangle, Archive, Database, Network, Play, ShieldCheck } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { type DataColumn, DataTable } from '@/components/DataTable';
 import { InspectorPanel, InspectorSection } from '@/components/InspectorPanel';
 import { MetricCard } from '@/components/MetricCard';
@@ -15,63 +17,72 @@ import { getErrorMessage, hasQueryError } from '@/lib/query-state';
 import type { ActivityEvent, AnalysisRun, Finding } from '@/lib/types';
 import { buildOverviewMetrics, contradictionsToFindings, jobsToActivity, jobToAnalysisRun } from '@/lib/view-models';
 
-const activeRunColumns: DataColumn<AnalysisRun>[] = [
-	{
-		key: 'title',
-		header: 'Run',
-		render: (run) => (
-			<div className="min-w-0">
-				<p className="truncate font-medium text-text">{run.title}</p>
-				<p className="mt-1 truncate font-mono text-xs text-text-subtle">{run.id}</p>
-			</div>
-		),
-	},
-	{ key: 'mode', header: 'Mode', render: (run) => <span className="text-text-muted">{run.mode}</span> },
-	{ key: 'status', header: 'Status', render: (run) => <StatusBadge status={run.status} /> },
-	{
-		key: 'progress',
-		header: 'Progress',
-		render: (run) => (
-			<div className="flex items-center gap-3">
-				{run.progress === null ? (
-					<span className="font-mono text-xs text-text-subtle">not exposed</span>
-				) : (
-					<>
-						<div className="h-1.5 w-28 overflow-hidden rounded-xs bg-field">
-							<div className="h-full rounded-xs bg-accent" style={{ width: `${run.progress}%` }} />
-						</div>
-						<span className="font-mono text-xs text-text-muted">{run.progress}%</span>
-					</>
-				)}
-			</div>
-		),
-	},
-	{
-		key: 'findings',
-		header: 'Findings',
-		render: (run) => <span className="font-mono text-sm">{run.findings ?? '—'}</span>,
-	},
-];
+function getActiveRunColumns(t: TFunction): DataColumn<AnalysisRun>[] {
+	return [
+		{
+			key: 'title',
+			header: t('runs.tableRun'),
+			render: (run) => (
+				<div className="min-w-0">
+					<p className="truncate font-medium text-text">{run.title}</p>
+					<p className="mt-1 truncate font-mono text-xs text-text-subtle">{run.id}</p>
+				</div>
+			),
+		},
+		{ key: 'mode', header: t('common.mode'), render: (run) => <span className="text-text-muted">{run.mode}</span> },
+		{ key: 'status', header: t('common.status'), render: (run) => <StatusBadge status={run.status} /> },
+		{
+			key: 'progress',
+			header: t('runs.tableProgress'),
+			render: (run) => (
+				<div className="flex items-center gap-3">
+					{run.progress === null ? (
+						<span className="font-mono text-xs text-text-subtle">{t('common.notExposed')}</span>
+					) : (
+						<>
+							<div className="h-1.5 w-28 overflow-hidden rounded-xs bg-field">
+								<div className="h-full rounded-xs bg-accent" style={{ width: `${run.progress}%` }} />
+							</div>
+							<span className="font-mono text-xs text-text-muted">{run.progress}%</span>
+						</>
+					)}
+				</div>
+			),
+		},
+		{
+			key: 'findings',
+			header: t('runs.findings'),
+			render: (run) => <span className="font-mono text-sm">{run.findings ?? '—'}</span>,
+		},
+	];
+}
 
-const activityColumns: DataColumn<ActivityEvent>[] = [
-	{
-		key: 'event',
-		header: 'Event',
-		render: (event) => (
-			<div>
-				<p className="font-medium text-text">{event.label}</p>
-				<p className="mt-1 text-xs text-text-muted">{event.detail}</p>
-			</div>
-		),
-	},
-	{
-		key: 'time',
-		header: 'Time',
-		className: 'w-24',
-		render: (event) => <span className="font-mono text-xs">{event.time}</span>,
-	},
-	{ key: 'status', header: 'Status', className: 'w-28', render: (event) => <StatusBadge status={event.status} /> },
-];
+function getActivityColumns(t: TFunction): DataColumn<ActivityEvent>[] {
+	return [
+		{
+			key: 'event',
+			header: t('overview.activity'),
+			render: (event) => (
+				<div>
+					<p className="font-medium text-text">{event.label}</p>
+					<p className="mt-1 text-xs text-text-muted">{event.detail}</p>
+				</div>
+			),
+		},
+		{
+			key: 'time',
+			header: t('common.started'),
+			className: 'w-24',
+			render: (event) => <span className="font-mono text-xs">{event.time}</span>,
+		},
+		{
+			key: 'status',
+			header: t('common.status'),
+			className: 'w-28',
+			render: (event) => <StatusBadge status={event.status} />,
+		},
+	];
+}
 
 function FindingRow({ finding }: { finding: Finding }) {
 	return (
@@ -88,22 +99,29 @@ function FindingRow({ finding }: { finding: Finding }) {
 }
 
 export function OverviewPage() {
+	const { t, i18n } = useTranslation();
 	const statusQuery = useStatus();
 	const jobsQuery = useJobs({ limit: 8 });
 	const documentsQuery = useDocuments({ limit: 5 });
 	const evidenceQuery = useEvidenceSummary();
 	const contradictionsQuery = useContradictions({ limit: 5 });
+	const viewModelContext = { locale: i18n.language, t };
 
-	const metrics = buildOverviewMetrics({
-		documents: documentsQuery.data,
-		evidence: evidenceQuery.data,
-		status: statusQuery.data,
-	});
+	const metrics = buildOverviewMetrics(
+		{
+			documents: documentsQuery.data,
+			evidence: evidenceQuery.data,
+			status: statusQuery.data,
+		},
+		viewModelContext,
+	);
 	const activeRuns = (jobsQuery.data?.data ?? [])
-		.map(jobToAnalysisRun)
+		.map((job) => jobToAnalysisRun(job, viewModelContext))
 		.filter((run) => run.status === 'running' || run.status === 'queued' || run.status === 'watching');
-	const findings = contradictionsToFindings(contradictionsQuery.data?.data ?? []);
-	const activity = jobsToActivity(jobsQuery.data?.data ?? []);
+	const findings = contradictionsToFindings(contradictionsQuery.data?.data ?? [], viewModelContext);
+	const activity = jobsToActivity(jobsQuery.data?.data ?? [], viewModelContext);
+	const activeRunColumns = getActiveRunColumns(t);
+	const activityColumns = getActivityColumns(t);
 	const hasError = hasQueryError([
 		statusQuery.error,
 		jobsQuery.error,
@@ -128,23 +146,23 @@ export function OverviewPage() {
 					<button
 						className="inline-flex h-9 items-center gap-2 rounded-md bg-field px-3 text-sm font-medium text-text-subtle"
 						disabled
-						title="Pipeline actions will be wired after the API foundation is in place."
+						title={t('overview.startAnalysisTitle')}
 						type="button"
 					>
 						<Play className="size-4" />
-						Start analysis
+						{t('overview.startAnalysis')}
 					</button>
 				}
-				description="System pulse, corpus health, active analyses, and high-signal findings."
-				eyebrow="Overview"
-				title="Analysis control plane"
+				description={t('overview.description')}
+				eyebrow={t('overview.eyebrow')}
+				title={t('overview.title')}
 			/>
 
 			<div className="space-y-4 p-4 sm:p-6">
-				{isLoading ? <StateNotice tone="loading" title="Loading API-backed overview" /> : null}
+				{isLoading ? <StateNotice tone="loading" title={t('overview.loadingTitle')} /> : null}
 				{hasError ? (
-					<StateNotice tone="error" title="Overview API unavailable">
-						{getErrorMessage(firstError)}
+					<StateNotice tone="error" title={t('overview.errorTitle')}>
+						{getErrorMessage(firstError, t('common.apiRequestFailed'))}
 					</StateNotice>
 				) : null}
 
@@ -160,61 +178,63 @@ export function OverviewPage() {
 						<Toolbar>
 							<div className="flex items-center gap-2">
 								<Database className="size-4 text-accent" />
-								<h2 className="font-medium text-text">Active analyses</h2>
+								<h2 className="font-medium text-text">{t('overview.activeAnalyses')}</h2>
 							</div>
-							<span className="ml-auto font-mono text-xs text-text-subtle">{activeRuns.length} live</span>
+							<span className="ml-auto font-mono text-xs text-text-subtle">
+								{t('overview.liveCount', { count: activeRuns.length })}
+							</span>
 						</Toolbar>
 						<DataTable
 							columns={activeRunColumns}
-							emptyMessage="No active jobs returned by the API"
+							emptyMessage={t('overview.noActiveJobs')}
 							getRowKey={(run) => run.id}
 							minWidth={660}
 							rows={activeRuns}
 						/>
 					</section>
 
-					<InspectorPanel subtitle="Claims and entities needing attention" title="Recent findings">
+					<InspectorPanel subtitle={t('overview.findingsSubtitle')} title={t('overview.findingsTitle')}>
 						<div className="-m-4">
 							{findings.length > 0 ? (
 								findings.map((finding) => <FindingRow finding={finding} key={finding.id} />)
 							) : (
-								<div className="p-4 text-sm text-text-muted">No contradiction findings returned by the API.</div>
+								<div className="p-4 text-sm text-text-muted">{t('overview.noFindings')}</div>
 							)}
 						</div>
 					</InspectorPanel>
 				</div>
 
 				<div className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-					<InspectorPanel title="API readiness">
-						<InspectorSection title="Read models">
+					<InspectorPanel title={t('overview.apiReadiness')}>
+						<InspectorSection title={t('overview.readModels')}>
 							<div className="space-y-2">
 								<div className="flex items-center justify-between gap-3 rounded-md bg-field p-3">
-									<span className="text-sm text-text-muted">Status</span>
+									<span className="text-sm text-text-muted">{t('common.status')}</span>
 									<StatusBadge status={statusQuery.isSuccess ? 'mounted-api' : 'missing'} />
 								</div>
 								<div className="flex items-center justify-between gap-3 rounded-md bg-field p-3">
-									<span className="text-sm text-text-muted">Jobs</span>
+									<span className="text-sm text-text-muted">{t('common.jobs')}</span>
 									<StatusBadge status={jobsQuery.isSuccess ? 'mounted-api' : 'missing'} />
 								</div>
 								<div className="flex items-center justify-between gap-3 rounded-md bg-field p-3">
-									<span className="text-sm text-text-muted">Evidence</span>
+									<span className="text-sm text-text-muted">{t('overview.evidence')}</span>
 									<StatusBadge status={evidenceQuery.isSuccess ? 'mounted-api' : 'missing'} />
 								</div>
 							</div>
 						</InspectorSection>
-						<InspectorSection title="Queue">
+						<InspectorSection title={t('overview.queue')}>
 							<div className="grid grid-cols-3 gap-2">
 								<div className="rounded-md bg-field p-3">
 									<p className="font-mono text-lg font-semibold">{queue?.running ?? '—'}</p>
-									<p className="text-xs text-text-muted">Running</p>
+									<p className="text-xs text-text-muted">{t('common.running')}</p>
 								</div>
 								<div className="rounded-md bg-field p-3">
 									<p className="font-mono text-lg font-semibold">{queue?.pending ?? '—'}</p>
-									<p className="text-xs text-text-muted">Queued</p>
+									<p className="text-xs text-text-muted">{t('common.queued')}</p>
 								</div>
 								<div className="rounded-md bg-field p-3">
 									<p className="font-mono text-lg font-semibold">{queue ? queue.failed + queue.dead_letter : '—'}</p>
-									<p className="text-xs text-text-muted">Blocked</p>
+									<p className="text-xs text-text-muted">{t('common.blocked')}</p>
 								</div>
 							</div>
 						</InspectorSection>
@@ -222,11 +242,11 @@ export function OverviewPage() {
 
 					<section className="panel min-w-0 overflow-hidden">
 						<Toolbar>
-							<h2 className="font-medium text-text">Activity</h2>
+							<h2 className="font-medium text-text">{t('overview.activity')}</h2>
 						</Toolbar>
 						<DataTable
 							columns={activityColumns}
-							emptyMessage="No job activity returned by the API"
+							emptyMessage={t('overview.noActivity')}
 							getRowKey={(event) => event.id}
 							minWidth={640}
 							rows={activity}
