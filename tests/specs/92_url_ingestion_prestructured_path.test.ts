@@ -635,7 +635,7 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 		}
 	});
 
-	it('QA-08/09/10: URL extract creates one readable story with URL hints and fails unreadable shells clearly', async () => {
+	it('QA-08/09/10: URL extract creates one readable story with URL hints and rejects unreadable shells clearly', async () => {
 		if (!pgAvailable) return;
 
 		const ingest = await runCli(['ingest', `${baseUrl}/article`]);
@@ -670,12 +670,10 @@ describe('Spec 92 — URL Ingestion on the Pre-Structured Path', () => {
 		cleanState();
 		resetStorage();
 		const unreadableIngest = await runCli(['ingest', `${baseUrl}/unreadable`]);
-		expect(unreadableIngest.exitCode, `${unreadableIngest.stdout}\n${unreadableIngest.stderr}`).toBe(0);
-		const unreadableSourceId = latestUrlSourceId();
-		const unreadableExtract = await runCli(['extract', unreadableSourceId]);
-		expect(unreadableExtract.exitCode).not.toBe(0);
-		expect(`${unreadableExtract.stdout}\n${unreadableExtract.stderr}`).toMatch(/URL extraction|readable|unreadable/i);
-		expect(db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = ${sqlLiteral(unreadableSourceId)};`)).toBe('0');
+		expect(unreadableIngest.exitCode).not.toBe(0);
+		expect(`${unreadableIngest.stdout}\n${unreadableIngest.stderr}`).toMatch(/URL render|readable|unreadable/i);
+		expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
+		expect(db.runSql('SELECT COUNT(*) FROM stories;')).toBe('0');
 	});
 
 	it('§6: URL extract-through-graph budget omits layout and segment charges', async () => {
