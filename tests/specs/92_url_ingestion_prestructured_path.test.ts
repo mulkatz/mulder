@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Source } from '@mulder/core';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -60,6 +60,7 @@ function unreadableHtml(): string {
 }
 
 function writeRenderFixtures(): void {
+	mkdirSync(dirname(RENDER_FIXTURE_FILE), { recursive: true });
 	writeFileSync(
 		RENDER_FIXTURE_FILE,
 		JSON.stringify(

@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
 import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir } from '../lib/storage.js';
@@ -64,6 +64,7 @@ function shellHtml(): string {
 
 function writeRenderFixtures(): void {
 	const rendered = articleHtml(renderedArticleBody);
+	mkdirSync(dirname(RENDER_FIXTURE_FILE), { recursive: true });
 	writeFileSync(
 		RENDER_FIXTURE_FILE,
 		JSON.stringify(
