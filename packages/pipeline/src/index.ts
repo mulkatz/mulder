@@ -98,7 +98,7 @@ export type {
 	SourceDetectionConfidence,
 	SourceDetectionResult,
 } from './ingest/index.js';
-export { detectSourceType, execute as executeIngest, resolvePdfFiles } from './ingest/index.js';
+export { detectSourceType, execute as executeIngest, isPreStructuredType, resolvePdfFiles } from './ingest/index.js';
 export type {
 	PipelineGlobalAnalysisOutcome,
 	PipelineRunInput,

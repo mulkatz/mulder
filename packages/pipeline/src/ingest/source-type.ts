@@ -93,6 +93,21 @@ function hasRfc822HeaderShape(buffer: Buffer): boolean {
 	return /^From:\s.+$/im.test(sample) && /^Date:\s.+$/im.test(sample) && /^Subject:\s.+$/im.test(sample);
 }
 
+/**
+ * Returns true for source types that produce stories directly at extract time
+ * and therefore skip the segment step in the pipeline orchestrator.
+ * PDF and image go through the normal segment step.
+ */
+export function isPreStructuredType(sourceType: SourceType): boolean {
+	return (
+		sourceType === 'text' ||
+		sourceType === 'docx' ||
+		sourceType === 'spreadsheet' ||
+		sourceType === 'email' ||
+		sourceType === 'url'
+	);
+}
+
 export function detectSourceType(
 	buffer: Buffer | null | undefined,
 	filenameOrInput: string,

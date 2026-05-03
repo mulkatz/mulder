@@ -29,7 +29,7 @@ import { detectSourceType } from './source-type.js';
 import type { IngestFileResult, IngestInput, IngestResult } from './types.js';
 
 export type { SourceDetectionConfidence, SourceDetectionResult } from './source-type.js';
-export { detectSourceType } from './source-type.js';
+export { detectSourceType, isPreStructuredType } from './source-type.js';
 export type { IngestFileResult, IngestInput, IngestResult } from './types.js';
 
 const STEP_NAME = 'ingest';
