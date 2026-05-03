@@ -1,4 +1,5 @@
-import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import { AnimatePresence } from 'framer-motion';
+import { Navigate, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
 import { AuthGate } from '@/app/AuthGate';
 import { AppShell } from '@/components/AppShell';
 import { PageTransition } from '@/components/PageTransition';
@@ -8,10 +9,12 @@ import { EvidenceWorkspacePage } from '@/pages/EvidenceWorkspace';
 import { LoginPage } from '@/pages/Login';
 import { OverviewPage } from '@/pages/Overview';
 
-export function App() {
+function AppRoutes() {
+	const location = useLocation();
+
 	return (
-		<Router>
-			<Routes>
+		<AnimatePresence mode="wait">
+			<Routes location={location} key={location.pathname}>
 				<Route
 					path="/login"
 					element={
@@ -58,6 +61,14 @@ export function App() {
 				</Route>
 				<Route path="*" element={<Navigate replace to="/" />} />
 			</Routes>
+		</AnimatePresence>
+	);
+}
+
+export function App() {
+	return (
+		<Router>
+			<AppRoutes />
 		</Router>
 	);
 }
