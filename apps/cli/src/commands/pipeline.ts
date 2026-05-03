@@ -236,6 +236,21 @@ Examples:
 							process.stdout.write(`... ${result.data.sources.length - 50} more rows truncated\n`);
 						}
 						process.stdout.write(`Global analyze: ${result.data.analysis.summary}\n`);
+						if (result.status === 'failed') {
+							for (const error of result.errors) {
+								process.stderr.write(`${error.file}: ${error.message}\n`);
+							}
+							printError('Dry run failed validation');
+							process.exit(1);
+							return;
+						}
+						if (result.status === 'partial') {
+							for (const error of result.errors) {
+								process.stderr.write(`${error.file}: ${error.message}\n`);
+							}
+							process.stderr.write('Dry run completed with validation errors\n');
+							return;
+						}
 						printSuccess('Dry run complete (no changes made)');
 						return;
 					}

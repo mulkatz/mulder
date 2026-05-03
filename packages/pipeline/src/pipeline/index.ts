@@ -50,7 +50,7 @@ import { execute as executeEmbed } from '../embed/index.js';
 import { execute as executeEnrich } from '../enrich/index.js';
 import { execute as executeExtract } from '../extract/index.js';
 import { execute as executeGraph } from '../graph/index.js';
-import { execute as executeIngest, resolvePdfFiles } from '../ingest/index.js';
+import { execute as executeIngest, type IngestFileResult, isUrlLikeInput, resolvePdfFiles } from '../ingest/index.js';
 import { execute as executeSegment } from '../segment/index.js';
 import type {
 	PipelineGlobalAnalysisOutcome,
@@ -299,6 +299,28 @@ function buildSourcePlans(sources: Source[], options: PipelineRunOptions): Map<s
 		plans.set(source.id, buildSourcePlan(source, options));
 	}
 	return plans;
+}
+
+function sourceFromDryRunIngestResult(result: IngestFileResult): Source {
+	const now = new Date();
+	return {
+		id: result.sourceId,
+		filename: result.filename,
+		storagePath: result.storagePath,
+		fileHash: result.fileHash,
+		parentSourceId: null,
+		sourceType: result.sourceType,
+		formatMetadata: result.formatMetadata,
+		pageCount: result.pageCount,
+		hasNativeText: result.hasNativeText,
+		nativeTextRatio: result.nativeTextRatio,
+		status: 'ingested',
+		reliabilityScore: null,
+		tags: [],
+		metadata: result.formatMetadata,
+		createdAt: now,
+		updatedAt: now,
+	};
 }
 
 function getSourcePlan(source: Source, ctx: ProcessSourceContext): StepPlan {
@@ -616,23 +638,40 @@ export async function execute(
 
 	// 2. Dry-run path — print the plan and bail before any DB writes.
 	if (options.dryRun) {
-		// For dry-run, we cannot enumerate via ingest (no upload). We can
-		// estimate the source count for the resume / retry paths, but we
-		// avoid running any side effects.
+		// For dry-run, enumerate enough to print a source-type-aware plan while
+		// avoiding uploads, run rows, and source rows.
 		let dryRunSourceCount = 0;
+		let dryRunSkippedSources = 0;
 		let dryRunSources: Source[] = [];
+		let dryRunFailedSources = 0;
+		let dryRunStatus: PipelineRunResult['status'] = 'success';
+		let dryRunErrors: StepError[] = [];
 		if (options.sourceIds && options.sourceIds.length > 0) {
 			if (pool) {
 				dryRunSources = (await enumerateSources(input, plannedSteps, pool, config, services, log)).sources;
 				dryRunSourceCount = dryRunSources.length;
+				dryRunSkippedSources = dryRunSources.length;
 			} else {
 				dryRunSourceCount = options.sourceIds.length;
+				dryRunSkippedSources = options.sourceIds.length;
 			}
 		} else if (input.path && plannedSteps.includes('ingest')) {
-			dryRunSourceCount = (await resolvePdfFiles(input.path)).length;
+			if (isUrlLikeInput(input.path)) {
+				const ingestDryRun = await executeIngest({ path: input.path, dryRun: true }, config, services, pool, log);
+				dryRunSources = ingestDryRun.data.map(sourceFromDryRunIngestResult);
+				dryRunErrors = ingestDryRun.errors;
+				dryRunFailedSources = dryRunErrors.length;
+				dryRunSourceCount = dryRunSources.length + dryRunFailedSources;
+				dryRunSkippedSources = dryRunSources.length;
+				dryRunStatus = ingestDryRun.status;
+			} else {
+				dryRunSourceCount = (await resolvePdfFiles(input.path)).length;
+				dryRunSkippedSources = dryRunSourceCount;
+			}
 		} else if (pool && !plannedSteps.includes('ingest')) {
 			dryRunSources = (await enumerateSources(input, plannedSteps, pool, config, services, log)).sources;
 			dryRunSourceCount = dryRunSources.length;
+			dryRunSkippedSources = dryRunSources.length;
 		}
 
 		const dryRunSourcePlans = buildSourcePlans(dryRunSources, options);
@@ -658,7 +697,7 @@ export async function execute(
 				: createSkippedGlobalAnalysis('dry run — global analyze would not run');
 
 		return {
-			status: 'success',
+			status: dryRunStatus,
 			runId: '',
 			data: {
 				runId: '',
@@ -666,16 +705,16 @@ export async function execute(
 				plannedSteps,
 				totalSources: dryRunSourceCount,
 				completedSources: 0,
-				failedSources: 0,
-				skippedSources: dryRunSourceCount,
+				failedSources: dryRunFailedSources,
+				skippedSources: dryRunSkippedSources,
 				sources: dryRunSourceOutcomes,
 				analysis: dryRunAnalysis,
 			},
-			errors: [],
+			errors: dryRunErrors,
 			metadata: {
 				duration_ms: Math.round(performance.now() - startTime),
 				items_processed: 0,
-				items_skipped: dryRunSourceCount,
+				items_skipped: dryRunSkippedSources,
 			},
 		};
 	}
@@ -796,9 +835,10 @@ export async function execute(
 
 		// 6. Finalisation (Phase 3).
 		let runStatus: 'success' | 'partial' | 'failed';
+		const hasIngestErrors = ingestErrors.length > 0;
 		if (sources.length === 0) {
-			runStatus = 'success';
-		} else if (failedCount === 0) {
+			runStatus = hasIngestErrors ? 'failed' : 'success';
+		} else if (failedCount === 0 && !hasIngestErrors) {
 			runStatus = 'success';
 		} else if (completedCount === 0) {
 			runStatus = 'failed';

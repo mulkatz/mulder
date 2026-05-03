@@ -105,6 +105,7 @@ export type {
 	SupportedImageMediaType,
 	SupportedSpreadsheetMediaType,
 	SupportedTextMediaType,
+	SupportedUrlSnapshotMediaType,
 } from './ingest/index.js';
 export {
 	buildDocxFormatMetadata,
@@ -112,6 +113,7 @@ export {
 	buildImageFormatMetadata,
 	buildSpreadsheetFormatMetadata,
 	buildTextFormatMetadata,
+	buildUrlFormatMetadata,
 	CSV_MEDIA_TYPE,
 	DOCX_MEDIA_TYPE,
 	decodeUtf8TextBuffer,
@@ -134,10 +136,15 @@ export {
 	isSupportedSpreadsheetMediaType,
 	isSupportedTextFilename,
 	isSupportedTextMediaType,
+	isSupportedUrlInput,
+	isUrlLikeInput,
 	MSG_MEDIA_TYPE,
+	normalizeUrlInput,
 	readImageDimensions,
 	resolveIngestFiles,
 	resolvePdfFiles,
+	sanitizeUrlInputForDisplay,
+	URL_SNAPSHOT_MEDIA_TYPE,
 	XLSX_MEDIA_TYPE,
 } from './ingest/index.js';
 export type {

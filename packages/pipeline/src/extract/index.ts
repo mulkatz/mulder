@@ -26,6 +26,8 @@ import type {
 	SpreadsheetSheet,
 	SpreadsheetTabularFormat,
 	StepError,
+	UrlEntityHint,
+	UrlExtractionResult,
 } from '@mulder/core';
 import {
 	createChildLogger,
@@ -1469,6 +1471,287 @@ async function extractEmailSource(input: {
 }
 
 // ────────────────────────────────────────────────────────────
+// URL extraction helpers
+// ────────────────────────────────────────────────────────────
+
+interface UrlStoryMetadataJson {
+	id: string;
+	document_id: string;
+	title: string;
+	subtitle: null;
+	language: string;
+	category: string;
+	pages: number[];
+	date_references: string[];
+	geographic_references: string[];
+	extraction_confidence: number;
+	source_type: 'url';
+	original_url: string | null;
+	final_url: string | null;
+	canonical_url: string | null;
+	host: string | null;
+	site_name: string | null;
+	byline: string | null;
+	published_time: string | null;
+	modified_time: string | null;
+	parser_engine: string;
+	text_length: number;
+	entity_hints: UrlEntityHint[];
+}
+
+function urlMetadataString(metadata: Record<string, unknown>, key: string): string | null {
+	const value = metadata[key];
+	return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function hostFromUrl(value: string | null): string | null {
+	if (!value) {
+		return null;
+	}
+	try {
+		return new URL(value).hostname;
+	} catch {
+		return null;
+	}
+}
+
+function renderUrlMetadataTable(input: {
+	originalUrl: string | null;
+	finalUrl: string | null;
+	canonicalUrl: string | null;
+	host: string | null;
+	siteName: string | null;
+	byline: string | null;
+	publishedTime: string | null;
+	modifiedTime: string | null;
+	fetchDate: string | null;
+}): string {
+	const rows = [
+		['Original URL', input.originalUrl],
+		['Final URL', input.finalUrl],
+		['Canonical URL', input.canonicalUrl],
+		['Host', input.host],
+		['Site Name', input.siteName],
+		['Byline', input.byline],
+		['Published', input.publishedTime],
+		['Modified', input.modifiedTime],
+		['Fetched', input.fetchDate],
+	].filter((row): row is [string, string] => typeof row[1] === 'string' && row[1].length > 0);
+	if (rows.length === 0) {
+		return '';
+	}
+	return [
+		'| Field | Value |',
+		'| --- | --- |',
+		...rows.map(([field, value]) => `| ${field} | ${escapeMarkdownTableValue(value)} |`),
+	].join('\n');
+}
+
+function renderUrlHintSection(hints: UrlEntityHint[]): string {
+	if (hints.length === 0) {
+		return '';
+	}
+	return [
+		'## URL Entity Hints',
+		'',
+		...hints.map((hint) => `- ${hint.field_name}: ${hint.value} (${hint.hint_type}, ${hint.source})`),
+	].join('\n');
+}
+
+function renderUrlMarkdown(input: {
+	title: string;
+	result: UrlExtractionResult;
+	fetchMetadata: Record<string, unknown>;
+}): string {
+	const originalUrl = urlMetadataString(input.fetchMetadata, 'original_url');
+	const finalUrl = urlMetadataString(input.fetchMetadata, 'final_url');
+	const sections = [
+		`# ${input.title}`,
+		'',
+		renderUrlMetadataTable({
+			originalUrl,
+			finalUrl,
+			canonicalUrl: input.result.canonicalUrl,
+			host: hostFromUrl(finalUrl),
+			siteName: input.result.siteName,
+			byline: input.result.byline,
+			publishedTime: input.result.publishedTime,
+			modifiedTime: input.result.modifiedTime,
+			fetchDate: urlMetadataString(input.fetchMetadata, 'fetch_date'),
+		}),
+		'',
+		input.result.markdown,
+	];
+	const hintSection = renderUrlHintSection(input.result.entityHints);
+	if (hintSection.length > 0) {
+		sections.push('', hintSection);
+	}
+	return sections.filter((section) => section.length > 0).join('\n');
+}
+
+function buildUrlStoryMetadata(input: {
+	storyId: string;
+	sourceId: string;
+	title: string;
+	language: string;
+	result: UrlExtractionResult;
+	fetchMetadata: Record<string, unknown>;
+}): UrlStoryMetadataJson {
+	const finalUrl = urlMetadataString(input.fetchMetadata, 'final_url');
+	return {
+		id: input.storyId,
+		document_id: input.sourceId,
+		title: input.title,
+		subtitle: null,
+		language: input.language,
+		category: 'document',
+		pages: [],
+		date_references: [input.result.publishedTime, input.result.modifiedTime].filter(
+			(value): value is string => value !== null,
+		),
+		geographic_references: [],
+		extraction_confidence: 1.0,
+		source_type: 'url',
+		original_url: urlMetadataString(input.fetchMetadata, 'original_url'),
+		final_url: finalUrl,
+		canonical_url: input.result.canonicalUrl,
+		host: hostFromUrl(finalUrl),
+		site_name: input.result.siteName,
+		byline: input.result.byline,
+		published_time: input.result.publishedTime,
+		modified_time: input.result.modifiedTime,
+		parser_engine: input.result.parserEngine,
+		text_length: input.result.textLength,
+		entity_hints: input.result.entityHints,
+	};
+}
+
+async function extractUrlSource(input: {
+	sourceId: string;
+	filename: string;
+	storagePath: string;
+	formatMetadata: Record<string, unknown>;
+	config: MulderConfig;
+	services: Services;
+	pool: pg.Pool;
+	stepConfigHash: string;
+	logger: Logger;
+}): Promise<ExtractionData> {
+	let buffer: Buffer;
+	try {
+		buffer = await input.services.storage.download(input.storagePath);
+	} catch (cause: unknown) {
+		throw new ExtractError(
+			`Failed to download URL HTML snapshot for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_STORAGE_FAILED,
+			{ cause, context: { sourceId: input.sourceId, storagePath: input.storagePath } },
+		);
+	}
+
+	let urlResult: UrlExtractionResult;
+	try {
+		urlResult = await input.services.urlExtractors.extractUrl(buffer, input.sourceId, input.formatMetadata);
+	} catch (cause: unknown) {
+		throw new ExtractError(
+			`URL extraction failed for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_URL_FAILED,
+			{
+				cause,
+				context: { sourceId: input.sourceId, storagePath: input.storagePath },
+			},
+		);
+	}
+
+	const title = urlResult.title || titleFromFilenameWithFallback(input.filename, 'Untitled URL source');
+	const language = input.config.project.supported_locales[0] ?? 'en';
+	const storyId = randomUUID();
+	const markdownUri = `segments/${input.sourceId}/${storyId}.md`;
+	const metadataUri = `segments/${input.sourceId}/${storyId}.meta.json`;
+	const markdown = renderUrlMarkdown({ title, result: urlResult, fetchMetadata: input.formatMetadata });
+	const storyMetadata = buildUrlStoryMetadata({
+		storyId,
+		sourceId: input.sourceId,
+		title,
+		language,
+		result: urlResult,
+		fetchMetadata: input.formatMetadata,
+	});
+
+	try {
+		await input.services.storage.upload(markdownUri, markdown, 'text/markdown');
+		await input.services.storage.upload(metadataUri, JSON.stringify(storyMetadata, null, 2), 'application/json');
+	} catch (cause: unknown) {
+		throw new ExtractError(
+			`Failed to write URL story artifacts for source ${input.sourceId}`,
+			EXTRACT_ERROR_CODES.EXTRACT_STORAGE_FAILED,
+			{ cause, context: { sourceId: input.sourceId, markdownUri, metadataUri } },
+		);
+	}
+
+	await createStory(input.pool, {
+		id: storyId,
+		sourceId: input.sourceId,
+		title,
+		language,
+		category: 'document',
+		gcsMarkdownUri: markdownUri,
+		gcsMetadataUri: metadataUri,
+		extractionConfidence: 1.0,
+		metadata: {
+			source_type: 'url',
+			original_url: storyMetadata.original_url,
+			final_url: storyMetadata.final_url,
+			canonical_url: storyMetadata.canonical_url,
+			host: storyMetadata.host,
+			site_name: storyMetadata.site_name,
+			byline: storyMetadata.byline,
+			published_time: storyMetadata.published_time,
+			modified_time: storyMetadata.modified_time,
+			parser_engine: urlResult.parserEngine,
+			entity_hints: urlResult.entityHints,
+			original_storage_path: input.storagePath,
+		},
+	});
+
+	const updatedFormatMetadata = {
+		...input.formatMetadata,
+		title: urlResult.title,
+		canonical_url: urlResult.canonicalUrl,
+		site_name: urlResult.siteName,
+		byline: urlResult.byline,
+		published_time: urlResult.publishedTime,
+		modified_time: urlResult.modifiedTime,
+		readability_text_length: urlResult.textLength,
+		parser_engine: urlResult.parserEngine,
+		parser_warnings: urlResult.warnings,
+	};
+	await updateSource(input.pool, input.sourceId, {
+		formatMetadata: updatedFormatMetadata,
+		metadata: updatedFormatMetadata,
+		status: 'extracted',
+	});
+	await upsertSourceStep(input.pool, {
+		sourceId: input.sourceId,
+		stepName: STEP_NAME,
+		status: 'completed',
+		configHash: input.stepConfigHash,
+	});
+
+	input.logger.debug({ storyId, textLength: urlResult.textLength }, 'URL source extracted into story Markdown');
+
+	return {
+		sourceId: input.sourceId,
+		layoutUri: null,
+		pageImageUris: [],
+		pageCount: 0,
+		primaryMethod: 'url',
+		pages: [],
+		visionFallbackCount: 0,
+		visionFallbackCapped: false,
+	};
+}
+
+// ────────────────────────────────────────────────────────────
 // Document AI parsing helpers
 // ────────────────────────────────────────────────────────────
 
@@ -1854,7 +2137,8 @@ export async function execute(
 		(source.sourceType === 'text' ||
 			source.sourceType === 'docx' ||
 			source.sourceType === 'spreadsheet' ||
-			source.sourceType === 'email') &&
+			source.sourceType === 'email' ||
+			source.sourceType === 'url') &&
 		input.fallbackOnly
 	) {
 		throw new ExtractError(
@@ -1901,6 +2185,18 @@ export async function execute(
 		});
 	} else if (!input.fallbackOnly && source.sourceType === 'email') {
 		extractionData = await extractEmailSource({
+			sourceId: input.sourceId,
+			filename: source.filename,
+			storagePath: source.storagePath,
+			formatMetadata: source.formatMetadata,
+			config,
+			services,
+			pool,
+			stepConfigHash,
+			logger: log,
+		});
+	} else if (!input.fallbackOnly && source.sourceType === 'url') {
+		extractionData = await extractUrlSource({
 			sourceId: input.sourceId,
 			filename: source.filename,
 			storagePath: source.storagePath,

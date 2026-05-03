@@ -16,7 +16,10 @@ import {
 	detectSourceType,
 	isSupportedIngestFilename,
 	isSupportedTextFilename,
+	isUrlLikeInput,
+	normalizeUrlInput,
 	type PipelineStepName,
+	sanitizeUrlInputForDisplay,
 } from '@mulder/pipeline';
 
 interface ReprocessEstimateSourcePlan {
@@ -27,6 +30,10 @@ interface ReprocessEstimateSourcePlan {
 const ESTIMATE_STEP_ORDER: readonly EstimatedStep[] = ['extract', 'segment', 'enrich', 'ground', 'embed', 'graph'];
 
 export async function resolveIngestFiles(inputPath: string): Promise<string[]> {
+	if (isUrlLikeInput(inputPath)) {
+		return [inputPath.trim()];
+	}
+
 	const resolved = resolve(inputPath);
 	const stats = await stat(resolved).catch(() => null);
 
@@ -65,6 +72,23 @@ export const resolvePdfFiles = resolveIngestFiles;
 export async function collectIngestSourceProfiles(inputPath: string): Promise<EstimatedSourceProfile[]> {
 	const ingestFiles = await resolveIngestFiles(inputPath);
 	const sourceProfiles: EstimatedSourceProfile[] = [];
+	if (isUrlLikeInput(inputPath)) {
+		const normalizedUrl = normalizeUrlInput(inputPath);
+		if (!normalizedUrl) {
+			const displayUrl = sanitizeUrlInputForDisplay(inputPath);
+			throw new IngestError(`Unsupported URL input: ${displayUrl}`, INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE, {
+				context: { input: displayUrl },
+			});
+		}
+
+		return [
+			{
+				filename: sanitizeUrlInputForDisplay(normalizedUrl),
+				pageCount: 0,
+				nativeTextRatio: 0,
+			},
+		];
+	}
 	const inputStats = await stat(resolve(inputPath)).catch(() => null);
 	const allowPartial = inputStats?.isDirectory() ?? false;
 	let firstError: Error | null = null;

@@ -214,6 +214,70 @@ export interface EmailExtractorService {
 }
 
 // ────────────────────────────────────────────────────────────
+// URL Fetcher and Extractor Services
+// ────────────────────────────────────────────────────────────
+
+export interface RobotsDecision {
+	allowed: boolean;
+	robotsUrl: string;
+	matchedUserAgent: string | null;
+	matchedRule: string | null;
+}
+
+export interface UrlFetchResult {
+	originalUrl: string;
+	normalizedUrl: string;
+	finalUrl: string;
+	httpStatus: number;
+	headers: Record<string, string>;
+	html: Buffer;
+	contentType: string;
+	redirectCount: number;
+	fetchedAt: string;
+	robots: RobotsDecision;
+	snapshotEncoding: string | null;
+}
+
+export interface UrlFetchOptions {
+	maxBytes: number;
+	timeoutMs?: number;
+	redirectLimit?: number;
+}
+
+export interface UrlFetcherService {
+	/** Fetch one static public HTTP(S) HTML URL with safety gates and robots checks. */
+	fetchUrl(url: string, options: UrlFetchOptions): Promise<UrlFetchResult>;
+}
+
+export interface UrlEntityHint {
+	hint_type: 'url' | 'host' | 'title' | 'byline' | 'published_date' | 'modified_date' | 'canonical_url';
+	field_name: string;
+	value: string;
+	confidence: number;
+	source: 'url' | 'html_meta' | 'fetch_metadata';
+}
+
+export interface UrlExtractionResult {
+	title: string;
+	byline: string | null;
+	excerpt: string | null;
+	siteName: string | null;
+	canonicalUrl: string | null;
+	publishedTime: string | null;
+	modifiedTime: string | null;
+	markdown: string;
+	textLength: number;
+	parserEngine: 'mozilla-readability-jsdom-turndown';
+	warnings: string[];
+	entityHints: UrlEntityHint[];
+}
+
+export interface UrlExtractorService {
+	/** Convert stored static HTML into deterministic readable Markdown and URL metadata. */
+	extractUrl(html: Buffer, sourceId: string, fetchMetadata: Record<string, unknown>): Promise<UrlExtractionResult>;
+}
+
+// ────────────────────────────────────────────────────────────
 // LLM Service
 // ────────────────────────────────────────────────────────────
 
@@ -342,6 +406,8 @@ export interface Services {
 	officeDocuments: OfficeDocumentExtractorService;
 	spreadsheets: SpreadsheetExtractorService;
 	emails: EmailExtractorService;
+	urls: UrlFetcherService;
+	urlExtractors: UrlExtractorService;
 	llm: LlmService;
 	embedding: EmbeddingService;
 	firestore: FirestoreService;

@@ -39,6 +39,7 @@ import {
 	buildImageFormatMetadata,
 	buildSpreadsheetFormatMetadata,
 	buildTextFormatMetadata,
+	buildUrlFormatMetadata,
 	CSV_MEDIA_TYPE,
 	detectSourceType,
 	getStorageExtensionForDetection,
@@ -48,6 +49,10 @@ import {
 	isSupportedSpreadsheetMediaType,
 	isSupportedTextFilename,
 	isSupportedTextMediaType,
+	isUrlLikeInput,
+	normalizeUrlInput,
+	sanitizeUrlInputForDisplay,
+	URL_SNAPSHOT_MEDIA_TYPE,
 } from './source-type.js';
 import type { IngestFileResult, IngestInput, IngestResult } from './types.js';
 
@@ -61,6 +66,7 @@ export type {
 	SupportedImageMediaType,
 	SupportedSpreadsheetMediaType,
 	SupportedTextMediaType,
+	SupportedUrlSnapshotMediaType,
 } from './source-type.js';
 export {
 	buildDocxFormatMetadata,
@@ -68,6 +74,7 @@ export {
 	buildImageFormatMetadata,
 	buildSpreadsheetFormatMetadata,
 	buildTextFormatMetadata,
+	buildUrlFormatMetadata,
 	CSV_MEDIA_TYPE,
 	DOCX_MEDIA_TYPE,
 	decodeUtf8TextBuffer,
@@ -89,8 +96,13 @@ export {
 	isSupportedSpreadsheetMediaType,
 	isSupportedTextFilename,
 	isSupportedTextMediaType,
+	isSupportedUrlInput,
+	isUrlLikeInput,
 	MSG_MEDIA_TYPE,
+	normalizeUrlInput,
 	readImageDimensions,
+	sanitizeUrlInputForDisplay,
+	URL_SNAPSHOT_MEDIA_TYPE,
 	XLSX_MEDIA_TYPE,
 } from './source-type.js';
 export type { IngestFileResult, IngestInput, IngestResult } from './types.js';
@@ -108,6 +120,10 @@ const STEP_NAME = 'ingest';
  * an explicit unsupported-format error.
  */
 export async function resolveIngestFiles(inputPath: string): Promise<string[]> {
+	if (isUrlLikeInput(inputPath)) {
+		return [inputPath.trim()];
+	}
+
 	const resolved = resolve(inputPath);
 	const stats = await stat(resolved).catch(() => null);
 
@@ -180,7 +196,7 @@ interface ProcessFileContext {
 	dryRun: boolean;
 }
 
-type IngestibleSourceType = Extract<SourceType, 'pdf' | 'image' | 'text' | 'docx' | 'spreadsheet' | 'email'>;
+type IngestibleSourceType = Extract<SourceType, 'pdf' | 'image' | 'text' | 'docx' | 'spreadsheet' | 'email' | 'url'>;
 
 interface PreparedFileMetadata {
 	sourceType: IngestibleSourceType;
@@ -200,8 +216,178 @@ function isIngestibleSourceType(sourceType: SourceType): sourceType is Ingestibl
 		sourceType === 'text' ||
 		sourceType === 'docx' ||
 		sourceType === 'spreadsheet' ||
-		sourceType === 'email'
+		sourceType === 'email' ||
+		sourceType === 'url'
 	);
+}
+
+function htmlTitle(html: Buffer): string | null {
+	const match = html.toString('utf-8').match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+	const title = match?.[1]
+		?.replace(/<[^>]+>/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim();
+	return title && title.length > 0 ? title : null;
+}
+
+function slugifyFilenamePart(value: string): string {
+	return (
+		value
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '')
+			.slice(0, 80) || 'page'
+	);
+}
+
+function filenameForUrl(fetchResult: Awaited<ReturnType<Services['urls']['fetchUrl']>>): string {
+	const title = htmlTitle(fetchResult.html);
+	const final = new URL(fetchResult.finalUrl);
+	const pathPart = final.pathname === '/' ? final.hostname : `${final.hostname}${final.pathname}`;
+	const basis = title ? `${title}-${final.hostname}` : pathPart;
+	return `${slugifyFilenamePart(basis)}.html`;
+}
+
+async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<IngestFileResult> {
+	const normalizedUrl = normalizeUrlInput(inputUrl);
+	const displayUrl = normalizedUrl ? sanitizeUrlInputForDisplay(normalizedUrl) : sanitizeUrlInputForDisplay(inputUrl);
+	if (!normalizedUrl) {
+		throw new IngestError(`Unsupported URL input: ${displayUrl}`, INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE, {
+			context: { input: displayUrl },
+		});
+	}
+
+	const log = createChildLogger(ctx.logger, { step: STEP_NAME, url: displayUrl });
+	let fetchResult: Awaited<ReturnType<Services['urls']['fetchUrl']>>;
+	try {
+		fetchResult = await ctx.services.urls.fetchUrl(inputUrl, {
+			maxBytes: ctx.config.ingestion.max_file_size_mb * 1024 * 1024,
+		});
+	} catch (cause: unknown) {
+		throw new IngestError(`URL fetch failed for ${displayUrl}`, INGEST_ERROR_CODES.INGEST_URL_FETCH_FAILED, {
+			cause,
+			context: { url: displayUrl },
+		});
+	}
+
+	const title = htmlTitle(fetchResult.html);
+	const filename = filenameForUrl(fetchResult);
+	const fileHash = computeFileHash(fetchResult.html);
+	const formatMetadata = buildUrlFormatMetadata(fetchResult, title ?? undefined);
+
+	if (ctx.pool) {
+		const existing = await findSourceByHash(ctx.pool, fileHash);
+		if (existing) {
+			log.info({ sourceId: existing.id, fileHash }, 'Duplicate URL snapshot detected, skipping upload');
+			return {
+				sourceId: existing.id,
+				filename,
+				storagePath: existing.storagePath,
+				fileHash,
+				sourceType: existing.sourceType,
+				formatMetadata: existing.formatMetadata,
+				pageCount: existing.pageCount ?? 0,
+				hasNativeText: existing.hasNativeText,
+				nativeTextRatio: existing.nativeTextRatio,
+				duplicate: true,
+			};
+		}
+	}
+
+	const sourceId = randomUUID();
+	const storagePath = `raw/${sourceId}/original.html`;
+	if (ctx.dryRun) {
+		log.info({ sourceId, filename }, 'Dry run — skipping URL snapshot upload and DB insert');
+		return {
+			sourceId,
+			filename,
+			storagePath,
+			fileHash,
+			sourceType: 'url',
+			formatMetadata,
+			pageCount: 0,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+			duplicate: false,
+		};
+	}
+
+	if (!ctx.pool) {
+		throw new IngestError(
+			'Database pool is required for non-dry-run URL ingest',
+			INGEST_ERROR_CODES.INGEST_UPLOAD_FAILED,
+			{
+				context: { url: displayUrl },
+			},
+		);
+	}
+
+	try {
+		await ctx.services.storage.upload(storagePath, fetchResult.html, URL_SNAPSHOT_MEDIA_TYPE);
+	} catch (cause: unknown) {
+		throw new IngestError(`Upload failed for URL snapshot ${displayUrl}`, INGEST_ERROR_CODES.INGEST_UPLOAD_FAILED, {
+			cause,
+			context: { url: displayUrl, storagePath },
+		});
+	}
+
+	const source = await createSource(ctx.pool, {
+		id: sourceId,
+		filename,
+		storagePath,
+		fileHash,
+		sourceType: 'url',
+		formatMetadata,
+		pageCount: 0,
+		hasNativeText: false,
+		nativeTextRatio: 0,
+		tags: ctx.tags,
+		metadata: formatMetadata,
+	});
+
+	if (source.id !== sourceId) {
+		await ctx.services.storage.delete(storagePath).catch(() => undefined);
+		return {
+			sourceId: source.id,
+			filename,
+			storagePath: source.storagePath,
+			fileHash,
+			sourceType: source.sourceType,
+			formatMetadata: source.formatMetadata,
+			pageCount: source.pageCount ?? 0,
+			hasNativeText: source.hasNativeText,
+			nativeTextRatio: source.nativeTextRatio,
+			duplicate: true,
+		};
+	}
+
+	await upsertSourceStep(ctx.pool, {
+		sourceId: source.id,
+		stepName: STEP_NAME,
+		status: 'completed',
+	});
+	ctx.services.firestore
+		.setDocument('documents', source.id, {
+			filename,
+			sourceType: 'url',
+			uploadedAt: new Date().toISOString(),
+			fileHash,
+			status: 'ingested',
+		})
+		.catch(() => undefined);
+
+	return {
+		sourceId: source.id,
+		filename,
+		storagePath: source.storagePath,
+		fileHash,
+		sourceType: source.sourceType,
+		formatMetadata: source.formatMetadata,
+		pageCount: source.pageCount ?? 0,
+		hasNativeText: source.hasNativeText,
+		nativeTextRatio: source.nativeTextRatio,
+		duplicate: false,
+	};
 }
 
 /**
@@ -690,11 +876,13 @@ export async function execute(
 ): Promise<IngestResult> {
 	const log = createChildLogger(logger, { step: STEP_NAME });
 	const startTime = performance.now();
+	const urlInput = isUrlLikeInput(input.path);
+	const inputPathForDisplay = urlInput ? sanitizeUrlInputForDisplay(input.path) : input.path;
 
-	log.info({ path: input.path, dryRun: input.dryRun ?? false }, 'Ingest step started');
+	log.info({ path: inputPathForDisplay, dryRun: input.dryRun ?? false }, 'Ingest step started');
 
-	// 1. Resolve files
-	const filePaths = await resolveIngestFiles(input.path);
+	// 1. Resolve URL or files. URL strings bypass filesystem stat completely.
+	const filePaths = urlInput ? [input.path] : await resolveIngestFiles(input.path);
 
 	if (filePaths.length === 0) {
 		log.info('No supported ingest files found');
@@ -711,7 +899,7 @@ export async function execute(
 		};
 	}
 
-	log.info({ fileCount: filePaths.length }, 'Ingest files resolved');
+	log.info(urlInput ? { urlCount: filePaths.length } : { fileCount: filePaths.length }, 'Ingest inputs resolved');
 
 	// 2. Process each file
 	const ctx: ProcessFileContext = {
@@ -729,19 +917,20 @@ export async function execute(
 
 	for (const filePath of filePaths) {
 		try {
-			const result = await processFile(filePath, ctx);
+			const result = urlInput ? await processUrl(filePath, ctx) : await processFile(filePath, ctx);
 			results.push(result);
 			if (result.duplicate) {
 				itemsSkipped++;
 			}
 		} catch (error: unknown) {
+			const fileForDisplay = urlInput ? sanitizeUrlInputForDisplay(filePath) : filePath;
 			const stepError: StepError = {
-				file: filePath,
+				file: fileForDisplay,
 				code: error instanceof IngestError ? error.code : 'INGEST_UNKNOWN',
 				message: error instanceof Error ? error.message : String(error),
 			};
 			errors.push(stepError);
-			log.error({ err: error, file: filePath }, 'Failed to ingest file');
+			log.error({ err: error, file: fileForDisplay }, 'Failed to ingest file');
 		}
 	}
 
