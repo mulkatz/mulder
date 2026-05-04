@@ -58,10 +58,6 @@ M14  Research Agent   ░░░░░░░░░░░░░░░░░░░�
 </table>
 <!-- PROGRESS:END -->
 
-<p align="center">
-  <img src="./public/01-dashboard-light.png" width="720" alt="Mulder Dashboard" />
-</p>
-
 ## What it does
 
 Mulder transforms unstructured document collections — PDFs with complex layouts like magazines, newspapers, government correspondence — into structured, searchable knowledge.
