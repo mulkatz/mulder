@@ -18,23 +18,28 @@ import type {
 	MulderConfig,
 	PdfMetadata,
 	Services,
+	Source,
 	SourceFormatMetadata,
 	SourceType,
 	StepError,
-	UrlExtractionResult,
-	UrlFetchResult,
-	UrlRenderResult,
 } from '@mulder/core';
 import {
+	computeUrlLifecycleNextAllowedAt,
 	createChildLogger,
 	createSource,
 	detectNativeText,
 	extractPdfMetadata,
 	findSourceByHash,
+	findUrlHostLifecycleByHost,
 	INGEST_ERROR_CODES,
 	IngestError,
-	MulderError,
+	normalizeUrlLifecycleHost,
+	recordUrlHostLifecycle,
+	recordUrlLifecycleFetch,
+	resolveUrlPolitenessDelayMs,
+	sleepForUrlPoliteness,
 	upsertSourceStep,
+	urlLifecycleHeaderValue,
 } from '@mulder/core';
 import type pg from 'pg';
 import {
@@ -43,7 +48,6 @@ import {
 	buildImageFormatMetadata,
 	buildSpreadsheetFormatMetadata,
 	buildTextFormatMetadata,
-	buildUrlFormatMetadata,
 	CSV_MEDIA_TYPE,
 	detectSourceType,
 	getStorageExtensionForDetection,
@@ -59,6 +63,7 @@ import {
 	URL_SNAPSHOT_MEDIA_TYPE,
 } from './source-type.js';
 import type { IngestFileResult, IngestInput, IngestResult } from './types.js';
+import { filenameForUrlSnapshot, prepareUrlSnapshot } from './url-snapshot.js';
 
 export type {
 	ImageDimensions,
@@ -225,141 +230,83 @@ function isIngestibleSourceType(sourceType: SourceType): sourceType is Ingestibl
 	);
 }
 
-function htmlTitle(html: Buffer): string | null {
-	const match = html.toString('utf-8').match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-	const title = match?.[1]
-		?.replace(/<[^>]+>/g, ' ')
-		.replace(/\s+/g, ' ')
-		.trim();
-	return title && title.length > 0 ? title : null;
+function stringMetadataValue(metadata: SourceFormatMetadata, key: string): string | null {
+	const value = metadata[key];
+	return typeof value === 'string' ? value : null;
 }
 
-function slugifyFilenamePart(value: string): string {
-	return (
-		value
-			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/^-+|-+$/g, '')
-			.slice(0, 80) || 'page'
-	);
-}
-
-function filenameForUrlSnapshot(html: Buffer, finalUrl: string, extractedTitle?: string): string {
-	const title = extractedTitle ?? htmlTitle(html);
-	const final = new URL(finalUrl);
-	const pathPart = final.pathname === '/' ? final.hostname : `${final.hostname}${final.pathname}`;
-	const basis = title ? `${title}-${final.hostname}` : pathPart;
-	return `${slugifyFilenamePart(basis)}.html`;
-}
-
-interface PreparedUrlSnapshot {
-	html: Buffer;
-	finalUrl: string;
-	title: string | null;
-	formatMetadata: SourceFormatMetadata;
-	renderingMethod: 'static' | 'playwright';
-}
-
-function errorCode(error: unknown): string {
-	return error instanceof MulderError ? error.code : error instanceof Error ? error.name : 'UNKNOWN';
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
-
-async function probeUrlSnapshot(input: {
-	services: Services;
-	html: Buffer;
-	sourceId: string;
-	fetchMetadata: SourceFormatMetadata;
-}): Promise<UrlExtractionResult> {
-	return await input.services.urlExtractors.extractUrl(input.html, input.sourceId, input.fetchMetadata);
-}
-
-async function prepareUrlSnapshot(
-	fetchResult: UrlFetchResult,
-	ctx: ProcessFileContext,
-	displayUrl: string,
-	log: Logger,
-): Promise<PreparedUrlSnapshot> {
-	const staticTitle = htmlTitle(fetchResult.html);
-	const staticMetadata = buildUrlFormatMetadata(fetchResult, staticTitle ?? undefined);
-	try {
-		const staticProbe = await probeUrlSnapshot({
-			services: ctx.services,
-			html: fetchResult.html,
-			sourceId: 'url-static-readability-probe',
-			fetchMetadata: staticMetadata,
-		});
-		return {
-			html: fetchResult.html,
-			finalUrl: fetchResult.finalUrl,
-			title: staticProbe.title || staticTitle,
-			formatMetadata: buildUrlFormatMetadata(fetchResult, staticProbe.title || staticTitle || undefined),
-			renderingMethod: 'static',
-		};
-	} catch (staticError: unknown) {
-		const staticReadabilityError = errorCode(staticError);
-		log.info({ staticReadabilityError }, 'Static URL snapshot unreadable, attempting render fallback');
-		let renderResult: UrlRenderResult;
-		try {
-			renderResult = await ctx.services.urlRenderers.renderUrl(fetchResult.finalUrl, {
-				maxBytes: ctx.config.ingestion.max_file_size_mb * 1024 * 1024,
-			});
-		} catch (cause: unknown) {
-			throw new IngestError(
-				`URL render fallback failed for ${displayUrl}`,
-				INGEST_ERROR_CODES.INGEST_URL_RENDER_FAILED,
-				{
-					cause,
-					context: { url: displayUrl, staticReadabilityError },
-				},
-			);
-		}
-		const renderingMetadata = {
-			result: renderResult,
-			fallbackReason: 'static_unreadable',
-			staticReadabilityError,
-			renderedFromUrl: fetchResult.finalUrl,
-		};
-		const renderedTitle = htmlTitle(renderResult.html);
-		const renderedMetadata = buildUrlFormatMetadata(fetchResult, renderedTitle ?? undefined, renderingMetadata);
-		let renderedProbe: UrlExtractionResult;
-		try {
-			renderedProbe = await probeUrlSnapshot({
-				services: ctx.services,
-				html: renderResult.html,
-				sourceId: 'url-rendered-readability-probe',
-				fetchMetadata: renderedMetadata,
-			});
-		} catch (cause: unknown) {
-			throw new IngestError(
-				`Rendered URL snapshot was not readable for ${displayUrl}`,
-				INGEST_ERROR_CODES.INGEST_URL_RENDER_FAILED,
-				{
-					cause,
-					context: {
-						url: displayUrl,
-						staticReadabilityError,
-						renderedReadabilityError: errorCode(cause),
-						renderedErrorMessage: errorMessage(cause),
-					},
-				},
-			);
-		}
-		return {
-			html: renderResult.html,
-			finalUrl: renderResult.finalUrl,
-			title: renderedProbe.title || renderedTitle,
-			formatMetadata: buildUrlFormatMetadata(
-				fetchResult,
-				renderedProbe.title || renderedTitle || undefined,
-				renderingMetadata,
-			),
-			renderingMethod: 'playwright',
-		};
+async function waitForUrlHostPoliteness(ctx: ProcessFileContext, normalizedUrl: string): Promise<void> {
+	if (!ctx.pool) {
+		return;
 	}
+
+	const host = normalizeUrlLifecycleHost(normalizedUrl);
+	const state = await findUrlHostLifecycleByHost(ctx.pool, host);
+	if (!state?.nextAllowedAt) {
+		return;
+	}
+
+	const waitMs = state.nextAllowedAt.getTime() - Date.now();
+	if (waitMs > 0) {
+		await sleepForUrlPoliteness(waitMs);
+	}
+}
+
+async function recordUrlLifecycleForFetch(input: {
+	ctx: ProcessFileContext;
+	source: Source;
+	fetchResult: Awaited<ReturnType<Services['urls']['fetchUrl']>>;
+	formatMetadata: SourceFormatMetadata;
+	fileHash: string;
+	storagePath: string;
+	changeKind: 'initial' | 'changed' | 'unchanged';
+}): Promise<void> {
+	if (!input.ctx.pool || input.ctx.dryRun || input.source.sourceType !== 'url') {
+		return;
+	}
+
+	const fetchedAt = new Date(input.fetchResult.fetchedAt);
+	const minimumDelayMs = resolveUrlPolitenessDelayMs();
+	const finalUrl = stringMetadataValue(input.formatMetadata, 'final_url') ?? input.fetchResult.finalUrl;
+	const host = normalizeUrlLifecycleHost(finalUrl);
+	const initialHost = normalizeUrlLifecycleHost(input.fetchResult.normalizedUrl);
+	const nextFetchAfter = computeUrlLifecycleNextAllowedAt(fetchedAt, minimumDelayMs);
+
+	for (const hostToRecord of new Set([initialHost, host])) {
+		await recordUrlHostLifecycle(input.ctx.pool, {
+			host: hostToRecord,
+			minimumDelayMs,
+			requestedAt: fetchedAt,
+			lastRobotsCheckedAt: fetchedAt,
+		});
+	}
+
+	await recordUrlLifecycleFetch(input.ctx.pool, {
+		sourceId: input.source.id,
+		originalUrl: input.fetchResult.originalUrl,
+		normalizedUrl: input.fetchResult.normalizedUrl,
+		finalUrl,
+		host,
+		etag: urlLifecycleHeaderValue(input.fetchResult.headers, 'etag'),
+		lastModified: urlLifecycleHeaderValue(input.fetchResult.headers, 'last-modified'),
+		lastFetchedAt: fetchedAt,
+		lastCheckedAt: fetchedAt,
+		nextFetchAfter,
+		lastHttpStatus: input.fetchResult.httpStatus,
+		robotsAllowed: input.fetchResult.robots.allowed,
+		robotsUrl: input.fetchResult.robots.robotsUrl,
+		robotsCheckedAt: fetchedAt,
+		robotsMatchedUserAgent: input.fetchResult.robots.matchedUserAgent,
+		robotsMatchedRule: input.fetchResult.robots.matchedRule,
+		redirectCount: input.fetchResult.redirectCount,
+		contentType: input.fetchResult.contentType,
+		renderingMethod: stringMetadataValue(input.formatMetadata, 'rendering_method'),
+		snapshotEncoding:
+			input.fetchResult.snapshotEncoding ?? stringMetadataValue(input.formatMetadata, 'snapshot_encoding'),
+		lastContentHash: input.fileHash,
+		lastSnapshotStoragePath: input.storagePath,
+		changeKind: input.changeKind,
+	});
 }
 
 async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<IngestFileResult> {
@@ -374,6 +321,7 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 	const log = createChildLogger(ctx.logger, { step: STEP_NAME, url: displayUrl });
 	let fetchResult: Awaited<ReturnType<Services['urls']['fetchUrl']>>;
 	try {
+		await waitForUrlHostPoliteness(ctx, normalizedUrl);
 		fetchResult = await ctx.services.urls.fetchUrl(inputUrl, {
 			maxBytes: ctx.config.ingestion.max_file_size_mb * 1024 * 1024,
 		});
@@ -384,7 +332,12 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 		});
 	}
 
-	const prepared = await prepareUrlSnapshot(fetchResult, ctx, displayUrl, log);
+	const prepared = await prepareUrlSnapshot(fetchResult, {
+		config: ctx.config,
+		services: ctx.services,
+		displayUrl,
+		logger: log,
+	});
 	const filename = filenameForUrlSnapshot(prepared.html, prepared.finalUrl, prepared.title ?? undefined);
 	const fileHash = computeFileHash(prepared.html);
 	const formatMetadata = prepared.formatMetadata;
@@ -393,6 +346,15 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 		const existing = await findSourceByHash(ctx.pool, fileHash);
 		if (existing) {
 			log.info({ sourceId: existing.id, fileHash }, 'Duplicate URL snapshot detected, skipping upload');
+			await recordUrlLifecycleForFetch({
+				ctx,
+				source: existing,
+				fetchResult,
+				formatMetadata,
+				fileHash,
+				storagePath: existing.storagePath,
+				changeKind: 'unchanged',
+			});
 			return {
 				sourceId: existing.id,
 				filename,
@@ -464,6 +426,15 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 
 	if (source.id !== sourceId) {
 		await ctx.services.storage.delete(storagePath).catch(() => undefined);
+		await recordUrlLifecycleForFetch({
+			ctx,
+			source,
+			fetchResult,
+			formatMetadata,
+			fileHash,
+			storagePath: source.storagePath,
+			changeKind: 'unchanged',
+		});
 		return {
 			sourceId: source.id,
 			filename,
@@ -477,6 +448,16 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 			duplicate: true,
 		};
 	}
+
+	await recordUrlLifecycleForFetch({
+		ctx,
+		source,
+		fetchResult,
+		formatMetadata,
+		fileHash,
+		storagePath: source.storagePath,
+		changeKind: 'initial',
+	});
 
 	await upsertSourceStep(ctx.pool, {
 		sourceId: source.id,

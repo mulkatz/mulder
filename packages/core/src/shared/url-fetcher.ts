@@ -61,19 +61,29 @@ async function readBoundedResponse(response: NodeFetchResponse, maxBytes: number
 	return Buffer.concat(chunks);
 }
 
-async function fetchOnce(target: VettedTarget, options: { timeoutMs: number }): Promise<NodeFetchResponse> {
+async function fetchOnce(
+	target: VettedTarget,
+	options: { timeoutMs: number; ifNoneMatch?: string | null; ifModifiedSince?: string | null },
+): Promise<NodeFetchResponse> {
 	const { url } = target;
+	const headers: Record<string, string> = {
+		Host: url.host,
+		'User-Agent': URL_USER_AGENT,
+		Accept: 'text/html, application/xhtml+xml;q=0.9',
+	};
+	if (options.ifNoneMatch) {
+		headers['If-None-Match'] = options.ifNoneMatch;
+	}
+	if (options.ifModifiedSince) {
+		headers['If-Modified-Since'] = options.ifModifiedSince;
+	}
 	const requestOptions: HttpsRequestOptions = {
 		protocol: url.protocol,
 		hostname: connectionHostname(url.hostname),
 		port: url.port || undefined,
 		method: 'GET',
 		path: `${url.pathname}${url.search}`,
-		headers: {
-			Host: url.host,
-			'User-Agent': URL_USER_AGENT,
-			Accept: 'text/html, application/xhtml+xml;q=0.9',
-		},
+		headers,
 		lookup: target.lookup,
 		agent: false,
 	};
@@ -301,8 +311,15 @@ class LocalUrlFetcherService implements UrlFetcherService {
 
 		let redirectCount = 0;
 		let response: NodeFetchResponse;
+		let conditionalHeaders: Pick<UrlFetchOptions, 'ifNoneMatch' | 'ifModifiedSince'> = {
+			ifNoneMatch: options.ifNoneMatch,
+			ifModifiedSince: options.ifModifiedSince,
+		};
 		while (true) {
-			response = await fetchOnce(currentTarget, { timeoutMs });
+			response = await fetchOnce(currentTarget, {
+				timeoutMs,
+				...conditionalHeaders,
+			});
 			if (!isRedirectStatus(response.status)) {
 				break;
 			}
@@ -320,8 +337,12 @@ class LocalUrlFetcherService implements UrlFetcherService {
 				});
 			}
 			discardResponse(response);
+			const previousOrigin = currentUrl.origin;
 			currentUrl = new URL(location, currentUrl);
 			currentUrl.hash = '';
+			if (currentUrl.origin !== previousOrigin) {
+				conditionalHeaders = {};
+			}
 			currentTarget = await validatePublicHttpTarget(currentUrl);
 			robots = await fetchRobots(currentUrl, { timeoutMs, maxBytes: options.maxBytes, redirectLimit });
 			if (!robots.allowed) {
@@ -330,6 +351,25 @@ class LocalUrlFetcherService implements UrlFetcherService {
 				});
 			}
 			redirectCount++;
+		}
+
+		const rawContentType = responseHeader(response, 'content-type');
+		if (response.status === 304) {
+			discardResponse(response);
+			return {
+				originalUrl: inputUrl,
+				normalizedUrl,
+				finalUrl: currentUrl.toString(),
+				httpStatus: response.status,
+				headers: headersToRecord(response.headers),
+				html: Buffer.alloc(0),
+				notModified: true,
+				contentType: rawContentType ?? '',
+				redirectCount,
+				fetchedAt: new Date().toISOString(),
+				robots,
+				snapshotEncoding: null,
+			};
 		}
 
 		if (!response.ok) {
@@ -345,7 +385,6 @@ class LocalUrlFetcherService implements UrlFetcherService {
 				context: { maxBytes: options.maxBytes, contentLength },
 			});
 		}
-		const rawContentType = responseHeader(response, 'content-type');
 		const contentType = parseContentType(rawContentType);
 		if (!HTML_CONTENT_TYPES.has(contentType.mediaType)) {
 			discardResponse(response);
@@ -361,6 +400,7 @@ class LocalUrlFetcherService implements UrlFetcherService {
 			httpStatus: response.status,
 			headers: headersToRecord(response.headers),
 			html,
+			notModified: false,
 			contentType: rawContentType ?? contentType.mediaType,
 			redirectCount,
 			fetchedAt: new Date().toISOString(),

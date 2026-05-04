@@ -112,6 +112,8 @@ function resetDatabase(): void {
 		'DROP TABLE IF EXISTS spatio_temporal_clusters CASCADE',
 		'DROP TABLE IF EXISTS evidence_chains CASCADE',
 		'DROP TABLE IF EXISTS entity_grounding CASCADE',
+		'DROP TABLE IF EXISTS url_lifecycle CASCADE',
+		'DROP TABLE IF EXISTS url_host_lifecycle CASCADE',
 		'DROP TABLE IF EXISTS source_steps CASCADE',
 		'DROP TABLE IF EXISTS sources CASCADE',
 		'DROP TABLE IF EXISTS mulder_migrations CASCADE',
