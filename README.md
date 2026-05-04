@@ -17,7 +17,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache_2.0-green?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/GCP-native-4285F4?style=flat-square&logo=googlecloud&logoColor=white" alt="GCP" />
-  <img src="https://img.shields.io/badge/status-M8_operations_complete-green?style=flat-square" alt="Status" />
+  <img src="https://img.shields.io/badge/status-M9_multi_format_complete-green?style=flat-square" alt="Status" />
 </p>
 
 <p align="center">
@@ -32,7 +32,7 @@
 <table align="center">
 <tr><td>
 
-**Development Progress** &ensp; `84 / 131 steps`
+**Development Progress** &ensp; `97 / 131 steps`
 
 ```
 M1   Foundation       ██████████████████████████████ 11/11 ✓
@@ -46,7 +46,7 @@ M6   Intelligence     ███████████████████�
 M7   API+Workers      ██████████████████████████████ 11/11 ✓
 M7.5 App              █████░░░░░░░░░░░░░░░░░░░░░░░░░  1/6
 M8   Operations       ██████████████████████████████  6/6  ✓
-M9   Multi-Format     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/13
+M9   Multi-Format     ██████████████████████████████ 13/13 ✓
 M10  Provenance       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/9
 M11  Trust Layer      ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/5
 M12  Discovery        ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/4
@@ -190,7 +190,7 @@ Everything beyond `project` and `ontology` has sensible defaults. See [`mulder.c
 
 ## Status
 
-Mulder's **CLI/backend track is complete through M8 Operations**: the v1.0 search pipeline is operational, the v2.0 intelligence layer is in place, and the production-safety tooling now covers evals, cost gates, budget alerts, selective reprocessing, dead-letter retry, and devlog conventions.
+Mulder's **CLI/backend track is complete through M9 Multi-Format Ingestion**: the v1.0 search pipeline is operational, the v2.0 intelligence layer is in place, production-safety tooling is covered, and ingestion now supports images, plain text, DOCX, spreadsheets, emails, URLs, lifecycle/refetch handling, and conservative cross-format deduplication.
 
 The browser app lives in [`apps/app`](./apps/app) and is guided by the [app design strategy](./docs/app-design-strategy.md), [API integration notes](./docs/app-api-integration.md), and [deployment runbook](./docs/app-deployment.md). The [functional spec](./docs/functional-spec.md), [implementation roadmap](./docs/roadmap.md), and [config schema](./mulder.config.example.yaml) are finalized.
 
