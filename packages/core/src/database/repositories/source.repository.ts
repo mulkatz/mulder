@@ -399,6 +399,7 @@ export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourc
 	const fieldMap: Array<[keyof UpdateSourceInput, string]> = [
 		['filename', 'filename'],
 		['storagePath', 'storage_path'],
+		['fileHash', 'file_hash'],
 		['parentSourceId', 'parent_source_id'],
 		['sourceType', 'source_type'],
 		['pageCount', 'page_count'],

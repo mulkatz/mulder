@@ -179,3 +179,5 @@ export type {
 export { executeReprocess, planReprocess } from './reprocess/index.js';
 export type { SegmentationData, SegmentedStory, SegmentInput, SegmentResult } from './segment/index.js';
 export { execute as executeSegment } from './segment/index.js';
+export type { UrlLifecycleStatusResult, UrlRefetchInput, UrlRefetchResult } from './url-lifecycle/index.js';
+export { getUrlLifecycleStatus, refetchUrlSource } from './url-lifecycle/index.js';

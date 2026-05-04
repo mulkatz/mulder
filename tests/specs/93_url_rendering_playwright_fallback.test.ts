@@ -120,6 +120,7 @@ async function runCli(args: string[], options: { timeout?: number; allowUnsafeUr
 		MULDER_CONFIG: EXAMPLE_CONFIG,
 		MULDER_LOG_LEVEL: 'silent',
 		MULDER_URL_RENDERER_FIXTURE_FILE: RENDER_FIXTURE_FILE,
+		MULDER_URL_POLITENESS_DELAY_MS: '0',
 		NODE_ENV: 'test',
 		PGPASSWORD: db.TEST_PG_PASSWORD,
 	};
@@ -161,6 +162,8 @@ function cleanState(): void {
 			'DELETE FROM jobs',
 			'DELETE FROM pipeline_run_sources',
 			'DELETE FROM pipeline_runs',
+			'DELETE FROM url_lifecycle',
+			'DELETE FROM url_host_lifecycle',
 			'DELETE FROM source_steps',
 			'DELETE FROM chunks',
 			'DELETE FROM story_entities',

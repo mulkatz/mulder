@@ -128,6 +128,9 @@ export type {
 	UpsertEntityGroundingInput,
 	UpsertPipelineRunSourceInput,
 	UpsertSourceStepInput,
+	UrlHostLifecycle,
+	UrlLifecycle,
+	UrlLifecycleChangeKind,
 	VectorSearchResult,
 } from './database/index.js';
 // ── Database ─────────────────────────────────────────────────
@@ -235,6 +238,8 @@ export {
 	findStoryById,
 	findTaxonomyEntryById,
 	findTaxonomyEntryByName,
+	findUrlHostLifecycleByHost,
+	findUrlLifecycleBySourceId,
 	gcOrphanedEntities,
 	getEntityCorroborationStats,
 	getMigrationStatus,
@@ -249,6 +254,8 @@ export {
 	mergeJobPayload,
 	persistEntityGroundingResult,
 	reapRunningJobs,
+	recordUrlHostLifecycle,
+	recordUrlLifecycleFetch,
 	replaceSpatioTemporalClustersSnapshot,
 	resetDeadLetterJobs,
 	resetPipelineStep,
@@ -450,6 +457,13 @@ export type {
 export type { StepError } from './shared/types.js';
 export { createUrlExtractorService } from './shared/url-extractor.js';
 export { createUrlFetcherService } from './shared/url-fetcher.js';
+export {
+	computeUrlLifecycleNextAllowedAt,
+	headerValue as urlLifecycleHeaderValue,
+	normalizeUrlLifecycleHost,
+	resolveUrlPolitenessDelayMs,
+	sleepForUrlPoliteness,
+} from './shared/url-lifecycle.js';
 export { createUrlRendererService } from './shared/url-renderer.js';
 // ── Vertex AI wrapper ────────────────────────────────────────
 export type { VertexClient, VertexClientOptions } from './vertex.js';

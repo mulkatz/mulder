@@ -231,6 +231,7 @@ export interface UrlFetchResult {
 	httpStatus: number;
 	headers: Record<string, string>;
 	html: Buffer;
+	notModified: boolean;
 	contentType: string;
 	redirectCount: number;
 	fetchedAt: string;
@@ -242,6 +243,8 @@ export interface UrlFetchOptions {
 	maxBytes: number;
 	timeoutMs?: number;
 	redirectLimit?: number;
+	ifNoneMatch?: string | null;
+	ifModifiedSince?: string | null;
 }
 
 export interface UrlFetcherService {

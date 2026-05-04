@@ -68,6 +68,7 @@ export interface CreateSourceInput {
 export interface UpdateSourceInput {
 	filename?: string;
 	storagePath?: string;
+	fileHash?: string;
 	parentSourceId?: string | null;
 	sourceType?: SourceType;
 	formatMetadata?: SourceFormatMetadata;

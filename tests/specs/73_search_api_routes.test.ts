@@ -146,6 +146,7 @@ function buildMockServices(): Services {
 				httpStatus: 200,
 				headers: {},
 				html: Buffer.from('<html><body></body></html>'),
+				notModified: false,
 				contentType: 'text/html',
 				redirectCount: 0,
 				fetchedAt: new Date(0).toISOString(),
