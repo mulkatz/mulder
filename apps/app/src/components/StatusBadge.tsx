@@ -24,7 +24,7 @@ const toneByStatus: Record<string, string> = {
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {
 	const { t } = useTranslation();
-	const statusKey = status.replaceAll('-', '_').replaceAll('_', '_');
+	const statusKey = status.replaceAll('-', '_');
 
 	return (
 		<span
@@ -34,7 +34,7 @@ export function StatusBadge({ status, className }: { status: string; className?:
 				className,
 			)}
 		>
-			{t(`status.${statusKey}`, { defaultValue: status.replaceAll('_', ' ') })}
+			{t(`status.${statusKey}`, { defaultValue: t('status.unknownValue', { status }) })}
 		</span>
 	);
 }

@@ -1,11 +1,18 @@
 import {
 	Activity,
+	AlertCircle,
+	AlertTriangle,
 	BarChart3,
+	Bell,
+	BookOpen,
+	Download,
 	FileText,
 	Gauge,
 	Home,
 	KeyRound,
+	Link2,
 	Network,
+	Plus,
 	Search,
 	Settings,
 	ShieldCheck,
@@ -15,7 +22,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { NavLink } from 'react-router-dom';
 import { IconButton } from '@/components/IconButton';
-import { type CapabilityId, getCapability } from '@/lib/capabilities';
+import type { CapabilityId } from '@/lib/capabilities';
 import { cn } from '@/lib/cn';
 
 const navGroups: {
@@ -28,50 +35,76 @@ const navGroups: {
 	}[];
 }[] = [
 	{
-		labelKey: 'navigation.research',
+		labelKey: 'navigation.workspace',
 		items: [
-			{ to: '/', labelKey: 'navigation.overview', icon: Home, capability: 'status.overview' },
-			{
-				to: '/evidence',
-				labelKey: 'navigation.evidenceWorkspace',
-				icon: ShieldCheck,
-				capability: 'evidence.contradictions',
-			},
-			{ labelKey: 'navigation.documents', icon: FileText, capability: 'documents.viewer' },
-			{ labelKey: 'navigation.search', icon: Search, capability: 'search.hybrid' },
+			{ to: '/', labelKey: 'navigation.researchDesk', icon: Home, capability: 'status.overview' },
+			{ labelKey: 'navigation.reviewQueue', icon: ShieldCheck, capability: 'workspace.reviewQueue' },
+			{ labelKey: 'navigation.watchlist', icon: Bell, capability: 'workspace.watchlist' },
+			{ labelKey: 'navigation.researchAgent', icon: Gauge, capability: 'workspace.agent' },
 		],
 	},
 	{
-		labelKey: 'navigation.knowledge',
+		labelKey: 'navigation.searchGroup',
+		items: [{ labelKey: 'navigation.search', icon: Search, capability: 'search.hybrid' }],
+	},
+	{
+		labelKey: 'navigation.sources',
+		items: [
+			{ labelKey: 'navigation.allSources', icon: FileText, capability: 'documents.list' },
+			{ labelKey: 'navigation.addSources', icon: Plus, capability: 'sources.add' },
+			{ labelKey: 'navigation.archive', icon: BookOpen, capability: 'documents.viewer' },
+			{ labelKey: 'navigation.sourceQuality', icon: AlertTriangle, capability: 'm10.provenance' },
+		],
+	},
+	{
+		labelKey: 'navigation.findings',
+		items: [
+			{
+				to: '/evidence',
+				labelKey: 'navigation.claimsAndEvidence',
+				icon: ShieldCheck,
+				capability: 'evidence.contradictions',
+			},
+			{ labelKey: 'navigation.contradictions', icon: AlertTriangle, capability: 'evidence.contradictions' },
+			{ labelKey: 'navigation.sourceReliability', icon: BarChart3, capability: 'evidence.reliability' },
+			{ labelKey: 'navigation.evidenceChains', icon: Link2, capability: 'evidence.chains' },
+			{ labelKey: 'navigation.clustersAndTimelines', icon: Network, capability: 'evidence.clusters' },
+		],
+	},
+	{
+		labelKey: 'navigation.knowledgeBase',
 		items: [
 			{ labelKey: 'navigation.entities', icon: KeyRound, capability: 'entities.list' },
-			{ labelKey: 'navigation.graph', icon: Network, capability: 'graph.aggregate' },
+			{ labelKey: 'navigation.relationships', icon: Link2, capability: 'relationships.list' },
+			{ labelKey: 'navigation.knowledgeMap', icon: Network, capability: 'graph.aggregate' },
+			{ labelKey: 'navigation.claimRegistry', icon: ShieldCheck, capability: 'evidence.claims' },
+			{ labelKey: 'navigation.taxonomy', icon: BookOpen, capability: 'taxonomy.manage' },
+			{ labelKey: 'navigation.stories', icon: FileText, capability: 'stories.list' },
 		],
 	},
 	{
 		labelKey: 'navigation.operations',
 		items: [
-			{ to: '/runs', labelKey: 'navigation.analysisRuns', icon: Workflow, capability: 'jobs.list' },
+			{ to: '/runs', labelKey: 'navigation.processing', icon: Workflow, capability: 'jobs.list' },
 			{ labelKey: 'navigation.activity', icon: Activity, capability: 'activity.feed' },
-			{ labelKey: 'navigation.usage', icon: BarChart3, capability: 'usage.cost' },
+			{ labelKey: 'navigation.recovery', icon: AlertCircle, capability: 'operations.recovery' },
+			{ labelKey: 'navigation.usageAndCost', icon: BarChart3, capability: 'usage.cost' },
+			{ labelKey: 'navigation.exports', icon: Download, capability: 'exports.list' },
 		],
 	},
 	{
 		labelKey: 'navigation.admin',
-		items: [{ labelKey: 'navigation.settings', icon: Settings, capability: 'settings.admin' }],
+		items: [
+			{ labelKey: 'navigation.settings', icon: Settings, capability: 'settings.admin' },
+			{ labelKey: 'navigation.membersAndAccess', icon: KeyRound, capability: 'admin.members' },
+			{ labelKey: 'navigation.policies', icon: ShieldCheck, capability: 'admin.policies' },
+			{ labelKey: 'navigation.integrations', icon: Network, capability: 'admin.integrations' },
+		],
 	},
 ];
 
-function stateLabel(capability: CapabilityId, t: ReturnType<typeof useTranslation>['t']) {
-	const state = getCapability(capability).state;
-	if (state === 'mounted-api') return t('capabilityState.api');
-	if (state === 'mounted-partial') return t('capabilityState.partial');
-	if (state === 'missing') return t('capabilityState.gap');
-	return t('capabilityState.soon');
-}
-
 function capabilityNoteKey(capability: CapabilityId) {
-	return `capabilities.${capability.replace('.', '_')}`;
+	return `capabilities.${capability.replaceAll('.', '_')}`;
 }
 
 export function Sidebar({ onClose, mobile = false }: { onClose?: () => void; mobile?: boolean }) {
@@ -86,7 +119,7 @@ export function Sidebar({ onClose, mobile = false }: { onClose?: () => void; mob
 					</div>
 					<div className="min-w-0">
 						<p className="truncate text-sm font-semibold text-text">{t('common.appName')}</p>
-						<p className="truncate font-mono text-[11px] text-text-subtle">{t('navigation.brandSubtitle')}</p>
+						<p className="truncate text-[11px] text-text-subtle">{t('navigation.brandSubtitle')}</p>
 					</div>
 				</div>
 				{mobile && onClose ? (
@@ -97,17 +130,14 @@ export function Sidebar({ onClose, mobile = false }: { onClose?: () => void; mob
 			</div>
 
 			<div className="border-b border-border p-3">
-				<button
-					className="flex w-full items-center justify-between rounded-md border border-border bg-field px-3 py-2 text-left text-sm text-text transition-colors hover:bg-field-hover"
-					type="button"
-				>
-					<span>{t('common.app')}</span>
-					<span className="rounded-sm bg-panel px-1.5 py-0.5 font-mono text-[11px] text-accent">{t('common.api')}</span>
-				</button>
+				<div className="rounded-md border border-border bg-field px-3 py-2">
+					<p className="truncate text-sm font-medium text-text">{t('navigation.workspaceScope')}</p>
+					<p className="mt-0.5 truncate text-xs text-text-subtle">{t('navigation.workspaceScopeDetail')}</p>
+				</div>
 			</div>
 
 			<nav className="flex-1 overflow-y-auto p-3">
-				<div className="space-y-5">
+				<div className="space-y-4">
 					{navGroups.map((group) => (
 						<div key={group.labelKey}>
 							<p className="px-3 text-xs font-medium text-text-subtle">{t(group.labelKey)}</p>
@@ -130,7 +160,7 @@ export function Sidebar({ onClose, mobile = false }: { onClose?: () => void; mob
 												to={item.to}
 											>
 												<Icon className="size-4 shrink-0" />
-												<span>{label}</span>
+												<span className="truncate">{label}</span>
 											</NavLink>
 										);
 									}
@@ -138,19 +168,14 @@ export function Sidebar({ onClose, mobile = false }: { onClose?: () => void; mob
 									return (
 										<button
 											aria-disabled="true"
-											className="flex h-9 w-full items-center justify-between gap-3 rounded-md px-3 text-left text-sm text-text-faint"
+											className="flex h-9 w-full items-center gap-3 rounded-md px-3 text-left text-sm text-text-faint"
 											disabled
 											key={item.labelKey}
-											title={t(capabilityNoteKey(item.capability), {
-												defaultValue: getCapability(item.capability).note,
-											})}
+											title={t(capabilityNoteKey(item.capability))}
 											type="button"
 										>
-											<span className="flex items-center gap-3">
-												<Icon className="size-4 shrink-0" />
-												{label}
-											</span>
-											<span className="font-mono text-[10px] text-text-faint">{stateLabel(item.capability, t)}</span>
+											<Icon className="size-4 shrink-0" />
+											<span className="truncate">{label}</span>
 										</button>
 									);
 								})}

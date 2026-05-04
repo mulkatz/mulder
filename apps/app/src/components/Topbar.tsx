@@ -28,7 +28,7 @@ export function Topbar({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 					className="field hidden h-9 items-center gap-2 px-3 text-sm text-text-muted transition-colors hover:bg-field-hover lg:inline-flex"
 					type="button"
 				>
-					<span className="font-mono text-xs">⌘K</span>
+					<span className="font-mono text-xs">{t('common.commandShortcut')}</span>
 					{t('common.command')}
 				</button>
 			</div>
@@ -56,7 +56,7 @@ export function Topbar({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 					type="button"
 				>
 					<Plus className="size-4 text-accent" />
-					{t('common.newRun')}
+					{t('common.addSources')}
 				</button>
 				<button
 					className="hidden h-9 max-w-[220px] items-center gap-2 rounded-md border border-border bg-field px-2 text-sm text-text transition-colors hover:bg-field-hover min-[480px]:flex sm:px-3"

@@ -13,7 +13,6 @@ import { Tabs } from '@/components/Tabs';
 import { SelectControl, Toolbar } from '@/components/Toolbar';
 import { useContradictions } from '@/features/evidence/useContradictions';
 import { useEvidenceSummary } from '@/features/evidence/useEvidenceSummary';
-import { getCapability } from '@/lib/capabilities';
 import { getErrorMessage } from '@/lib/query-state';
 import type { ClaimStatus, EvidenceClaim, SourceRef } from '@/lib/types';
 import { contradictionToClaim } from '@/lib/view-models';
@@ -26,7 +25,6 @@ function getClaimColumns(t: TFunction): DataColumn<EvidenceClaim>[] {
 			render: (claim) => (
 				<div className="min-w-0">
 					<p className="max-w-2xl truncate font-medium text-text">{claim.claim}</p>
-					<p className="mt-1 truncate font-mono text-xs text-text-subtle">{claim.id}</p>
 				</div>
 			),
 		},
@@ -195,7 +193,7 @@ export function EvidenceWorkspacePage() {
 							<ChevronDown className="size-3.5 text-text-subtle" />
 						</SelectControl>
 						<SelectControl disabled label={t('evidence.reliability')} title={t('evidence.reliabilityFilterTitle')}>
-							50%+
+							{t('evidence.reliabilityThreshold')}
 							<ChevronDown className="size-3.5 text-text-subtle" />
 						</SelectControl>
 						<IconButton disabled label={t('common.advancedFilters')} title={t('evidence.advancedFiltersTitle')}>
@@ -257,7 +255,7 @@ export function EvidenceWorkspacePage() {
 								</div>
 							) : (
 								<StateNotice title={t('evidence.citationsMissingTitle')}>
-									{t('capabilities.evidence_claims', { defaultValue: getCapability('evidence.claims').note })}
+									{t('capabilities.evidence_claims')}
 								</StateNotice>
 							)}
 						</InspectorSection>

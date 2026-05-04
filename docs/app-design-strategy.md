@@ -10,11 +10,11 @@
 
 `apps/app` is the only active product direction for Mulder's browser experience.
 
-Mulder is a powerful research and analysis system. The interface should therefore feel like a precise technical workbench, not like an editorial presentation layer. API integration decisions are captured in [`docs/app-api-integration.md`](./app-api-integration.md).
+Mulder is a powerful research and analysis system. The interface should therefore feel like a precise research workspace for understanding content, not like an editorial presentation layer and not like a system monitor. API integration decisions are captured in [`docs/app-api-integration.md`](./app-api-integration.md).
 
 The key decision is not simply "make the earlier interface cleaner." The better path is to continue the app as an API-contract-first, capability-aware shell:
 
-- Build the UI around real workflows: documents, runs, evidence, entities, search, graph, review.
+- Build the UI around real workflows: sources, findings, claims, evidence, entities, search, graph, and review.
 - Bind real API data as early as possible.
 - Show future capabilities in the information architecture without pretending that unavailable APIs already exist.
 - Keep all visual decisions adjustable through Tailwind and local design tokens.
@@ -107,6 +107,10 @@ Not:
 
 > Pipeline-first, developer-facing, permanently technical.
 
+The hard product rule is:
+
+> Mulder is a tool for understanding content. Processing is inspectable infrastructure, not the primary product object.
+
 ---
 
 ## 4.1 Audience Model
@@ -128,24 +132,48 @@ The app should not assume that "powerful" means "busy." The strongest interface 
 
 The sidebar is the right foundation because Mulder will grow beyond four tabs. Future product breadth is expected, and top navigation will not scale.
 
-The sidebar must still express product priorities. A research user should see Mulder as a workspace for documents, evidence, search, and knowledge. Operations should be available, but visually secondary.
+The sidebar must still express product priorities. A research user should see Mulder as a workspace for sources, findings, claims, evidence, search, and knowledge. Operations should be available, but visually secondary.
 
 Recommended sidebar grouping:
 
 | Group | Area | Purpose | Contract state |
 | --- | --- | --- | --- |
-| Research | Overview | Corpus pulse, high-signal work, review queue | Mounted partial: `/api/status`, jobs, evidence read models |
-| Research | Evidence Workspace | Claims, contradictions, citations, review decisions | Mounted partial; first-class claims and review actions need a facade |
-| Research | Documents | Archive, upload, processing readiness, viewer | Mounted API; real archive use is gated by M10 provenance/trust work |
-| Research | Search | Hybrid retrieval, citations, trace disclosure | Mounted API; trace depth is partial |
-| Knowledge | Entities | Entity search, profiles, aliases, merges | Mounted API |
-| Knowledge | Graph | Relationship exploration and graph-backed review | Mounted partial; aggregate graph endpoint or batch edge query needed |
-| Operations | Analysis Runs | Queue, jobs, artifacts, failures, retries | Jobs mounted; app-shaped run facade needed |
+| Workspace | Research Desk | Review needs, source health, new findings, open questions, and next research steps | Mounted partial: `/api/status`, jobs, evidence read models |
+| Workspace | Review Queue | Human review assignments for claims, contradictions, and source issues | Documented target; needs claim/review facade |
+| Workspace | Watchlist | Saved research areas, watched claims, sources, entities, or queries | Documented target |
+| Workspace | Research Agent | Assisted research workflows and autonomous follow-up | Future milestone: M14 |
+| Search | Search | Hybrid retrieval across sources, claims, citations, entities, and stories | Mounted API; trace depth is partial |
+| Sources | All Sources | Source archive list and processing readiness | Mounted API; route disabled until source workflow is built |
+| Sources | Add Sources | Upload and ingest entry point | Upload routes exist; product use gated by M10 provenance/trust |
+| Sources | Archive | Reader, document detail, pages, layout, and extracted stories | Mounted partial |
+| Sources | Source Quality | Provenance, custody, quality, sensitivity/RBAC, rollback, credibility | Future milestone: M10/M11 |
+| Findings | Claims & Evidence | Active review workflow for claims, contradictions, confidence, citations, and source support | Mounted partial; first-class claims and review actions need a facade |
+| Findings | Contradictions | Contradiction-focused review | Mounted API, future dedicated route |
+| Findings | Source Reliability | Source reliability review | Mounted API, future dedicated route |
+| Findings | Evidence Chains | Thesis/evidence-chain review | Mounted API, future dedicated route |
+| Findings | Clusters & Timelines | Spatio-temporal review | Mounted API, future dedicated route |
+| Knowledge Base | Entities | Entity search, profiles, aliases, merges | Mounted API |
+| Knowledge Base | Relationships | Relationship list and relationship review | Mounted partial |
+| Knowledge Base | Knowledge Map | Graph-backed exploration | Mounted partial; aggregate graph endpoint or batch edge query needed |
+| Knowledge Base | Claim Registry | Structured list of claim records as knowledge objects | Missing app facade |
+| Knowledge Base | Taxonomy | Taxonomy list, bootstrap, export, and rebootstrap if browser-managed | CLI/package-only |
+| Knowledge Base | Stories | Extracted narratives and story-level reading | Mounted partial; global story endpoint decision needed |
+| Operations | Processing | Background processing, job history, artifacts, failures, retries | Jobs mounted; app-shaped run facade needed |
 | Operations | Activity | Cross-system event stream | Missing aggregate |
-| Operations | Usage | Cost, budget, worker, and capacity signals | CLI/package-only plus mounted status pieces; app API partial |
-| Admin | Settings | Workspace, users, API/auth, config, policy | Future milestone |
+| Operations | Recovery | Retry, reprocess, dead-letter inspection, and rollback | Mounted partial |
+| Operations | Usage & Cost | Cost, budget, worker, and capacity signals | CLI/package-only plus mounted status pieces; app API partial |
+| Operations | Exports | Export jobs and signed artifacts | CLI/package-only |
+| Admin | Settings | Workspace configuration | Future milestone |
+| Admin | Members & Access | Users, invitations, access, roles | Mounted partial |
+| Admin | Policies | Workspace policy, retention, review rules, source rules | Future milestone |
+| Admin | Integrations | API/auth and third-party connections | Future milestone |
 
-`Analysis Runs` can stay active early because it is the fastest way to validate API binding and operational states. In the real product navigation, it should sit under Operations so pipeline machinery does not look like the core research object.
+Claims deliberately appear in two future-facing places:
+
+- `Claims & Evidence` is the human review workflow.
+- `Claim Registry` is the future structured knowledge-base object list.
+
+`Processing` can stay active early because it is the fastest way to validate API binding and operational states. In the real product navigation, it should sit under Operations so pipeline machinery does not look like the core research object.
 
 Use precise contract states in planning:
 
@@ -243,6 +271,21 @@ Recommended token surfaces:
 
 Do not make Mulder feel powerful only by making everything smaller. The interface can be dense, but primary reading paths, evidence summaries, citations, and review actions need enough breathing room to remain usable for people who do not live in technical consoles all day.
 
+### Responsive Layout Strategy
+
+Mulder should be desktop-first, tablet-capable, and mobile-safe.
+
+- The primary target is desktop and laptop research workstations.
+- Tablet layouts should remain readable and usable for review and inspection.
+- Mobile layouts should support authentication, invitation acceptance, reading, quick review, and status visibility without breaking.
+- Mobile does not need full productivity parity for graph exploration, document comparison, large evidence tables, or processing debug workflows.
+- The sidebar should become a drawer on mobile.
+- Tables may use intentional horizontal scroll or simplified stacked rows.
+- Inspector panels may move below the main content.
+- Complex workflows may show "best viewed on desktop" guidance when necessary.
+
+This keeps future responsive refactors manageable without spending current product energy on a mobile-first application that does not match the core research workflow.
+
 ---
 
 ## 7. Usability Strategy
@@ -253,7 +296,7 @@ The app should optimize for repeated analytical work, not just first impression.
 
 The researcher works with the result of the pipeline, not with the pipeline itself. Most screens should therefore lead with:
 
-- Documents.
+- Sources.
 - Claims.
 - Citations.
 - Entities.
@@ -472,7 +515,7 @@ Use it to control:
 - Missing actions.
 - Empty states.
 - Tooltips.
-- "API pending" internal notes.
+- Unavailable-state internal notes.
 
 ### Phase 3: Close Backend Gaps in Product Order
 
@@ -492,7 +535,7 @@ Prioritize API additions that unlock complete workflows:
 
 Once the API shape exists, expand:
 
-- Documents and upload.
+- Sources and upload.
 - Entity profiles.
 - Search with trace.
 - Graph/Board.
