@@ -293,6 +293,34 @@ export async function findSourceByHash(pool: Queryable, hash: string): Promise<S
 }
 
 /**
+ * Finds the earliest source with a durable cross-format ingest dedup key.
+ *
+ * The key lives in format_metadata so this remains migration-free for M9-J12.
+ */
+export async function findSourceByCrossFormatDedupKey(pool: Queryable, dedupKey: string): Promise<Source | null> {
+	const sql = `
+    SELECT *
+    FROM sources
+    WHERE format_metadata->>'cross_format_dedup_key' = $1
+    ORDER BY created_at ASC, id ASC
+    LIMIT 1
+  `;
+
+	try {
+		const result = await pool.query<SourceRow>(sql, [dedupKey]);
+		if (result.rows.length === 0) {
+			return null;
+		}
+		return mapSourceRow(result.rows[0]);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to find source by cross-format dedup key', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { dedupKey },
+		});
+	}
+}
+
+/**
  * Finds all sources matching the given filter.
  *
  * Supports filtering by status and tags, with pagination via limit/offset.

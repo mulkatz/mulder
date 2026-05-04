@@ -29,6 +29,7 @@ import {
 	createSource,
 	detectNativeText,
 	extractPdfMetadata,
+	findSourceByCrossFormatDedupKey,
 	findSourceByHash,
 	findUrlHostLifecycleByHost,
 	INGEST_ERROR_CODES,
@@ -43,12 +44,19 @@ import {
 } from '@mulder/core';
 import type pg from 'pg';
 import {
+	buildTabularCrossFormatContent,
+	deriveMarkdownTitle,
+	getCrossFormatDedupKey,
+	withCrossFormatDedupMetadata,
+} from './cross-format-dedup.js';
+import {
 	buildDocxFormatMetadata,
 	buildEmailFormatMetadata,
 	buildImageFormatMetadata,
 	buildSpreadsheetFormatMetadata,
 	buildTextFormatMetadata,
 	CSV_MEDIA_TYPE,
+	decodeUtf8TextBuffer,
 	detectSourceType,
 	getStorageExtensionForDetection,
 	isSupportedEmailMediaType,
@@ -65,6 +73,21 @@ import {
 import type { IngestFileResult, IngestInput, IngestResult } from './types.js';
 import { filenameForUrlSnapshot, prepareUrlSnapshot } from './url-snapshot.js';
 
+export type {
+	CrossFormatDedupBasis,
+	CrossFormatDedupMetadataInput,
+	CrossFormatTabularSheet,
+} from './cross-format-dedup.js';
+export {
+	buildTabularCrossFormatContent,
+	deriveCrossFormatContentKey,
+	deriveCrossFormatTitleKey,
+	deriveMarkdownTitle,
+	getCrossFormatDedupKey,
+	isStrongCrossFormatContentSignal,
+	normalizeCrossFormatText,
+	withCrossFormatDedupMetadata,
+} from './cross-format-dedup.js';
 export type {
 	ImageDimensions,
 	SourceDetectionConfidence,
@@ -340,7 +363,10 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 	});
 	const filename = filenameForUrlSnapshot(prepared.html, prepared.finalUrl, prepared.title ?? undefined);
 	const fileHash = computeFileHash(prepared.html);
-	const formatMetadata = prepared.formatMetadata;
+	const formatMetadata = withCrossFormatDedupMetadata(prepared.formatMetadata, {
+		basis: 'url_readability_content',
+		title: prepared.title,
+	});
 
 	if (ctx.pool) {
 		const existing = await findSourceByHash(ctx.pool, fileHash);
@@ -367,6 +393,29 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 				nativeTextRatio: existing.nativeTextRatio,
 				duplicate: true,
 			};
+		}
+
+		const crossFormatDedupKey = getCrossFormatDedupKey(formatMetadata);
+		if (crossFormatDedupKey) {
+			const existingCrossFormatSource = await findSourceByCrossFormatDedupKey(ctx.pool, crossFormatDedupKey);
+			if (existingCrossFormatSource) {
+				log.info(
+					{ sourceId: existingCrossFormatSource.id, crossFormatDedupKey },
+					'Cross-format duplicate URL snapshot detected, skipping upload',
+				);
+				return {
+					sourceId: existingCrossFormatSource.id,
+					filename,
+					storagePath: existingCrossFormatSource.storagePath,
+					fileHash: existingCrossFormatSource.fileHash,
+					sourceType: existingCrossFormatSource.sourceType,
+					formatMetadata: existingCrossFormatSource.formatMetadata,
+					pageCount: existingCrossFormatSource.pageCount ?? 0,
+					hasNativeText: existingCrossFormatSource.hasNativeText,
+					nativeTextRatio: existingCrossFormatSource.nativeTextRatio,
+					duplicate: true,
+				};
+			}
 		}
 	}
 
@@ -677,6 +726,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			);
 		}
 
+		const textContent = decodeUtf8TextBuffer(buffer);
 		const formatMetadata = buildTextFormatMetadata(buffer, filename, detection.mediaType);
 		if (!formatMetadata) {
 			throw new IngestError(
@@ -692,7 +742,11 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			sourceType: 'text',
 			mediaType: typeof formatMetadata.media_type === 'string' ? formatMetadata.media_type : detection.mediaType,
 			storageExtension,
-			formatMetadata,
+			formatMetadata: withCrossFormatDedupMetadata(formatMetadata, {
+				content: textContent,
+				title: textContent ? deriveMarkdownTitle(textContent) : null,
+				basis: 'text_content',
+			}),
 			pageCount: 0,
 			hasNativeText: false,
 			nativeTextRatio: 0,
@@ -742,7 +796,13 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			sourceType: 'spreadsheet',
 			mediaType: detection.mediaType,
 			storageExtension,
-			formatMetadata: buildSpreadsheetFormatMetadata(buffer, filename, detection.mediaType, extractionResult),
+			formatMetadata: withCrossFormatDedupMetadata(
+				buildSpreadsheetFormatMetadata(buffer, filename, detection.mediaType, extractionResult),
+				{
+					content: buildTabularCrossFormatContent(extractionResult.sheets),
+					basis: 'tabular_rows',
+				},
+			),
 			pageCount: 0,
 			hasNativeText: false,
 			nativeTextRatio: 0,
@@ -780,7 +840,16 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 			sourceType: 'email',
 			mediaType: detection.mediaType,
 			storageExtension,
-			formatMetadata: buildEmailFormatMetadata(buffer, filename, detection.mediaType, extractionResult),
+			formatMetadata: withCrossFormatDedupMetadata(
+				buildEmailFormatMetadata(buffer, filename, detection.mediaType, extractionResult),
+				{
+					content: [extractionResult.headers.subject, extractionResult.bodyText || extractionResult.bodyHtmlText]
+						.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+						.join('\n\n'),
+					title: extractionResult.headers.subject,
+					basis: 'email_body',
+				},
+			),
 			pageCount: 0,
 			hasNativeText: false,
 			nativeTextRatio: 0,
@@ -812,6 +881,30 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 				duplicate: true,
 				pdfMetadata: prepared.pdfMetadata,
 			};
+		}
+
+		const crossFormatDedupKey = getCrossFormatDedupKey(prepared.formatMetadata);
+		if (crossFormatDedupKey) {
+			const existingCrossFormatSource = await findSourceByCrossFormatDedupKey(ctx.pool, crossFormatDedupKey);
+			if (existingCrossFormatSource) {
+				log.info(
+					{ sourceId: existingCrossFormatSource.id, crossFormatDedupKey },
+					'Cross-format duplicate file detected, skipping upload',
+				);
+				return {
+					sourceId: existingCrossFormatSource.id,
+					filename,
+					storagePath: existingCrossFormatSource.storagePath,
+					fileHash: existingCrossFormatSource.fileHash,
+					sourceType: existingCrossFormatSource.sourceType,
+					formatMetadata: existingCrossFormatSource.formatMetadata,
+					pageCount: existingCrossFormatSource.pageCount ?? 0,
+					hasNativeText: existingCrossFormatSource.hasNativeText,
+					nativeTextRatio: existingCrossFormatSource.nativeTextRatio,
+					duplicate: true,
+					pdfMetadata: prepared.pdfMetadata,
+				};
+			}
 		}
 	}
 
