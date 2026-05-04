@@ -1,0 +1,84 @@
+{
+	"schema_version": 1,
+	"description": "Spec 97 deterministic multi-format golden cases for M9 ingest/extract convergence.",
+	"cases": [
+		{
+			"id": "golden-pdf-native-text",
+			"source_type": "pdf",
+			"fixture_kind": "committed_file",
+			"fixture_ref": "fixtures/raw/native-text-sample.pdf",
+			"expected_filename": "native-text-sample.pdf",
+			"expected_route": "layout",
+			"expected_story_min": 1,
+			"expected_metadata_keys": []
+		},
+		{
+			"id": "golden-image-png",
+			"source_type": "image",
+			"fixture_kind": "generated_png",
+			"expected_filename": "golden-scan.png",
+			"expected_route": "layout",
+			"expected_story_min": 1,
+			"expected_metadata_keys": ["media_type", "width", "height"]
+		},
+		{
+			"id": "golden-text-markdown",
+			"source_type": "text",
+			"fixture_kind": "generated_markdown",
+			"expected_filename": "golden-note.md",
+			"expected_route": "prestructured",
+			"expected_story_min": 1,
+			"expected_metadata_keys": ["media_type", "encoding", "line_count"]
+		},
+		{
+			"id": "golden-docx-brief",
+			"source_type": "docx",
+			"fixture_kind": "generated_docx",
+			"expected_filename": "golden-brief.docx",
+			"expected_route": "prestructured",
+			"expected_story_min": 1,
+			"expected_metadata_keys": ["media_type", "office_format", "container", "extraction_engine"]
+		},
+		{
+			"id": "golden-spreadsheet-xlsx",
+			"source_type": "spreadsheet",
+			"fixture_kind": "generated_xlsx",
+			"expected_filename": "golden-ledger.xlsx",
+			"expected_route": "prestructured",
+			"expected_story_min": 1,
+			"expected_metadata_keys": ["media_type", "tabular_format", "container", "sheet_count", "sheet_names"]
+		},
+		{
+			"id": "golden-email-eml",
+			"source_type": "email",
+			"fixture_kind": "generated_eml",
+			"expected_filename": "golden-message.eml",
+			"expected_route": "prestructured",
+			"expected_story_min": 1,
+			"expected_metadata_keys": ["media_type", "email_format", "message_id", "subject"]
+		},
+		{
+			"id": "golden-url-local-article",
+			"source_type": "url",
+			"fixture_kind": "local_http_url",
+			"fixture_ref": "/golden-url-article",
+			"expected_filename": "spec-97-golden-url-127-0-0-1.html",
+			"expected_route": "prestructured",
+			"expected_story_min": 1,
+			"expected_metadata_keys": ["original_url", "final_url", "http_status", "robots_allowed", "parser_engine"]
+		}
+	],
+	"duplicate_scenario": {
+		"id": "golden-markdown-text-duplicate",
+		"first": {
+			"fixture_kind": "generated_markdown",
+			"expected_filename": "duplicate-report.md"
+		},
+		"second": {
+			"fixture_kind": "generated_text",
+			"expected_filename": "duplicate-report.txt"
+		},
+		"expected_source_type": "text",
+		"expected_duplicate_basis": "text_content"
+	}
+}
