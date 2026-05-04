@@ -12,7 +12,9 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { MulderConfig } from '../config/types.js';
+import { createEmailExtractorService } from './email-extractor.js';
 import type { Logger } from './logger.js';
+import { createOfficeDocumentExtractorService } from './office-document-extractor.js';
 import type {
 	CreateStorageUploadSessionOptions,
 	DocumentAiResult,
@@ -31,6 +33,10 @@ import type {
 	StructuredGenerateOptions,
 	TextGenerateOptions,
 } from './services.js';
+import { createSpreadsheetExtractorService } from './spreadsheet-extractor.js';
+import { createUrlExtractorService } from './url-extractor.js';
+import { createUrlFetcherService } from './url-fetcher.js';
+import { createUrlRendererService } from './url-renderer.js';
 
 // ────────────────────────────────────────────────────────────
 // Helpers
@@ -93,6 +99,22 @@ function slugify(value: string): string {
 			.replace(/[^a-z0-9]+/g, '-')
 			.replace(/^-+|-+$/g, '') || 'entity'
 	);
+}
+
+function contentTypeForBucketPath(bucketPath: string): string {
+	const lowerPath = bucketPath.toLowerCase();
+	if (lowerPath.endsWith('.pdf')) return 'application/pdf';
+	if (lowerPath.endsWith('.png')) return 'image/png';
+	if (lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg')) return 'image/jpeg';
+	if (lowerPath.endsWith('.tif') || lowerPath.endsWith('.tiff')) return 'image/tiff';
+	if (lowerPath.endsWith('.txt')) return 'text/plain';
+	if (lowerPath.endsWith('.md') || lowerPath.endsWith('.markdown')) return 'text/markdown';
+	if (lowerPath.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+	if (lowerPath.endsWith('.csv')) return 'text/csv';
+	if (lowerPath.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+	if (lowerPath.endsWith('.eml')) return 'message/rfc822';
+	if (lowerPath.endsWith('.msg')) return 'application/vnd.ms-outlook';
+	return 'application/octet-stream';
 }
 
 type GroundingFixtureScenario = 'accepted' | 'invalid-coordinates' | 'invalid-date';
@@ -178,7 +200,7 @@ class DevStorageService implements StorageService {
 		const stats = statSync(fullPath);
 		return {
 			sizeBytes: stats.size,
-			contentType: bucketPath.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
+			contentType: contentTypeForBucketPath(bucketPath),
 		};
 	}
 
@@ -234,8 +256,12 @@ class DevDocumentAiService implements DocumentAiService {
 		this.logger = logger;
 	}
 
-	async processDocument(_pdfContent: Buffer, sourceId: string): Promise<DocumentAiResult> {
-		this.logger.debug({ sourceId }, 'DevDocumentAiService: returning fixture data');
+	async processDocument(
+		documentContent: Buffer,
+		sourceId: string,
+		mediaType = 'application/pdf',
+	): Promise<DocumentAiResult> {
+		this.logger.debug({ sourceId, mediaType }, 'DevDocumentAiService: returning fixture data');
 
 		// Look for a layout.json in the source's fixture directory
 		const layoutPath = join(this.basePath, sourceId, 'layout.json');
@@ -255,6 +281,22 @@ class DevDocumentAiService implements DocumentAiService {
 			}
 
 			return { document, pageImages };
+		}
+
+		if (mediaType.startsWith('image/')) {
+			const pageImages = mediaType === 'image/png' ? [documentContent] : [];
+			return {
+				document: {
+					text: '',
+					pages: [
+						{
+							layout: { confidence: 0.9 },
+							paragraphs: [],
+						},
+					],
+				},
+				pageImages,
+			};
 		}
 
 		// Return empty result if no fixture exists
@@ -612,6 +654,12 @@ export function createDevServices(_config: MulderConfig, logger: Logger): Servic
 	return {
 		storage: new DevStorageService(storagePath, fixturesPath, logger),
 		documentAi: new DevDocumentAiService(fixturesPath, logger),
+		officeDocuments: createOfficeDocumentExtractorService(logger),
+		spreadsheets: createSpreadsheetExtractorService(),
+		emails: createEmailExtractorService(),
+		urls: createUrlFetcherService(),
+		urlRenderers: createUrlRendererService(),
+		urlExtractors: createUrlExtractorService(),
 		llm: new DevLlmService(fixturesPath, logger),
 		embedding: new DevEmbeddingService(fixturesPath, logger),
 		firestore: new DevFirestoreService(logger),

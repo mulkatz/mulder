@@ -65,10 +65,27 @@ export type {
 	ExtractionData,
 	ExtractionMethod,
 	ExtractResult,
+	ExtractRouteKind,
+	ExtractSourceRoute,
 	LayoutDocument,
+	LayoutExtractRoute,
+	LayoutExtractSourceType,
 	PageExtraction,
+	PrestructuredExtractRoute,
+	PrestructuredExtractSourceType,
+	PrimaryExtractionMethod,
 } from './extract/index.js';
-export { execute as executeExtract, layoutToMarkdown } from './extract/index.js';
+export {
+	assertFallbackOnlySupported,
+	EXTRACT_LAYOUT_SOURCE_TYPES,
+	EXTRACT_PRESTRUCTURED_SOURCE_TYPES,
+	EXTRACT_SOURCE_TYPES,
+	execute as executeExtract,
+	isAcceptedExtractSourceType,
+	layoutToMarkdown,
+	requireExtractRoute,
+	resolveExtractRoute,
+} from './extract/index.js';
 export type {
 	FixtureArtifact,
 	FixtureError,
@@ -92,13 +109,72 @@ export {
 export type { GroundInput, GroundingData, GroundOutcome, GroundResult } from './ground/index.js';
 export { execute as executeGround } from './ground/index.js';
 export type {
+	CrossFormatDedupBasis,
+	CrossFormatDedupMetadataInput,
+	CrossFormatTabularSheet,
+	ImageDimensions,
 	IngestFileResult,
 	IngestInput,
 	IngestResult,
 	SourceDetectionConfidence,
 	SourceDetectionResult,
+	SourceStorageExtension,
+	SupportedDocxMediaType,
+	SupportedEmailMediaType,
+	SupportedImageMediaType,
+	SupportedSpreadsheetMediaType,
+	SupportedTextMediaType,
+	SupportedUrlSnapshotMediaType,
 } from './ingest/index.js';
-export { detectSourceType, execute as executeIngest, isPreStructuredType, resolvePdfFiles } from './ingest/index.js';
+export {
+	buildDocxFormatMetadata,
+	buildEmailFormatMetadata,
+	buildImageFormatMetadata,
+	buildSpreadsheetFormatMetadata,
+	buildTabularCrossFormatContent,
+	buildTextFormatMetadata,
+	buildUrlFormatMetadata,
+	CSV_MEDIA_TYPE,
+	DOCX_MEDIA_TYPE,
+	decodeUtf8TextBuffer,
+	deriveCrossFormatContentKey,
+	deriveCrossFormatTitleKey,
+	deriveMarkdownTitle,
+	detectSourceType,
+	EML_MEDIA_TYPE,
+	execute as executeIngest,
+	getCanonicalStorageExtensionForMediaType,
+	getCrossFormatDedupKey,
+	getOriginalExtension,
+	getStorageExtensionForDetection,
+	isOfficeOpenXmlDocx,
+	isOfficeOpenXmlSpreadsheet,
+	isPreStructuredType,
+	isReadableText,
+	isStrongCrossFormatContentSignal,
+	isSupportedDocxFilename,
+	isSupportedDocxMediaType,
+	isSupportedEmailFilename,
+	isSupportedEmailMediaType,
+	isSupportedImageMediaType,
+	isSupportedIngestFilename,
+	isSupportedSpreadsheetFilename,
+	isSupportedSpreadsheetMediaType,
+	isSupportedTextFilename,
+	isSupportedTextMediaType,
+	isSupportedUrlInput,
+	isUrlLikeInput,
+	MSG_MEDIA_TYPE,
+	normalizeCrossFormatText,
+	normalizeUrlInput,
+	readImageDimensions,
+	resolveIngestFiles,
+	resolvePdfFiles,
+	sanitizeUrlInputForDisplay,
+	URL_SNAPSHOT_MEDIA_TYPE,
+	withCrossFormatDedupMetadata,
+	XLSX_MEDIA_TYPE,
+} from './ingest/index.js';
 export type {
 	PipelineGlobalAnalysisOutcome,
 	PipelineRunInput,
@@ -106,8 +182,18 @@ export type {
 	PipelineRunResult,
 	PipelineRunSourceOutcome,
 	PipelineStepName,
+	StepPlan,
+	StepPlanInput,
 } from './pipeline/index.js';
-export { execute as executePipelineRun, STEP_ORDER, shouldRun } from './pipeline/index.js';
+export {
+	computeRequestedSteps,
+	execute as executePipelineRun,
+	isLayoutSourceType,
+	isPrestructuredSourceType,
+	planPipelineSteps,
+	STEP_ORDER,
+	shouldRun,
+} from './pipeline/index.js';
 export type {
 	ReprocessInput,
 	ReprocessPlan,
@@ -121,3 +207,5 @@ export type {
 export { executeReprocess, planReprocess } from './reprocess/index.js';
 export type { SegmentationData, SegmentedStory, SegmentInput, SegmentResult } from './segment/index.js';
 export { execute as executeSegment } from './segment/index.js';
+export type { UrlLifecycleStatusResult, UrlRefetchInput, UrlRefetchResult } from './url-lifecycle/index.js';
+export { getUrlLifecycleStatus, refetchUrlSource } from './url-lifecycle/index.js';

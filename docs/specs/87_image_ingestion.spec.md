@@ -210,7 +210,7 @@ Logic inside `extractImage()`:
 7. The page image to store at `pages/page-001.png` is the original image buffer (no conversion needed if PNG; for JPEG/TIFF, store as-is and upload with `image/png` content type only if converted — for simplicity, store as-is for JPEG and convert TIFF to PNG):
    - `image/png` → upload buffer as-is with `image/png`
    - `image/jpeg` → upload buffer as-is with `image/jpeg` (rename the path to `page-001.jpg` is NOT done — keep consistent `page-001.png` naming by converting using `@napi-rs/canvas`)
-   
+
    **Decision:** Always store page images as PNG for consistency. Convert JPEG and TIFF to PNG using `@napi-rs/canvas`. The `createCanvas` + `loadImage` approach already available in the extract step can handle this.
 
 8. Build `LayoutDocument` with `pageCount: 1`, `primaryMethod: 'document_ai'`.

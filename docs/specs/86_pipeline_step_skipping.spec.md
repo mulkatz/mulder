@@ -16,7 +16,7 @@ Teach the pipeline orchestrator to skip the `segment` step for pre-structured so
 
 This satisfies M9-J2 and is the orchestration infrastructure that later J3–J10 format handlers depend on. The change is purely in the orchestrator — no pipeline step logic or data models change, and existing PDF ingest behaviour is fully preserved.
 
-**Pre-structured types:** `text`, `docx`, `spreadsheet`, `email`, `url`  
+**Pre-structured types:** `text`, `docx`, `spreadsheet`, `email`, `url`
 **Normal-pipeline types (segment applies):** `pdf`, `image`
 
 ## 2. Boundaries
@@ -163,30 +163,30 @@ Given the `isPreStructuredType` function, when called with each `SourceType` val
 
 **QA-02: `shouldRun` skips segment for pre-structured types**
 
-Given `shouldRun('segment', 'extracted', [], {}, 'text')`, the result is `false`.  
-Given `shouldRun('segment', 'extracted', [], {}, 'docx')`, the result is `false`.  
-Given `shouldRun('segment', 'extracted', [], {}, 'email')`, the result is `false`.  
+Given `shouldRun('segment', 'extracted', [], {}, 'text')`, the result is `false`.
+Given `shouldRun('segment', 'extracted', [], {}, 'docx')`, the result is `false`.
+Given `shouldRun('segment', 'extracted', [], {}, 'email')`, the result is `false`.
 Given `shouldRun('segment', 'extracted', [], {}, 'pdf')`, the result is `true` (unchanged).
 
 **QA-03: `shouldRun` skips segment even with force=true**
 
-Given `shouldRun('segment', 'extracted', [], { force: true }, 'text')`, the result is `false`.  
+Given `shouldRun('segment', 'extracted', [], { force: true }, 'text')`, the result is `false`.
 Given `shouldRun('segment', 'extracted', [], { force: true }, 'pdf')`, the result is `true`.
 
 **QA-04: `shouldRun` allows enrich from extracted for pre-structured types**
 
-Given `shouldRun('enrich', 'extracted', [], {}, 'text')`, the result is `true`.  
-Given `shouldRun('enrich', 'extracted', [], {}, 'docx')`, the result is `true`.  
+Given `shouldRun('enrich', 'extracted', [], {}, 'text')`, the result is `true`.
+Given `shouldRun('enrich', 'extracted', [], {}, 'docx')`, the result is `true`.
 Given `shouldRun('enrich', 'extracted', [], {}, 'pdf')`, the result is `false` (PDF at extracted still needs segment first).
 
 **QA-05: `shouldRun` allows enrich from segmented (unchanged PDF path)**
 
-Given `shouldRun('enrich', 'segmented', [], {}, 'pdf')`, the result is `true`.  
+Given `shouldRun('enrich', 'segmented', [], {}, 'pdf')`, the result is `true`.
 Given `shouldRun('enrich', 'segmented', [], {}, undefined)`, the result is `true` (no sourceType → original behaviour).
 
 **QA-06: `shouldRun` with no sourceType is backward-compatible**
 
-Given `shouldRun('segment', 'extracted', [], {})` (no 5th arg), the result is `true` — identical to pre-J2 behaviour.  
+Given `shouldRun('segment', 'extracted', [], {})` (no 5th arg), the result is `true` — identical to pre-J2 behaviour.
 Given `shouldRun('enrich', 'extracted', [], {})` (no 5th arg), the result is `false` — identical to pre-J2 behaviour.
 
 **QA-07: `isPreStructuredType` is exported from the pipeline package**

@@ -43,6 +43,7 @@ interface SourceRow {
 	filename: string;
 	storage_path: string;
 	file_hash: string;
+	parent_source_id: string | null;
 	source_type: SourceType | null;
 	format_metadata: SourceFormatMetadata | null;
 	page_count: number | null;
@@ -79,6 +80,7 @@ function mapSourceRow(row: SourceRow): Source {
 		filename: row.filename,
 		storagePath: row.storage_path,
 		fileHash: row.file_hash,
+		parentSourceId: row.parent_source_id,
 		sourceType: row.source_type ?? 'pdf',
 		formatMetadata: row.format_metadata ?? {},
 		pageCount: row.page_count,
@@ -175,6 +177,7 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				'filename',
 				'storage_path',
 				'file_hash',
+				'parent_source_id',
 				'source_type',
 				'format_metadata',
 				'page_count',
@@ -187,6 +190,7 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				'filename',
 				'storage_path',
 				'file_hash',
+				'parent_source_id',
 				'source_type',
 				'format_metadata',
 				'page_count',
@@ -201,6 +205,7 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				input.filename,
 				input.storagePath,
 				input.fileHash,
+				input.parentSourceId ?? null,
 				input.sourceType ?? 'pdf',
 				JSON.stringify(input.formatMetadata ?? {}),
 				input.pageCount ?? null,
@@ -213,6 +218,7 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				input.filename,
 				input.storagePath,
 				input.fileHash,
+				input.parentSourceId ?? null,
 				input.sourceType ?? 'pdf',
 				JSON.stringify(input.formatMetadata ?? {}),
 				input.pageCount ?? null,
@@ -282,6 +288,34 @@ export async function findSourceByHash(pool: Queryable, hash: string): Promise<S
 		throw new DatabaseError('Failed to find source by hash', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause: error,
 			context: { hash },
+		});
+	}
+}
+
+/**
+ * Finds the earliest source with a durable cross-format ingest dedup key.
+ *
+ * The key lives in format_metadata so this remains migration-free for M9-J12.
+ */
+export async function findSourceByCrossFormatDedupKey(pool: Queryable, dedupKey: string): Promise<Source | null> {
+	const sql = `
+    SELECT *
+    FROM sources
+    WHERE format_metadata->>'cross_format_dedup_key' = $1
+    ORDER BY created_at ASC, id ASC
+    LIMIT 1
+  `;
+
+	try {
+		const result = await pool.query<SourceRow>(sql, [dedupKey]);
+		if (result.rows.length === 0) {
+			return null;
+		}
+		return mapSourceRow(result.rows[0]);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to find source by cross-format dedup key', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { dedupKey },
 		});
 	}
 }
@@ -393,6 +427,8 @@ export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourc
 	const fieldMap: Array<[keyof UpdateSourceInput, string]> = [
 		['filename', 'filename'],
 		['storagePath', 'storage_path'],
+		['fileHash', 'file_hash'],
+		['parentSourceId', 'parent_source_id'],
 		['sourceType', 'source_type'],
 		['pageCount', 'page_count'],
 		['hasNativeText', 'has_native_text'],
@@ -512,10 +548,11 @@ export async function deleteSource(pool: pg.Pool, id: string): Promise<boolean> 
 /**
  * Upserts a source step record. Idempotent via (source_id, step_name) primary key.
  *
- * Sets `completed_at = now()` when the status is `completed`.
+ * Sets `completed_at = now()` when the status is `completed` or `skipped`.
  */
 export async function upsertSourceStep(pool: Queryable, input: UpsertSourceStepInput): Promise<SourceStep> {
-	const completedAt = input.status === 'completed' ? 'now()' : 'NULL';
+	const isTerminalSuccess = input.status === 'completed' || input.status === 'skipped';
+	const completedAt = isTerminalSuccess ? 'now()' : 'NULL';
 
 	const sql = `
     INSERT INTO source_steps (source_id, step_name, status, config_hash, error_message, completed_at)
@@ -527,7 +564,7 @@ export async function upsertSourceStep(pool: Queryable, input: UpsertSourceStepI
         ELSE EXCLUDED.config_hash
       END,
       error_message = EXCLUDED.error_message,
-      completed_at = CASE WHEN EXCLUDED.status = 'completed' THEN now() ELSE source_steps.completed_at END
+      completed_at = CASE WHEN EXCLUDED.status IN ('completed', 'skipped') THEN now() ELSE source_steps.completed_at END
     RETURNING *
   `;
 	const params = [input.sourceId, input.stepName, input.status, input.configHash ?? null, input.errorMessage ?? null];
@@ -590,6 +627,7 @@ export async function findSourcesWithSteps(pool: pg.Pool, filter?: SourceWithSte
       s.filename,
       s.storage_path,
       s.file_hash,
+      s.parent_source_id,
       s.source_type,
       s.format_metadata,
       s.page_count,

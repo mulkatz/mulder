@@ -191,6 +191,7 @@ export {
 	deleteSourceStep,
 	findAllSources,
 	findScoredSources,
+	findSourceByCrossFormatDedupKey,
 	findSourceByHash,
 	findSourceById,
 	findSourceStep,
@@ -284,3 +285,16 @@ export type {
 	TaxonomySimilarityMatch,
 	UpdateTaxonomyEntryInput,
 } from './taxonomy.types.js';
+export type {
+	RecordUrlHostLifecycleInput,
+	RecordUrlLifecycleFetchInput,
+	UrlHostLifecycle,
+	UrlLifecycle,
+	UrlLifecycleChangeKind,
+} from './url-lifecycle.repository.js';
+export {
+	findUrlHostLifecycleByHost,
+	findUrlLifecycleBySourceId,
+	recordUrlHostLifecycle,
+	recordUrlLifecycleFetch,
+} from './url-lifecycle.repository.js';

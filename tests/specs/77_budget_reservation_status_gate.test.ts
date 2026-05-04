@@ -77,6 +77,10 @@ function insertSourceRow(
 		hasNativeText?: boolean;
 		nativeTextRatio?: number;
 		status?: string;
+		sourceType?: Source['sourceType'];
+		filename?: string;
+		storagePath?: string;
+		formatMetadata?: Record<string, unknown>;
 	},
 ): void {
 	const fileHash = `${randomUUID().replace(/-/g, '')}${randomUUID().replace(/-/g, '')}`;
@@ -84,11 +88,15 @@ function insertSourceRow(
 	const hasNativeText = opts?.hasNativeText ?? false;
 	const nativeTextRatio = opts?.nativeTextRatio ?? 0;
 	const status = opts?.status ?? 'ingested';
+	const sourceType = opts?.sourceType ?? 'pdf';
+	const filename = opts?.filename ?? 'budget-test.pdf';
+	const storagePath = opts?.storagePath ?? '/tmp/budget-test.pdf';
+	const formatMetadata = JSON.stringify(opts?.formatMetadata ?? {});
 
 	db.runSql(
 		[
-			'INSERT INTO sources (id, filename, storage_path, file_hash, page_count, has_native_text, native_text_ratio, status, reliability_score, tags, metadata)',
-			`VALUES ('${sourceId}', 'budget-test.pdf', '/tmp/budget-test.pdf', '${fileHash}', ${pageCount}, ${hasNativeText}, ${nativeTextRatio}, '${status}', NULL, ARRAY[]::text[], '{}'::jsonb)`,
+			'INSERT INTO sources (id, filename, storage_path, file_hash, page_count, has_native_text, native_text_ratio, status, reliability_score, tags, metadata, source_type, format_metadata)',
+			`VALUES ('${sourceId}', '${filename}', '${storagePath}', '${fileHash}', ${pageCount}, ${hasNativeText}, ${nativeTextRatio}, '${status}', NULL, ARRAY[]::text[], '{}'::jsonb, '${sourceType}', '${formatMetadata}'::jsonb)`,
 			'ON CONFLICT (id) DO UPDATE SET updated_at = now();',
 		].join(' '),
 	);
@@ -391,6 +399,7 @@ describe('Spec 77 — Budget reservation status gate', () => {
 			filename: 'partial.pdf',
 			storagePath: '/tmp/partial.pdf',
 			fileHash: 'hash',
+			parentSourceId: null,
 			sourceType: 'pdf',
 			formatMetadata: {},
 			pageCount: 10,
@@ -556,5 +565,133 @@ describe('Spec 77 — Budget reservation status gate', () => {
 				},
 			},
 		});
+	});
+
+	it('QA-07: DOCX budget estimates omit extract and segment layout charges but keep downstream work', () => {
+		const source: Source = {
+			id: randomUUID(),
+			filename: 'budget-test.docx',
+			storagePath: 'raw/budget-test/original.docx',
+			fileHash: 'hash',
+			parentSourceId: null,
+			sourceType: 'docx',
+			formatMetadata: {
+				media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+				office_format: 'docx',
+				extraction_engine: 'mammoth',
+			},
+			pageCount: 0,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+			status: 'ingested',
+			reliabilityScore: null,
+			tags: [],
+			metadata: {},
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		};
+
+		const estimate = coreModule.estimateBudgetForSourceRun({
+			source,
+			plannedSteps: ['extract', 'segment', 'enrich', 'embed', 'graph'],
+			budget: {
+				enabled: true,
+				monthly_limit_usd: 50,
+				extract_per_page_usd: 0.006,
+				segment_per_page_usd: 0.002,
+				enrich_per_source_usd: 0.015,
+				embed_per_source_usd: 0.004,
+				graph_per_source_usd: 0.001,
+			},
+			extraction: {
+				native_text_threshold: 0.9,
+				confidence_threshold: 0.85,
+				max_vision_pages: 20,
+				segmentation: { model: 'gemini-2.5-flash' },
+			},
+		});
+
+		expect(estimate.byStep).toEqual({
+			extract: 0,
+			segment: 0,
+			enrich: 0.015,
+			embed: 0.004,
+			graph: 0.001,
+		});
+		expect(estimate.totalUsd).toBeCloseTo(0.02, 5);
+	});
+
+	it('QA-08: DOCX API run is accepted when remaining budget covers only downstream work', async () => {
+		const sourceId = randomUUID();
+		const occupiedSourceId = randomUUID();
+		const occupiedRunId = randomUUID();
+		const occupiedJobId = randomUUID();
+
+		insertSourceRow(sourceId, {
+			pageCount: 0,
+			hasNativeText: false,
+			nativeTextRatio: 0,
+			sourceType: 'docx',
+			filename: 'budget-test.docx',
+			storagePath: `raw/${sourceId}/original.docx`,
+			formatMetadata: {
+				media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+				original_extension: 'docx',
+				byte_size: 1024,
+				office_format: 'docx',
+				container: 'office_open_xml',
+				extraction_engine: 'mammoth',
+			},
+		});
+		insertSourceRow(occupiedSourceId, { pageCount: 1, hasNativeText: false, status: 'ingested' });
+		insertRun(occupiedRunId, 'running');
+		insertJob({
+			id: occupiedJobId,
+			type: 'pipeline_run',
+			status: 'pending',
+			payload: { sourceId: occupiedSourceId, runId: occupiedRunId },
+		});
+		insertReservation({
+			budgetMonth: currentBudgetMonth,
+			sourceId: occupiedSourceId,
+			runId: occupiedRunId,
+			jobId: occupiedJobId,
+			status: 'reserved',
+			reservedUsd: 49.98,
+			plannedSteps: ['extract'],
+		});
+
+		const response = await apiPost(app, '/api/pipeline/run', {
+			source_id: sourceId,
+			from: 'extract',
+			up_to: 'graph',
+			tag: 'docx-budget-accept',
+		});
+
+		expect(response.status).toBe(202);
+		const body = (await response.json()) as {
+			data: { run_id: string; job_id: string };
+		};
+		const reservation = readJsonCell(
+			`SELECT row_to_json(r)::text FROM (
+				SELECT status, reserved_estimated_usd, planned_steps, metadata
+				FROM monthly_budget_reservations
+				WHERE run_id = '${body.data.run_id}'
+			) r`,
+		);
+
+		expect(reservation.status).toBe('reserved');
+		expect(Number(reservation.reserved_estimated_usd)).toBeCloseTo(0.02, 5);
+		expect(reservation.planned_steps).toEqual(['extract', 'enrich', 'embed', 'graph']);
+		expect((reservation.metadata as { breakdown: Record<string, number> }).breakdown).toEqual({
+			extract: 0,
+			segment: 0,
+			enrich: 0.015,
+			embed: 0.004,
+			graph: 0.001,
+		});
+		expect(
+			db.runSql(`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'segment';`),
+		).toBe('skipped');
 	});
 });

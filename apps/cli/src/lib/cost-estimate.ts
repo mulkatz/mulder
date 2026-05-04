@@ -12,7 +12,15 @@ import {
 	type ReprocessableStep,
 	type Source,
 } from '@mulder/core';
-import type { PipelineStepName } from '@mulder/pipeline';
+import {
+	detectSourceType,
+	isSupportedIngestFilename,
+	isSupportedTextFilename,
+	isUrlLikeInput,
+	normalizeUrlInput,
+	type PipelineStepName,
+	sanitizeUrlInputForDisplay,
+} from '@mulder/pipeline';
 
 interface ReprocessEstimateSourcePlan {
 	sourceId: string;
@@ -21,7 +29,11 @@ interface ReprocessEstimateSourcePlan {
 
 const ESTIMATE_STEP_ORDER: readonly EstimatedStep[] = ['extract', 'segment', 'enrich', 'ground', 'embed', 'graph'];
 
-export async function resolvePdfFiles(inputPath: string): Promise<string[]> {
+export async function resolveIngestFiles(inputPath: string): Promise<string[]> {
+	if (isUrlLikeInput(inputPath)) {
+		return [inputPath.trim()];
+	}
+
 	const resolved = resolve(inputPath);
 	const stats = await stat(resolved).catch(() => null);
 
@@ -37,13 +49,13 @@ export async function resolvePdfFiles(inputPath: string): Promise<string[]> {
 
 	if (stats.isDirectory()) {
 		const entries = await readdir(resolved, { recursive: true });
-		const pdfFiles: string[] = [];
+		const ingestFiles: string[] = [];
 		for (const entry of entries) {
-			if (entry.toLowerCase().endsWith('.pdf')) {
-				pdfFiles.push(join(resolved, entry));
+			if (isSupportedIngestFilename(entry)) {
+				ingestFiles.push(join(resolved, entry));
 			}
 		}
-		return pdfFiles.sort();
+		return ingestFiles.sort();
 	}
 
 	throw new IngestError(
@@ -55,22 +67,135 @@ export async function resolvePdfFiles(inputPath: string): Promise<string[]> {
 	);
 }
 
-export async function collectPdfSourceProfiles(inputPath: string): Promise<EstimatedSourceProfile[]> {
-	const pdfFiles = await resolvePdfFiles(inputPath);
-	const sourceProfiles: EstimatedSourceProfile[] = [];
+export const resolvePdfFiles = resolveIngestFiles;
 
-	for (const filePath of pdfFiles) {
-		const buffer = await readFile(filePath);
-		const nativeText = await detectNativeText(buffer);
-		sourceProfiles.push({
-			filename: filePath,
-			pageCount: nativeText.pageCount,
-			nativeTextRatio: nativeText.nativeTextRatio,
-		});
+export async function collectIngestSourceProfiles(inputPath: string): Promise<EstimatedSourceProfile[]> {
+	const ingestFiles = await resolveIngestFiles(inputPath);
+	const sourceProfiles: EstimatedSourceProfile[] = [];
+	if (isUrlLikeInput(inputPath)) {
+		const normalizedUrl = normalizeUrlInput(inputPath);
+		if (!normalizedUrl) {
+			const displayUrl = sanitizeUrlInputForDisplay(inputPath);
+			throw new IngestError(`Unsupported URL input: ${displayUrl}`, INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE, {
+				context: { input: displayUrl },
+			});
+		}
+
+		return [
+			{
+				filename: sanitizeUrlInputForDisplay(normalizedUrl),
+				pageCount: 0,
+				nativeTextRatio: 0,
+			},
+		];
+	}
+	const inputStats = await stat(resolve(inputPath)).catch(() => null);
+	const allowPartial = inputStats?.isDirectory() ?? false;
+	let firstError: Error | null = null;
+
+	for (const filePath of ingestFiles) {
+		try {
+			const buffer = await readFile(filePath);
+			const detection = detectSourceType(buffer, filePath);
+			if (!detection) {
+				throw new IngestError(
+					`Unsupported or unknown source format for ${filePath}`,
+					INGEST_ERROR_CODES.INGEST_UNKNOWN_SOURCE_TYPE,
+					{
+						context: { path: filePath },
+					},
+				);
+			}
+
+			if (detection.sourceType === 'pdf') {
+				const nativeText = await detectNativeText(buffer);
+				sourceProfiles.push({
+					filename: filePath,
+					pageCount: nativeText.pageCount,
+					nativeTextRatio: nativeText.nativeTextRatio,
+				});
+				continue;
+			}
+
+			if (detection.sourceType === 'image') {
+				sourceProfiles.push({
+					filename: filePath,
+					pageCount: 1,
+					nativeTextRatio: 0,
+				});
+				continue;
+			}
+
+			if (detection.sourceType === 'text') {
+				if (!isSupportedTextFilename(filePath)) {
+					throw new IngestError(
+						`Unsupported text source extension for ${filePath}; supported text files must end with .txt, .md, or .markdown`,
+						INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+						{
+							context: { path: filePath, sourceType: detection.sourceType, confidence: detection.confidence },
+						},
+					);
+				}
+				sourceProfiles.push({
+					filename: filePath,
+					pageCount: 0,
+					nativeTextRatio: 0,
+				});
+				continue;
+			}
+
+			if (detection.sourceType === 'docx') {
+				sourceProfiles.push({
+					filename: filePath,
+					pageCount: 0,
+					nativeTextRatio: 0,
+				});
+				continue;
+			}
+
+			if (detection.sourceType === 'spreadsheet') {
+				sourceProfiles.push({
+					filename: filePath,
+					pageCount: 0,
+					nativeTextRatio: 0,
+				});
+				continue;
+			}
+
+			if (detection.sourceType === 'email') {
+				sourceProfiles.push({
+					filename: filePath,
+					pageCount: 0,
+					nativeTextRatio: 0,
+				});
+				continue;
+			}
+
+			throw new IngestError(
+				`Unsupported source type "${detection.sourceType}" for ${filePath}; only pdf, image, text, docx, spreadsheet, and email are supported in this step`,
+				INGEST_ERROR_CODES.INGEST_UNSUPPORTED_SOURCE_TYPE,
+				{
+					context: { path: filePath, sourceType: detection.sourceType, confidence: detection.confidence },
+				},
+			);
+		} catch (cause: unknown) {
+			if (!allowPartial) {
+				throw cause;
+			}
+			if (!firstError) {
+				firstError = cause instanceof Error ? cause : new Error(String(cause));
+			}
+		}
+	}
+
+	if (sourceProfiles.length === 0 && firstError) {
+		throw firstError;
 	}
 
 	return sourceProfiles;
 }
+
+export const collectPdfSourceProfiles = collectIngestSourceProfiles;
 
 export function collectDbSourceProfiles(sources: Source[]): EstimatedSourceProfile[] {
 	return sources.map((source) => ({

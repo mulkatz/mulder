@@ -35,6 +35,7 @@ import { registerSegmentCommands } from './commands/segment.js';
 import { registerShowCommands } from './commands/show.js';
 import { registerStatusCommand } from './commands/status.js';
 import { registerTaxonomyCommands } from './commands/taxonomy.js';
+import { registerUrlCommands } from './commands/url.js';
 import { registerWorkerCommands } from './commands/worker.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -85,5 +86,6 @@ registerShowCommands(program);
 registerStatusCommand(program);
 registerWorkerCommands(program);
 registerTaxonomyCommands(program);
+registerUrlCommands(program);
 
 program.parse();

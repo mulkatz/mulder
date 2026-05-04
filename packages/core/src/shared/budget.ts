@@ -1,5 +1,6 @@
 import type { ApiBudgetConfig, ExtractionConfig } from '../config/types.js';
 import type { Source, SourceStatus } from '../database/repositories/source.types.js';
+import { isLayoutSourceType } from './pipeline-step-plan.js';
 
 export const BUDGETABLE_PIPELINE_STEP_VALUES = ['extract', 'segment', 'enrich', 'embed', 'graph'] as const;
 
@@ -63,12 +64,24 @@ function emptyBreakdown(): Record<BudgetablePipelineStep, number> {
 	};
 }
 
+function sourceSkipsLayoutBudget(source: Source): boolean {
+	return !isLayoutSourceType(source.sourceType);
+}
+
 function shouldChargeExtract(source: Source, extraction: ExtractionConfig): boolean {
+	if (sourceSkipsLayoutBudget(source)) {
+		return false;
+	}
+
 	if (!source.hasNativeText) {
 		return true;
 	}
 
 	return source.nativeTextRatio < extraction.native_text_threshold;
+}
+
+function shouldChargeSegment(source: Source): boolean {
+	return !sourceSkipsLayoutBudget(source);
 }
 
 function isChargeableStep(step: BudgetablePipelineStep, sourceStatus: SourceStatus, force: boolean): boolean {
@@ -101,7 +114,9 @@ export function estimateBudgetForSourceRun(input: {
 				}
 				break;
 			case 'segment':
-				breakdown.segment = roundUsd(pageCount * input.budget.segment_per_page_usd);
+				if (shouldChargeSegment(input.source)) {
+					breakdown.segment = roundUsd(pageCount * input.budget.segment_per_page_usd);
+				}
 				break;
 			case 'enrich':
 				breakdown.enrich = roundUsd(input.budget.enrich_per_source_usd);

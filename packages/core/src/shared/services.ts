@@ -85,11 +85,220 @@ export interface DocumentAiResult {
 
 /**
  * Abstraction over Google Document AI Layout Parser.
- * Processes a PDF document and returns structured layout data with spatial information.
+ * Processes a layout-oriented document and returns structured layout data with spatial information.
  */
 export interface DocumentAiService {
-	/** Process a PDF document and return structured layout data + page images. */
-	processDocument(pdfContent: Buffer, sourceId: string): Promise<DocumentAiResult>;
+	/** Process a layout-oriented document and return structured layout data + page images. */
+	processDocument(documentContent: Buffer, sourceId: string, mediaType?: string): Promise<DocumentAiResult>;
+}
+
+// ────────────────────────────────────────────────────────────
+// Office Document Extractor Service
+// ────────────────────────────────────────────────────────────
+
+export interface OfficeDocumentExtractionMessage {
+	type: 'warning' | 'error';
+	message: string;
+}
+
+export interface OfficeDocumentExtractionResult {
+	markdown: string;
+	title?: string;
+	extractionEngine: 'mammoth';
+	messages: OfficeDocumentExtractionMessage[];
+}
+
+export interface OfficeDocumentExtractorService {
+	/** Convert a DOCX Office Open XML document into deterministic Markdown. */
+	extractDocx(documentContent: Buffer, sourceId: string): Promise<OfficeDocumentExtractionResult>;
+}
+
+// ────────────────────────────────────────────────────────────
+// Spreadsheet Extractor Service
+// ────────────────────────────────────────────────────────────
+
+export type SpreadsheetTabularFormat = 'csv' | 'xlsx';
+
+export interface SpreadsheetRowGroup {
+	index: number;
+	rowStart: number;
+	rowEnd: number;
+}
+
+export interface SpreadsheetTableSummary {
+	sheetName: string;
+	rowCount: number;
+	columnCount: number;
+	rowGroupCount: number;
+}
+
+export interface SpreadsheetSheet {
+	name: string;
+	headers: string[];
+	rows: string[][];
+	rowGroups: SpreadsheetRowGroup[];
+	summary: SpreadsheetTableSummary;
+}
+
+export interface SpreadsheetExtractionResult {
+	tabularFormat: SpreadsheetTabularFormat;
+	parserEngine: 'mulder-csv' | 'sheetjs-xlsx';
+	delimiter?: ',' | ';' | '\t';
+	sheets: SpreadsheetSheet[];
+	sheetSummaries: SpreadsheetTableSummary[];
+	warnings: string[];
+}
+
+export interface SpreadsheetExtractorService {
+	/** Parse CSV/XLSX bytes into normalized sheet rows for deterministic Markdown extraction. */
+	extractSpreadsheet(
+		documentContent: Buffer,
+		sourceId: string,
+		format: SpreadsheetTabularFormat,
+	): Promise<SpreadsheetExtractionResult>;
+}
+
+// ────────────────────────────────────────────────────────────
+// Email Extractor Service
+// ────────────────────────────────────────────────────────────
+
+export type EmailFormat = 'eml' | 'msg';
+
+export interface EmailAddress {
+	name: string | null;
+	address: string;
+	display: string;
+}
+
+export interface EmailAttachmentSummary {
+	filename: string | null;
+	mediaType: string | null;
+	sizeBytes: number;
+	disposition: string | null;
+	contentId: string | null;
+	childSourceId?: string;
+}
+
+export interface EmailAttachment extends EmailAttachmentSummary {
+	content?: Buffer;
+}
+
+export interface EmailHeaders {
+	messageId: string | null;
+	threadId: string;
+	subject: string | null;
+	from: EmailAddress[];
+	to: EmailAddress[];
+	cc: EmailAddress[];
+	bcc: EmailAddress[];
+	replyTo: EmailAddress[];
+	sentAt: string | null;
+	inReplyTo: string | null;
+	references: string[];
+}
+
+export interface EmailExtractionResult {
+	emailFormat: EmailFormat;
+	container: 'rfc822_mime' | 'outlook_msg';
+	parserEngine: 'mailparser' | 'msgreader';
+	headers: EmailHeaders;
+	bodyText: string;
+	bodyHtmlText: string | null;
+	attachments: EmailAttachment[];
+	warnings: string[];
+}
+
+export interface EmailExtractorService {
+	/** Parse EML/MSG bytes into normalized headers, body text, and attachment summaries. */
+	extractEmail(documentContent: Buffer, sourceId: string, format: EmailFormat): Promise<EmailExtractionResult>;
+}
+
+// ────────────────────────────────────────────────────────────
+// URL Fetcher and Extractor Services
+// ────────────────────────────────────────────────────────────
+
+export interface RobotsDecision {
+	allowed: boolean;
+	robotsUrl: string;
+	matchedUserAgent: string | null;
+	matchedRule: string | null;
+}
+
+export interface UrlFetchResult {
+	originalUrl: string;
+	normalizedUrl: string;
+	finalUrl: string;
+	httpStatus: number;
+	headers: Record<string, string>;
+	html: Buffer;
+	notModified: boolean;
+	contentType: string;
+	redirectCount: number;
+	fetchedAt: string;
+	robots: RobotsDecision;
+	snapshotEncoding: string | null;
+}
+
+export interface UrlFetchOptions {
+	maxBytes: number;
+	timeoutMs?: number;
+	redirectLimit?: number;
+	ifNoneMatch?: string | null;
+	ifModifiedSince?: string | null;
+}
+
+export interface UrlFetcherService {
+	/** Fetch one static public HTTP(S) HTML URL with safety gates and robots checks. */
+	fetchUrl(url: string, options: UrlFetchOptions): Promise<UrlFetchResult>;
+}
+
+export interface UrlRenderOptions {
+	maxBytes: number;
+	timeoutMs?: number;
+	redirectLimit?: number;
+}
+
+export interface UrlRenderResult {
+	html: Buffer;
+	finalUrl: string;
+	renderedAt: string;
+	durationMs: number;
+	engine: 'playwright-chromium' | 'fixture';
+	blockedRequestCount: number;
+	warnings: string[];
+}
+
+export interface UrlRendererService {
+	/** Render one safe public HTTP(S) HTML URL through an ephemeral browser context. */
+	renderUrl(url: string, options: UrlRenderOptions): Promise<UrlRenderResult>;
+}
+
+export interface UrlEntityHint {
+	hint_type: 'url' | 'host' | 'title' | 'byline' | 'published_date' | 'modified_date' | 'canonical_url';
+	field_name: string;
+	value: string;
+	confidence: number;
+	source: 'url' | 'html_meta' | 'fetch_metadata';
+}
+
+export interface UrlExtractionResult {
+	title: string;
+	byline: string | null;
+	excerpt: string | null;
+	siteName: string | null;
+	canonicalUrl: string | null;
+	publishedTime: string | null;
+	modifiedTime: string | null;
+	markdown: string;
+	textLength: number;
+	parserEngine: 'mozilla-readability-jsdom-turndown';
+	warnings: string[];
+	entityHints: UrlEntityHint[];
+}
+
+export interface UrlExtractorService {
+	/** Convert stored static HTML into deterministic readable Markdown and URL metadata. */
+	extractUrl(html: Buffer, sourceId: string, fetchMetadata: Record<string, unknown>): Promise<UrlExtractionResult>;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -218,6 +427,12 @@ export interface FirestoreService {
 export interface Services {
 	storage: StorageService;
 	documentAi: DocumentAiService;
+	officeDocuments: OfficeDocumentExtractorService;
+	spreadsheets: SpreadsheetExtractorService;
+	emails: EmailExtractorService;
+	urls: UrlFetcherService;
+	urlRenderers: UrlRendererService;
+	urlExtractors: UrlExtractorService;
 	llm: LlmService;
 	embedding: EmbeddingService;
 	firestore: FirestoreService;

@@ -8,8 +8,48 @@ Ground-truth annotations for evaluating pipeline quality. Each JSON file in a su
 - `segmentation/` — Ground truth for segment boundaries (Boundary Accuracy, Segment Count)
 - `entities/` — Ground truth for entity extraction (Precision/Recall/F1 per type)
 - `retrieval/` — Ground truth for hybrid retrieval (Precision@k, Recall@k, MRR, nDCG@10)
+- `multi-format/` — Deterministic M9 black-box manifest for source type, route, story, skip, and duplicate contracts
 
 ## Annotation Formats
+
+### Multi-Format (`multi-format/manifest.json`)
+
+The multi-format manifest is not model output annotation. It is a curated
+fixture index used by the Spec 97 Vitest harness to prove every supported M9
+source type enters the same source/story/status model.
+
+```json
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "string — stable case identifier",
+      "source_type": "pdf | image | text | docx | spreadsheet | email | url",
+      "fixture_kind": "committed_file | generated_png | generated_markdown | generated_docx | generated_xlsx | generated_eml | local_http_url",
+      "fixture_ref": "string (optional) — committed path or local HTTP route",
+      "expected_filename": "string — filename persisted by ingest",
+      "expected_route": "layout | prestructured",
+      "expected_story_min": "number — minimum story rows after extract",
+      "expected_metadata_keys": ["format_metadata keys required on sources"]
+    }
+  ],
+  "duplicate_scenario": {
+    "id": "string — stable duplicate case identifier",
+    "first": { "fixture_kind": "string", "expected_filename": "string" },
+    "second": { "fixture_kind": "string", "expected_filename": "string" },
+    "expected_source_type": "text",
+    "expected_duplicate_basis": "text_content"
+  }
+}
+```
+
+Rules:
+
+1. Keep exactly one primary case per supported M9 source type.
+2. Prefer deterministic generated fixtures for DOCX, XLSX, email, text, image, and local URL cases.
+3. Reuse committed PDFs when they already exercise the layout path.
+4. Do not commit binary golden files solely for this manifest unless a future spec explicitly requires them.
+5. Expected metadata keys should be stable contract keys, not incidental parser diagnostics.
 
 ### Extraction (`extraction/*.json`)
 

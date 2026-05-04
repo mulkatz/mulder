@@ -16,7 +16,7 @@
 export type SourceStatus = 'ingested' | 'extracted' | 'segmented' | 'enriched' | 'embedded' | 'graphed' | 'analyzed';
 
 /** Source step execution status. */
-export type SourceStepStatus = 'pending' | 'completed' | 'failed' | 'partial';
+export type SourceStepStatus = 'pending' | 'completed' | 'failed' | 'partial' | 'skipped';
 
 /** Source format discriminator. */
 export type SourceType = 'pdf' | 'image' | 'text' | 'docx' | 'spreadsheet' | 'email' | 'url';
@@ -34,6 +34,7 @@ export interface Source {
 	filename: string;
 	storagePath: string;
 	fileHash: string;
+	parentSourceId: string | null;
 	sourceType: SourceType;
 	formatMetadata: SourceFormatMetadata;
 	pageCount: number | null;
@@ -53,6 +54,7 @@ export interface CreateSourceInput {
 	filename: string;
 	storagePath: string;
 	fileHash: string;
+	parentSourceId?: string | null;
 	sourceType?: SourceType;
 	formatMetadata?: SourceFormatMetadata;
 	pageCount?: number;
@@ -66,6 +68,8 @@ export interface CreateSourceInput {
 export interface UpdateSourceInput {
 	filename?: string;
 	storagePath?: string;
+	fileHash?: string;
+	parentSourceId?: string | null;
 	sourceType?: SourceType;
 	formatMetadata?: SourceFormatMetadata;
 	pageCount?: number;

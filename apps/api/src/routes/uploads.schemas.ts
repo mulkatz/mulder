@@ -1,5 +1,95 @@
 import { z } from 'zod';
 
+const SUPPORTED_UPLOAD_EXTENSIONS = new Map([
+	['pdf', 'pdf'],
+	['png', 'png'],
+	['jpg', 'jpg'],
+	['jpeg', 'jpg'],
+	['tif', 'tiff'],
+	['tiff', 'tiff'],
+	['txt', 'txt'],
+	['md', 'md'],
+	['markdown', 'md'],
+	['docx', 'docx'],
+	['csv', 'csv'],
+	['xlsx', 'xlsx'],
+	['eml', 'eml'],
+	['msg', 'msg'],
+]);
+
+const SUPPORTED_UPLOAD_CONTENT_TYPES = new Map([
+	['application/pdf', 'pdf'],
+	['image/png', 'png'],
+	['image/jpeg', 'jpg'],
+	['image/tiff', 'tiff'],
+	['text/plain', 'txt'],
+	['text/markdown', 'md'],
+	['text/x-markdown', 'md'],
+	['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx'],
+	['text/csv', 'csv'],
+	['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx'],
+	['message/rfc822', 'eml'],
+	['application/vnd.ms-outlook', 'msg'],
+]);
+
+export type UploadStorageExtension =
+	| 'pdf'
+	| 'png'
+	| 'jpg'
+	| 'tiff'
+	| 'txt'
+	| 'md'
+	| 'docx'
+	| 'csv'
+	| 'xlsx'
+	| 'eml'
+	| 'msg';
+
+function filenameExtension(filename: string): string {
+	const basename = filename.split(/[\\/]/).pop() ?? filename;
+	const dotIndex = basename.lastIndexOf('.');
+	return dotIndex >= 0 ? basename.slice(dotIndex + 1).toLowerCase() : '';
+}
+
+export function canonicalUploadExtensionForFilename(filename: string): UploadStorageExtension | null {
+	const extension = SUPPORTED_UPLOAD_EXTENSIONS.get(filenameExtension(filename));
+	return extension === 'pdf' ||
+		extension === 'png' ||
+		extension === 'jpg' ||
+		extension === 'tiff' ||
+		extension === 'txt' ||
+		extension === 'md' ||
+		extension === 'docx' ||
+		extension === 'csv' ||
+		extension === 'xlsx' ||
+		extension === 'eml' ||
+		extension === 'msg'
+		? extension
+		: null;
+}
+
+export function canonicalUploadExtensionForContentType(contentType: string): UploadStorageExtension | null {
+	const normalized = contentType.split(';')[0]?.trim().toLowerCase() ?? '';
+	const extension = SUPPORTED_UPLOAD_CONTENT_TYPES.get(normalized);
+	return extension === 'pdf' ||
+		extension === 'png' ||
+		extension === 'jpg' ||
+		extension === 'tiff' ||
+		extension === 'txt' ||
+		extension === 'md' ||
+		extension === 'docx' ||
+		extension === 'csv' ||
+		extension === 'xlsx' ||
+		extension === 'eml' ||
+		extension === 'msg'
+		? extension
+		: null;
+}
+
+export function isSupportedOriginalStoragePath(storagePath: string): boolean {
+	return /^raw\/[^/]+\/original\.(pdf|png|jpg|tiff|txt|md|docx|csv|xlsx|eml|msg)$/i.test(storagePath);
+}
+
 export const UploadTransportSchema = z.enum(['gcs_resumable', 'dev_proxy']);
 
 export const InitiateDocumentUploadRequestSchema = z.object({
@@ -37,7 +127,18 @@ export const CompleteDocumentUploadRequestSchema = z
 		start_pipeline: z.boolean().optional().default(true),
 	})
 	.superRefine((value, ctx) => {
-		const expectedPath = `raw/${value.source_id}/original.pdf`;
+		const canonicalExtension = canonicalUploadExtensionForFilename(value.filename);
+		if (!canonicalExtension) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['filename'],
+				message:
+					'filename must end with .pdf, .png, .jpg, .jpeg, .tif, .tiff, .txt, .md, .markdown, .docx, .csv, .xlsx, .eml, or .msg',
+			});
+			return;
+		}
+
+		const expectedPath = `raw/${value.source_id}/original.${canonicalExtension}`;
 		if (value.storage_path !== expectedPath) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,

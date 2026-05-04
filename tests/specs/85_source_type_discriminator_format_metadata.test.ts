@@ -178,31 +178,28 @@ describe('Spec 85 — Source Type Discriminator + Format Metadata', () => {
 		const imageRenamedPdf = join(tmpDir, 'image-renamed.pdf');
 		writeFileSync(imageRenamedPdf, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]));
 
-		const result = runCli(['ingest', imageRenamedPdf]);
-		expect(result.exitCode).not.toBe(0);
-		expect(`${result.stdout}\n${result.stderr}`).toMatch(/INGEST_UNSUPPORTED_SOURCE_TYPE|unsupported source type/i);
+		const result = runCli(['ingest', '--dry-run', imageRenamedPdf]);
+		expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
 		expect(`${result.stdout}\n${result.stderr}`).toMatch(/\bimage\b/i);
 		expect(db.runSql('SELECT COUNT(*) FROM sources;')).toBe('0');
 		expectNoStorageUpload(beforeStorage);
 	});
 
-	it('QA-05: text files are detected but rejected until text ingestion lands', () => {
+	it('QA-05: supported text files ingest as text while unsupported readable extensions stay rejected', () => {
 		if (!pgAvailable) return;
 
 		cleanSourceData();
-		const beforeStorage = currentStorageEntries();
 		const note = join(tmpDir, 'note.txt');
-		writeFileSync(note, 'A plain text note that will become ingestible in a later M9 step.\n', 'utf-8');
+		writeFileSync(note, 'A plain text note for the M9 text path.\n', 'utf-8');
 
 		const result = runCli(['ingest', note]);
-		expect(result.exitCode).not.toBe(0);
-		expect(`${result.stdout}\n${result.stderr}`).toMatch(/INGEST_UNSUPPORTED_SOURCE_TYPE|unsupported source type/i);
-		expect(`${result.stdout}\n${result.stderr}`).toMatch(/\btext\b/i);
-		expect(db.runSql('SELECT COUNT(*) FROM sources;')).toBe('0');
-		expectNoStorageUpload(beforeStorage);
+		expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
+		expect(result.stdout).toMatch(/\btext\b/i);
+		expect(db.runSql("SELECT source_type::text FROM sources WHERE filename = 'note.txt';")).toBe('text');
 
 		const logFile = join(tmpDir, 'note.log');
-		writeFileSync(logFile, 'A readable log file should still be classified as unsupported text.\n', 'utf-8');
+		writeFileSync(logFile, 'A readable log file is not a supported text ingest extension.\n', 'utf-8');
+		const beforeStorage = currentStorageEntries();
 
 		const logResult = runCli(['ingest', logFile]);
 		expect(logResult.exitCode).not.toBe(0);
@@ -210,7 +207,7 @@ describe('Spec 85 — Source Type Discriminator + Format Metadata', () => {
 			/INGEST_UNSUPPORTED_SOURCE_TYPE|unsupported source type/i,
 		);
 		expect(`${logResult.stdout}\n${logResult.stderr}`).toMatch(/\btext\b/i);
-		expect(db.runSql('SELECT COUNT(*) FROM sources;')).toBe('0');
+		expect(db.runSql('SELECT COUNT(*) FROM sources;')).toBe('1');
 		expectNoStorageUpload(beforeStorage);
 	});
 

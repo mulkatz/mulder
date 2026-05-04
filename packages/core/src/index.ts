@@ -128,6 +128,9 @@ export type {
 	UpsertEntityGroundingInput,
 	UpsertPipelineRunSourceInput,
 	UpsertSourceStepInput,
+	UrlHostLifecycle,
+	UrlLifecycle,
+	UrlLifecycleChangeKind,
 	VectorSearchResult,
 } from './database/index.js';
 // ── Database ─────────────────────────────────────────────────
@@ -223,6 +226,7 @@ export {
 	findPipelineRunSourceById,
 	findPipelineRunSourcesByRunId,
 	findScoredSources,
+	findSourceByCrossFormatDedupKey,
 	findSourceByHash,
 	findSourceById,
 	findSourceStep,
@@ -235,6 +239,8 @@ export {
 	findStoryById,
 	findTaxonomyEntryById,
 	findTaxonomyEntryByName,
+	findUrlHostLifecycleByHost,
+	findUrlLifecycleBySourceId,
 	gcOrphanedEntities,
 	getEntityCorroborationStats,
 	getMigrationStatus,
@@ -249,6 +255,8 @@ export {
 	mergeJobPayload,
 	persistEntityGroundingResult,
 	reapRunningJobs,
+	recordUrlHostLifecycle,
+	recordUrlLifecycleFetch,
 	replaceSpatioTemporalClustersSnapshot,
 	resetDeadLetterJobs,
 	resetPipelineStep,
@@ -321,6 +329,7 @@ export type {
 	EstimatedStep,
 } from './shared/cost-estimator.js';
 export { estimatePipelineCost } from './shared/cost-estimator.js';
+export { createEmailExtractorService } from './shared/email-extractor.js';
 export type {
 	AnalyzeErrorCode,
 	ConfigErrorCode,
@@ -386,6 +395,16 @@ export {
 	createLogger,
 	withDuration,
 } from './shared/logger.js';
+export type { PipelinePlanStep, StepPlan, StepPlanInput } from './shared/pipeline-step-plan.js';
+export {
+	computeRequestedSteps,
+	isLayoutSourceType,
+	isPrestructuredSourceType,
+	LAYOUT_SOURCE_TYPES,
+	PIPELINE_STEP_ORDER,
+	PRESTRUCTURED_SOURCE_TYPES,
+	planPipelineSteps,
+} from './shared/pipeline-step-plan.js';
 export type { RateLimiterOptions } from './shared/rate-limiter.js';
 // ── Rate limiter ────────────────────────────────────────────
 export { RateLimiter } from './shared/rate-limiter.js';
@@ -398,20 +417,55 @@ export { createGcpServices } from './shared/services.gcp.js';
 export type {
 	DocumentAiResult,
 	DocumentAiService,
+	EmailAddress,
+	EmailAttachment,
+	EmailAttachmentSummary,
+	EmailExtractionResult,
+	EmailExtractorService,
+	EmailFormat,
+	EmailHeaders,
 	EmbeddingResult,
 	EmbeddingService,
 	FirestoreService,
 	GroundedGenerateOptions,
 	GroundedGenerateResult,
 	LlmService,
+	OfficeDocumentExtractionMessage,
+	OfficeDocumentExtractionResult,
+	OfficeDocumentExtractorService,
 	ServiceMode,
 	Services,
+	SpreadsheetExtractionResult,
+	SpreadsheetExtractorService,
+	SpreadsheetRowGroup,
+	SpreadsheetSheet,
+	SpreadsheetTableSummary,
+	SpreadsheetTabularFormat,
 	StorageListResult,
 	StorageService,
 	StructuredGenerateOptions,
 	TextGenerateOptions,
+	UrlEntityHint,
+	UrlExtractionResult,
+	UrlExtractorService,
+	UrlFetcherService,
+	UrlFetchOptions,
+	UrlFetchResult,
+	UrlRendererService,
+	UrlRenderOptions,
+	UrlRenderResult,
 } from './shared/services.js';
 export type { StepError } from './shared/types.js';
+export { createUrlExtractorService } from './shared/url-extractor.js';
+export { createUrlFetcherService } from './shared/url-fetcher.js';
+export {
+	computeUrlLifecycleNextAllowedAt,
+	headerValue as urlLifecycleHeaderValue,
+	normalizeUrlLifecycleHost,
+	resolveUrlPolitenessDelayMs,
+	sleepForUrlPoliteness,
+} from './shared/url-lifecycle.js';
+export { createUrlRendererService } from './shared/url-renderer.js';
 // ── Vertex AI wrapper ────────────────────────────────────────
 export type { VertexClient, VertexClientOptions } from './vertex.js';
 export { createVertexClient } from './vertex.js';

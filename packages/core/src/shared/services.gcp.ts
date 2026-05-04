@@ -17,9 +17,11 @@ import type { Storage } from '@google-cloud/storage';
 import type { MulderConfig } from '../config/types.js';
 import { createLlmCache, DEFAULT_CACHE_DB_PATH } from '../llm-cache.js';
 import { createVertexClient, type VertexClient } from '../vertex.js';
+import { createEmailExtractorService } from './email-extractor.js';
 import { ExternalServiceError } from './errors.js';
 import { closeGcpClients, getDocumentAIClient, getFirestoreClient, getGenAI, getStorageClient } from './gcp.js';
 import type { Logger } from './logger.js';
+import { createOfficeDocumentExtractorService } from './office-document-extractor.js';
 import { withRetry } from './retry.js';
 import type {
 	CreateStorageUploadSessionOptions,
@@ -39,6 +41,10 @@ import type {
 	StructuredGenerateOptions,
 	TextGenerateOptions,
 } from './services.js';
+import { createSpreadsheetExtractorService } from './spreadsheet-extractor.js';
+import { createUrlExtractorService } from './url-extractor.js';
+import { createUrlFetcherService } from './url-fetcher.js';
+import { createUrlRendererService } from './url-renderer.js';
 
 // ────────────────────────────────────────────────────────────
 // Helpers
@@ -234,7 +240,7 @@ class GcpStorageService implements StorageService {
 
 /**
  * Document AI Layout Parser implementation.
- * Processes PDF documents and returns structured layout data with page images.
+ * Processes layout-oriented documents and returns structured layout data with page images.
  */
 class GcpDocumentAiService implements DocumentAiService {
 	constructor(
@@ -243,16 +249,23 @@ class GcpDocumentAiService implements DocumentAiService {
 		private readonly logger: Logger,
 	) {}
 
-	async processDocument(pdfContent: Buffer, sourceId: string): Promise<DocumentAiResult> {
+	async processDocument(
+		documentContent: Buffer,
+		sourceId: string,
+		mediaType = 'application/pdf',
+	): Promise<DocumentAiResult> {
 		return withRetry(
 			async () => {
-				this.logger.info({ sourceId, processorName: this.processorName }, 'GcpDocumentAiService: processing');
+				this.logger.info(
+					{ sourceId, processorName: this.processorName, mediaType },
+					'GcpDocumentAiService: processing',
+				);
 
 				const request: protos.google.cloud.documentai.v1.IProcessRequest = {
 					name: this.processorName,
 					rawDocument: {
-						content: pdfContent.toString('base64'),
-						mimeType: 'application/pdf',
+						content: documentContent.toString('base64'),
+						mimeType: mediaType,
 					},
 				};
 
@@ -489,6 +502,12 @@ export function createGcpServices(config: MulderConfig, logger: Logger): Service
 	return {
 		storage: new GcpStorageService(storageClient, bucket, logger),
 		documentAi: new GcpDocumentAiService(documentAiClient, processorName, logger),
+		officeDocuments: createOfficeDocumentExtractorService(logger),
+		spreadsheets: createSpreadsheetExtractorService(),
+		emails: createEmailExtractorService(),
+		urls: createUrlFetcherService(),
+		urlRenderers: createUrlRendererService(),
+		urlExtractors: createUrlExtractorService(),
 		llm: new GcpLlmService(vertexClient, logger),
 		embedding: new GcpEmbeddingService(vertexClient, embeddingModel, embeddingDimensions, logger),
 		firestore: new GcpFirestoreService(firestoreClient, logger),

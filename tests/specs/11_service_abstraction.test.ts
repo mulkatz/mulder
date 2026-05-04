@@ -230,7 +230,19 @@ describe('Spec 11: Service Abstraction', () => {
 		process.env.NODE_ENV = 'test';
 		try {
 			const services = createServiceRegistry(devConfig, silentLogger);
-			const requiredKeys = ['storage', 'documentAi', 'llm', 'embedding', 'firestore'];
+			const requiredKeys = [
+				'storage',
+				'documentAi',
+				'officeDocuments',
+				'spreadsheets',
+				'emails',
+				'urls',
+				'urlRenderers',
+				'urlExtractors',
+				'llm',
+				'embedding',
+				'firestore',
+			];
 			for (const key of requiredKeys) {
 				expect(services).toHaveProperty(key);
 				expect(services[key]).toBeDefined();
