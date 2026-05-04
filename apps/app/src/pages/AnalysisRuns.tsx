@@ -14,7 +14,7 @@ import { Tabs } from '@/components/Tabs';
 import { SelectControl, Toolbar } from '@/components/Toolbar';
 import { useJob } from '@/features/jobs/useJob';
 import { useJobs } from '@/features/jobs/useJobs';
-import { getErrorMessage } from '@/lib/query-state';
+import { getErrorMessage, isApiUnavailableError } from '@/lib/query-state';
 import type { AnalysisRun, RunStatus } from '@/lib/types';
 import { jobDetailToAnalysisRun, jobToAnalysisRun } from '@/lib/view-models';
 
@@ -116,6 +116,17 @@ export function AnalysisRunsPage() {
 		? jobDetailToAnalysisRun(selectedJobQuery.data.data, viewModelContext)
 		: selectedListRun;
 	const runColumns = getRunColumns(t);
+	const hasRunFilters = query.trim().length > 0 || status !== 'all';
+	const runTableRows = jobsQuery.error ? [] : filteredRuns;
+	const runTableEmptyMessage = jobsQuery.error
+		? t('runs.processingUnavailableShort')
+		: jobsQuery.isLoading
+			? t('runs.noJobsLoaded')
+			: runs.length === 0
+				? t('runs.noProcessingRecords')
+				: hasRunFilters
+					? t('runs.noMatchingJobs')
+					: t('runs.noProcessingRecords');
 
 	return (
 		<>
@@ -156,7 +167,12 @@ export function AnalysisRunsPage() {
 					) : null}
 					{jobsQuery.error ? (
 						<div className="border-b border-border p-3">
-							<StateNotice tone="error" title={t('runs.errorTitle')}>
+							<StateNotice
+								tone="error"
+								title={
+									isApiUnavailableError(jobsQuery.error) ? t('runs.processingUnavailableTitle') : t('runs.errorTitle')
+								}
+							>
 								{getErrorMessage(jobsQuery.error, t('common.apiRequestFailed'))}
 							</StateNotice>
 						</div>
@@ -187,10 +203,10 @@ export function AnalysisRunsPage() {
 
 					<DataTable
 						columns={runColumns}
-						emptyMessage={jobsQuery.isSuccess ? t('runs.noMatchingJobs') : t('runs.noJobsLoaded')}
+						emptyMessage={runTableEmptyMessage}
 						getRowKey={(run) => run.id}
 						onRowClick={(run) => setSelectedId(run.id)}
-						rows={filteredRuns}
+						rows={runTableRows}
 						selectedKey={selectedRun?.id}
 						minWidth={800}
 					/>
@@ -198,6 +214,25 @@ export function AnalysisRunsPage() {
 
 				{selectedRun ? (
 					<InspectorPanel subtitle={selectedRun.id} title={selectedRun.title}>
+						{selectedJobQuery.isLoading ? (
+							<div className="mb-3">
+								<StateNotice tone="loading" title={t('runs.detailLoadingTitle')} />
+							</div>
+						) : null}
+						{selectedJobQuery.error ? (
+							<div className="mb-3">
+								<StateNotice
+									tone="error"
+									title={
+										isApiUnavailableError(selectedJobQuery.error)
+											? t('runs.detailUnavailableTitle')
+											: t('runs.detailErrorTitle')
+									}
+								>
+									{getErrorMessage(selectedJobQuery.error, t('common.apiRequestFailed'))}
+								</StateNotice>
+							</div>
+						) : null}
 						<InspectorSection title={t('runs.execution')}>
 							<div className="grid grid-cols-2 gap-2">
 								<div className="rounded-md bg-field p-3">

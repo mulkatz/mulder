@@ -36,6 +36,24 @@ React Query should use conservative defaults:
 - Session expiry is observable through shared app-level handling for both queries and mutations.
 - API-unavailable states must remain visible product states and must not be treated as logout.
 
+## App State Model
+
+The app treats API state as product behavior, not as incidental rendering detail.
+
+| State | Meaning | App behavior |
+| --- | --- | --- |
+| `unauthenticated` | API returned `401` | Auth/session handling owns the redirect to `/login`. |
+| `unavailable` | Network/CORS failure, status `0`, or `5xx` | Show localized API-unavailable UI; never treat this as logout. |
+| `forbidden` | API returned `403` | Show localized access/error UI. |
+| `notFound` | API returned `404` | Show localized missing-data UI where relevant. |
+| `validation` | Other `4xx` responses | Show localized request/error UI with the API message when available. |
+
+Active app routes use this model as follows:
+
+- `Research Desk` (`/`) treats `GET /api/status` as the minimum workspace pulse. Without it, the page shows a workspace-unavailable state. Documents, evidence summary, contradictions, and jobs remain secondary panel-level data.
+- `Claims & Evidence` (`/evidence`) separates "no claims need review" from "claims data unavailable." Evidence summaries may fail independently from claim/contradiction records.
+- `Processing` (`/runs`) separates the job list from selected job detail. A failed `GET /api/jobs/:id` leaves the list selection intact and shows an inspector-level detail error.
+
 The app should expose:
 
 - `/login` for email/password authentication.

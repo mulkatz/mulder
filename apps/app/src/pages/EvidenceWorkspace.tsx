@@ -13,7 +13,7 @@ import { Tabs } from '@/components/Tabs';
 import { SelectControl, Toolbar } from '@/components/Toolbar';
 import { useContradictions } from '@/features/evidence/useContradictions';
 import { useEvidenceSummary } from '@/features/evidence/useEvidenceSummary';
-import { getErrorMessage } from '@/lib/query-state';
+import { getErrorMessage, isApiUnavailableError } from '@/lib/query-state';
 import type { ClaimStatus, EvidenceClaim, SourceRef } from '@/lib/types';
 import { contradictionToClaim } from '@/lib/view-models';
 
@@ -147,6 +147,36 @@ export function EvidenceWorkspacePage() {
 	const summary = evidenceSummaryQuery.data?.data;
 	const claimColumns = getClaimColumns(t);
 	const citationColumns = getCitationColumns(t);
+	const hasClaimFilters = query.trim().length > 0 || status !== 'all';
+	const noClaimsFromApi = contradictionsQuery.isSuccess && evidenceClaims.length === 0;
+	const claimTableRows = contradictionsQuery.error ? [] : filteredClaims;
+	const claimTableEmptyMessage = contradictionsQuery.error
+		? t('evidence.claimsUnavailableShort')
+		: contradictionsQuery.isLoading
+			? t('evidence.noRecordsLoaded')
+			: noClaimsFromApi
+				? t('evidence.noReviewItems')
+				: hasClaimFilters
+					? t('evidence.noMatchingRecords')
+					: t('evidence.noReviewItems');
+	const sourceScoreValue = evidenceSummaryQuery.error ? t('common.unavailableShort') : (summary?.sources.scored ?? '—');
+	const sourceReliabilityValue = evidenceSummaryQuery.error
+		? t('common.unavailableShort')
+		: (summary?.sources.data_reliability ?? '—');
+	const noSelectionTitle = contradictionsQuery.error
+		? isApiUnavailableError(contradictionsQuery.error)
+			? t('evidence.claimsUnavailableTitle')
+			: t('evidence.errorTitle')
+		: noClaimsFromApi
+			? t('evidence.noReviewItemsTitle')
+			: t('evidence.noEvidenceSelected');
+	const noSelectionBody = contradictionsQuery.error
+		? getErrorMessage(contradictionsQuery.error, t('common.apiRequestFailed'))
+		: noClaimsFromApi
+			? summary
+				? t('evidence.noReviewItemsWithSummary')
+				: t('evidence.noReviewItemsBody')
+			: t('evidence.noContradictionsBody');
 
 	return (
 		<>
@@ -174,10 +204,31 @@ export function EvidenceWorkspacePage() {
 							<StateNotice tone="loading" title={t('evidence.loadingTitle')} />
 						</div>
 					) : null}
-					{contradictionsQuery.error || evidenceSummaryQuery.error ? (
+					{contradictionsQuery.error ? (
 						<div className="border-b border-border p-3">
-							<StateNotice tone="error" title={t('evidence.errorTitle')}>
-								{getErrorMessage(contradictionsQuery.error ?? evidenceSummaryQuery.error, t('common.apiRequestFailed'))}
+							<StateNotice
+								tone="error"
+								title={
+									isApiUnavailableError(contradictionsQuery.error)
+										? t('evidence.claimsUnavailableTitle')
+										: t('evidence.errorTitle')
+								}
+							>
+								{getErrorMessage(contradictionsQuery.error, t('common.apiRequestFailed'))}
+							</StateNotice>
+						</div>
+					) : null}
+					{evidenceSummaryQuery.error ? (
+						<div className="border-b border-border p-3">
+							<StateNotice
+								tone="error"
+								title={
+									isApiUnavailableError(evidenceSummaryQuery.error)
+										? t('evidence.summaryUnavailableTitle')
+										: t('evidence.summaryErrorTitle')
+								}
+							>
+								{getErrorMessage(evidenceSummaryQuery.error, t('common.apiRequestFailed'))}
 							</StateNotice>
 						</div>
 					) : null}
@@ -207,13 +258,11 @@ export function EvidenceWorkspacePage() {
 
 					<DataTable
 						columns={claimColumns}
-						emptyMessage={
-							contradictionsQuery.isSuccess ? t('evidence.noMatchingRecords') : t('evidence.noRecordsLoaded')
-						}
+						emptyMessage={claimTableEmptyMessage}
 						getRowKey={(claim) => claim.id}
 						minWidth={760}
 						onRowClick={(claim) => setSelectedId(claim.id)}
-						rows={filteredClaims}
+						rows={claimTableRows}
 						selectedKey={selectedClaim?.id}
 					/>
 				</section>
@@ -290,19 +339,21 @@ export function EvidenceWorkspacePage() {
 								<div className="grid grid-cols-2 gap-2">
 									<div className="rounded-md bg-field p-3">
 										<p className="text-xs text-text-subtle">{t('evidence.sourcesScored')}</p>
-										<p className="mt-2 font-mono text-sm text-text">{summary?.sources.scored ?? '—'}</p>
+										<p className="mt-2 font-mono text-sm text-text">{sourceScoreValue}</p>
 									</div>
 									<div className="rounded-md bg-field p-3">
 										<p className="text-xs text-text-subtle">{t('evidence.reliability')}</p>
-										<p className="mt-2 font-mono text-sm text-text">{summary?.sources.data_reliability ?? '—'}</p>
+										<p className="mt-2 font-mono text-sm text-text">{sourceReliabilityValue}</p>
 									</div>
 								</div>
 							)}
 						</InspectorSection>
 					</InspectorPanel>
 				) : (
-					<InspectorPanel title={t('evidence.noEvidenceSelected')}>
-						<StateNotice title={t('evidence.noContradictionsLoaded')}>{t('evidence.noContradictionsBody')}</StateNotice>
+					<InspectorPanel title={noSelectionTitle}>
+						<StateNotice tone={contradictionsQuery.error ? 'error' : 'info'} title={noSelectionTitle}>
+							{noSelectionBody}
+						</StateNotice>
 					</InspectorPanel>
 				)}
 			</div>

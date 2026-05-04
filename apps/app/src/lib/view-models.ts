@@ -264,12 +264,18 @@ export function contradictionToClaim(
 export function buildOverviewMetrics(
 	{
 		documents,
+		documentsError,
 		evidence,
+		evidenceError,
 		status,
+		statusError,
 	}: {
 		documents?: DocumentListResponse;
+		documentsError?: unknown;
 		evidence?: EvidenceSummaryResponse;
+		evidenceError?: unknown;
 		status?: StatusResponse;
+		statusError?: unknown;
 	},
 	contextInput?: Partial<ViewModelContext>,
 ): Metric[] {
@@ -282,36 +288,45 @@ export function buildOverviewMetrics(
 		{
 			label: context.t('viewModel.documentsIndexed'),
 			value: formatNumber(documents?.meta.count, context.locale),
-			delta: documents
-				? context.t('viewModel.loaded', { count: formatNumber(documents.data.length, context.locale) })
-				: context.t('common.apiPending'),
-			tone: documents ? 'neutral' : 'warning',
+			delta: documentsError
+				? context.t('common.unavailableShort')
+				: documents
+					? context.t('viewModel.loaded', { count: formatNumber(documents.data.length, context.locale) })
+					: context.t('common.apiPending'),
+			tone: documentsError ? 'warning' : documents ? 'neutral' : 'warning',
 		},
 		{
 			label: context.t('viewModel.entitiesResolved'),
 			value: formatNumber(evidence?.data.entities.total, context.locale),
-			delta: evidence
-				? context.t('viewModel.scored', { count: formatNumber(evidence.data.entities.scored, context.locale) })
-				: context.t('common.apiPending'),
-			tone: evidence ? 'good' : 'warning',
+			delta: evidenceError
+				? context.t('common.unavailableShort')
+				: evidence
+					? context.t('viewModel.scored', { count: formatNumber(evidence.data.entities.scored, context.locale) })
+					: context.t('common.apiPending'),
+			tone: evidenceError ? 'warning' : evidence ? 'good' : 'warning',
 		},
 		{
 			label: context.t('viewModel.openContradictions'),
 			value: formatNumber(openContradictions, context.locale),
-			delta: evidence
-				? context.t('viewModel.confirmed', {
-						count: formatNumber(evidence.data.contradictions.confirmed, context.locale),
-					})
-				: context.t('common.apiPending'),
-			tone: openContradictions && openContradictions > 0 ? 'danger' : 'neutral',
+			delta: evidenceError
+				? context.t('common.unavailableShort')
+				: evidence
+					? context.t('viewModel.confirmed', {
+							count: formatNumber(evidence.data.contradictions.confirmed, context.locale),
+						})
+					: context.t('common.apiPending'),
+			tone: evidenceError ? 'warning' : openContradictions && openContradictions > 0 ? 'danger' : 'neutral',
 		},
 		{
 			label: context.t('viewModel.queueRunning'),
 			value: formatNumber(status?.data.jobs.running, context.locale),
-			delta: status
-				? context.t('viewModel.pending', { count: formatNumber(status.data.jobs.pending, context.locale) })
-				: context.t('common.apiPending'),
-			tone: status && status.data.jobs.failed + status.data.jobs.dead_letter > 0 ? 'warning' : 'neutral',
+			delta: statusError
+				? context.t('common.unavailableShort')
+				: status
+					? context.t('viewModel.pending', { count: formatNumber(status.data.jobs.pending, context.locale) })
+					: context.t('common.apiPending'),
+			tone:
+				statusError || (status && status.data.jobs.failed + status.data.jobs.dead_letter > 0) ? 'warning' : 'neutral',
 		},
 	];
 }

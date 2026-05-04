@@ -13,7 +13,7 @@ import { useContradictions } from '@/features/evidence/useContradictions';
 import { useEvidenceSummary } from '@/features/evidence/useEvidenceSummary';
 import { useJobs } from '@/features/jobs/useJobs';
 import { useStatus } from '@/features/status/useStatus';
-import { getErrorMessage, hasQueryError } from '@/lib/query-state';
+import { getErrorMessage, isApiUnavailableError } from '@/lib/query-state';
 import type { ActivityEvent, AnalysisRun, Finding } from '@/lib/types';
 import { buildOverviewMetrics, contradictionsToFindings, jobsToActivity, jobToAnalysisRun } from '@/lib/view-models';
 
@@ -97,6 +97,36 @@ function FindingRow({ finding }: { finding: Finding }) {
 	);
 }
 
+function QueryNotice({
+	error,
+	errorFallback,
+	errorTitle,
+	isLoading,
+	loadingTitle,
+	unavailableTitle,
+}: {
+	error: unknown;
+	errorFallback: string;
+	errorTitle: string;
+	isLoading: boolean;
+	loadingTitle: string;
+	unavailableTitle: string;
+}) {
+	if (isLoading) {
+		return <StateNotice tone="loading" title={loadingTitle} />;
+	}
+
+	if (error) {
+		return (
+			<StateNotice tone="error" title={isApiUnavailableError(error) ? unavailableTitle : errorTitle}>
+				{getErrorMessage(error, errorFallback)}
+			</StateNotice>
+		);
+	}
+
+	return null;
+}
+
 export function OverviewPage() {
 	const { t, i18n } = useTranslation();
 	const statusQuery = useStatus();
@@ -109,39 +139,71 @@ export function OverviewPage() {
 	const metrics = buildOverviewMetrics(
 		{
 			documents: documentsQuery.data,
+			documentsError: documentsQuery.error,
 			evidence: evidenceQuery.data,
+			evidenceError: evidenceQuery.error,
 			status: statusQuery.data,
+			statusError: statusQuery.error,
 		},
 		viewModelContext,
 	);
-	const activeRuns = (jobsQuery.data?.data ?? [])
-		.map((job) => jobToAnalysisRun(job, viewModelContext))
-		.filter((run) => run.status === 'running' || run.status === 'queued' || run.status === 'watching');
-	const findings = contradictionsToFindings(contradictionsQuery.data?.data ?? [], viewModelContext);
-	const activity = jobsToActivity(jobsQuery.data?.data ?? [], viewModelContext);
+	const activeRuns = jobsQuery.error
+		? []
+		: (jobsQuery.data?.data ?? [])
+				.map((job) => jobToAnalysisRun(job, viewModelContext))
+				.filter((run) => run.status === 'running' || run.status === 'queued' || run.status === 'watching');
+	const findings = contradictionsQuery.error
+		? []
+		: contradictionsToFindings(contradictionsQuery.data?.data ?? [], viewModelContext);
+	const activity = jobsQuery.error ? [] : jobsToActivity(jobsQuery.data?.data ?? [], viewModelContext);
 	const activeRunColumns = getActiveRunColumns(t);
 	const activityColumns = getActivityColumns(t);
-	const hasError = hasQueryError([
-		statusQuery.error,
-		jobsQuery.error,
-		documentsQuery.error,
-		evidenceQuery.error,
-		contradictionsQuery.error,
-	]);
-	const firstError =
-		statusQuery.error ?? jobsQuery.error ?? documentsQuery.error ?? evidenceQuery.error ?? contradictionsQuery.error;
-	const isLoading =
-		statusQuery.isLoading ||
-		jobsQuery.isLoading ||
-		documentsQuery.isLoading ||
-		evidenceQuery.isLoading ||
-		contradictionsQuery.isLoading;
 	const queue = statusQuery.data?.data.jobs;
 	const sourceCount = documentsQuery.data?.meta.count;
 	const scoredSources = evidenceQuery.data?.data.sources.scored;
 	const openContradictions = evidenceQuery.data
 		? evidenceQuery.data.data.contradictions.potential + evidenceQuery.data.data.contradictions.confirmed
 		: undefined;
+	const workspaceUnavailable = Boolean(statusQuery.error && !statusQuery.data);
+	const sourceCountValue = documentsQuery.error ? t('common.unavailableShort') : (sourceCount ?? '—');
+	const scoredSourcesValue = evidenceQuery.error ? t('common.unavailableShort') : (scoredSources ?? '—');
+	const openContradictionsValue = evidenceQuery.error ? t('common.unavailableShort') : (openContradictions ?? '—');
+
+	if (workspaceUnavailable) {
+		return (
+			<>
+				<PageHeader
+					actions={
+						<button
+							className="inline-flex h-9 items-center gap-2 rounded-md bg-field px-3 text-sm font-medium text-text-subtle"
+							disabled
+							title={t('overview.startAnalysisTitle')}
+							type="button"
+						>
+							<Plus className="size-4" />
+							{t('overview.startAnalysis')}
+						</button>
+					}
+					description={t('overview.description')}
+					eyebrow={t('overview.eyebrow')}
+					title={t('overview.title')}
+				/>
+
+				<div className="p-4 sm:p-6">
+					<StateNotice
+						tone="error"
+						title={
+							isApiUnavailableError(statusQuery.error)
+								? t('overview.workspaceUnavailableTitle')
+								: t('overview.errorTitle')
+						}
+					>
+						{getErrorMessage(statusQuery.error, t('overview.workspaceUnavailableBody'))}
+					</StateNotice>
+				</div>
+			</>
+		);
+	}
 
 	return (
 		<>
@@ -163,12 +225,7 @@ export function OverviewPage() {
 			/>
 
 			<div className="space-y-4 p-4 sm:p-6">
-				{isLoading ? <StateNotice tone="loading" title={t('overview.loadingTitle')} /> : null}
-				{hasError ? (
-					<StateNotice tone="error" title={t('overview.errorTitle')}>
-						{getErrorMessage(firstError, t('common.apiRequestFailed'))}
-					</StateNotice>
-				) : null}
+				{statusQuery.isLoading ? <StateNotice tone="loading" title={t('overview.loadingTitle')} /> : null}
 
 				<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 					<MetricCard icon={<Archive className="size-4" />} metric={metrics[0]} />
@@ -188,9 +245,21 @@ export function OverviewPage() {
 								{t('overview.liveCount', { count: activeRuns.length })}
 							</span>
 						</Toolbar>
+						{jobsQuery.error || jobsQuery.isLoading ? (
+							<div className="border-b border-border p-3">
+								<QueryNotice
+									error={jobsQuery.error}
+									errorFallback={t('common.apiRequestFailed')}
+									errorTitle={t('overview.processingErrorTitle')}
+									isLoading={jobsQuery.isLoading}
+									loadingTitle={t('overview.processingLoadingTitle')}
+									unavailableTitle={t('overview.processingUnavailableTitle')}
+								/>
+							</div>
+						) : null}
 						<DataTable
 							columns={activeRunColumns}
-							emptyMessage={t('overview.noActiveJobs')}
+							emptyMessage={jobsQuery.error ? t('overview.processingUnavailableShort') : t('overview.noActiveJobs')}
 							getRowKey={(run) => run.id}
 							minWidth={660}
 							rows={activeRuns}
@@ -199,7 +268,18 @@ export function OverviewPage() {
 
 					<InspectorPanel subtitle={t('overview.findingsSubtitle')} title={t('overview.findingsTitle')}>
 						<div className="-m-4">
-							{findings.length > 0 ? (
+							{contradictionsQuery.error || contradictionsQuery.isLoading ? (
+								<div className="p-4">
+									<QueryNotice
+										error={contradictionsQuery.error}
+										errorFallback={t('common.apiRequestFailed')}
+										errorTitle={t('overview.findingsErrorTitle')}
+										isLoading={contradictionsQuery.isLoading}
+										loadingTitle={t('overview.findingsLoadingTitle')}
+										unavailableTitle={t('overview.findingsUnavailableTitle')}
+									/>
+								</div>
+							) : findings.length > 0 ? (
 								findings.map((finding) => <FindingRow finding={finding} key={finding.id} />)
 							) : (
 								<div className="p-4 text-sm text-text-muted">{t('overview.noFindings')}</div>
@@ -210,19 +290,39 @@ export function OverviewPage() {
 
 				<div className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
 					<InspectorPanel title={t('overview.sourceHealth')}>
+						{documentsQuery.error || evidenceQuery.error || documentsQuery.isLoading || evidenceQuery.isLoading ? (
+							<div className="mb-3 space-y-2">
+								<QueryNotice
+									error={documentsQuery.error}
+									errorFallback={t('common.apiRequestFailed')}
+									errorTitle={t('overview.sourcesErrorTitle')}
+									isLoading={documentsQuery.isLoading}
+									loadingTitle={t('overview.sourcesLoadingTitle')}
+									unavailableTitle={t('overview.sourcesUnavailableTitle')}
+								/>
+								<QueryNotice
+									error={evidenceQuery.error}
+									errorFallback={t('common.apiRequestFailed')}
+									errorTitle={t('overview.evidenceSummaryErrorTitle')}
+									isLoading={evidenceQuery.isLoading}
+									loadingTitle={t('overview.evidenceSummaryLoadingTitle')}
+									unavailableTitle={t('overview.evidenceSummaryUnavailableTitle')}
+								/>
+							</div>
+						) : null}
 						<InspectorSection title={t('overview.sourceSignals')}>
 							<div className="space-y-2">
 								<div className="flex items-center justify-between gap-3 rounded-md bg-field p-3">
 									<span className="text-sm text-text-muted">{t('overview.indexedSources')}</span>
-									<span className="font-mono text-sm text-text">{sourceCount ?? '—'}</span>
+									<span className="font-mono text-sm text-text">{sourceCountValue}</span>
 								</div>
 								<div className="flex items-center justify-between gap-3 rounded-md bg-field p-3">
 									<span className="text-sm text-text-muted">{t('overview.scoredSources')}</span>
-									<span className="font-mono text-sm text-text">{scoredSources ?? '—'}</span>
+									<span className="font-mono text-sm text-text">{scoredSourcesValue}</span>
 								</div>
 								<div className="flex items-center justify-between gap-3 rounded-md bg-field p-3">
 									<span className="text-sm text-text-muted">{t('overview.openContradictions')}</span>
-									<span className="font-mono text-sm text-text">{openContradictions ?? '—'}</span>
+									<span className="font-mono text-sm text-text">{openContradictionsValue}</span>
 								</div>
 							</div>
 						</InspectorSection>
@@ -248,9 +348,21 @@ export function OverviewPage() {
 						<Toolbar>
 							<h2 className="font-medium text-text">{t('overview.activity')}</h2>
 						</Toolbar>
+						{jobsQuery.error || jobsQuery.isLoading ? (
+							<div className="border-b border-border p-3">
+								<QueryNotice
+									error={jobsQuery.error}
+									errorFallback={t('common.apiRequestFailed')}
+									errorTitle={t('overview.activityErrorTitle')}
+									isLoading={jobsQuery.isLoading}
+									loadingTitle={t('overview.activityLoadingTitle')}
+									unavailableTitle={t('overview.activityUnavailableTitle')}
+								/>
+							</div>
+						) : null}
 						<DataTable
 							columns={activityColumns}
-							emptyMessage={t('overview.noActivity')}
+							emptyMessage={jobsQuery.error ? t('overview.activityUnavailableShort') : t('overview.noActivity')}
 							getRowKey={(event) => event.id}
 							minWidth={640}
 							rows={activity}
