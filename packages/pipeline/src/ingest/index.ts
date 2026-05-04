@@ -47,6 +47,7 @@ import {
 	buildTabularCrossFormatContent,
 	deriveMarkdownTitle,
 	getCrossFormatDedupKey,
+	normalizeCrossFormatText,
 	withCrossFormatDedupMetadata,
 } from './cross-format-dedup.js';
 import {
@@ -258,6 +259,22 @@ function stringMetadataValue(metadata: SourceFormatMetadata, key: string): strin
 	return typeof value === 'string' ? value : null;
 }
 
+function buildUrlCrossFormatDedupContent(title: string | null, readabilityMarkdown: string | null): string | null {
+	const content = readabilityMarkdown?.trim();
+	if (!content) {
+		return null;
+	}
+	const normalizedTitle = title?.trim();
+	if (!normalizedTitle) {
+		return content;
+	}
+	const firstContentLine = content.split(/\r?\n/).find((line) => line.trim().length > 0);
+	if (firstContentLine && normalizeCrossFormatText(firstContentLine) === normalizeCrossFormatText(normalizedTitle)) {
+		return content;
+	}
+	return `${normalizedTitle}\n\n${content}`;
+}
+
 async function waitForUrlHostPoliteness(ctx: ProcessFileContext, normalizedUrl: string): Promise<void> {
 	if (!ctx.pool) {
 		return;
@@ -364,6 +381,7 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 	const filename = filenameForUrlSnapshot(prepared.html, prepared.finalUrl, prepared.title ?? undefined);
 	const fileHash = computeFileHash(prepared.html);
 	const formatMetadata = withCrossFormatDedupMetadata(prepared.formatMetadata, {
+		content: buildUrlCrossFormatDedupContent(prepared.title, prepared.readabilityMarkdown),
 		basis: 'url_readability_content',
 		title: prepared.title,
 	});

@@ -1,5 +1,6 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -27,6 +28,8 @@ let pgAvailable = false;
 let rawSnapshot: StorageSnapshot | null = null;
 let extractedSnapshot: StorageSnapshot | null = null;
 let segmentsSnapshot: StorageSnapshot | null = null;
+let server: Server | null = null;
+let baseUrl = '';
 
 function buildPackage(packageDir: string): void {
 	const result = spawnSync('pnpm', ['build'], {
@@ -41,25 +44,61 @@ function buildPackage(packageDir: string): void {
 	}
 }
 
+function cliEnv(): NodeJS.ProcessEnv {
+	return {
+		...process.env,
+		MULDER_CONFIG: EXAMPLE_CONFIG,
+		MULDER_LOG_LEVEL: 'silent',
+		MULDER_ALLOW_UNSAFE_URLS_FOR_TESTS: 'true',
+		MULDER_URL_POLITENESS_DELAY_MS: '0',
+		NODE_ENV: 'test',
+		PGPASSWORD: db.TEST_PG_PASSWORD,
+	};
+}
+
 function runCli(args: string[], opts?: { timeout?: number }): { stdout: string; stderr: string; exitCode: number } {
 	const result = spawnSync('node', [CLI_DIST, ...args], {
 		cwd: ROOT,
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 180_000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: {
-			...process.env,
-			MULDER_CONFIG: EXAMPLE_CONFIG,
-			MULDER_LOG_LEVEL: 'silent',
-			NODE_ENV: 'test',
-			PGPASSWORD: db.TEST_PG_PASSWORD,
-		},
+		env: cliEnv(),
 	});
 	return {
 		stdout: result.stdout ?? '',
 		stderr: result.stderr ?? '',
 		exitCode: result.status ?? 1,
 	};
+}
+
+async function runCliAsync(
+	args: string[],
+	opts?: { timeout?: number },
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+	return await new Promise((resolveCli) => {
+		const child = spawn('node', [CLI_DIST, ...args], {
+			cwd: ROOT,
+			stdio: ['ignore', 'pipe', 'pipe'],
+			env: cliEnv(),
+		});
+		let stdout = '';
+		let stderr = '';
+		const timeout = setTimeout(() => {
+			child.kill('SIGTERM');
+		}, opts?.timeout ?? 180_000);
+		child.stdout.setEncoding('utf-8');
+		child.stderr.setEncoding('utf-8');
+		child.stdout.on('data', (chunk: string) => {
+			stdout += chunk;
+		});
+		child.stderr.on('data', (chunk: string) => {
+			stderr += chunk;
+		});
+		child.on('close', (code) => {
+			clearTimeout(timeout);
+			resolveCli({ stdout, stderr, exitCode: code ?? 1 });
+		});
+	});
 }
 
 function cleanState(): void {
@@ -114,11 +153,27 @@ function combinedOutput(result: { stdout: string; stderr: string }): string {
 	return `${result.stdout}\n${result.stderr}`;
 }
 
+function urlDuplicateArticleHtml(): string {
+	return `<!doctype html>
+<html lang="en">
+<head>
+  <title>Spec 96 URL Duplicate Report</title>
+</head>
+<body>
+  <article>
+    <h1>Spec 96 URL Duplicate Report</h1>
+    <p>Alpha beta gamma delta epsilon zeta eta theta iota kappa.</p>
+    <p>This normalized readable body is shared between markdown and a URL snapshot.</p>
+  </article>
+</body>
+</html>`;
+}
+
 function expectSuccessfulIngest(result: { stdout: string; stderr: string; exitCode: number }): void {
 	expect(result.exitCode, combinedOutput(result)).toBe(0);
 }
 
-beforeAll(() => {
+beforeAll(async () => {
 	process.env.MULDER_CONFIG = EXAMPLE_CONFIG;
 	process.env.MULDER_LOG_LEVEL = 'silent';
 	process.env.NODE_ENV = 'test';
@@ -127,6 +182,27 @@ beforeAll(() => {
 	rawSnapshot = snapshotStorageDir(RAW_STORAGE_DIR);
 	extractedSnapshot = snapshotStorageDir(EXTRACTED_STORAGE_DIR);
 	segmentsSnapshot = snapshotStorageDir(SEGMENTS_STORAGE_DIR);
+	server = createServer((request, response) => {
+		if (request.url === '/robots.txt') {
+			response.writeHead(200, { 'content-type': 'text/plain' });
+			response.end('User-agent: *\nAllow: /');
+			return;
+		}
+		if (request.url === '/same-report') {
+			response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+			response.end(urlDuplicateArticleHtml());
+			return;
+		}
+		response.writeHead(404, { 'content-type': 'text/plain' });
+		response.end('not found');
+	});
+	await new Promise<void>((resolveServer) => {
+		server?.listen(0, '127.0.0.1', resolveServer);
+	});
+	const address = server.address();
+	if (address && typeof address === 'object') {
+		baseUrl = `http://127.0.0.1:${address.port}`;
+	}
 
 	buildPackage(CORE_DIR);
 	buildPackage(PIPELINE_DIR);
@@ -148,7 +224,7 @@ beforeEach(() => {
 	resetStorage();
 });
 
-afterAll(() => {
+afterAll(async () => {
 	try {
 		if (pgAvailable) {
 			cleanState();
@@ -159,6 +235,12 @@ afterAll(() => {
 	}
 	if (tmpDir) {
 		rmSync(tmpDir, { recursive: true, force: true });
+	}
+	if (server) {
+		await new Promise<void>((resolveServer) => {
+			server?.close(() => resolveServer());
+			server?.closeAllConnections();
+		});
 	}
 });
 
@@ -200,6 +282,33 @@ describe('Spec 96 - Cross-format ingest dedup', () => {
 
 		expect(sourceCount()).toBe('1');
 		expect(sourceIdForFilename('report.txt')).toBe(existingSourceId);
+	});
+
+	it('QA-02 regression: URL readable content duplicate is detected before source creation', async () => {
+		if (!pgAvailable) return;
+		const reportMd = writeFixture(
+			'qa-02-url/report.md',
+			[
+				'# Spec 96 URL Duplicate Report',
+				'',
+				'Alpha beta gamma delta epsilon zeta eta theta iota kappa.',
+				'',
+				'This normalized readable body is shared between markdown and a URL snapshot.',
+				'',
+			].join('\n'),
+		);
+
+		const first = runCli(['ingest', reportMd]);
+		expectSuccessfulIngest(first);
+		const existingSourceId = sourceIdForFilename('report.md');
+
+		const second = await runCliAsync(['ingest', `${baseUrl}/same-report`]);
+		expectSuccessfulIngest(second);
+		expect(combinedOutput(second)).toMatch(/\b1 duplicates\b/i);
+		expect(combinedOutput(second)).toContain(existingSourceId);
+
+		expect(sourceCount()).toBe('1');
+		expect(db.runSql("SELECT COUNT(*) FROM sources WHERE source_type = 'url';")).toBe('0');
 	});
 
 	it('QA-03: dedup metadata is durable and deterministic', () => {
