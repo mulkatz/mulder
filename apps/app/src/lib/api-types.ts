@@ -96,6 +96,100 @@ export interface DocumentListResponse {
 	meta: { count: number; limit: number; offset: number };
 }
 
+export type SourceStatus = DocumentRecord['status'];
+
+export interface DocumentStoryRecord {
+	id: string;
+	source_id: string;
+	title: string;
+	subtitle: string | null;
+	language: string | null;
+	category: string | null;
+	page_start: number | null;
+	page_end: number | null;
+	extraction_confidence: number | null;
+	status: string;
+	markdown: string;
+	excerpt: string;
+	entities: unknown[];
+}
+
+export interface DocumentStoriesResponse {
+	data: {
+		source_id: string;
+		stories: DocumentStoryRecord[];
+	};
+	meta: { count: number };
+}
+
+export interface DocumentObservabilityResponse {
+	data: {
+		source: {
+			id: string;
+			filename: string;
+			status: SourceStatus;
+			page_count: number | null;
+			steps: {
+				step: string;
+				status: 'pending' | 'completed' | 'failed' | 'partial';
+				completed_at: string | null;
+				error_message: string | null;
+			}[];
+			projection: {
+				status: string | null;
+				extracted_at: string | null;
+				segmented_at: string | null;
+				page_count: number | null;
+				story_count: number | null;
+				vision_fallback_count: number | null;
+				vision_fallback_capped: boolean | null;
+			} | null;
+		};
+		stories: {
+			id: string;
+			title: string;
+			status: string;
+			page_start: number | null;
+			page_end: number | null;
+			projection: {
+				status: string | null;
+				enriched_at: string | null;
+				embedded_at: string | null;
+				graphed_at: string | null;
+				entities_extracted: number | null;
+				chunks_created: number | null;
+			} | null;
+		}[];
+		job: {
+			job_id: string;
+			status: JobStatus;
+			attempts: number;
+			max_attempts: number;
+			error_log: string | null;
+			created_at: string;
+			started_at: string | null;
+			finished_at: string | null;
+		} | null;
+		progress: {
+			run_id: string;
+			run_status: 'running' | 'completed' | 'partial' | 'failed';
+			current_step: string;
+			source_status: 'pending' | 'processing' | 'completed' | 'failed';
+			updated_at: string;
+			error_message: string | null;
+		} | null;
+		timeline: {
+			scope: 'job' | 'source' | 'story';
+			event: string;
+			status: string;
+			occurred_at: string;
+			step: string | null;
+			story_id: string | null;
+			details: Record<string, unknown>;
+		}[];
+	};
+}
+
 export interface EvidenceSummaryResponse {
 	data: {
 		entities: {

@@ -1,6 +1,7 @@
 import type { TFunction } from 'i18next';
 import { AlertTriangle, Archive, Network, Plus, ShieldCheck, Workflow } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { type DataColumn, DataTable } from '@/components/DataTable';
 import { InspectorPanel, InspectorSection } from '@/components/InspectorPanel';
 import { MetricCard } from '@/components/MetricCard';
@@ -174,15 +175,24 @@ export function OverviewPage() {
 			<>
 				<PageHeader
 					actions={
-						<button
-							className="inline-flex h-9 items-center gap-2 rounded-md bg-field px-3 text-sm font-medium text-text-subtle"
-							disabled
-							title={t('overview.startAnalysisTitle')}
-							type="button"
-						>
-							<Plus className="size-4" />
-							{t('overview.startAnalysis')}
-						</button>
+						<>
+							<Link
+								className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
+								to="/sources"
+							>
+								<Archive className="size-4" />
+								{t('overview.viewSources')}
+							</Link>
+							<button
+								className="inline-flex h-9 items-center gap-2 rounded-md bg-field px-3 text-sm font-medium text-text-subtle"
+								disabled
+								title={t('overview.startAnalysisTitle')}
+								type="button"
+							>
+								<Plus className="size-4" />
+								{t('overview.startAnalysis')}
+							</button>
+						</>
 					}
 					description={t('overview.description')}
 					eyebrow={t('overview.eyebrow')}
@@ -209,15 +219,24 @@ export function OverviewPage() {
 		<>
 			<PageHeader
 				actions={
-					<button
-						className="inline-flex h-9 items-center gap-2 rounded-md bg-field px-3 text-sm font-medium text-text-subtle"
-						disabled
-						title={t('overview.startAnalysisTitle')}
-						type="button"
-					>
-						<Plus className="size-4" />
-						{t('overview.startAnalysis')}
-					</button>
+					<>
+						<Link
+							className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
+							to="/sources"
+						>
+							<Archive className="size-4" />
+							{t('overview.viewSources')}
+						</Link>
+						<button
+							className="inline-flex h-9 items-center gap-2 rounded-md bg-field px-3 text-sm font-medium text-text-subtle"
+							disabled
+							title={t('overview.startAnalysisTitle')}
+							type="button"
+						>
+							<Plus className="size-4" />
+							{t('overview.startAnalysis')}
+						</button>
+					</>
 				}
 				description={t('overview.description')}
 				eyebrow={t('overview.eyebrow')}
@@ -325,6 +344,18 @@ export function OverviewPage() {
 									<span className="font-mono text-sm text-text">{openContradictionsValue}</span>
 								</div>
 							</div>
+							{documentsQuery.isSuccess && sourceCount === 0 ? (
+								<StateNotice className="mt-3" title={t('overview.emptyCorpusTitle')}>
+									{t('overview.emptyCorpusBody')}
+								</StateNotice>
+							) : null}
+							<Link
+								className="mt-3 inline-flex h-8 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
+								to="/sources"
+							>
+								<Archive className="size-4" />
+								{t('overview.viewSources')}
+							</Link>
 						</InspectorSection>
 						<InspectorSection title={t('overview.backgroundWork')}>
 							<div className="grid grid-cols-3 gap-2">

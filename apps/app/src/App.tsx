@@ -8,6 +8,7 @@ import { AnalysisRunsPage } from '@/pages/AnalysisRuns';
 import { EvidenceWorkspacePage } from '@/pages/EvidenceWorkspace';
 import { LoginPage } from '@/pages/Login';
 import { OverviewPage } from '@/pages/Overview';
+import { SourcesPage } from '@/pages/Sources';
 
 function AppRoutes() {
 	const location = useLocation();
@@ -54,6 +55,14 @@ function AppRoutes() {
 							element={
 								<PageTransition>
 									<EvidenceWorkspacePage />
+								</PageTransition>
+							}
+						/>
+						<Route
+							path="/sources"
+							element={
+								<PageTransition>
+									<SourcesPage />
 								</PageTransition>
 							}
 						/>

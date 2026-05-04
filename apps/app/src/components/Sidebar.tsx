@@ -50,7 +50,7 @@ const navGroups: {
 	{
 		labelKey: 'navigation.sources',
 		items: [
-			{ labelKey: 'navigation.allSources', icon: FileText, capability: 'documents.list' },
+			{ to: '/sources', labelKey: 'navigation.allSources', icon: FileText, capability: 'documents.list' },
 			{ labelKey: 'navigation.addSources', icon: Plus, capability: 'sources.add' },
 			{ labelKey: 'navigation.archive', icon: BookOpen, capability: 'documents.viewer' },
 			{ labelKey: 'navigation.sourceQuality', icon: AlertTriangle, capability: 'm10.provenance' },
