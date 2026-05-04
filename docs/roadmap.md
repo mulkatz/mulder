@@ -260,7 +260,7 @@ Images, Office docs, emails, URLs — every format converges to the same Markdow
 | 🟢 | J7 | Email ingestion — .eml/.msg parsing, header metadata → entities (sender, recipient, date, thread) | §2.1 |
 | 🟢 | J8 | URL ingestion — fetch + snapshot to GCS, Readability extraction → Markdown | §2.1 |
 | 🟢 | J9 | URL rendering — Playwright fallback for JS-rendered pages | §2.1 |
-| ⚪ | J10 | URL lifecycle — `robots.txt` respect, rate limiting, freshness tracking, re-fetch support | §2.1 |
+| 🟡 | J10 | URL lifecycle — `robots.txt` respect, rate limiting, freshness tracking, re-fetch support | §2.1 |
 | ⚪ | J11 | Format-aware extract routing — dispatch to correct extractor by `source_type` | §2.2 |
 | ⚪ | J12 | Cross-format dedup — early dedup at ingest (title/hash matching) before graph-level MinHash | §2.7 |
 | ⚪ | J13 | Golden tests: multi-format — one fixture per format, Vitest assertions | §15.1, §15.2 |
