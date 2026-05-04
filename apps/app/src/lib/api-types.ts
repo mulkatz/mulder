@@ -98,6 +98,21 @@ export interface DocumentListResponse {
 
 export type SourceStatus = DocumentRecord['status'];
 
+export interface EntityRecord {
+	id: string;
+	canonical_id: string | null;
+	name: string;
+	type: string;
+	taxonomy_status: 'auto' | 'curated' | 'merged';
+	taxonomy_id: string | null;
+	corroboration_score: number | null;
+	corroboration_status: 'scored' | 'not_scored' | 'insufficient_data';
+	source_count: number;
+	attributes: Record<string, unknown>;
+	created_at: string;
+	updated_at: string;
+}
+
 export interface DocumentStoryRecord {
 	id: string;
 	source_id: string;
@@ -111,13 +126,26 @@ export interface DocumentStoryRecord {
 	status: string;
 	markdown: string;
 	excerpt: string;
-	entities: unknown[];
+	entities: EntityRecord[];
 }
 
 export interface DocumentStoriesResponse {
 	data: {
 		source_id: string;
 		stories: DocumentStoryRecord[];
+	};
+	meta: { count: number };
+}
+
+export interface DocumentPageRecord {
+	page_number: number;
+	image_url: string;
+}
+
+export interface DocumentPagesResponse {
+	data: {
+		source_id: string;
+		pages: DocumentPageRecord[];
 	};
 	meta: { count: number };
 }

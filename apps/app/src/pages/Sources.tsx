@@ -2,6 +2,7 @@ import type { TFunction } from 'i18next';
 import { BookOpen, ChevronLeft, ChevronRight, FileText, Image, Plus, ShieldCheck } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { type DataColumn, DataTable } from '@/components/DataTable';
 import { IconButton } from '@/components/IconButton';
 import { InspectorPanel, InspectorSection } from '@/components/InspectorPanel';
@@ -44,7 +45,13 @@ function getSourceColumns(t: TFunction, locale: string): DataColumn<DocumentReco
 			header: t('sources.tableSource'),
 			render: (source) => (
 				<div className="min-w-0">
-					<p className="truncate font-medium text-text">{source.filename}</p>
+					<Link
+						className="block truncate font-medium text-text transition-colors hover:text-accent"
+						onClick={(event) => event.stopPropagation()}
+						to={`/sources/${source.id}`}
+					>
+						{source.filename}
+					</Link>
 					<p className="mt-1 text-xs text-text-subtle">
 						{source.layout_available ? t('sources.contentAvailable') : t('sources.contentNotAvailable')}
 					</p>
@@ -152,6 +159,12 @@ function SelectedSourceInspector({ source }: { source?: DocumentRecord }) {
 					<p>{t('sources.createdAt', { value: formatDate(source.created_at, i18n.language) })}</p>
 					<p className="mt-1">{t('sources.updatedAt', { value: formatDate(source.updated_at, i18n.language) })}</p>
 				</div>
+				<Link
+					className="mt-3 inline-flex h-9 items-center justify-center rounded-md border border-border bg-panel px-3 text-sm font-medium text-text transition-colors hover:bg-field"
+					to={`/sources/${source.id}`}
+				>
+					{t('sources.openReader')}
+				</Link>
 			</InspectorSection>
 
 			<InspectorSection title={t('sources.extractedStories')}>
@@ -185,6 +198,12 @@ function SelectedSourceInspector({ source }: { source?: DocumentRecord }) {
 									<StatusBadge status={story.status} />
 								</div>
 								{story.excerpt ? <p className="mt-2 line-clamp-3 text-sm text-text-muted">{story.excerpt}</p> : null}
+								<Link
+									className="mt-3 inline-flex text-xs font-medium text-accent hover:underline"
+									to={`/sources/${source.id}?story=${story.id}`}
+								>
+									{t('sources.openInReader')}
+								</Link>
 							</div>
 						))}
 						{stories.length > 3 ? (

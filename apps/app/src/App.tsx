@@ -8,6 +8,7 @@ import { AnalysisRunsPage } from '@/pages/AnalysisRuns';
 import { EvidenceWorkspacePage } from '@/pages/EvidenceWorkspace';
 import { LoginPage } from '@/pages/Login';
 import { OverviewPage } from '@/pages/Overview';
+import { SourceReaderPage } from '@/pages/SourceReader';
 import { SourcesPage } from '@/pages/Sources';
 
 function AppRoutes() {
@@ -63,6 +64,14 @@ function AppRoutes() {
 							element={
 								<PageTransition>
 									<SourcesPage />
+								</PageTransition>
+							}
+						/>
+						<Route
+							path="/sources/:sourceId"
+							element={
+								<PageTransition>
+									<SourceReaderPage />
 								</PageTransition>
 							}
 						/>

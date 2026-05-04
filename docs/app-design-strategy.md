@@ -143,9 +143,9 @@ Recommended sidebar grouping:
 | Workspace | Watchlist | Saved research areas, watched claims, sources, entities, or queries | Documented target |
 | Workspace | Research Agent | Assisted research workflows and autonomous follow-up | Future milestone: M14 |
 | Search | Search | Hybrid retrieval across sources, claims, citations, entities, and stories | Mounted API; trace depth is partial |
-| Sources | All Sources | Source archive list and processing readiness | Mounted API; route disabled until source workflow is built |
+| Sources | All Sources | Source archive list, source readiness, and entry point into the source reader | Mounted API; active route `/sources` |
 | Sources | Add Sources | Upload and ingest entry point | Upload routes exist; product use gated by M10 provenance/trust |
-| Sources | Archive | Reader, document detail, pages, layout, and extracted stories | Mounted partial |
+| Sources | Archive | Future archive organization beyond the active all-sources list and reader | Documented target |
 | Sources | Source Quality | Provenance, custody, quality, sensitivity/RBAC, rollback, credibility | Future milestone: M10/M11 |
 | Findings | Claims & Evidence | Active review workflow for claims, contradictions, confidence, citations, and source support | Mounted partial; first-class claims and review actions need a facade |
 | Findings | Contradictions | Contradiction-focused review | Mounted API, future dedicated route |
@@ -328,6 +328,25 @@ Tables, badges, timestamps, and compact rows should make it possible to understa
 ### Inspect Without Losing Context
 
 Use inspector panels for selected rows and entities. The user should not have to navigate away for every detail. Master-detail patterns are central to the product.
+
+### Source Reader Workspace
+
+Sources are not only records in a table. The source reader is a core product surface because many users will need to understand material that is long, multilingual, scanned, or outside their own native language.
+
+The reader should be story-first without losing the original:
+
+- Default desktop mode is a split view with the original PDF on the left and the extracted Mulder story on the right.
+- Users can switch to Original-only or Story-only when one side needs focus.
+- Smaller screens should hide split mode and keep Original/Story switching usable instead of pretending that dense comparison work is mobile-first.
+- The story pane should become a living document: entities, contradictions, evidence signals, citations, source reliability, and future claim anchors should appear as contextual annotations as real API contracts expose them.
+- Translation controls should be designed from the beginning, but translation must remain clearly prepare-only until the M11 translation contract exists. No generated or fake translation should appear in the app.
+- Technical processing details belong in a secondary "Processing background" disclosure so the reading experience remains content-led.
+
+Inline annotation policy:
+
+- Entity highlights may use conservative best-effort text matching from `story.entities`.
+- Claim spans, citation anchors, and evidence offsets must wait for first-class assertion/claim offsets from the API.
+- The reader should never imply that a claim is anchored to a precise passage unless the backend exposes that anchor.
 
 ### Progressive Disclosure
 
@@ -536,6 +555,7 @@ Prioritize API additions that unlock complete workflows:
 Once the API shape exists, expand:
 
 - Sources and upload.
+- Source reader annotations and persistent translations.
 - Entity profiles.
 - Search with trace.
 - Graph/Board.

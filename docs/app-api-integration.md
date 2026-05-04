@@ -51,6 +51,8 @@ The app treats API state as product behavior, not as incidental rendering detail
 Active app routes use this model as follows:
 
 - `Research Desk` (`/`) treats `GET /api/status` as the minimum workspace pulse. Without it, the page shows a workspace-unavailable state. Documents, evidence summary, contradictions, and jobs remain secondary panel-level data.
+- `All Sources` (`/sources`) uses `GET /api/documents` with server-backed search, status filters, limit, and offset. Empty corpus, unavailable API, and no matching filters are distinct states.
+- `Source Reader` (`/sources/:id`) uses document-scoped contracts only: PDF, layout, pages, stories, and observability. Each pane can fail independently without collapsing the whole reader.
 - `Claims & Evidence` (`/evidence`) separates "no claims need review" from "claims data unavailable." Evidence summaries may fail independently from claim/contradiction records.
 - `Processing` (`/runs`) separates the job list from selected job detail. A failed `GET /api/jobs/:id` leaves the list selection intact and shows an inspector-level detail error.
 
@@ -114,11 +116,12 @@ This mapping captures the app's hook-per-contract shape.
 | `useStatus` | `GET /api/status` | Overview pulse and capacity signals. |
 | `useJobs` | `GET /api/jobs` | Operations/Analysis Runs table. |
 | `useJob` | `GET /api/jobs/:id` | Selected run inspector. |
-| `useDocuments` | `GET /api/documents` | Documents list and corpus counts. |
-| `useDocumentLayout` | `GET /api/documents/:id/layout` | Future document reader. |
-| `useDocumentPages` | `GET /api/documents/:id/pages` | Future document reader. |
-| `usePdfUrl` | `GET /api/documents/:id/pdf` | Future PDF pane. |
-| `useStoriesForDocument` | `GET /api/documents/:id/stories` | Future story/evidence reader. |
+| `useDocuments` | `GET /api/documents` | Sources list, corpus counts, server-backed search/status filters, and pagination. |
+| `useDocumentLayout` | `GET /api/documents/:id/layout` | Source reader extracted-text preview. |
+| `useDocumentPages` | `GET /api/documents/:id/pages` | Source reader page count and future page metadata. |
+| PDF pane URL | `GET /api/documents/:id/pdf` | Source reader original-document pane. |
+| `useDocumentStories` | `GET /api/documents/:id/stories` | Source inspector and source reader story workspace. |
+| `useDocumentObservability` | `GET /api/documents/:id/observability` | Source inspector and secondary processing-background panel. |
 | `useEntities` | `GET /api/entities` | Entities list. |
 | `useEntity` | `GET /api/entities/:id` | Entity inspector/profile. |
 | `useEntityEdges` | `GET /api/entities/:id/edges` | Entity-local graph context. |
@@ -144,6 +147,8 @@ These gaps should be visible in the app capability registry instead of hidden be
 | Usage/cost surface | Status exposes budget pieces, but product usage views need a broader read model. |
 | Settings/admin | Auth invitations exist, but workspace policy, roles, config, and product settings are future work. |
 | Production upload UX | Upload contracts exist, but real archive ingest should not be promoted until the trust/provenance gate is resolved or explicitly waived. |
+| Persistent translation | Translation controls exist in the reader, but M11 must define the persisted on-demand translation contract, cache behavior, permissions, and provenance before translations are generated or shown. |
+| Claim/citation anchors | Story entities can be highlighted conservatively, but exact claim spans, citation anchors, and assertion offsets need first-class API fields before the app shows passage-level claim links. |
 
 ## What To Reuse
 
@@ -151,6 +156,7 @@ These gaps should be visible in the app capability registry instead of hidden be
 - React Query defaults and query-key discipline.
 - Hook-per-contract structure.
 - Upload session sequence.
+- Source reader pane pattern: original PDF, extracted story, and secondary processing background from document-scoped contracts.
 - Playwright smoke-test idea: verify real routes against a running API, not only static render.
 - API-backed empty/error states as first-class UI states.
 
@@ -167,7 +173,7 @@ These gaps should be visible in the app capability registry instead of hidden be
 After the cleanup, the first app API implementation should stay narrow:
 
 1. Add the API client, local API types, React Query provider, and capability registry to `apps/app`.
-2. Bind existing routes only: `/`, `/runs`, and `/evidence`.
+2. Bind existing routes only: `/`, `/sources`, `/sources/:id`, `/runs`, and `/evidence`.
 3. Use real loading/empty/error states.
 4. Keep auth/session behavior honest: `401` means unauthenticated, while network/CORS/5xx states remain unavailable/error UI.
 5. Do not use checked-in fixture data in app screens.
