@@ -226,6 +226,7 @@ export {
 	findPipelineRunSourceById,
 	findPipelineRunSourcesByRunId,
 	findScoredSources,
+	findSourceByCrossFormatDedupKey,
 	findSourceByHash,
 	findSourceById,
 	findSourceStep,

@@ -14,6 +14,7 @@ export interface PreparedUrlSnapshot {
 	html: Buffer;
 	finalUrl: string;
 	title: string | null;
+	readabilityMarkdown: string | null;
 	formatMetadata: SourceFormatMetadata;
 	renderingMethod: 'static' | 'playwright';
 }
@@ -86,6 +87,7 @@ export async function prepareUrlSnapshot(
 			html: fetchResult.html,
 			finalUrl: fetchResult.finalUrl,
 			title: staticProbe.title || staticTitle,
+			readabilityMarkdown: staticProbe.markdown,
 			formatMetadata: buildUrlFormatMetadata(fetchResult, staticProbe.title || staticTitle || undefined),
 			renderingMethod: 'static',
 		};
@@ -142,6 +144,7 @@ export async function prepareUrlSnapshot(
 			html: renderResult.html,
 			finalUrl: renderResult.finalUrl,
 			title: renderedProbe.title || renderedTitle,
+			readabilityMarkdown: renderedProbe.markdown,
 			formatMetadata: buildUrlFormatMetadata(
 				fetchResult,
 				renderedProbe.title || renderedTitle || undefined,

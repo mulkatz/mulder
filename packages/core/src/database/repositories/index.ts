@@ -191,6 +191,7 @@ export {
 	deleteSourceStep,
 	findAllSources,
 	findScoredSources,
+	findSourceByCrossFormatDedupKey,
 	findSourceByHash,
 	findSourceById,
 	findSourceStep,
