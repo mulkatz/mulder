@@ -10,116 +10,159 @@ export type CapabilityId =
 	| 'status.overview'
 	| 'jobs.list'
 	| 'jobs.detail'
+	| 'workspace.reviewQueue'
+	| 'workspace.watchlist'
+	| 'workspace.agent'
 	| 'documents.list'
 	| 'documents.viewer'
+	| 'sources.add'
 	| 'evidence.summary'
 	| 'evidence.contradictions'
 	| 'evidence.claims'
+	| 'evidence.reliability'
+	| 'evidence.chains'
+	| 'evidence.clusters'
 	| 'search.hybrid'
 	| 'entities.list'
+	| 'relationships.list'
 	| 'graph.aggregate'
+	| 'taxonomy.manage'
+	| 'stories.list'
 	| 'activity.feed'
+	| 'operations.recovery'
 	| 'usage.cost'
+	| 'exports.list'
 	| 'settings.admin'
+	| 'admin.members'
+	| 'admin.policies'
+	| 'admin.integrations'
 	| 'm10.provenance';
 
 export interface Capability {
 	id: CapabilityId;
-	label: string;
 	state: CapabilityState;
-	note: string;
 }
 
 export const capabilities = {
 	'status.overview': {
 		id: 'status.overview',
-		label: 'System overview',
 		state: 'mounted-api',
-		note: 'GET /api/status is available.',
 	},
 	'jobs.list': {
 		id: 'jobs.list',
-		label: 'Job list',
 		state: 'mounted-api',
-		note: 'GET /api/jobs is available.',
 	},
 	'jobs.detail': {
 		id: 'jobs.detail',
-		label: 'Job detail',
 		state: 'mounted-partial',
-		note: 'GET /api/jobs/:id exists, but app run artifacts and timings need a stronger facade.',
+	},
+	'workspace.reviewQueue': {
+		id: 'workspace.reviewQueue',
+		state: 'documented-target',
+	},
+	'workspace.watchlist': {
+		id: 'workspace.watchlist',
+		state: 'documented-target',
+	},
+	'workspace.agent': {
+		id: 'workspace.agent',
+		state: 'future-milestone',
 	},
 	'documents.list': {
 		id: 'documents.list',
-		label: 'Documents',
 		state: 'mounted-api',
-		note: 'GET /api/documents is available.',
 	},
 	'documents.viewer': {
 		id: 'documents.viewer',
-		label: 'Document viewer',
 		state: 'mounted-partial',
-		note: 'PDF, layout, pages, stories, and observability exist, but archive ingest is gated by M10 trust work.',
+	},
+	'sources.add': {
+		id: 'sources.add',
+		state: 'future-milestone',
 	},
 	'evidence.summary': {
 		id: 'evidence.summary',
-		label: 'Evidence summary',
 		state: 'mounted-api',
-		note: 'GET /api/evidence/summary is available.',
 	},
 	'evidence.contradictions': {
 		id: 'evidence.contradictions',
-		label: 'Contradictions',
 		state: 'mounted-api',
-		note: 'GET /api/evidence/contradictions is available.',
 	},
 	'evidence.claims': {
 		id: 'evidence.claims',
-		label: 'Claim review',
 		state: 'missing',
-		note: 'First-class claims, assertions, and review actions need an app API contract.',
+	},
+	'evidence.reliability': {
+		id: 'evidence.reliability',
+		state: 'mounted-api',
+	},
+	'evidence.chains': {
+		id: 'evidence.chains',
+		state: 'mounted-api',
+	},
+	'evidence.clusters': {
+		id: 'evidence.clusters',
+		state: 'mounted-api',
 	},
 	'search.hybrid': {
 		id: 'search.hybrid',
-		label: 'Hybrid search',
 		state: 'mounted-api',
-		note: 'POST /api/search is available.',
 	},
 	'entities.list': {
 		id: 'entities.list',
-		label: 'Entities',
 		state: 'mounted-api',
-		note: 'GET /api/entities is available.',
+	},
+	'relationships.list': {
+		id: 'relationships.list',
+		state: 'mounted-partial',
 	},
 	'graph.aggregate': {
 		id: 'graph.aggregate',
-		label: 'Graph',
 		state: 'mounted-partial',
-		note: 'Entity-local edges exist; aggregate graph read models are still needed.',
+	},
+	'taxonomy.manage': {
+		id: 'taxonomy.manage',
+		state: 'cli-or-package-only',
+	},
+	'stories.list': {
+		id: 'stories.list',
+		state: 'mounted-partial',
 	},
 	'activity.feed': {
 		id: 'activity.feed',
-		label: 'Activity',
 		state: 'missing',
-		note: 'No cross-system activity stream is mounted yet.',
+	},
+	'operations.recovery': {
+		id: 'operations.recovery',
+		state: 'mounted-partial',
 	},
 	'usage.cost': {
 		id: 'usage.cost',
-		label: 'Usage',
 		state: 'mounted-partial',
-		note: 'Status exposes budget pieces; a broader usage view is still needed.',
+	},
+	'exports.list': {
+		id: 'exports.list',
+		state: 'cli-or-package-only',
 	},
 	'settings.admin': {
 		id: 'settings.admin',
-		label: 'Settings',
 		state: 'future-milestone',
-		note: 'Workspace, policy, roles, and settings UI are future work.',
+	},
+	'admin.members': {
+		id: 'admin.members',
+		state: 'mounted-partial',
+	},
+	'admin.policies': {
+		id: 'admin.policies',
+		state: 'future-milestone',
+	},
+	'admin.integrations': {
+		id: 'admin.integrations',
+		state: 'future-milestone',
 	},
 	'm10.provenance': {
 		id: 'm10.provenance',
-		label: 'Provenance gate',
 		state: 'future-milestone',
-		note: 'Real archive ingest is gated by provenance, custody, quality, sensitivity/RBAC, and rollback.',
 	},
 } satisfies Record<CapabilityId, Capability>;
 

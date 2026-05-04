@@ -68,11 +68,11 @@ function formatDuration(
 	return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
 }
 
-function titleFromJobType(type: string) {
-	return type
-		.replaceAll('_', ' ')
-		.replaceAll('-', ' ')
-		.replace(/\b\w/g, (char) => char.toUpperCase());
+function formatJobType(type: string, context: ViewModelContext) {
+	const key = type.replaceAll('-', '_');
+	return context.t(`jobType.${key}`, {
+		defaultValue: context.t('jobType.unknown', { type }),
+	});
 }
 
 function mapJobStatus(status: JobSummary['status']): RunStatus {
@@ -153,7 +153,7 @@ export function jobToAnalysisRun(job: JobForAnalysis, contextInput?: Partial<Vie
 
 	return {
 		id: job.id,
-		title: titleFromJobType(job.type),
+		title: formatJobType(job.type, context),
 		mode: job.type,
 		status: mapJobStatus(job.status),
 		owner: job.worker_id ?? context.t('viewModel.unassigned'),
@@ -190,7 +190,7 @@ export function jobsToActivity(jobs: JobSummary[], contextInput?: Partial<ViewMo
 	const context = getContext(contextInput);
 	return jobs.slice(0, 6).map((job) => ({
 		id: `activity-${job.id}`,
-		label: titleFromJobType(job.type),
+		label: formatJobType(job.type, context),
 		detail: job.worker_id
 			? context.t('viewModel.workerStartedDetail', { workerId: job.worker_id })
 			: context.t('viewModel.waitingForWorker'),

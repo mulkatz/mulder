@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import { AlertTriangle, Archive, Database, Network, Play, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, Archive, Network, Plus, ShieldCheck, Workflow } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { type DataColumn, DataTable } from '@/components/DataTable';
 import { InspectorPanel, InspectorSection } from '@/components/InspectorPanel';
@@ -25,7 +25,6 @@ function getActiveRunColumns(t: TFunction): DataColumn<AnalysisRun>[] {
 			render: (run) => (
 				<div className="min-w-0">
 					<p className="truncate font-medium text-text">{run.title}</p>
-					<p className="mt-1 truncate font-mono text-xs text-text-subtle">{run.id}</p>
 				</div>
 			),
 		},
@@ -138,6 +137,11 @@ export function OverviewPage() {
 		evidenceQuery.isLoading ||
 		contradictionsQuery.isLoading;
 	const queue = statusQuery.data?.data.jobs;
+	const sourceCount = documentsQuery.data?.meta.count;
+	const scoredSources = evidenceQuery.data?.data.sources.scored;
+	const openContradictions = evidenceQuery.data
+		? evidenceQuery.data.data.contradictions.potential + evidenceQuery.data.data.contradictions.confirmed
+		: undefined;
 
 	return (
 		<>
@@ -149,7 +153,7 @@ export function OverviewPage() {
 						title={t('overview.startAnalysisTitle')}
 						type="button"
 					>
-						<Play className="size-4" />
+						<Plus className="size-4" />
 						{t('overview.startAnalysis')}
 					</button>
 				}
@@ -177,7 +181,7 @@ export function OverviewPage() {
 					<section className="panel min-w-0 overflow-hidden">
 						<Toolbar>
 							<div className="flex items-center gap-2">
-								<Database className="size-4 text-accent" />
+								<Workflow className="size-4 text-accent" />
 								<h2 className="font-medium text-text">{t('overview.activeAnalyses')}</h2>
 							</div>
 							<span className="ml-auto font-mono text-xs text-text-subtle">
@@ -205,24 +209,24 @@ export function OverviewPage() {
 				</div>
 
 				<div className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-					<InspectorPanel title={t('overview.apiReadiness')}>
-						<InspectorSection title={t('overview.readModels')}>
+					<InspectorPanel title={t('overview.sourceHealth')}>
+						<InspectorSection title={t('overview.sourceSignals')}>
 							<div className="space-y-2">
 								<div className="flex items-center justify-between gap-3 rounded-md bg-field p-3">
-									<span className="text-sm text-text-muted">{t('common.status')}</span>
-									<StatusBadge status={statusQuery.isSuccess ? 'mounted-api' : 'missing'} />
+									<span className="text-sm text-text-muted">{t('overview.indexedSources')}</span>
+									<span className="font-mono text-sm text-text">{sourceCount ?? '—'}</span>
 								</div>
 								<div className="flex items-center justify-between gap-3 rounded-md bg-field p-3">
-									<span className="text-sm text-text-muted">{t('common.jobs')}</span>
-									<StatusBadge status={jobsQuery.isSuccess ? 'mounted-api' : 'missing'} />
+									<span className="text-sm text-text-muted">{t('overview.scoredSources')}</span>
+									<span className="font-mono text-sm text-text">{scoredSources ?? '—'}</span>
 								</div>
 								<div className="flex items-center justify-between gap-3 rounded-md bg-field p-3">
-									<span className="text-sm text-text-muted">{t('overview.evidence')}</span>
-									<StatusBadge status={evidenceQuery.isSuccess ? 'mounted-api' : 'missing'} />
+									<span className="text-sm text-text-muted">{t('overview.openContradictions')}</span>
+									<span className="font-mono text-sm text-text">{openContradictions ?? '—'}</span>
 								</div>
 							</div>
 						</InspectorSection>
-						<InspectorSection title={t('overview.queue')}>
+						<InspectorSection title={t('overview.backgroundWork')}>
 							<div className="grid grid-cols-3 gap-2">
 								<div className="rounded-md bg-field p-3">
 									<p className="font-mono text-lg font-semibold">{queue?.running ?? '—'}</p>

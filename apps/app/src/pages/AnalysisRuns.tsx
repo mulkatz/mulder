@@ -138,7 +138,7 @@ export function AnalysisRunsPage() {
 							type="button"
 						>
 							<PlayCircle className="size-4" />
-							{t('common.newRun')}
+							{t('runs.processSources')}
 						</button>
 					</>
 				}
@@ -281,7 +281,7 @@ export function AnalysisRunsPage() {
 						</InspectorSection>
 
 						<InspectorSection title={t('runs.parameters')}>
-							<CodeBlock label="job-payload.json" value={selectedRun.params} />
+							<CodeBlock label={t('runs.jobPayloadLabel')} value={selectedRun.params} />
 						</InspectorSection>
 					</InspectorPanel>
 				) : (
