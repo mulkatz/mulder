@@ -225,6 +225,34 @@ describe('Spec 95 - Format-aware extract routing', () => {
 		expect(existsSync(resolve(STORAGE_DIR, `extracted/${sourceId}/layout.json`))).toBe(false);
 	});
 
+	it('QA-02 regression: pre-structured --force --fallback-only fails before cleanup', () => {
+		if (!pgAvailable) return;
+		const sourceId = seedTextSource('force-fallback-note.txt');
+		const extract = runCli(['extract', sourceId]);
+		expect(extract.exitCode, `${extract.stdout}\n${extract.stderr}`).toBe(0);
+
+		const storyRow = db.runSql(
+			`SELECT id, gcs_markdown_uri, gcs_metadata_uri FROM stories WHERE source_id = ${sqlLiteral(sourceId)} LIMIT 1;`,
+		);
+		const [storyId, markdownUri, metadataUri] = storyRow.split('|');
+		const markdownBefore = readFileSync(resolve(STORAGE_DIR, markdownUri), 'utf-8');
+
+		const result = runCli(['extract', sourceId, '--force', '--fallback-only']);
+		expect(result.exitCode, `${result.stdout}\n${result.stderr}`).not.toBe(0);
+		expect(`${result.stdout}\n${result.stderr}`).toMatch(/does not support vision fallback/i);
+
+		expect(db.runSql(`SELECT status FROM sources WHERE id = ${sqlLiteral(sourceId)};`)).toBe('extracted');
+		expect(sourceStepStatus(sourceId, 'extract')).toBe('completed');
+		expect(db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = ${sqlLiteral(sourceId)};`)).toBe('1');
+		expect(
+			db.runSql(`SELECT id FROM stories WHERE source_id = ${sqlLiteral(sourceId)} ORDER BY created_at DESC LIMIT 1;`),
+		).toBe(storyId);
+		expect(existsSync(resolve(STORAGE_DIR, markdownUri))).toBe(true);
+		expect(existsSync(resolve(STORAGE_DIR, metadataUri))).toBe(true);
+		expect(readFileSync(resolve(STORAGE_DIR, markdownUri), 'utf-8')).toBe(markdownBefore);
+		expect(existsSync(resolve(STORAGE_DIR, `extracted/${sourceId}/layout.json`))).toBe(false);
+	});
+
 	it('QA-03: source_type controls text extraction even when the filename is misleading', () => {
 		if (!pgAvailable) return;
 		const sourceId = seedTextSource('misleading.pdf');

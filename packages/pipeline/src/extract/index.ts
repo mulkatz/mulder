@@ -2128,6 +2128,9 @@ export async function execute(
 		});
 	}
 	const route = requireExtractRoute(source.sourceType, { sourceId: input.sourceId });
+	if (input.fallbackOnly) {
+		assertFallbackOnlySupported(route, { sourceId: input.sourceId });
+	}
 
 	// 2. Validate status
 	const validStatuses = ['ingested', 'extracted', 'segmented', 'enriched', 'embedded', 'graphed', 'analyzed'];
@@ -2162,10 +2165,6 @@ export async function execute(
 
 	const errors: StepError[] = [];
 	let extractionData: ExtractionData;
-
-	if (input.fallbackOnly) {
-		assertFallbackOnlySupported(route, { sourceId: input.sourceId });
-	}
 
 	if (!input.fallbackOnly && route.kind === 'prestructured') {
 		switch (route.sourceType) {
