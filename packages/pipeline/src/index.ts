@@ -65,11 +65,27 @@ export type {
 	ExtractionData,
 	ExtractionMethod,
 	ExtractResult,
+	ExtractRouteKind,
+	ExtractSourceRoute,
 	LayoutDocument,
+	LayoutExtractRoute,
+	LayoutExtractSourceType,
 	PageExtraction,
+	PrestructuredExtractRoute,
+	PrestructuredExtractSourceType,
 	PrimaryExtractionMethod,
 } from './extract/index.js';
-export { execute as executeExtract, layoutToMarkdown } from './extract/index.js';
+export {
+	assertFallbackOnlySupported,
+	EXTRACT_LAYOUT_SOURCE_TYPES,
+	EXTRACT_PRESTRUCTURED_SOURCE_TYPES,
+	EXTRACT_SOURCE_TYPES,
+	execute as executeExtract,
+	isAcceptedExtractSourceType,
+	layoutToMarkdown,
+	requireExtractRoute,
+	resolveExtractRoute,
+} from './extract/index.js';
 export type {
 	FixtureArtifact,
 	FixtureError,
