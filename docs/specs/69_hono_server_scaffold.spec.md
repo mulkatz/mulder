@@ -19,7 +19,7 @@ Introduce Mulder's first real HTTP runtime in `apps/api` so M7 can build on a co
 - **Roadmap Step:** `M7-H3` — Hono server scaffold — app, node-server, health endpoint
 - **Target:** `apps/api/package.json`, `apps/api/src/app.ts`, `apps/api/src/index.ts`, `apps/api/src/routes/health.ts`, `tests/specs/69_hono_server_scaffold.test.ts`
 - **In scope:** Hono runtime dependencies for `@mulder/api`; a reusable app factory that mounts `/api/health`; a Node entrypoint that starts the Hono app with `@hono/node-server`; minimal request logging through Mulder's existing logger; and black-box coverage proving the scaffold boots and serves the health route
-- **Out of scope:** auth, rate limiting, request context, structured error middleware (`M7-H4`); pipeline, jobs, search, entity, evidence, or document routes (`M7-H5` through `M7-H10`); OpenAPI/Scalar setup; config schema additions for API settings; and any demo UI work (`M7-H11`)
+- **Out of scope:** auth, rate limiting, request context, structured error middleware (`M7-H4`); pipeline, jobs, search, entity, evidence, or document routes (`M7-H5` through `M7-H10`); OpenAPI/Scalar setup; config schema additions for API settings; and any browser app work (`M7-H11`)
 - **Constraints:** preserve the CLI-first package boundaries from `CLAUDE.md`; keep business logic out of the HTTP layer; keep the initial server bootstrap small and dependency-light; avoid inventing a broad API config surface before the middleware/routes specs land; and ensure the health endpoint can be called without authentication for Cloud Run-style liveness checks
 
 ## 3. Dependencies

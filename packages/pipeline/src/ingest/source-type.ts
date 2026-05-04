@@ -647,6 +647,21 @@ export function isOfficeOpenXmlSpreadsheet(buffer: Buffer): boolean {
 	return entries.has('[Content_Types].xml') && entries.has('xl/workbook.xml');
 }
 
+/**
+ * Returns true for source types that produce stories directly at extract time
+ * and therefore skip the segment step in the pipeline orchestrator.
+ * PDF and image go through the normal segment step.
+ */
+export function isPreStructuredType(sourceType: SourceType): boolean {
+	return (
+		sourceType === 'text' ||
+		sourceType === 'docx' ||
+		sourceType === 'spreadsheet' ||
+		sourceType === 'email' ||
+		sourceType === 'url'
+	);
+}
+
 export function detectSourceType(
 	buffer: Buffer | null | undefined,
 	filenameOrInput: string,

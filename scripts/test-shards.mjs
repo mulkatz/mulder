@@ -8,10 +8,6 @@ const ROOT = resolve(dirname(SCRIPT_PATH), '..');
 const SEARCH_ROOTS = ['tests/specs', 'packages', 'apps'].map((path) => resolve(ROOT, path));
 const VITEST = resolve(ROOT, 'node_modules/vitest/vitest.mjs');
 const VITEST_SHARD_ARGS = ['--no-file-parallelism', '--maxWorkers=1'];
-const EXCLUDED_TESTS = new Set([
-	// Superseded by the M7.5/V1 demo app track, which is verified by the demo workflow.
-	'tests/specs/01_demo_evidence_analysis_ui.test.ts',
-]);
 
 function walkTests(root) {
 	const files = [];
@@ -41,7 +37,6 @@ function listTestFiles() {
 			relativePath: fullPath.slice(ROOT.length + 1),
 			weight: readFileSync(fullPath, 'utf8').split('\n').length,
 		}))
-		.filter((file) => !EXCLUDED_TESTS.has(file.relativePath))
 		.sort((a, b) => b.weight - a.weight || a.relativePath.localeCompare(b.relativePath));
 }
 

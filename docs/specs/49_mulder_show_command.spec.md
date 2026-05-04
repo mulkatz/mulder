@@ -1,7 +1,7 @@
 ---
 spec: 49
 title: "`mulder show` command — terminal preview of layout.md"
-roadmap_step: "off-roadmap (demoability)"
+roadmap_step: "off-roadmap (inspection tooling)"
 functional_spec: "§1 (CLI surface), §2.2 (extract step), §4.5 (service abstraction)"
 scope: single
 issue: https://github.com/mulkatz/mulder/issues/128
@@ -12,7 +12,7 @@ created: 2026-04-09
 
 ## 1. Objective
 
-Add a `mulder show <source-id>` CLI command that reads the `layout.md` artifact produced by the Extract step (spec 48) and prints it to stdout with lightweight ANSI formatting. Makes the derived Markdown immediately consumable in the terminal without opening a file in an editor — the cheapest possible demoability win for the Extract pipeline stage while the real document viewer waits for M7-H11.
+Add a `mulder show <source-id>` CLI command that reads the `layout.md` artifact produced by the Extract step (spec 48) and prints it to stdout with lightweight ANSI formatting. Makes the derived Markdown immediately consumable in the terminal without opening a file in an editor, which is the cheapest possible inspection win for the Extract pipeline stage while the real document viewer waits for M7-H11.
 
 This is a focused stop-gap: a single-file CLI command (~200 lines) that uses the existing service abstraction, adds zero new dependencies, and will be naturally superseded once the M7 HTTP API + React viewer lands. It does not create architectural debt — it uses the same `loadConfig() → createServiceRegistry() → services.storage.download()` pattern as every other CLI command, and its formatter is a pure function of the input string.
 

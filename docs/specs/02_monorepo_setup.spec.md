@@ -149,7 +149,7 @@ packages:
     }
   },
   "files": {
-    "ignore": ["node_modules", "dist", ".turbo", "fixtures", "demo"]
+    "ignore": ["node_modules", "dist", ".turbo", "fixtures"]
   }
 }
 ```

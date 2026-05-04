@@ -228,7 +228,7 @@ describe('Spec 77: Browser-safe email/password auth', () => {
 		const originalFetch = globalThis.fetch;
 
 		process.env.MULDER_INVITE_DELIVERY = 'resend';
-		process.env.MULDER_APP_BASE_URL = 'https://mulder.mulkatz.dev';
+		process.env.MULDER_APP_BASE_URL = 'https://app.example.test';
 		process.env.MULDER_MAIL_FROM = 'Mulder <invites@example.com>';
 		process.env.RESEND_API_KEY = 'resend-test-key';
 		globalThis.fetch = fetchMock as typeof fetch;
@@ -247,8 +247,8 @@ describe('Spec 77: Browser-safe email/password auth', () => {
 
 			const deliveryBody = JSON.parse(String(fetchCalls[0]?.body)) as { to: string; html: string; text: string };
 			expect(deliveryBody.to).toBe('owner@example.com');
-			expect(deliveryBody.text).toContain('https://mulder.mulkatz.dev/auth/invitations/');
-			expect(deliveryBody.html).toContain('https://mulder.mulkatz.dev/auth/invitations/');
+			expect(deliveryBody.text).toContain('https://app.example.test/auth/invitations/');
+			expect(deliveryBody.html).toContain('https://app.example.test/auth/invitations/');
 		} finally {
 			globalThis.fetch = originalFetch;
 			if (originalDelivery === undefined) delete process.env.MULDER_INVITE_DELIVERY;
@@ -262,9 +262,9 @@ describe('Spec 77: Browser-safe email/password auth', () => {
 		}
 	});
 
-	it('QA-06: the demo bundle source does not reference VITE_MULDER_API_KEY', () => {
-		const apiClient = readFileSync(resolve(ROOT, 'demo/src/lib/api-client.ts'), 'utf8');
-		const authGate = readFileSync(resolve(ROOT, 'demo/src/app/AuthGate.tsx'), 'utf8');
+	it('QA-06: the app bundle source does not reference VITE_MULDER_API_KEY', () => {
+		const apiClient = readFileSync(resolve(ROOT, 'apps/app/src/lib/api-client.ts'), 'utf8');
+		const authGate = readFileSync(resolve(ROOT, 'apps/app/src/app/AuthGate.tsx'), 'utf8');
 		expect(apiClient).not.toContain('VITE_MULDER_API_KEY');
 		expect(authGate).not.toContain('VITE_MULDER_API_KEY');
 	});

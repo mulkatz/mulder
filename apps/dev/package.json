@@ -4,6 +4,6 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "node ../../demo/scripts/run-demo-stack.mjs"
+		"dev": "pnpm --filter @mulder/app dev"
 	}
 }

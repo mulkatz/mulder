@@ -205,7 +205,8 @@ mulder/
 │
 ├── apps/
 │   ├── cli/                      # CLI application (commands/ + lib/)
-│   └── api/                      # HTTP API (routes/ + middleware/)
+│   ├── api/                      # HTTP API (routes/ + middleware/)
+│   └── app/                      # Browser app
 │
 ├── terraform/modules/            # GCP infrastructure
 │   └── {cloud-sql,storage,cloud-run,pubsub,firestore,budget,iam,networking}
@@ -216,7 +217,7 @@ mulder/
 │   ├── architecture-core-vs-domain.md # Architecture principle: domain-agnostic core (§D1–§D5)
 │   └── notes/improvements/            # Architecture delta documents (historical)
 │
-└── demo/                         # Demo UI
+└── tests/                        # Spec and integration tests
 ```
 
 `packages/evidence` is the public package boundary for Analyze-facing consumers. Keep the underlying analyze implementation in `packages/pipeline` unless a later spec intentionally migrates that code.
