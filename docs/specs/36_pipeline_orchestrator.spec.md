@@ -12,7 +12,7 @@ created: 2026-04-07
 
 Implement the full pipeline orchestrator (`mulder pipeline run`, `mulder pipeline status`, `mulder pipeline retry`). This is a coordinator that chains the existing pipeline steps (ingest → extract → segment → enrich → embed → graph) and persists per-source progress in the `pipeline_runs` / `pipeline_run_sources` tables so a crash at document N resumes from document N — not from the beginning. A failed source does not crash the batch; it is marked `failed` in `pipeline_run_sources` and the batch continues.
 
-This closes the M4 critical path: after this step, the pipeline can be driven end-to-end with a single command (`mulder pipeline run ./pdfs`), making v1.0 demo-ready once retrieval steps (D7+) land.
+This closes the M4 critical path: after this step, the pipeline can be driven end-to-end with a single command (`mulder pipeline run ./pdfs`), making v1.0 review-ready once retrieval steps (D7+) land.
 
 **Boundaries with individual step CLIs:** The per-step CLIs (`mulder ingest`, `mulder extract`, …, `mulder graph`) stay unchanged and remain the primary debugging tool. The orchestrator calls the same `execute*` functions the step CLIs call — it does not reimplement any step logic.
 

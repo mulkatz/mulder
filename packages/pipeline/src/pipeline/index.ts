@@ -18,7 +18,17 @@
  */
 
 import { performance } from 'node:perf_hooks';
-import type { Logger, MulderConfig, Services, Source, SourceStatus, StepError, Story, StoryStatus } from '@mulder/core';
+import type {
+	Logger,
+	MulderConfig,
+	Services,
+	Source,
+	SourceStatus,
+	SourceType,
+	StepError,
+	Story,
+	StoryStatus,
+} from '@mulder/core';
 import {
 	completedStepsFromProgress,
 	computeRequestedSteps,
@@ -174,10 +184,17 @@ export function shouldRun(
 	sourceStatus: SourceStatus,
 	storyStatuses: StoryStatus[],
 	options: PipelineRunOptions,
+	sourceType?: SourceType,
 ): boolean {
 	if (step === 'ingest') {
 		// Ingest is handled outside the per-source loop. Should never be
 		// asked of `shouldRun`, but defensively return false.
+		return false;
+	}
+
+	// Pre-structured types never have a segment step — skip unconditionally,
+	// even with `--force` (there is no segment implementation to retry).
+	if (step === 'segment' && sourceType !== undefined && isPrestructuredSourceType(sourceType)) {
 		return false;
 	}
 
@@ -211,6 +228,8 @@ export function shouldRun(
 
 	if (step === 'enrich') {
 		if (sourceStatus === 'segmented') return true;
+		// Pre-structured types skip segment, so they enter enrich at `extracted`.
+		if (sourceType !== undefined && isPrestructuredSourceType(sourceType) && sourceStatus === 'extracted') return true;
 		return storyStatuses.some((s) => storyStatusIndex(s) < targetStoryIdx);
 	}
 	if (step === 'embed') {
@@ -506,7 +525,7 @@ async function processSource(source: Source, ctx: ProcessSourceContext): Promise
 		const stories = await findStoriesBySourceId(ctx.pool, currentSource.id);
 		const storyStatuses = stories.map((s) => s.status);
 
-		if (!shouldRun(step, currentSource.status, storyStatuses, ctx.options)) {
+		if (!shouldRun(step, currentSource.status, storyStatuses, ctx.options, currentSource.sourceType)) {
 			sourceLog.debug({ step, sourceStatus: currentSource.status }, 'pipeline.source.step.skipped');
 			continue;
 		}

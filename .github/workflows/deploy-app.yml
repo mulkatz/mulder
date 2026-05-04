@@ -1,0 +1,101 @@
+name: Deploy App
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: GCP project id
+        required: true
+      region:
+        description: Cloud Run and Artifact Registry region
+        required: true
+      api_domain:
+        description: Public API origin
+        required: true
+      app_origin:
+        description: Public frontend origin
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS_JSON }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Enable required services
+        run: |
+          gcloud services enable \
+            artifactregistry.googleapis.com \
+            cloudbuild.googleapis.com \
+            run.googleapis.com \
+            secretmanager.googleapis.com \
+            sqladmin.googleapis.com \
+            --project "${{ inputs.project_id }}"
+
+      - name: Ensure Artifact Registry repository
+        run: |
+          gcloud artifacts repositories describe mulder \
+            --project "${{ inputs.project_id }}" \
+            --location "${{ inputs.region }}" >/dev/null 2>&1 || \
+          gcloud artifacts repositories create mulder \
+            --project "${{ inputs.project_id }}" \
+            --location "${{ inputs.region }}" \
+            --repository-format docker \
+            --description "Mulder API and worker containers"
+
+      - name: Configure Docker auth
+        run: gcloud auth configure-docker "${{ inputs.region }}-docker.pkg.dev" --quiet
+
+      - name: Build and push image
+        env:
+          IMAGE: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/mulder/mulder-api:${{ github.sha }}
+        run: |
+          docker build -f Dockerfile.api -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Deploy API service
+        env:
+          IMAGE: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/mulder/mulder-api:${{ github.sha }}
+          SERVICE_ACCOUNT: mulder-runtime@${{ inputs.project_id }}.iam.gserviceaccount.com
+        run: |
+          gcloud run deploy mulder-api \
+            --project "${{ inputs.project_id }}" \
+            --region "${{ inputs.region }}" \
+            --image "$IMAGE" \
+            --service-account "$SERVICE_ACCOUNT" \
+            --allow-unauthenticated \
+            --port 8080 \
+            --set-env-vars "NODE_ENV=production,MULDER_CONFIG=/secrets/mulder.config.yaml,MULDER_CORS_ORIGINS=${{ inputs.app_origin }},MULDER_APP_BASE_URL=${{ inputs.app_origin }},MULDER_INVITE_DELIVERY=resend,MULDER_MAIL_FROM=${{ vars.MULDER_MAIL_FROM }}" \
+            --set-secrets "/secrets/mulder.config.yaml=mulder-config-yaml:latest,RESEND_API_KEY=resend-api-key:latest"
+
+      - name: Deploy worker service
+        env:
+          IMAGE: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/mulder/mulder-api:${{ github.sha }}
+          SERVICE_ACCOUNT: mulder-runtime@${{ inputs.project_id }}.iam.gserviceaccount.com
+        run: |
+          gcloud run deploy mulder-worker \
+            --project "${{ inputs.project_id }}" \
+            --region "${{ inputs.region }}" \
+            --image "$IMAGE" \
+            --service-account "$SERVICE_ACCOUNT" \
+            --no-allow-unauthenticated \
+            --port 8080 \
+            --min-instances 1 \
+            --no-cpu-throttling \
+            --command node \
+            --args scripts/run-worker-service.mjs \
+            --set-env-vars "NODE_ENV=production,MULDER_CONFIG=/secrets/mulder.config.yaml,MULDER_WORKER_CONCURRENCY=1,MULDER_WORKER_POLL_INTERVAL_MS=5000" \
+            --set-secrets "/secrets/mulder.config.yaml=mulder-config-yaml:latest,RESEND_API_KEY=resend-api-key:latest"
+
+      - name: Smoke API
+        run: node scripts/smoke-live-api.mjs --api-url "${{ inputs.api_domain }}"

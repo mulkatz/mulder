@@ -118,6 +118,7 @@ export {
 	getStorageExtensionForDetection,
 	isOfficeOpenXmlDocx,
 	isOfficeOpenXmlSpreadsheet,
+	isPreStructuredType,
 	isReadableText,
 	isSupportedDocxFilename,
 	isSupportedDocxMediaType,

@@ -178,11 +178,11 @@ No divergences found. Implementation matches spec:
 
 ### §13 — Source Layout
 
-**[DIV-013] No `demo/` directory referenced in spec exists in unexpected context**
+**[DIV-013] Browser app source layout note**
 - **Severity:** NOTE
-- **Spec says:** §13 (line 2228) lists `demo/` — "Demo UI (existing)"
-- **Code does:** `demo/` directory exists from a previous phase
-- **Evidence:** This is consistent. Not a divergence.
+- **Spec says:** §13 lists a browser UI surface.
+- **Code does:** current browser product work lives in `apps/app`.
+- **Evidence:** This is consistent with the current app layout. Not a divergence.
 
 No divergences found. All directories listed in §13 exist:
 - packages/core, packages/pipeline, packages/retrieval, packages/taxonomy, packages/worker, packages/evidence
@@ -261,4 +261,4 @@ None.
 3. [DIV-006]: v2.0 migration files (009-011) will be created in M6
 4. [DIV-008]: `cost-estimator.ts` is M8-I2 scope
 5. [DIV-011]: `shared/types.ts` can be created when shared types are needed beyond service interfaces
-6. [DIV-013]: Not a real divergence — `demo/` exists as expected
+6. [DIV-013]: Not a real divergence — the browser app lives in `apps/app`
