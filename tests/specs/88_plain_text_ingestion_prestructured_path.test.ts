@@ -390,7 +390,16 @@ describe('Spec 88 — Plain Text Ingestion on the Pre-Structured Path', () => {
 	it('QA-08: API upload accepts Markdown media types and queues extract', async () => {
 		if (!pgAvailable) return;
 
-		const content = Buffer.from('# Uploaded Note\n\nBody.\n', 'utf-8');
+		const content = Buffer.from(
+			[
+				'# Uploaded Note',
+				'',
+				'Alpha beta gamma delta epsilon zeta eta theta iota kappa.',
+				'This uploaded Markdown body is long enough for cross-format duplicate metadata.',
+				'',
+			].join('\n'),
+			'utf-8',
+		);
 		const initiate = await apiPost('/api/uploads/documents/initiate', {
 			filename: 'note.md',
 			size_bytes: content.byteLength,
@@ -414,14 +423,79 @@ describe('Spec 88 — Plain Text Ingestion on the Pre-Structured Path', () => {
 		const processed = await processOneJob();
 		expect(processed.state).toBe('completed');
 		const sourceRow = db.runSql(
-			`SELECT source_type::text AS source_type, storage_path, format_metadata->>'media_type' AS media_type FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
+			`SELECT source_type::text AS source_type, storage_path, format_metadata->>'media_type' AS media_type, format_metadata->>'cross_format_dedup_basis' AS dedup_basis, format_metadata->>'cross_format_dedup_key' LIKE 'sha256:%' AS has_dedup_key FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
 		);
-		expect(sourceRow).toBe(`text|raw/${sourceId}/original.md|text/markdown`);
+		expect(sourceRow).toBe(`text|raw/${sourceId}/original.md|text/markdown|text_content|t`);
 		expect(
 			db.runSql(
 				`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
 			),
 		).toBe('1');
+	});
+
+	it('QA-08 regression: API upload finalization reports cross-format text duplicates', async () => {
+		if (!pgAvailable) return;
+
+		const sharedBody = [
+			'Cross Format Upload Report',
+			'',
+			'Alpha beta gamma delta epsilon zeta eta theta iota kappa.',
+			'This normalized body is shared across CLI ingest and browser upload finalization.',
+			'',
+		].join('\n');
+		const cliTextFile = join(tmpDir, 'cross-format-upload-report.txt');
+		writeFileSync(cliTextFile, sharedBody, 'utf-8');
+
+		const first = runCli(['ingest', cliTextFile]);
+		expect(first.exitCode, `${first.stdout}\n${first.stderr}`).toBe(0);
+		const existingSourceId = sourceIdForFilename('cross-format-upload-report.txt');
+		expect(
+			db.runSql(
+				`SELECT format_metadata->>'cross_format_dedup_basis' FROM sources WHERE id = ${sqlLiteral(existingSourceId)};`,
+			),
+		).toBe('text_content');
+
+		const uploadContent = Buffer.from(sharedBody.replace('Cross Format Upload Report', '# Cross Format Upload Report'));
+		const initiate = await apiPost('/api/uploads/documents/initiate', {
+			filename: 'cross-format-upload-report.md',
+			size_bytes: uploadContent.byteLength,
+			content_type: 'text/markdown',
+		});
+		expect(initiate.status).toBe(201);
+		const initiateBody = await readJson(initiate);
+		const provisionalSourceId = String((initiateBody.data as Record<string, unknown>).source_id);
+		const storagePath = String((initiateBody.data as Record<string, unknown>).storage_path);
+		writeUploadedObject(storagePath, uploadContent);
+
+		const complete = await apiPost('/api/uploads/documents/complete', {
+			source_id: provisionalSourceId,
+			filename: 'cross-format-upload-report.md',
+			storage_path: storagePath,
+			start_pipeline: true,
+		});
+		expect(complete.status).toBe(202);
+		const completeBody = await readJson(complete);
+		const jobId = String((completeBody.data as Record<string, unknown>).job_id);
+
+		const processed = await processOneJob();
+		expect(processed.state).toBe('completed');
+		expect(db.runSql('SELECT COUNT(*) FROM sources;')).toBe('1');
+		expect(existsSync(resolve(STORAGE_DIR, storagePath))).toBe(false);
+		expect(
+			db.runSql(
+				`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND payload->>'sourceId' = ${sqlLiteral(provisionalSourceId)};`,
+			),
+		).toBe('0');
+
+		const finalizePayload = JSON.parse(
+			db.runSql(`SELECT payload::text FROM jobs WHERE id = ${sqlLiteral(jobId)};`),
+		) as Record<string, unknown>;
+		expect(finalizePayload).toMatchObject({
+			sourceId: provisionalSourceId,
+			result_status: 'duplicate',
+			resolved_source_id: existingSourceId,
+			duplicate_of_source_id: existingSourceId,
+		});
 	});
 
 	it('QA-09: duplicate text ingest returns the existing text source', () => {
