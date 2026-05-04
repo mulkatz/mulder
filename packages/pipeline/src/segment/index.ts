@@ -106,6 +106,7 @@ async function loadPageImages(
 interface SegmentMetadataJson {
 	id: string;
 	document_id: string;
+	source_type: string;
 	title: string;
 	subtitle: string | null;
 	language: string;
@@ -119,6 +120,7 @@ interface SegmentMetadataJson {
 function buildSegmentMetadata(
 	storyId: string,
 	sourceId: string,
+	sourceType: string,
 	story: {
 		title: string;
 		subtitle: string | null;
@@ -139,6 +141,7 @@ function buildSegmentMetadata(
 	return {
 		id: storyId,
 		document_id: sourceId,
+		source_type: sourceType,
 		title: story.title,
 		subtitle: story.subtitle,
 		language: story.language,
@@ -332,7 +335,7 @@ export async function execute(
 		const storyId = randomUUID();
 
 		// Build metadata JSON
-		const metadata = buildSegmentMetadata(storyId, input.sourceId, story);
+		const metadata = buildSegmentMetadata(storyId, input.sourceId, source.sourceType, story);
 
 		const markdownUri = `segments/${input.sourceId}/${storyId}.md`;
 		const metadataUri = `segments/${input.sourceId}/${storyId}.meta.json`;
@@ -377,6 +380,7 @@ export async function execute(
 			gcsMetadataUri: metadataUri,
 			extractionConfidence: story.confidence,
 			metadata: {
+				source_type: source.sourceType,
 				dateReferences: story.date_references,
 				geographicReferences: story.geographic_references,
 			},
