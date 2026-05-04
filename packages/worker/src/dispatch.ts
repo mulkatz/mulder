@@ -17,6 +17,7 @@ import {
 	detectNativeText,
 	enqueueJob,
 	extractPdfMetadata,
+	findSourceByCrossFormatDedupKey,
 	findSourceByHash,
 	findSourceById,
 	findStoriesBySourceId,
@@ -30,8 +31,11 @@ import {
 	buildEmailFormatMetadata,
 	buildImageFormatMetadata,
 	buildSpreadsheetFormatMetadata,
+	buildTabularCrossFormatContent,
 	buildTextFormatMetadata,
 	CSV_MEDIA_TYPE,
+	decodeUtf8TextBuffer,
+	deriveMarkdownTitle,
 	detectSourceType,
 	executeEmbed,
 	executeEnrich,
@@ -39,6 +43,7 @@ import {
 	executeGraph,
 	executePipelineRun,
 	executeSegment,
+	getCrossFormatDedupKey,
 	getStorageExtensionForDetection,
 	isSupportedEmailMediaType,
 	isSupportedImageMediaType,
@@ -46,6 +51,7 @@ import {
 	isSupportedTextFilename,
 	isSupportedTextMediaType,
 	type PipelineRunOptions,
+	withCrossFormatDedupMetadata,
 } from '@mulder/pipeline';
 import {
 	type DocumentUploadFinalizeJobPayload,
@@ -345,6 +351,7 @@ async function finalizeUploadedDocument(
 			);
 		}
 
+		const textContent = decodeUtf8TextBuffer(buffer);
 		const formatMetadata = buildTextFormatMetadata(buffer, payload.filename, detection.mediaType);
 		if (!formatMetadata) {
 			throw new IngestError(
@@ -358,7 +365,11 @@ async function finalizeUploadedDocument(
 
 		finalizedMetadata = {
 			sourceType: 'text',
-			formatMetadata,
+			formatMetadata: withCrossFormatDedupMetadata(formatMetadata, {
+				content: textContent,
+				title: textContent ? deriveMarkdownTitle(textContent) : null,
+				basis: 'text_content',
+			}),
 			pageCount: 0,
 			hasNativeText: false,
 			nativeTextRatio: 0,
@@ -406,7 +417,13 @@ async function finalizeUploadedDocument(
 
 		finalizedMetadata = {
 			sourceType: 'spreadsheet',
-			formatMetadata: buildSpreadsheetFormatMetadata(buffer, payload.filename, detection.mediaType, extractionResult),
+			formatMetadata: withCrossFormatDedupMetadata(
+				buildSpreadsheetFormatMetadata(buffer, payload.filename, detection.mediaType, extractionResult),
+				{
+					content: buildTabularCrossFormatContent(extractionResult.sheets),
+					basis: 'tabular_rows',
+				},
+			),
 			pageCount: 0,
 			hasNativeText: false,
 			nativeTextRatio: 0,
@@ -444,13 +461,39 @@ async function finalizeUploadedDocument(
 
 		finalizedMetadata = {
 			sourceType: 'email',
-			formatMetadata: buildEmailFormatMetadata(buffer, payload.filename, detection.mediaType, extractionResult),
+			formatMetadata: withCrossFormatDedupMetadata(
+				buildEmailFormatMetadata(buffer, payload.filename, detection.mediaType, extractionResult),
+				{
+					content: [extractionResult.headers.subject, extractionResult.bodyText || extractionResult.bodyHtmlText]
+						.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+						.join('\n\n'),
+					title: extractionResult.headers.subject,
+					basis: 'email_body',
+				},
+			),
 			pageCount: 0,
 			hasNativeText: false,
 			nativeTextRatio: 0,
 			mediaType: detection.mediaType,
 			storageExtension: canonicalStorageExtension,
 		};
+	}
+
+	const crossFormatDedupKey = getCrossFormatDedupKey(finalizedMetadata.formatMetadata);
+	if (crossFormatDedupKey) {
+		const existingCrossFormatSource = await findSourceByCrossFormatDedupKey(pool, crossFormatDedupKey);
+		if (existingCrossFormatSource && existingCrossFormatSource.id !== payload.sourceId) {
+			await services.storage.delete(payload.storagePath);
+			log.info(
+				{ sourceId: existingCrossFormatSource.id, crossFormatDedupKey },
+				'Cross-format duplicate upload detected, skipping source creation',
+			);
+			return {
+				result_status: 'duplicate',
+				resolved_source_id: existingCrossFormatSource.id,
+				duplicate_of_source_id: existingCrossFormatSource.id,
+			};
+		}
 	}
 
 	const finalizedStoragePath = `raw/${payload.sourceId}/original.${finalizedMetadata.storageExtension}`;
