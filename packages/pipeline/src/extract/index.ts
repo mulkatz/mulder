@@ -65,9 +65,27 @@ import {
 	isSupportedTextMediaType,
 } from '../ingest/source-type.js';
 import { layoutToMarkdown } from './layout-to-markdown.js';
+import { assertFallbackOnlySupported, requireExtractRoute } from './source-routing.js';
 import type { ExtractInput, ExtractionData, ExtractResult, LayoutBlock, LayoutDocument, LayoutPage } from './types.js';
 
 export { layoutToMarkdown } from './layout-to-markdown.js';
+export type {
+	ExtractRouteKind,
+	ExtractSourceRoute,
+	LayoutExtractRoute,
+	LayoutExtractSourceType,
+	PrestructuredExtractRoute,
+	PrestructuredExtractSourceType,
+} from './source-routing.js';
+export {
+	assertFallbackOnlySupported,
+	EXTRACT_LAYOUT_SOURCE_TYPES,
+	EXTRACT_PRESTRUCTURED_SOURCE_TYPES,
+	EXTRACT_SOURCE_TYPES,
+	isAcceptedExtractSourceType,
+	requireExtractRoute,
+	resolveExtractRoute,
+} from './source-routing.js';
 export type {
 	ExtractInput,
 	ExtractionData,
@@ -2109,6 +2127,10 @@ export async function execute(
 			context: { sourceId: input.sourceId },
 		});
 	}
+	const route = requireExtractRoute(source.sourceType, { sourceId: input.sourceId });
+	if (input.fallbackOnly) {
+		assertFallbackOnlySupported(route, { sourceId: input.sourceId });
+	}
 
 	// 2. Validate status
 	const validStatuses = ['ingested', 'extracted', 'segmented', 'enriched', 'embedded', 'graphed', 'analyzed'];
@@ -2144,81 +2166,73 @@ export async function execute(
 	const errors: StepError[] = [];
 	let extractionData: ExtractionData;
 
-	// ── Path C: Fallback only ────────────────────────────
-	if (
-		(source.sourceType === 'text' ||
-			source.sourceType === 'docx' ||
-			source.sourceType === 'spreadsheet' ||
-			source.sourceType === 'email' ||
-			source.sourceType === 'url') &&
-		input.fallbackOnly
-	) {
-		throw new ExtractError(
-			`Source type "${source.sourceType}" does not support vision fallback`,
-			EXTRACT_ERROR_CODES.EXTRACT_INVALID_STATUS,
-			{ context: { sourceId: input.sourceId, sourceType: source.sourceType } },
-		);
-	}
-
-	if (!input.fallbackOnly && source.sourceType === 'text') {
-		extractionData = await extractTextSource({
-			sourceId: input.sourceId,
-			filename: source.filename,
-			storagePath: source.storagePath,
-			formatMetadata: source.formatMetadata,
-			config,
-			services,
-			pool,
-			stepConfigHash,
-			logger: log,
-		});
-	} else if (!input.fallbackOnly && source.sourceType === 'docx') {
-		extractionData = await extractDocxSource({
-			sourceId: input.sourceId,
-			filename: source.filename,
-			storagePath: source.storagePath,
-			config,
-			services,
-			pool,
-			stepConfigHash,
-			logger: log,
-		});
-	} else if (!input.fallbackOnly && source.sourceType === 'spreadsheet') {
-		extractionData = await extractSpreadsheetSource({
-			sourceId: input.sourceId,
-			filename: source.filename,
-			storagePath: source.storagePath,
-			formatMetadata: source.formatMetadata,
-			config,
-			services,
-			pool,
-			stepConfigHash,
-			logger: log,
-		});
-	} else if (!input.fallbackOnly && source.sourceType === 'email') {
-		extractionData = await extractEmailSource({
-			sourceId: input.sourceId,
-			filename: source.filename,
-			storagePath: source.storagePath,
-			formatMetadata: source.formatMetadata,
-			config,
-			services,
-			pool,
-			stepConfigHash,
-			logger: log,
-		});
-	} else if (!input.fallbackOnly && source.sourceType === 'url') {
-		extractionData = await extractUrlSource({
-			sourceId: input.sourceId,
-			filename: source.filename,
-			storagePath: source.storagePath,
-			formatMetadata: source.formatMetadata,
-			config,
-			services,
-			pool,
-			stepConfigHash,
-			logger: log,
-		});
+	if (!input.fallbackOnly && route.kind === 'prestructured') {
+		switch (route.sourceType) {
+			case 'text':
+				extractionData = await extractTextSource({
+					sourceId: input.sourceId,
+					filename: source.filename,
+					storagePath: source.storagePath,
+					formatMetadata: source.formatMetadata,
+					config,
+					services,
+					pool,
+					stepConfigHash,
+					logger: log,
+				});
+				break;
+			case 'docx':
+				extractionData = await extractDocxSource({
+					sourceId: input.sourceId,
+					filename: source.filename,
+					storagePath: source.storagePath,
+					config,
+					services,
+					pool,
+					stepConfigHash,
+					logger: log,
+				});
+				break;
+			case 'spreadsheet':
+				extractionData = await extractSpreadsheetSource({
+					sourceId: input.sourceId,
+					filename: source.filename,
+					storagePath: source.storagePath,
+					formatMetadata: source.formatMetadata,
+					config,
+					services,
+					pool,
+					stepConfigHash,
+					logger: log,
+				});
+				break;
+			case 'email':
+				extractionData = await extractEmailSource({
+					sourceId: input.sourceId,
+					filename: source.filename,
+					storagePath: source.storagePath,
+					formatMetadata: source.formatMetadata,
+					config,
+					services,
+					pool,
+					stepConfigHash,
+					logger: log,
+				});
+				break;
+			case 'url':
+				extractionData = await extractUrlSource({
+					sourceId: input.sourceId,
+					filename: source.filename,
+					storagePath: source.storagePath,
+					formatMetadata: source.formatMetadata,
+					config,
+					services,
+					pool,
+					stepConfigHash,
+					logger: log,
+				});
+				break;
+		}
 	} else if (input.fallbackOnly) {
 		log.info('Running vision fallback only on existing extraction');
 
@@ -2285,14 +2299,6 @@ export async function execute(
 		};
 	} else {
 		// ── Path A or B: Full extraction ────────────────────
-		if (source.sourceType !== 'pdf' && source.sourceType !== 'image') {
-			throw new ExtractError(
-				`Source type "${source.sourceType}" is not supported by the layout extract step`,
-				EXTRACT_ERROR_CODES.EXTRACT_INVALID_STATUS,
-				{ context: { sourceId: input.sourceId, sourceType: source.sourceType } },
-			);
-		}
-
 		// 3. Download source original
 		const storagePath = source.storagePath;
 		let sourceBuffer: Buffer;
