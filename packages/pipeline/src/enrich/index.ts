@@ -12,16 +12,19 @@
  */
 
 import { performance } from 'node:perf_hooks';
-import type { Logger, MulderConfig, Services, StepError } from '@mulder/core';
+import type { DocumentQualityAssessment, Logger, MulderConfig, Services, StepError } from '@mulder/core';
 import {
 	createChildLogger,
 	deleteEdgesByStoryId,
+	deleteKnowledgeAssertionsForStory,
 	deleteStoryEntitiesByStoryId,
 	ENRICH_ERROR_CODES,
 	EnrichError,
+	findLatestDocumentQualityAssessment,
 	findStoryById,
 	getStepConfigHash,
 	linkStoryEntity,
+	normalizeConfidenceMetadata,
 	provenanceForSource,
 	renderPrompt,
 	resetPipelineStep,
@@ -29,6 +32,7 @@ import {
 	updateStoryStatus,
 	upsertEdge,
 	upsertEntityByNameType,
+	upsertKnowledgeAssertion,
 	upsertSourceStep,
 } from '@mulder/core';
 import { normalizeTaxonomy } from '@mulder/taxonomy';
@@ -44,6 +48,7 @@ export type {
 	ResolutionTier,
 	ResolveEntityOptions,
 } from './resolution-types.js';
+export type { ExtractionSchemaOptions } from './schema.js';
 export {
 	generateExtractionSchema,
 	getEntityTypeNames,
@@ -53,6 +58,7 @@ export type {
 	EnrichInput,
 	EnrichmentData,
 	EnrichResult,
+	ExtractedAssertion,
 	ExtractedEntity,
 	ExtractedRelationship,
 	ExtractionResponse,
@@ -87,6 +93,38 @@ const PARAGRAPH_CHARS_PER_TOKEN = 2;
 
 function estimateParagraphTokens(text: string): number {
 	return Math.ceil(text.length / PARAGRAPH_CHARS_PER_TOKEN);
+}
+
+function buildAssertionQualityMetadata(assessment: DocumentQualityAssessment | null): Record<string, unknown> | null {
+	if (!assessment) {
+		return null;
+	}
+
+	return {
+		document_quality_assessment_id: assessment.id,
+		overall_quality: assessment.overallQuality,
+		processable: assessment.processable,
+		recommended_path: assessment.recommendedPath,
+		assessed_at: assessment.assessedAt.toISOString(),
+	};
+}
+
+function mapAssertionEntityIds(
+	entityNames: readonly string[] | undefined,
+	entityNameToId: Map<string, string>,
+): string[] {
+	if (!entityNames) {
+		return [];
+	}
+
+	const entityIds = new Set<string>();
+	for (const entityName of entityNames) {
+		const id = entityNameToId.get(entityName.trim());
+		if (id) {
+			entityIds.add(id);
+		}
+	}
+	return [...entityIds].sort();
 }
 
 // ────────────────────────────────────────────────────────────
@@ -139,6 +177,7 @@ function mergeExtractionResponses(responses: ExtractionResponse[]): ExtractionRe
 	const entityMap = new Map<string, ExtractionResponse['entities'][0]>();
 	const relationshipSet = new Set<string>();
 	const mergedRelationships: ExtractionResponse['relationships'] = [];
+	const assertionMap = new Map<string, NonNullable<ExtractionResponse['assertions']>[0]>();
 
 	for (const response of responses) {
 		for (const entity of response.entities) {
@@ -165,12 +204,29 @@ function mergeExtractionResponses(responses: ExtractionResponse[]): ExtractionRe
 				mergedRelationships.push(rel);
 			}
 		}
+
+		for (const assertion of response.assertions ?? []) {
+			const key = `${assertion.assertion_type}:${assertion.content}`;
+			const existing = assertionMap.get(key);
+			if (existing) {
+				assertionMap.set(key, {
+					...existing,
+					entity_names: [...new Set([...(existing.entity_names ?? []), ...(assertion.entity_names ?? [])])].sort(),
+				});
+			} else {
+				assertionMap.set(key, assertion);
+			}
+		}
 	}
 
-	return {
+	const merged: ExtractionResponse = {
 		entities: [...entityMap.values()],
 		relationships: mergedRelationships,
 	};
+	if (assertionMap.size > 0) {
+		merged.assertions = [...assertionMap.values()];
+	}
+	return merged;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -182,10 +238,11 @@ function mergeExtractionResponses(responses: ExtractionResponse[]): ExtractionRe
  * Deletes story_entities and entity_edges, resets story status to segmented.
  */
 async function forceCleanupStory(storyId: string, pool: pg.Pool, logger: Logger): Promise<void> {
+	const deletedAssertions = await deleteKnowledgeAssertionsForStory(pool, storyId);
 	const deletedLinks = await deleteStoryEntitiesByStoryId(pool, storyId);
 	const deletedEdges = await deleteEdgesByStoryId(pool, storyId);
 	await updateStoryStatus(pool, storyId, 'segmented');
-	logger.debug({ storyId, deletedLinks, deletedEdges }, 'Force cleanup complete for story');
+	logger.debug({ storyId, deletedAssertions, deletedLinks, deletedEdges }, 'Force cleanup complete for story');
 }
 
 /**
@@ -242,6 +299,12 @@ export async function execute(
 		});
 	}
 	const artifactProvenance = provenanceForSource(story.sourceId, input.extractionPipelineRun ?? null);
+	const assertionClassificationConfig = config.enrichment.assertion_classification;
+	const assertionClassificationEnabled = assertionClassificationConfig.enabled;
+	const latestQualityAssessment = assertionClassificationEnabled
+		? await findLatestDocumentQualityAssessment(pool, story.sourceId)
+		: null;
+	const assertionQualityMetadata = buildAssertionQualityMetadata(latestQualityAssessment);
 
 	// 2. Validate status — must be at least "segmented"
 	const validStatuses = ['segmented', 'enriched', 'embedded', 'graphed', 'analyzed'];
@@ -306,8 +369,9 @@ export async function execute(
 
 	// 6. Generate JSON Schema from ontology
 	const ontology = config.ontology;
-	const jsonSchema = generateExtractionSchema(ontology);
-	const responseSchema = getExtractionResponseSchema(ontology);
+	const extractionSchemaOptions = { assertionClassificationEnabled };
+	const jsonSchema = generateExtractionSchema(ontology, extractionSchemaOptions);
+	const responseSchema = getExtractionResponseSchema(ontology, extractionSchemaOptions);
 
 	// 7. Build ontology description for the prompt
 	const ontologyDescription = JSON.stringify(
@@ -389,6 +453,7 @@ export async function execute(
 		{
 			entities: extraction.entities.length,
 			relationships: extraction.relationships.length,
+			assertions: extraction.assertions?.length ?? 0,
 			chunksUsed: textChunks.length,
 			chunksSucceeded: chunkResponses.length,
 		},
@@ -526,7 +591,42 @@ export async function execute(
 		}
 	}
 
-	// 13. Determine overall status
+	// 13. Persist classified assertions after resolved entity IDs are known.
+	let assertionsPersisted = 0;
+
+	if (assertionClassificationEnabled) {
+		for (const assertion of extraction.assertions ?? []) {
+			const content = assertion.content.trim();
+			if (content.length === 0) {
+				continue;
+			}
+
+			try {
+				await upsertKnowledgeAssertion(pool, {
+					sourceId: story.sourceId,
+					storyId: input.storyId,
+					assertionType: assertion.assertion_type,
+					content,
+					confidenceMetadata: normalizeConfidenceMetadata(assertion.confidence_metadata),
+					classificationProvenance:
+						assertion.classification_provenance ?? assertionClassificationConfig.default_provenance,
+					extractedEntityIds: mapAssertionEntityIds(assertion.entity_names, entityNameToId),
+					provenance: artifactProvenance,
+					qualityMetadata: assertionQualityMetadata,
+				});
+				assertionsPersisted++;
+			} catch (cause: unknown) {
+				const message = cause instanceof Error ? cause.message : String(cause);
+				errors.push({
+					code: ENRICH_ERROR_CODES.ENRICH_ENTITY_WRITE_FAILED,
+					message: `Failed to persist assertion "${content}": ${message}`,
+				});
+				log.warn({ assertionType: assertion.assertion_type, err: cause }, 'Failed to persist assertion');
+			}
+		}
+	}
+
+	// 14. Determine overall status
 	const entitiesExtracted = sortedEntities.length;
 	let status: 'success' | 'partial' | 'failed';
 	if (errors.length === 0) {
@@ -537,7 +637,7 @@ export async function execute(
 		status = 'failed';
 	}
 
-	// 14. Update story status + source step
+	// 15. Update story status + source step
 	if (status !== 'failed') {
 		await updateStoryStatus(pool, input.storyId, 'enriched');
 		await upsertSourceStep(pool, {
@@ -555,7 +655,7 @@ export async function execute(
 		});
 	}
 
-	// 15. Firestore observability (fire-and-forget)
+	// 16. Firestore observability (fire-and-forget)
 	services.firestore
 		.setDocument('stories', input.storyId, {
 			status: status !== 'failed' ? 'enriched' : 'failed',
@@ -563,6 +663,7 @@ export async function execute(
 			entitiesExtracted,
 			entitiesResolved,
 			relationshipsCreated,
+			assertionsPersisted,
 		})
 		.catch(() => {
 			// Silently swallow — Firestore is best-effort observability
@@ -574,6 +675,7 @@ export async function execute(
 		entitiesExtracted,
 		entitiesResolved,
 		relationshipsCreated,
+		assertionsPersisted,
 		taxonomyEntriesAdded,
 		taxonomyLinked,
 		chunksUsed: textChunks.length,
@@ -585,6 +687,7 @@ export async function execute(
 			entitiesExtracted,
 			entitiesResolved,
 			relationshipsCreated,
+			assertionsPersisted,
 			taxonomyEntriesAdded,
 			taxonomyLinked,
 			chunksUsed: textChunks.length,

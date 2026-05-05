@@ -12,5 +12,15 @@
 ## Output Format
 {{ i18n.extract.output_format }}
 
+## Assertion Classification
+When the output schema contains an assertions array, extract concise assertions from the story and classify each one as exactly one of:
+- observation: empirical information stated as a data point without causal explanation.
+- interpretation: an author's reading or explanation of observations.
+- hypothesis: a formal, testable thesis or prediction.
+
+For borderline cases, use the more conservative label: prefer interpretation over observation unless the text is clearly empirical. Include confidence_metadata for each assertion with witness_count, measurement_based, contemporaneous, corroborated, peer_reviewed, and author_is_interpreter. Use classification_provenance only when the source itself explicitly distinguishes assertion type; otherwise omit it and let the system default apply. Link assertions to extracted entities through entity_names when the names match extracted entities.
+
+When the output schema does not contain an assertions array, omit assertion classification and return only the schema fields.
+
 {{ i18n.common.language_instruction }}
 {{ i18n.common.json_instruction }}

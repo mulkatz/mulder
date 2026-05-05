@@ -70,7 +70,9 @@ export function registerConfigCommands(program: Command): void {
 		.action(
 			withErrorHandler(async (path?: string) => {
 				const config = loadConfig(path);
-				const schema = generateExtractionSchema(config.ontology);
+				const schema = generateExtractionSchema(config.ontology, {
+					assertionClassificationEnabled: config.enrichment.assertion_classification.enabled,
+				});
 				printJson(schema);
 			}),
 		);

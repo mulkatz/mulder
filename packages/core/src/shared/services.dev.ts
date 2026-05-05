@@ -410,7 +410,29 @@ class DevLlmService implements LlmService {
 				});
 			}
 
-			result = JSON.parse(JSON.stringify({ entities, relationships }));
+			const assertions: Array<Record<string, unknown>> = [];
+			if (hasProperty('assertions')) {
+				assertions.push({
+					content: 'Dev mode fixture records a classified observation from the story text.',
+					assertion_type: 'observation',
+					confidence_metadata: {
+						witness_count: null,
+						measurement_based: false,
+						contemporaneous: false,
+						corroborated: false,
+						peer_reviewed: false,
+						author_is_interpreter: false,
+					},
+					classification_provenance: 'llm_auto',
+					entity_names: entities.map((entity) => String(entity.name)),
+				});
+			}
+
+			result = JSON.parse(
+				JSON.stringify(
+					hasProperty('assertions') ? { entities, relationships, assertions } : { entities, relationships },
+				),
+			);
 		}
 		// Detect entity resolution schema by checking for 'same_entity' property
 		else if (hasProperty('same_entity')) {

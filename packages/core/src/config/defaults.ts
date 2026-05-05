@@ -92,6 +92,15 @@ export const CONFIG_DEFAULTS = {
 	enrichment: {
 		model: 'gemini-2.5-flash',
 		max_story_tokens: 15000,
+		assertion_classification: {
+			enabled: true,
+			conservative_labeling: true,
+			require_confidence_metadata: true,
+			default_provenance: 'llm_auto' as const,
+			reviewable: true,
+			review_depth: 'spot_check' as const,
+			spot_check_percentage: 20,
+		},
 	},
 
 	taxonomy: {

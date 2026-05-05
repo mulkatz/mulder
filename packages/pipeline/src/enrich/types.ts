@@ -9,7 +9,7 @@
  * @see docs/functional-spec.md §2.4
  */
 
-import type { StepError } from '@mulder/core';
+import type { AssertionType, ClassificationProvenance, ConfidenceMetadata, StepError } from '@mulder/core';
 
 // ────────────────────────────────────────────────────────────
 // Step input / output
@@ -41,6 +41,7 @@ export interface EnrichmentData {
 	entitiesExtracted: number;
 	entitiesResolved: number;
 	relationshipsCreated: number;
+	assertionsPersisted: number;
 	taxonomyEntriesAdded: number;
 	/**
 	 * Number of entity rows in this story whose `taxonomy_id` was set
@@ -75,8 +76,25 @@ export interface ExtractedRelationship {
 	attributes?: Record<string, unknown>;
 }
 
+/** A classified assertion extracted from a story by Gemini. */
+export interface ExtractedAssertion {
+	content: string;
+	assertion_type: AssertionType;
+	confidence_metadata: {
+		witness_count: ConfidenceMetadata['witnessCount'];
+		measurement_based: ConfidenceMetadata['measurementBased'];
+		contemporaneous: ConfidenceMetadata['contemporaneous'];
+		corroborated: ConfidenceMetadata['corroborated'];
+		peer_reviewed: ConfidenceMetadata['peerReviewed'];
+		author_is_interpreter: ConfidenceMetadata['authorIsInterpreter'];
+	};
+	classification_provenance?: ClassificationProvenance;
+	entity_names?: string[];
+}
+
 /** The full extraction response from Gemini. */
 export interface ExtractionResponse {
 	entities: ExtractedEntity[];
 	relationships: ExtractedRelationship[];
+	assertions?: ExtractedAssertion[];
 }

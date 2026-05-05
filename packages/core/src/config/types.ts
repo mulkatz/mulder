@@ -8,6 +8,7 @@ import type {
 	analysisSchema,
 	apiBudgetSchema,
 	apiSchema,
+	assertionClassificationSchema,
 	cloudSqlSchema,
 	deduplicationSchema,
 	documentAiSchema,
@@ -50,6 +51,7 @@ export type DocumentAiConfig = z.infer<typeof documentAiSchema>;
 export type IngestionConfig = z.infer<typeof ingestionSchema>;
 export type ExtractionConfig = z.infer<typeof extractionSchema>;
 export type EnrichmentConfig = z.infer<typeof enrichmentSchema>;
+export type AssertionClassificationConfig = z.infer<typeof assertionClassificationSchema>;
 export type EntityResolutionConfig = z.infer<typeof entityResolutionSchema>;
 export type DeduplicationConfig = z.infer<typeof deduplicationSchema>;
 export type DocumentQualityConfig = z.infer<typeof documentQualitySchema>;
