@@ -151,6 +151,65 @@ const extractionObj = z.object({
 });
 const extractionSchema = extractionObj.default(defaults(extractionObj));
 
+// --- Document Quality ---
+
+const documentQualityAssessmentSchema = z.object({
+	method: z.enum(['ocr_confidence', 'gemini_vision', 'both']).default('ocr_confidence'),
+	engine: z.string().min(1).nullable().default(null),
+	ocr_confidence_threshold: z.number().min(0).max(1).default(0.7),
+	native_text_ratio_threshold: z.number().min(0).max(1).default(0.5),
+});
+
+const extractionPathSchema = z.enum([
+	'standard',
+	'enhanced_ocr',
+	'visual_extraction',
+	'handwriting_recognition',
+	'manual_transcription_required',
+	'skip',
+]);
+
+function documentQualityRouteSchema(defaultPath: z.infer<typeof extractionPathSchema>) {
+	return z.object({
+		path: extractionPathSchema.default(defaultPath),
+		fallback: extractionPathSchema.optional(),
+		create_manual_task: z.boolean().optional(),
+	});
+}
+
+const highQualityRouteSchema = documentQualityRouteSchema('standard');
+const mediumQualityRouteSchema = documentQualityRouteSchema('enhanced_ocr');
+const lowQualityRouteSchema = documentQualityRouteSchema('visual_extraction');
+const unusableQualityRouteSchema = documentQualityRouteSchema('skip');
+
+const documentQualityRoutingSchema = z.object({
+	high: highQualityRouteSchema.default({ path: 'standard' }),
+	medium: mediumQualityRouteSchema.default({ path: 'enhanced_ocr', fallback: 'visual_extraction' }),
+	low: lowQualityRouteSchema.default({ path: 'visual_extraction', fallback: 'manual_transcription_required' }),
+	unusable: unusableQualityRouteSchema.default({ path: 'skip', create_manual_task: false }),
+});
+
+const documentQualityPropagationSchema = z.object({
+	enabled: z.boolean().default(true),
+	low_quality_embedding_weight: z.number().min(0).max(1).default(0.5),
+	low_quality_assertion_penalty: z.number().min(0).max(1).default(0.3),
+});
+
+const documentQualityManualQueueSchema = z.object({
+	enabled: z.boolean().default(false),
+	notify_reviewers: z.boolean().default(false),
+	priority: z.enum(['low', 'normal', 'high']).default('normal'),
+});
+
+const documentQualityObj = z.object({
+	enabled: z.boolean().default(true),
+	assessment: documentQualityAssessmentSchema.default(defaults(documentQualityAssessmentSchema)),
+	routing: documentQualityRoutingSchema.default(defaults(documentQualityRoutingSchema)),
+	quality_propagation: documentQualityPropagationSchema.default(defaults(documentQualityPropagationSchema)),
+	manual_queue: documentQualityManualQueueSchema.default(defaults(documentQualityManualQueueSchema)),
+});
+const documentQualitySchema = documentQualityObj.default(defaults(documentQualityObj));
+
 // --- Enrichment ---
 
 const enrichmentObj = z.object({
@@ -408,6 +467,7 @@ const baseMulderConfigSchema = z.object({
 	ontology: ontologySchema,
 	ingestion: ingestionSchema,
 	extraction: extractionSchema,
+	document_quality: documentQualitySchema,
 	enrichment: enrichmentSchema,
 	taxonomy: taxonomySchema,
 	entity_resolution: entityResolutionSchema,
@@ -474,6 +534,7 @@ export {
 	cloudSqlSchema,
 	deduplicationSchema,
 	documentAiSchema,
+	documentQualitySchema,
 	embeddingSchema,
 	enrichmentSchema,
 	entityResolutionSchema,

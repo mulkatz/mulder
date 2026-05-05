@@ -126,6 +126,28 @@ extraction:
   segmentation:
     model: "gemini-2.5-flash"
 
+# --- Document Quality ---
+document_quality:
+  enabled: true
+  assessment:
+    method: "ocr_confidence"          # Local/default: no external calls
+    engine: null
+    ocr_confidence_threshold: 0.7
+    native_text_ratio_threshold: 0.5
+  routing:
+    high: { path: "standard" }
+    medium: { path: "enhanced_ocr", fallback: "visual_extraction" }
+    low: { path: "visual_extraction", fallback: "manual_transcription_required" }
+    unusable: { path: "skip", create_manual_task: false }
+  quality_propagation:
+    enabled: true
+    low_quality_embedding_weight: 0.5
+    low_quality_assertion_penalty: 0.3
+  manual_queue:
+    enabled: false
+    notify_reviewers: false
+    priority: "normal"
+
 # --- Enrichment ---
 enrichment:
   model: "gemini-2.5-flash"

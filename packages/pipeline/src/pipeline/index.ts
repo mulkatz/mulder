@@ -61,6 +61,7 @@ import { execute as executeEnrich } from '../enrich/index.js';
 import { execute as executeExtract } from '../extract/index.js';
 import { execute as executeGraph } from '../graph/index.js';
 import { execute as executeIngest, type IngestFileResult, isUrlLikeInput, resolvePdfFiles } from '../ingest/index.js';
+import { execute as executeQuality } from '../quality/index.js';
 import { execute as executeSegment } from '../segment/index.js';
 import type {
 	PipelineGlobalAnalysisOutcome,
@@ -137,6 +138,8 @@ function targetSourceStatusForStep(step: PipelineStepName): SourceStatus {
 	switch (step) {
 		case 'ingest':
 			return 'ingested';
+		case 'quality':
+			return 'ingested';
 		case 'extract':
 			return 'extracted';
 		case 'segment':
@@ -190,6 +193,10 @@ export function shouldRun(
 		// Ingest is handled outside the per-source loop. Should never be
 		// asked of `shouldRun`, but defensively return false.
 		return false;
+	}
+
+	if (step === 'quality') {
+		return sourceStatus === 'ingested' || options.force === true;
 	}
 
 	// Pre-structured types never have a segment step — skip unconditionally,
@@ -348,6 +355,8 @@ function getSourcePlan(source: Source, ctx: ProcessSourceContext): StepPlan {
 
 function eligibleStatusesForFirstStep(firstStep: PipelineStepName): SourceStatus[] {
 	switch (firstStep) {
+		case 'quality':
+			return ['ingested'];
 		case 'extract':
 			return ['ingested'];
 		case 'segment':
@@ -582,6 +591,10 @@ async function runStepForSource(
 ): Promise<void> {
 	const force = ctx.options.force ?? false;
 
+	if (step === 'quality') {
+		await executeQuality({ sourceId: source.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
+		return;
+	}
 	if (step === 'extract') {
 		await executeExtract({ sourceId: source.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
 		return;

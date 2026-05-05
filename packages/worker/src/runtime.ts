@@ -24,6 +24,7 @@ import {
 	findMonthlyBudgetReservationByRunId,
 	findPipelineRunSourcesByRunId,
 	findSourceById,
+	findSourceStep,
 	markJobCompleted,
 	markJobFailed,
 	type PipelinePlanStep,
@@ -57,6 +58,7 @@ import {
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_STALE_JOB_AGE_MS = 2 * 60 * 60 * 1000;
 const STEP_ORDER = [
+	'quality',
 	'extract',
 	'segment',
 	'enrich',
@@ -361,14 +363,16 @@ async function chainStepJobAfterSuccess(
 	});
 	const nextStep = nextStepAfterPlan(stepPlan, job.type);
 	await recordSkippedSourceSteps(pool, sourceRunPayload.sourceId, stepPlan);
+	const currentStep = await findSourceStep(pool, sourceRunPayload.sourceId, job.type);
+	const stopAfterSkippedStep = job.type === 'extract' && currentStep?.status === 'skipped';
 	await upsertPipelineRunSource(pool, {
 		runId: sourceRunPayload.runId,
 		sourceId: sourceRunPayload.sourceId,
 		currentStep: job.type,
-		status: nextStep ? 'processing' : 'completed',
+		status: nextStep && !stopAfterSkippedStep ? 'processing' : 'completed',
 	});
 
-	if (nextStep) {
+	if (nextStep && !stopAfterSkippedStep) {
 		await enqueueJob(pool, {
 			type: nextStep,
 			payload: {

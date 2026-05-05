@@ -184,7 +184,7 @@ function deriveRetryStep(latest: PipelineRunSource, explicitStep?: PipelineStep)
 function planSourcePipeline(input: { source: Source; from?: PipelineStep; upTo?: PipelineStep }): StepPlan {
 	return planPipelineSteps({
 		sourceType: input.source.sourceType,
-		from: input.from ?? 'extract',
+		from: input.from ?? 'quality',
 		upTo: input.upTo,
 	});
 }

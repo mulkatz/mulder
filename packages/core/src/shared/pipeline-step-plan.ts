@@ -17,6 +17,7 @@ export type PipelinePlanStep = 'ingest' | PipelineStep;
 
 export const PIPELINE_STEP_ORDER: readonly PipelinePlanStep[] = [
 	'ingest',
+	'quality',
 	'extract',
 	'segment',
 	'enrich',

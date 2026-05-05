@@ -20,6 +20,7 @@ export type {
 	CloudSqlConfig,
 	DeduplicationConfig,
 	DocumentAiConfig,
+	DocumentQualityConfig,
 	EmbeddingConfig,
 	EnrichmentConfig,
 	EntityResolutionConfig,

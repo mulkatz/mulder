@@ -607,9 +607,14 @@ describe('Spec 89 — DOCX Ingestion on the Pre-Structured Path', () => {
 		]);
 		expect(
 			db.runSql(
-				`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
+				`SELECT COUNT(*) FROM jobs WHERE type = 'quality' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
 			),
 		).toBe('1');
+		expect(
+			db.runSql(
+				`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
+			),
+		).toBe('0');
 	});
 
 	it('QA-10: duplicate DOCX ingest returns the existing source', () => {

@@ -65,6 +65,26 @@ export {
 	findDocumentBlobByHash,
 	upsertDocumentBlob,
 } from './document-blob.repository.js';
+export {
+	createDocumentQualityAssessment,
+	findDocumentQualityAssessmentById,
+	findLatestDocumentQualityAssessment,
+	listDocumentQualityAssessmentsForSource,
+	normalizeDocumentQualityDimensions,
+	normalizeDocumentQualitySignals,
+} from './document-quality.repository.js';
+export type {
+	CompactDocumentQualitySummary,
+	CreateDocumentQualityAssessmentInput,
+	DocumentOverallQuality,
+	DocumentQualityAssessment,
+	DocumentQualityAssessmentMethod,
+	DocumentQualityDimensions,
+	DocumentQualityOverride,
+	DocumentQualitySignals,
+	DocumentStructureType,
+	ExtractionPath,
+} from './document-quality.types.js';
 export type { EdgeTypePageFilter } from './edge.repository.js';
 export {
 	countEdges,

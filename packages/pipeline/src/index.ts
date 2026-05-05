@@ -194,6 +194,12 @@ export {
 	STEP_ORDER,
 	shouldRun,
 } from './pipeline/index.js';
+export type { QualityData, QualityInput, QualityResult } from './quality/index.js';
+export {
+	buildCompactDocumentQualitySummary,
+	execute as executeQuality,
+	isAutomaticExtractionAllowed,
+} from './quality/index.js';
 export type {
 	ReprocessInput,
 	ReprocessPlan,

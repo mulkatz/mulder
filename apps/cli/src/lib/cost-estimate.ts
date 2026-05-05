@@ -343,6 +343,7 @@ export function mapPipelineStepsToEstimateSteps(plannedSteps: readonly PipelineS
 				estimatedSteps.push(step);
 				break;
 			case 'ingest':
+			case 'quality':
 				break;
 		}
 	}

@@ -576,7 +576,8 @@ describe('Spec 98 - Content-addressed raw blob storage', () => {
 		);
 		expect(existsSync(storageObjectPath(expectedPath))).toBe(true);
 		expect(existsSync(storageObjectPath(finalized.provisionalPath))).toBe(false);
-		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending';"))).toBe(1);
+		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'quality' AND status = 'pending';"))).toBe(1);
+		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending';"))).toBe(0);
 		expect(finalized.finalizePayload).toMatchObject({
 			sourceId: finalized.sourceId,
 			result_status: 'created',
@@ -608,7 +609,7 @@ describe('Spec 98 - Content-addressed raw blob storage', () => {
 		expect(
 			Number(
 				db.runSql(
-					`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND payload->>'sourceId' = ${sqlLiteral(second.sourceId)};`,
+					`SELECT COUNT(*) FROM jobs WHERE type IN ('quality', 'extract') AND payload->>'sourceId' = ${sqlLiteral(second.sourceId)};`,
 				),
 			),
 		).toBe(0);
@@ -651,7 +652,7 @@ describe('Spec 98 - Content-addressed raw blob storage', () => {
 		expect(
 			Number(
 				db.runSql(
-					`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND payload->>'sourceId' = ${sqlLiteral(first.sourceId)};`,
+					`SELECT COUNT(*) FROM jobs WHERE type IN ('quality', 'extract') AND payload->>'sourceId' = ${sqlLiteral(first.sourceId)};`,
 				),
 			),
 		).toBe(0);

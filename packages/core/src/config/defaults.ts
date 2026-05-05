@@ -63,6 +63,32 @@ export const CONFIG_DEFAULTS = {
 		},
 	},
 
+	document_quality: {
+		enabled: true,
+		assessment: {
+			method: 'ocr_confidence' as const,
+			engine: null,
+			ocr_confidence_threshold: 0.7,
+			native_text_ratio_threshold: 0.5,
+		},
+		routing: {
+			high: { path: 'standard' as const },
+			medium: { path: 'enhanced_ocr' as const, fallback: 'visual_extraction' as const },
+			low: { path: 'visual_extraction' as const, fallback: 'manual_transcription_required' as const },
+			unusable: { path: 'skip' as const, create_manual_task: false },
+		},
+		quality_propagation: {
+			enabled: true,
+			low_quality_embedding_weight: 0.5,
+			low_quality_assertion_penalty: 0.3,
+		},
+		manual_queue: {
+			enabled: false,
+			notify_reviewers: false,
+			priority: 'normal' as const,
+		},
+	},
+
 	enrichment: {
 		model: 'gemini-2.5-flash',
 		max_story_tokens: 15000,

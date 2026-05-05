@@ -372,7 +372,7 @@ async function executeStep(
 	services: Services,
 	pool: pg.Pool,
 	logger: Logger,
-): Promise<{ status: 'success' | 'partial' | 'failed'; errors: StepError[] }> {
+): Promise<{ status: 'success' | 'partial' | 'failed' | 'skipped'; errors: StepError[] }> {
 	switch (stepName) {
 		case 'extract': {
 			const result = await executeExtract({ sourceId, force }, config, services, pool, logger);

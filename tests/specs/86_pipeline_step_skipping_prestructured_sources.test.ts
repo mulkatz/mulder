@@ -25,7 +25,7 @@ const CORE_MIGRATIONS_DIR = resolve(ROOT, 'packages/core/src/database/migrations
 const SPEC_STORAGE_DIR = testStoragePath('segments', 'spec-86');
 
 type SourceTypeValue = 'pdf' | 'image' | 'text' | 'docx' | 'spreadsheet' | 'email' | 'url';
-type PipelineStepValue = 'ingest' | 'extract' | 'segment' | 'enrich' | 'embed' | 'graph';
+type PipelineStepValue = 'ingest' | 'quality' | 'extract' | 'segment' | 'enrich' | 'embed' | 'graph';
 type PlanPipelineSteps = (input: {
 	sourceType: SourceTypeValue;
 	from?: PipelineStepValue;
@@ -240,13 +240,13 @@ describe('Spec 86 — Pipeline Step Skipping for Pre-Structured Sources', () => 
 
 	it('QA-01/02/07: planner preserves layout sources and skips segment for pre-structured sources', () => {
 		expect(planPipelineSteps({ sourceType: 'pdf' })).toMatchObject({
-			executableSteps: ['ingest', 'extract', 'segment', 'enrich', 'embed', 'graph'],
+			executableSteps: ['ingest', 'quality', 'extract', 'segment', 'enrich', 'embed', 'graph'],
 			skippedSteps: [],
 		});
 
 		for (const sourceType of ['text', 'docx', 'spreadsheet', 'email', 'url'] as const) {
 			expect(planPipelineSteps({ sourceType })).toMatchObject({
-				executableSteps: ['ingest', 'extract', 'enrich', 'embed', 'graph'],
+				executableSteps: ['ingest', 'quality', 'extract', 'enrich', 'embed', 'graph'],
 				skippedSteps: ['segment'],
 			});
 		}

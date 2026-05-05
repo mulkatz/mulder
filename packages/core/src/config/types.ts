@@ -11,6 +11,7 @@ import type {
 	cloudSqlSchema,
 	deduplicationSchema,
 	documentAiSchema,
+	documentQualitySchema,
 	embeddingSchema,
 	enrichmentSchema,
 	entityResolutionSchema,
@@ -51,6 +52,7 @@ export type ExtractionConfig = z.infer<typeof extractionSchema>;
 export type EnrichmentConfig = z.infer<typeof enrichmentSchema>;
 export type EntityResolutionConfig = z.infer<typeof entityResolutionSchema>;
 export type DeduplicationConfig = z.infer<typeof deduplicationSchema>;
+export type DocumentQualityConfig = z.infer<typeof documentQualitySchema>;
 export type EmbeddingConfig = z.infer<typeof embeddingSchema>;
 export type RetrievalConfig = z.infer<typeof retrievalSchema>;
 export type GroundingConfig = z.infer<typeof groundingSchema>;
