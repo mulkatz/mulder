@@ -22,5 +22,20 @@ For borderline cases, use the more conservative label: prefer interpretation ove
 
 When the output schema does not contain an assertions array, omit assertion classification and return only the schema fields.
 
+## Sensitivity Detection
+Auto-detection: {{ sensitivity_auto_detection }}
+
+When auto-detection is true and the output schema contains a sensitivity object, include sensitivity for every extracted entity, relationship, and assertion. Use only these generic levels, ordered least to most restrictive: {{ sensitivity_levels }}. The default policy level is {{ sensitivity_default_level }}. Use only these pii_types values: {{ sensitivity_pii_types }}.
+
+Level guidance:
+- public: safe to share openly.
+- internal: ordinary non-public project material.
+- restricted: personal information, private locations, legal/financial details, or unpublished research that should be tightly limited.
+- confidential: highly sensitive personal or protected information where disclosure could cause harm.
+
+For borderline cases, classify conservatively upward. Set sensitivity.level to the most restrictive applicable level, sensitivity.reason to a short generic reason, sensitivity.pii_types to the matching configured values, and sensitivity.declassify_date to null unless the text states a concrete declassification date.
+
+When auto-detection is false or the output schema does not contain a sensitivity object, omit sensitivity fields and let the system default apply.
+
 {{ i18n.common.language_instruction }}
 {{ i18n.common.json_instruction }}

@@ -1,3 +1,4 @@
+import type { SensitivityLevel, SensitivityMetadata } from '../../shared/sensitivity.js';
 import type { ArtifactProvenance, ArtifactProvenanceInput } from './artifact-provenance.js';
 
 export type AssertionType = 'observation' | 'interpretation' | 'hypothesis';
@@ -24,6 +25,8 @@ export interface KnowledgeAssertion {
 	extractedEntityIds: string[];
 	provenance: ArtifactProvenance;
 	qualityMetadata: Record<string, unknown> | null;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
 	createdAt: Date;
 	updatedAt: Date;
 	deletedAt: Date | null;
@@ -39,6 +42,8 @@ export interface UpsertKnowledgeAssertionInput {
 	extractedEntityIds?: string[];
 	provenance?: ArtifactProvenanceInput;
 	qualityMetadata?: Record<string, unknown> | null;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 }
 
 export interface ListKnowledgeAssertionsInput {

@@ -254,6 +254,7 @@ export {
 	findSourcesWithFailedSteps,
 	findSourcesWithSteps,
 	updateSource,
+	updateSourceSensitivityFromArtifacts,
 	updateSourceStatus,
 	upsertSourceStep,
 } from './source.repository.js';
@@ -299,6 +300,7 @@ export {
 	findStoriesBySourceId,
 	findStoryById,
 	updateStory,
+	updateStorySensitivityFromArtifacts,
 	updateStoryStatus,
 } from './story.repository.js';
 export type {

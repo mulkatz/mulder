@@ -2,6 +2,8 @@
 
 export { ZodError } from 'zod';
 export type {
+	AccessControlConfig,
+	AccessControlSensitivityConfig,
 	AnalysisConfig,
 	ApiAuthConfig,
 	ApiAuthKeyConfig,
@@ -312,8 +314,10 @@ export {
 	updateEntity,
 	updateEntityEmbedding,
 	updateSource,
+	updateSourceSensitivityFromArtifacts,
 	updateSourceStatus,
 	updateStory,
+	updateStorySensitivityFromArtifacts,
 	updateStoryStatus,
 	updateTaxonomyEntry,
 	upsertDocumentBlob,
@@ -459,6 +463,26 @@ export { createServiceRegistry } from './shared/registry.js';
 export type { RetryOptions } from './shared/retry.js';
 // ── Retry ───────────────────────────────────────────────────
 export { withRetry } from './shared/retry.js';
+export type {
+	PIIType,
+	SensitivityAssignmentSource,
+	SensitivityLevel,
+	SensitivityMetadata,
+	SensitivityMetadataInput,
+	SensitivityTagged,
+} from './shared/sensitivity.js';
+export {
+	defaultSensitivityMetadata,
+	isSensitivityLevel,
+	mapSensitivityMetadataToDb,
+	mergeSensitivityMetadata,
+	mostRestrictiveSensitivityLevel,
+	normalizeSensitivityMetadata,
+	PII_TYPES,
+	SENSITIVITY_ASSIGNMENT_SOURCES,
+	SENSITIVITY_LEVELS,
+	stringifySensitivityMetadata,
+} from './shared/sensitivity.js';
 export { createGcpServices } from './shared/services.gcp.js';
 export type {
 	DocumentAiResult,

@@ -89,6 +89,33 @@ export const CONFIG_DEFAULTS = {
 		},
 	},
 
+	access_control: {
+		enabled: true,
+		sensitivity: {
+			levels: ['public', 'internal', 'restricted', 'confidential'],
+			default_level: 'internal' as const,
+			auto_detection: true,
+			propagation: 'upward' as const,
+			pii_types: [
+				'person_name',
+				'contact_info',
+				'medical_data',
+				'location_private',
+				'location_sighting',
+				'financial',
+				'unpublished_research',
+				'legal',
+			],
+		},
+		rbac: {
+			roles_source: 'config/roles.yaml',
+			default_role: 'analyst',
+		},
+		external_query_gate: {
+			enabled: false,
+		},
+	},
+
 	enrichment: {
 		model: 'gemini-2.5-flash',
 		max_story_tokens: 15000,

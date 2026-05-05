@@ -8,6 +8,8 @@
  * @see docs/functional-spec.md §4.3
  */
 
+import type { SensitivityLevel, SensitivityMetadata } from '../../shared/sensitivity.js';
+
 // ────────────────────────────────────────────────────────────
 // Status enums
 // ────────────────────────────────────────────────────────────
@@ -44,6 +46,8 @@ export interface Source {
 	reliabilityScore: number | null;
 	tags: string[];
 	metadata: Record<string, unknown>;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -62,6 +66,8 @@ export interface CreateSourceInput {
 	nativeTextRatio?: number;
 	tags?: string[];
 	metadata?: Record<string, unknown>;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 }
 
 /** Input for updating a source. Partial -- only provided fields are updated. */
@@ -79,6 +85,8 @@ export interface UpdateSourceInput {
 	reliabilityScore?: number | null;
 	tags?: string[];
 	metadata?: Record<string, unknown>;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 }
 
 /** Filters for querying sources. */

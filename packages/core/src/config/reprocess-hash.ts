@@ -23,6 +23,10 @@ type ReprocessHashSubset =
 	| { extraction: MulderConfig['extraction'] }
 	| { extraction: { segmentation: MulderConfig['extraction']['segmentation'] } }
 	| {
+			access_control: {
+				enabled: MulderConfig['access_control']['enabled'];
+				sensitivity: MulderConfig['access_control']['sensitivity'];
+			};
 			ontology: MulderConfig['ontology'];
 			enrichment: MulderConfig['enrichment'];
 			taxonomy: MulderConfig['taxonomy'];
@@ -77,6 +81,10 @@ export function getReprocessConfigSubset(config: MulderConfig, step: ReprocessHa
 			return { extraction: { segmentation: config.extraction.segmentation } };
 		case 'enrich':
 			return {
+				access_control: {
+					enabled: config.access_control.enabled,
+					sensitivity: config.access_control.sensitivity,
+				},
 				ontology: config.ontology,
 				enrichment: config.enrichment,
 				taxonomy: config.taxonomy,

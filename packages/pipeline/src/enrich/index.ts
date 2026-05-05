@@ -12,9 +12,18 @@
  */
 
 import { performance } from 'node:perf_hooks';
-import type { DocumentQualityAssessment, Logger, MulderConfig, Services, StepError } from '@mulder/core';
+import type {
+	DocumentQualityAssessment,
+	Logger,
+	MulderConfig,
+	SensitivityLevel,
+	SensitivityMetadata,
+	Services,
+	StepError,
+} from '@mulder/core';
 import {
 	createChildLogger,
+	defaultSensitivityMetadata,
 	deleteEdgesByStoryId,
 	deleteKnowledgeAssertionsForStory,
 	deleteStoryEntitiesByStoryId,
@@ -24,11 +33,16 @@ import {
 	findStoryById,
 	getStepConfigHash,
 	linkStoryEntity,
+	mapSensitivityMetadataToDb,
+	mergeSensitivityMetadata,
 	normalizeConfidenceMetadata,
+	normalizeSensitivityMetadata,
 	provenanceForSource,
 	renderPrompt,
 	resetPipelineStep,
 	updateEntity,
+	updateSourceSensitivityFromArtifacts,
+	updateStorySensitivityFromArtifacts,
 	updateStoryStatus,
 	upsertEdge,
 	upsertEntityByNameType,
@@ -39,7 +53,13 @@ import { normalizeTaxonomy } from '@mulder/taxonomy';
 import type pg from 'pg';
 import { resolveEntity } from './resolution.js';
 import { generateExtractionSchema, getExtractionResponseSchema } from './schema.js';
-import type { EnrichInput, EnrichmentData, EnrichResult, ExtractionResponse } from './types.js';
+import type {
+	EnrichInput,
+	EnrichmentData,
+	EnrichResult,
+	ExtractedSensitivityMetadata,
+	ExtractionResponse,
+} from './types.js';
 
 export { resolveEntity } from './resolution.js';
 export type {
@@ -61,6 +81,7 @@ export type {
 	ExtractedAssertion,
 	ExtractedEntity,
 	ExtractedRelationship,
+	ExtractedSensitivityMetadata,
 	ExtractionResponse,
 } from './types.js';
 
@@ -127,6 +148,34 @@ function mapAssertionEntityIds(
 	return [...entityIds].sort();
 }
 
+function toExtractedSensitivityMetadata(value: unknown, fallbackLevel: SensitivityLevel): ExtractedSensitivityMetadata {
+	const metadata = normalizeSensitivityMetadata(value, fallbackLevel);
+	const dbMetadata = mapSensitivityMetadataToDb(metadata);
+	return {
+		level: metadata.level,
+		reason: metadata.reason,
+		assigned_by: metadata.assignedBy,
+		assigned_at: metadata.assignedAt,
+		pii_types: metadata.piiTypes,
+		declassify_date: typeof dbMetadata.declassify_date === 'string' ? dbMetadata.declassify_date : null,
+	};
+}
+
+function mergeExtractedSensitivity(
+	items: readonly (ExtractedSensitivityMetadata | undefined)[],
+	fallbackLevel: SensitivityLevel,
+): ExtractedSensitivityMetadata {
+	return toExtractedSensitivityMetadata(mergeSensitivityMetadata(items, fallbackLevel), fallbackLevel);
+}
+
+function detectedSensitivityMetadata(value: unknown, fallbackLevel: SensitivityLevel): SensitivityMetadata {
+	const metadata = normalizeSensitivityMetadata(value, fallbackLevel);
+	return {
+		...metadata,
+		assignedBy: 'llm_auto',
+	};
+}
+
 // ────────────────────────────────────────────────────────────
 // Pre-chunking
 // ────────────────────────────────────────────────────────────
@@ -191,6 +240,7 @@ function mergeExtractionResponses(responses: ExtractionResponse[]): ExtractionRe
 					confidence: Math.max(existing.confidence, entity.confidence),
 					mentions: mergedMentions,
 					attributes: { ...existing.attributes, ...entity.attributes },
+					sensitivity: mergeExtractedSensitivity([existing.sensitivity, entity.sensitivity], 'internal'),
 				});
 			} else {
 				entityMap.set(key, entity);
@@ -212,6 +262,7 @@ function mergeExtractionResponses(responses: ExtractionResponse[]): ExtractionRe
 				assertionMap.set(key, {
 					...existing,
 					entity_names: [...new Set([...(existing.entity_names ?? []), ...(assertion.entity_names ?? [])])].sort(),
+					sensitivity: mergeExtractedSensitivity([existing.sensitivity, assertion.sensitivity], 'internal'),
 				});
 			} else {
 				assertionMap.set(key, assertion);
@@ -301,6 +352,13 @@ export async function execute(
 	const artifactProvenance = provenanceForSource(story.sourceId, input.extractionPipelineRun ?? null);
 	const assertionClassificationConfig = config.enrichment.assertion_classification;
 	const assertionClassificationEnabled = assertionClassificationConfig.enabled;
+	const sensitivityConfig = config.access_control.sensitivity;
+	const defaultSensitivityLevel = sensitivityConfig.default_level;
+	const sensitivityAutoDetectionEnabled = config.access_control.enabled && sensitivityConfig.auto_detection;
+	const defaultSensitivity = defaultSensitivityMetadata(defaultSensitivityLevel, {
+		assignedBy: 'policy_rule',
+		reason: 'default_policy',
+	});
 	const latestQualityAssessment = assertionClassificationEnabled
 		? await findLatestDocumentQualityAssessment(pool, story.sourceId)
 		: null;
@@ -369,7 +427,12 @@ export async function execute(
 
 	// 6. Generate JSON Schema from ontology
 	const ontology = config.ontology;
-	const extractionSchemaOptions = { assertionClassificationEnabled };
+	const extractionSchemaOptions = {
+		assertionClassificationEnabled,
+		sensitivityAutoDetectionEnabled,
+		sensitivityLevels: sensitivityConfig.levels,
+		piiTypes: sensitivityConfig.pii_types,
+	};
 	const jsonSchema = generateExtractionSchema(ontology, extractionSchemaOptions);
 	const responseSchema = getExtractionResponseSchema(ontology, extractionSchemaOptions);
 
@@ -402,6 +465,10 @@ export async function execute(
 			locale,
 			ontology: ontologyDescription,
 			story_text: chunk,
+			sensitivity_auto_detection: sensitivityAutoDetectionEnabled ? 'true' : 'false',
+			sensitivity_levels: sensitivityConfig.levels.join(', '),
+			sensitivity_default_level: defaultSensitivityLevel,
+			sensitivity_pii_types: sensitivityConfig.pii_types.join(', '),
 		});
 
 		try {
@@ -478,6 +545,9 @@ export async function execute(
 
 	for (const extracted of sortedEntities) {
 		try {
+			const sensitivityMetadata = sensitivityAutoDetectionEnabled
+				? detectedSensitivityMetadata(extracted.sensitivity, defaultSensitivityLevel)
+				: defaultSensitivity;
 			// 11a. Taxonomy normalization (must run before upsert so the
 			// resulting entity row carries the canonical taxonomy_id from
 			// the start; cross-story queries can then group entities that
@@ -494,6 +564,8 @@ export async function execute(
 				attributes: extracted.attributes,
 				taxonomyId: normResult.taxonomyEntry.id,
 				provenance: artifactProvenance,
+				sensitivityLevel: sensitivityMetadata.level,
+				sensitivityMetadata,
 			});
 			entityNameToId.set(extracted.name, entity.id);
 			if (entity.taxonomyId) {
@@ -531,6 +603,8 @@ export async function execute(
 				confidence: extracted.confidence,
 				mentionCount: extracted.mentions.length,
 				provenance: artifactProvenance,
+				sensitivityLevel: sensitivityMetadata.level,
+				sensitivityMetadata,
 			});
 		} catch (cause: unknown) {
 			const message = cause instanceof Error ? cause.message : String(cause);
@@ -562,6 +636,9 @@ export async function execute(
 		}
 
 		try {
+			const sensitivityMetadata = sensitivityAutoDetectionEnabled
+				? detectedSensitivityMetadata(rel.sensitivity, defaultSensitivityLevel)
+				: defaultSensitivity;
 			await upsertEdge(pool, {
 				sourceEntityId,
 				targetEntityId,
@@ -571,6 +648,8 @@ export async function execute(
 				edgeType: 'RELATIONSHIP',
 				attributes: rel.attributes ?? {},
 				provenance: artifactProvenance,
+				sensitivityLevel: sensitivityMetadata.level,
+				sensitivityMetadata,
 			});
 			relationshipsCreated++;
 		} catch (cause: unknown) {
@@ -602,6 +681,9 @@ export async function execute(
 			}
 
 			try {
+				const sensitivityMetadata = sensitivityAutoDetectionEnabled
+					? detectedSensitivityMetadata(assertion.sensitivity, defaultSensitivityLevel)
+					: defaultSensitivity;
 				await upsertKnowledgeAssertion(pool, {
 					sourceId: story.sourceId,
 					storyId: input.storyId,
@@ -613,6 +695,8 @@ export async function execute(
 					extractedEntityIds: mapAssertionEntityIds(assertion.entity_names, entityNameToId),
 					provenance: artifactProvenance,
 					qualityMetadata: assertionQualityMetadata,
+					sensitivityLevel: sensitivityMetadata.level,
+					sensitivityMetadata,
 				});
 				assertionsPersisted++;
 			} catch (cause: unknown) {
@@ -639,6 +723,10 @@ export async function execute(
 
 	// 15. Update story status + source step
 	if (status !== 'failed') {
+		if (sensitivityConfig.propagation === 'upward') {
+			await updateStorySensitivityFromArtifacts(pool, input.storyId);
+			await updateSourceSensitivityFromArtifacts(pool, story.sourceId);
+		}
 		await updateStoryStatus(pool, input.storyId, 'enriched');
 		await upsertSourceStep(pool, {
 			sourceId: story.sourceId,

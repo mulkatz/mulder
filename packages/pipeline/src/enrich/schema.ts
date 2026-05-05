@@ -12,13 +12,17 @@
  * @see docs/functional-spec.md §2.4
  */
 
-import type { EntityTypeConfig, OntologyConfig } from '@mulder/core';
+import type { EntityTypeConfig, OntologyConfig, PIIType, SensitivityLevel } from '@mulder/core';
+import { PII_TYPES, SENSITIVITY_LEVELS } from '@mulder/core';
 import { z } from 'zod';
 import { z as z3 } from 'zod/v3';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
 export interface ExtractionSchemaOptions {
 	assertionClassificationEnabled?: boolean;
+	sensitivityAutoDetectionEnabled?: boolean;
+	sensitivityLevels?: readonly SensitivityLevel[];
+	piiTypes?: readonly PIIType[];
 }
 
 // ────────────────────────────────────────────────────────────
@@ -134,8 +138,29 @@ function buildConfidenceMetadataSchemaV3(): z3.ZodObject<z3.ZodRawShape> {
 	});
 }
 
-function buildAssertionSchemaV3(): z3.ZodObject<z3.ZodRawShape> {
+function nonEmptySensitivityLevels(options?: ExtractionSchemaOptions): [SensitivityLevel, ...SensitivityLevel[]] {
+	const values = options?.sensitivityLevels?.length ? options.sensitivityLevels : SENSITIVITY_LEVELS;
+	return values as [SensitivityLevel, ...SensitivityLevel[]];
+}
+
+function nonEmptyPiiTypes(options?: ExtractionSchemaOptions): [PIIType, ...PIIType[]] {
+	const values = options?.piiTypes?.length ? options.piiTypes : PII_TYPES;
+	return values as [PIIType, ...PIIType[]];
+}
+
+function buildSensitivitySchemaV3(options?: ExtractionSchemaOptions): z3.ZodObject<z3.ZodRawShape> {
 	return z3.object({
+		level: z3
+			.enum(nonEmptySensitivityLevels(options))
+			.describe('Sensitivity level: public < internal < restricted < confidential'),
+		reason: z3.string().describe('Short generic reason for the assigned sensitivity level'),
+		pii_types: z3.array(z3.enum(nonEmptyPiiTypes(options))).describe('PII or sensitive information types detected'),
+		declassify_date: z3.string().nullable().describe('ISO date when level can be lowered, or null'),
+	});
+}
+
+function buildAssertionSchemaV3(options?: ExtractionSchemaOptions): z3.ZodObject<z3.ZodRawShape> {
+	const shape: z3.ZodRawShape = {
 		content: z3.string().describe('The concise assertion text, preserving the source meaning'),
 		assertion_type: z3
 			.enum(['observation', 'interpretation', 'hypothesis'])
@@ -146,7 +171,13 @@ function buildAssertionSchemaV3(): z3.ZodObject<z3.ZodRawShape> {
 			.optional()
 			.describe('How the assertion classification was determined'),
 		entity_names: z3.array(z3.string()).optional().describe('Extracted entity names referenced by this assertion'),
-	});
+	};
+
+	if (options?.sensitivityAutoDetectionEnabled) {
+		shape.sensitivity = buildSensitivitySchemaV3(options).describe('Sensitivity metadata for this assertion');
+	}
+
+	return z3.object(shape);
 }
 
 function buildExtractionResponseSchemaV3(
@@ -159,16 +190,20 @@ function buildExtractionResponseSchemaV3(
 	const attributesSchema = buildAttributesSchemaV3(ontology.entity_types);
 
 	// Entity schema
-	const entitySchemaV3 = z3.object({
+	const entityShapeV3: z3.ZodRawShape = {
 		name: z3.string().describe('The canonical name of the entity'),
 		type: z3.enum(entityTypeNames as [string, ...string[]]).describe('The entity type from the ontology'),
 		confidence: z3.number().min(0).max(1).describe('Confidence score for entity extraction (0-1)'),
 		attributes: attributesSchema.describe('Entity attributes based on its type'),
 		mentions: z3.array(z3.string()).describe('All text mentions/aliases of this entity in the story'),
-	});
+	};
+	if (options?.sensitivityAutoDetectionEnabled) {
+		entityShapeV3.sensitivity = buildSensitivitySchemaV3(options).describe('Sensitivity metadata for this entity');
+	}
+	const entitySchemaV3 = z3.object(entityShapeV3);
 
 	// Relationship schema
-	const relationshipSchemaV3 = z3.object({
+	const relationshipShapeV3: z3.ZodRawShape = {
 		source_entity: z3.string().describe('Name of the source entity'),
 		target_entity: z3.string().describe('Name of the target entity'),
 		relationship_type:
@@ -177,7 +212,13 @@ function buildExtractionResponseSchemaV3(
 				: z3.string().describe('Relationship type'),
 		confidence: z3.number().min(0).max(1).describe('Confidence score for relationship extraction (0-1)'),
 		attributes: z3.object({}).passthrough().optional().describe('Optional relationship attributes'),
-	});
+	};
+	if (options?.sensitivityAutoDetectionEnabled) {
+		relationshipShapeV3.sensitivity = buildSensitivitySchemaV3(options).describe(
+			'Sensitivity metadata for this relationship',
+		);
+	}
+	const relationshipSchemaV3 = z3.object(relationshipShapeV3);
 
 	const shape: z3.ZodRawShape = {
 		entities: z3.array(entitySchemaV3).describe('All entities extracted from the story'),
@@ -186,7 +227,7 @@ function buildExtractionResponseSchemaV3(
 
 	if (options?.assertionClassificationEnabled) {
 		shape.assertions = z3
-			.array(buildAssertionSchemaV3())
+			.array(buildAssertionSchemaV3(options))
 			.describe('All classified assertions extracted from the story');
 	}
 
@@ -227,14 +268,34 @@ function buildConfidenceMetadataSchemaV4() {
 	});
 }
 
-function buildAssertionSchemaV4() {
+function buildSensitivitySchemaV4(options?: ExtractionSchemaOptions) {
 	return z.object({
+		level: z.enum(nonEmptySensitivityLevels(options)),
+		reason: z.string(),
+		assigned_by: z.optional(z.enum(['llm_auto', 'human', 'policy_rule'])),
+		assigned_at: z.optional(z.string()),
+		pii_types: z.array(z.enum(nonEmptyPiiTypes(options))),
+		declassify_date: z.string().nullable(),
+	});
+}
+
+function buildAssertionSchemaV4(options?: ExtractionSchemaOptions) {
+	const shape = {
 		content: z.string(),
 		assertion_type: z.enum(['observation', 'interpretation', 'hypothesis']),
 		confidence_metadata: buildConfidenceMetadataSchemaV4(),
 		classification_provenance: z.optional(z.enum(['llm_auto', 'human_reviewed', 'author_explicit'])),
 		entity_names: z.optional(z.array(z.string())),
-	});
+	};
+
+	if (options?.sensitivityAutoDetectionEnabled) {
+		return z.object({
+			...shape,
+			sensitivity: buildSensitivitySchemaV4(options),
+		});
+	}
+
+	return z.object(shape);
 }
 
 function buildExtractionResponseSchemaV4(ontology: OntologyConfig, options?: ExtractionSchemaOptions) {
@@ -244,22 +305,34 @@ function buildExtractionResponseSchemaV4(ontology: OntologyConfig, options?: Ext
 	const attributesSchema = buildAttributesSchemaV4(ontology.entity_types);
 
 	// Entity schema
-	const entitySchemaV4 = z.object({
+	const entityShapeV4 = {
 		name: z.string(),
 		type: z.enum(entityTypeNames as [string, ...string[]]),
 		confidence: z.number().min(0).max(1),
 		attributes: attributesSchema,
 		mentions: z.array(z.string()),
-	});
+	};
+	const entitySchemaV4 = options?.sensitivityAutoDetectionEnabled
+		? z.object({
+				...entityShapeV4,
+				sensitivity: buildSensitivitySchemaV4(options),
+			})
+		: z.object(entityShapeV4);
 
 	// Relationship schema
-	const relationshipSchemaV4 = z.object({
+	const relationshipShapeV4 = {
 		source_entity: z.string(),
 		target_entity: z.string(),
 		relationship_type: relationshipNames.length > 0 ? z.enum(relationshipNames as [string, ...string[]]) : z.string(),
 		confidence: z.number().min(0).max(1),
 		attributes: z.optional(z.record(z.string(), z.unknown())),
-	});
+	};
+	const relationshipSchemaV4 = options?.sensitivityAutoDetectionEnabled
+		? z.object({
+				...relationshipShapeV4,
+				sensitivity: buildSensitivitySchemaV4(options),
+			})
+		: z.object(relationshipShapeV4);
 
 	const shape = {
 		entities: z.array(entitySchemaV4),
@@ -269,7 +342,7 @@ function buildExtractionResponseSchemaV4(ontology: OntologyConfig, options?: Ext
 	if (options?.assertionClassificationEnabled) {
 		return z.object({
 			...shape,
-			assertions: z.array(buildAssertionSchemaV4()),
+			assertions: z.array(buildAssertionSchemaV4(options)),
 		});
 	}
 

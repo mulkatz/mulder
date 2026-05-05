@@ -8,6 +8,7 @@
  * @see docs/functional-spec.md §4.3
  */
 
+import type { SensitivityLevel, SensitivityMetadata } from '../../shared/sensitivity.js';
 import type { ArtifactProvenance, ArtifactProvenanceInput } from './artifact-provenance.js';
 import type { Story } from './story.types.js';
 
@@ -42,6 +43,8 @@ export interface Entity {
 	 */
 	taxonomyId: string | null;
 	provenance: ArtifactProvenance;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -58,6 +61,8 @@ export interface CreateEntityInput {
 	/** Optional FK to the canonical taxonomy entry. */
 	taxonomyId?: string | null;
 	provenance?: ArtifactProvenanceInput;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 }
 
 /** Input for updating an entity. Partial -- only provided fields are updated. */
@@ -73,6 +78,8 @@ export interface UpdateEntityInput {
 	/** Set to `null` to clear the taxonomy FK. */
 	taxonomyId?: string | null;
 	provenance?: ArtifactProvenanceInput;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 }
 
 /** Filters for querying entities. */
@@ -144,6 +151,8 @@ export interface EntityAlias {
 	alias: string;
 	source: string | null;
 	provenance: ArtifactProvenance;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
 }
 
 /** Input for creating a new entity alias. */
@@ -152,6 +161,8 @@ export interface CreateEntityAliasInput {
 	alias: string;
 	source?: string;
 	provenance?: ArtifactProvenanceInput;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -165,6 +176,8 @@ export interface StoryEntity {
 	confidence: number | null;
 	mentionCount: number;
 	provenance: ArtifactProvenance;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
 }
 
 /** Input for linking a story to an entity. */
@@ -174,6 +187,8 @@ export interface LinkStoryEntityInput {
 	confidence?: number;
 	mentionCount?: number;
 	provenance?: ArtifactProvenanceInput;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 }
 
 // ────────────────────────────────────────────────────────────

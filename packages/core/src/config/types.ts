@@ -5,6 +5,8 @@
 
 import type { z } from 'zod';
 import type {
+	accessControlSchema,
+	accessControlSensitivitySchema,
 	analysisSchema,
 	apiBudgetSchema,
 	apiSchema,
@@ -39,6 +41,8 @@ import type {
 // --- Section Types ---
 
 export type ProjectConfig = z.infer<typeof projectSchema>;
+export type AccessControlConfig = z.infer<typeof accessControlSchema>;
+export type AccessControlSensitivityConfig = z.infer<typeof accessControlSensitivitySchema>;
 export type ApiConfig = z.infer<typeof apiSchema>;
 export type ApiAuthKeyConfig = ApiConfig['auth']['api_keys'][number];
 export type ApiAuthConfig = ApiConfig['auth'];

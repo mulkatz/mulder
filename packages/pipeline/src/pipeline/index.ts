@@ -344,6 +344,15 @@ function sourceFromDryRunIngestResult(result: IngestFileResult): Source {
 		reliabilityScore: null,
 		tags: [],
 		metadata: result.formatMetadata,
+		sensitivityLevel: 'internal',
+		sensitivityMetadata: {
+			level: 'internal',
+			reason: 'default_policy',
+			assignedBy: 'policy_rule',
+			assignedAt: now.toISOString(),
+			piiTypes: [],
+			declassifyDate: null,
+		},
 		createdAt: now,
 		updatedAt: now,
 	};

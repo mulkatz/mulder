@@ -8,6 +8,7 @@
  * @see docs/functional-spec.md §4.3
  */
 
+import type { SensitivityLevel, SensitivityMetadata } from '../../shared/sensitivity.js';
 import type { ArtifactProvenance, ArtifactProvenanceInput } from './artifact-provenance.js';
 
 // ────────────────────────────────────────────────────────────
@@ -28,6 +29,8 @@ export type ChunkRow = {
 	parent_chunk_id: string | null;
 	metadata: Record<string, unknown>;
 	provenance: unknown;
+	sensitivity_level: SensitivityLevel;
+	sensitivity_metadata: unknown;
 	created_at: Date;
 };
 
@@ -48,6 +51,8 @@ export type Chunk = {
 	parentChunkId: string | null;
 	metadata: Record<string, unknown>;
 	provenance: ArtifactProvenance;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
 	createdAt: Date;
 };
 
@@ -68,6 +73,8 @@ export type CreateChunkInput = {
 	parentChunkId?: string | null;
 	metadata?: Record<string, unknown>;
 	provenance?: ArtifactProvenanceInput;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 };
 
 /** Filters for querying chunks. */

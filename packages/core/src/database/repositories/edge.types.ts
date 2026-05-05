@@ -8,6 +8,7 @@
  * @see docs/functional-spec.md §4.3
  */
 
+import type { SensitivityLevel, SensitivityMetadata } from '../../shared/sensitivity.js';
 import type { ArtifactProvenance, ArtifactProvenanceInput } from './artifact-provenance.js';
 
 // ────────────────────────────────────────────────────────────
@@ -38,6 +39,8 @@ export interface EntityEdge {
 	edgeType: EdgeType;
 	analysis: Record<string, unknown> | null;
 	provenance: ArtifactProvenance;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
 	createdAt: Date;
 }
 
@@ -55,6 +58,8 @@ export interface CreateEdgeInput {
 	edgeType?: EdgeType;
 	analysis?: Record<string, unknown>;
 	provenance?: ArtifactProvenanceInput;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 }
 
 /** Input for updating an edge. Partial -- only provided fields are updated. */
@@ -63,6 +68,8 @@ export interface UpdateEdgeInput {
 	confidence?: number | null;
 	edgeType?: EdgeType;
 	analysis?: Record<string, unknown> | null;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 }
 
 /** Filters for querying edges. */
