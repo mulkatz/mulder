@@ -289,7 +289,7 @@ Must complete before first real archive data ingest. Without these foundations, 
 |--------|------|------|------|
 | 🟢 | K1 | Content-addressed storage — GCS layout migration, SHA-256 dedup | §A2 |
 | 🟢 | K2 | Provenance tracking — `source_document_ids` on all artifacts | §A6.1 |
-| 🟡 | K3 | Document quality assessment step | §A4 |
+| 🟢 | K3 | Document quality assessment step | §A4 |
 | ⚪ | K4 | Assertion classification in Enrich step | §A3 |
 | ⚪ | K5 | Sensitivity level tagging + auto-detection | §A5 |
 | ⚪ | K6 | Source rollback — soft-delete + cascading purge | §A6 |
