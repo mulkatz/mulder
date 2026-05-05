@@ -21,6 +21,7 @@ import {
 } from './artifact-provenance.js';
 import { type EntityRow, mapEntityRow } from './entity.repository.js';
 import type { CreateEntityAliasInput, Entity, EntityAlias } from './entity.types.js';
+import { queryWithSensitivityColumnFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'entity-alias-repository' });
@@ -73,6 +74,14 @@ export async function createEntityAlias(pool: pg.Pool, input: CreateEntityAliasI
       sensitivity_metadata = EXCLUDED.sensitivity_metadata
     RETURNING *
   `;
+	const legacySql = `
+    INSERT INTO entity_aliases (entity_id, alias, source, provenance)
+    VALUES ($1, $2, $3, $4::jsonb)
+    ON CONFLICT (entity_id, alias) DO UPDATE SET
+      source = COALESCE(entity_aliases.source, EXCLUDED.source),
+      provenance = ${mergeArtifactProvenanceSql('entity_aliases.provenance', 'EXCLUDED.provenance')}
+    RETURNING *
+  `;
 	const params = [
 		input.entityId,
 		input.alias,
@@ -81,9 +90,10 @@ export async function createEntityAlias(pool: pg.Pool, input: CreateEntityAliasI
 		sensitivityLevel,
 		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
+	const legacyParams = params.slice(0, -2);
 
 	try {
-		const result = await pool.query<EntityAliasRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EntityAliasRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug(
 			{ aliasId: row.id, entityId: input.entityId, alias: input.alias },

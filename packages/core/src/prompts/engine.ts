@@ -16,6 +16,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PROMPT_ERROR_CODES, PromptError } from '../shared/errors.js';
+import { PII_TYPES, SENSITIVITY_LEVELS } from '../shared/sensitivity.js';
 
 // ────────────────────────────────────────────────────────────
 // Path resolution
@@ -187,6 +188,19 @@ function valueToString(value: unknown): string {
 	return String(value);
 }
 
+function templateDefaultVariables(templateName: string): Record<string, unknown> {
+	if (templateName !== 'extract-entities') {
+		return {};
+	}
+
+	return {
+		sensitivity_auto_detection: 'false',
+		sensitivity_levels: SENSITIVITY_LEVELS.join(', '),
+		sensitivity_default_level: 'internal',
+		sensitivity_pii_types: PII_TYPES.join(', '),
+	};
+}
+
 // ────────────────────────────────────────────────────────────
 // Public API
 // ────────────────────────────────────────────────────────────
@@ -214,7 +228,7 @@ export function renderPrompt(templateName: string, variables: Record<string, unk
 	const template = loadTemplate(templateName);
 
 	// 2. Resolve i18n if locale is provided
-	const mergedVars: Record<string, unknown> = { ...variables };
+	const mergedVars: Record<string, unknown> = { ...templateDefaultVariables(templateName), ...variables };
 	if (typeof variables.locale === 'string' && variables.locale.length > 0) {
 		const localeData = loadLocale(variables.locale);
 		mergedVars.i18n = localeData;

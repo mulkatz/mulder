@@ -14,6 +14,7 @@ import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
 import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
+import { queryWithSensitivityColumnFallback } from './schema-compat.js';
 import type {
 	CreateSourceInput,
 	FailedSourceInfo,
@@ -248,9 +249,19 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
     ON CONFLICT (file_hash) DO UPDATE SET updated_at = now()
     RETURNING *
   `;
+	const legacyColumnCount = columns.length - 2;
+	const legacyColumns = columns.slice(0, legacyColumnCount);
+	const legacyValues = values.slice(0, legacyColumnCount);
+	const legacyPlaceholders = legacyValues.map((_, index) => `$${index + 1}`).join(', ');
+	const legacySql = `
+    INSERT INTO sources (${legacyColumns.join(', ')})
+    VALUES (${legacyPlaceholders})
+    ON CONFLICT (file_hash) DO UPDATE SET updated_at = now()
+    RETURNING *
+  `;
 
 	try {
-		const result = await pool.query<SourceRow>(sql, values);
+		const result = await queryWithSensitivityColumnFallback<SourceRow>(pool, sql, values, legacySql, legacyValues);
 		const row = result.rows[0];
 		repoLogger.debug({ sourceId: row.id, fileHash: input.fileHash }, 'Source created or found');
 		return mapSourceRow(row);

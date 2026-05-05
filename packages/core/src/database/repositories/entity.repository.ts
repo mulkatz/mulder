@@ -27,6 +27,7 @@ import type {
 	TaxonomyStatus,
 	UpdateEntityInput,
 } from './entity.types.js';
+import { queryWithSensitivityColumnFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'entity-repository' });
@@ -115,6 +116,23 @@ export async function createEntity(pool: pg.Pool, input: CreateEntityInput): Pro
       updated_at = now()
     RETURNING *
   `;
+	const legacySql = hasExplicitId
+		? `
+    INSERT INTO entities (id, name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+      provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+      updated_at = now()
+    RETURNING *
+  `
+		: `
+    INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+      provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+      updated_at = now()
+    RETURNING *
+  `;
 	const baseParams = [
 		input.name,
 		input.type,
@@ -127,9 +145,11 @@ export async function createEntity(pool: pg.Pool, input: CreateEntityInput): Pro
 		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
 	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
+	const legacyBaseParams = baseParams.slice(0, -2);
+	const legacyParams = hasExplicitId ? [input.id, ...legacyBaseParams] : legacyBaseParams;
 
 	try {
-		const result = await pool.query<EntityRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EntityRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ entityId: row.id, name: input.name, type: input.type }, 'Entity created or found');
 		return mapEntityRow(row);
@@ -193,6 +213,44 @@ export async function upsertEntityByNameType(pool: pg.Pool, input: CreateEntityI
     SELECT * FROM inserted
     LIMIT 1
   `;
+	const legacySql = `
+    WITH existing AS (
+      UPDATE entities
+      SET
+        attributes = COALESCE(NULLIF($4::jsonb, '{}'::jsonb), entities.attributes),
+        taxonomy_status = COALESCE($5, entities.taxonomy_status),
+        taxonomy_id = COALESCE($6, entities.taxonomy_id),
+        provenance = ${mergeArtifactProvenanceSql('entities.provenance', '$7::jsonb')},
+        updated_at = now()
+      WHERE id = (
+        SELECT id
+        FROM entities
+        WHERE name = $1
+          AND type = $2
+          AND $3::uuid IS NULL
+          AND (canonical_id IS NULL OR canonical_id = id)
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+      )
+      RETURNING *
+    ),
+    inserted AS (
+      INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance)
+      SELECT $1, $2, $3, $4, $5, $6, $7::jsonb
+      WHERE NOT EXISTS (SELECT 1 FROM existing)
+      ON CONFLICT (name, type) WHERE canonical_id IS NULL DO UPDATE SET
+        attributes = COALESCE(NULLIF($4::jsonb, '{}'::jsonb), entities.attributes),
+        taxonomy_status = COALESCE($5, entities.taxonomy_status),
+        taxonomy_id = COALESCE($6, entities.taxonomy_id),
+        provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+        updated_at = now()
+      RETURNING *
+    )
+    SELECT * FROM existing
+    UNION ALL
+    SELECT * FROM inserted
+    LIMIT 1
+  `;
 	const params = [
 		input.name,
 		input.type,
@@ -204,9 +262,10 @@ export async function upsertEntityByNameType(pool: pg.Pool, input: CreateEntityI
 		sensitivityLevel,
 		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
+	const legacyParams = params.slice(0, -2);
 
 	try {
-		const result = await pool.query<EntityRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EntityRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ entityId: row.id, name: input.name, type: input.type }, 'Entity upserted by name+type');
 		return mapEntityRow(row);

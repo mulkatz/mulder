@@ -21,6 +21,7 @@ import {
 	stringifyArtifactProvenance,
 } from './artifact-provenance.js';
 import type { CreateEdgeInput, EdgeFilter, EdgeType, EntityEdge, UpdateEdgeInput } from './edge.types.js';
+import { queryWithSensitivityColumnFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'edge-repository' });
@@ -84,6 +85,17 @@ export async function createEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb)
     RETURNING *
   `;
+	const legacySql = hasExplicitId
+		? `
+    INSERT INTO entity_edges (id, source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+    RETURNING *
+  `
+		: `
+    INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+    RETURNING *
+  `;
 
 	const baseParams = [
 		input.sourceEntityId,
@@ -99,9 +111,11 @@ export async function createEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
 		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
 	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
+	const legacyBaseParams = baseParams.slice(0, -2);
+	const legacyParams = hasExplicitId ? [input.id, ...legacyBaseParams] : legacyBaseParams;
 
 	try {
-		const result = await pool.query<EdgeRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EdgeRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ edgeId: row.id, relationship: input.relationship, edgeType: row.edge_type }, 'Edge created');
 		return mapEdgeRow(row);
@@ -149,6 +163,18 @@ export async function upsertEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
       sensitivity_metadata = EXCLUDED.sensitivity_metadata
     RETURNING *
   `;
+	const legacySql = `
+    INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+    ON CONFLICT (source_entity_id, target_entity_id, relationship, edge_type, story_id)
+    WHERE story_id IS NOT NULL
+    DO UPDATE SET
+      attributes = EXCLUDED.attributes,
+      confidence = EXCLUDED.confidence,
+      analysis = EXCLUDED.analysis,
+      provenance = ${mergeArtifactProvenanceSql('entity_edges.provenance', 'EXCLUDED.provenance')}
+    RETURNING *
+  `;
 
 	const params = [
 		input.sourceEntityId,
@@ -163,9 +189,10 @@ export async function upsertEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
 		sensitivityLevel,
 		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
+	const legacyParams = params.slice(0, -2);
 
 	try {
-		const result = await pool.query<EdgeRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EdgeRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ edgeId: row.id, relationship: input.relationship, edgeType: row.edge_type }, 'Edge upserted');
 		return mapEdgeRow(row);

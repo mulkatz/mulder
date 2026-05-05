@@ -29,6 +29,7 @@ import type {
 	FtsSearchResult,
 	VectorSearchResult,
 } from './chunk.types.js';
+import { queryWithSensitivityColumnFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'chunk-repository' });
@@ -120,6 +121,22 @@ export async function createChunk(pool: pg.Pool, input: CreateChunkInput): Promi
     VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10::jsonb, $11, $12::jsonb)
     RETURNING *, embedding::text
   `;
+	const legacySql = hasExplicitId
+		? `
+    INSERT INTO chunks (id, story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, $9, $10, $11::jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+      content = EXCLUDED.content,
+      embedding = EXCLUDED.embedding,
+      metadata = EXCLUDED.metadata,
+      provenance = ${mergeArtifactProvenanceSql('chunks.provenance', 'EXCLUDED.provenance')}
+    RETURNING *, embedding::text
+  `
+		: `
+    INSERT INTO chunks (story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10::jsonb)
+    RETURNING *, embedding::text
+  `;
 	const baseParams = [
 		input.storyId,
 		input.content,
@@ -135,9 +152,11 @@ export async function createChunk(pool: pg.Pool, input: CreateChunkInput): Promi
 		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
 	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
+	const legacyBaseParams = baseParams.slice(0, -2);
+	const legacyParams = hasExplicitId ? [input.id, ...legacyBaseParams] : legacyBaseParams;
 
 	try {
-		const result = await pool.query<ChunkRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<ChunkRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ chunkId: row.id, storyId: input.storyId }, 'Chunk created');
 		return mapChunkRow(row);

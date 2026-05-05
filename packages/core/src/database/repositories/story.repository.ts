@@ -14,6 +14,7 @@ import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
 import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
+import { queryWithSensitivityColumnFallback } from './schema-compat.js';
 import type { CreateStoryInput, Story, StoryFilter, StoryStatus, UpdateStoryInput } from './story.types.js';
 
 const logger = createLogger();
@@ -98,6 +99,19 @@ export async function createStory(pool: pg.Pool, input: CreateStoryInput): Promi
     ON CONFLICT (id) DO UPDATE SET updated_at = now()
     RETURNING *
   `;
+	const legacySql = hasExplicitId
+		? `
+    INSERT INTO stories (id, source_id, title, subtitle, language, category, page_start, page_end, gcs_markdown_uri, gcs_metadata_uri, extraction_confidence, metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    ON CONFLICT (id) DO UPDATE SET updated_at = now()
+    RETURNING *
+  `
+		: `
+    INSERT INTO stories (source_id, title, subtitle, language, category, page_start, page_end, gcs_markdown_uri, gcs_metadata_uri, extraction_confidence, metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    ON CONFLICT (id) DO UPDATE SET updated_at = now()
+    RETURNING *
+  `;
 	const baseParams = [
 		input.sourceId,
 		input.title,
@@ -114,9 +128,11 @@ export async function createStory(pool: pg.Pool, input: CreateStoryInput): Promi
 		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
 	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
+	const legacyBaseParams = baseParams.slice(0, -2);
+	const legacyParams = hasExplicitId ? [input.id, ...legacyBaseParams] : legacyBaseParams;
 
 	try {
-		const result = await pool.query<StoryRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<StoryRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ storyId: row.id, sourceId: input.sourceId }, 'Story created or found');
 		return mapStoryRow(row);

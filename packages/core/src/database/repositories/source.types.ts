@@ -37,7 +37,7 @@ export type SourceFormatMetadata = Record<string, unknown>;
  * that construct source-shaped fixtures can omit them and rely on database
  * defaults or downstream normalization.
  */
-export interface Source extends Partial<SensitivityTagged> {
+export interface Source {
 	id: string;
 	filename: string;
 	storagePath: string;
@@ -52,6 +52,8 @@ export interface Source extends Partial<SensitivityTagged> {
 	reliabilityScore: number | null;
 	tags: string[];
 	metadata: Record<string, unknown>;
+	sensitivityLevel?: SensitivityTagged['sensitivityLevel'];
+	sensitivityMetadata?: SensitivityTagged['sensitivityMetadata'];
 	createdAt: Date;
 	updatedAt: Date;
 }
