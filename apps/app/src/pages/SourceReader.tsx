@@ -274,7 +274,7 @@ function OriginalPane({
 				</span>
 			</Toolbar>
 			<div className="grid min-h-0 flex-1 gap-3 p-3 xl:grid-rows-[minmax(420px,1fr)_220px]">
-				<div className="min-h-[420px] overflow-hidden rounded-md border border-border bg-panel-raised">
+				<div className="h-[calc(100vh-320px)] min-h-[420px] max-h-[720px] overflow-hidden rounded-md border border-border bg-panel-raised">
 					<Suspense
 						fallback={
 							<div className="h-full min-h-[420px] bg-panel-raised p-3">

@@ -126,8 +126,8 @@ export async function apiFetchBlob(path: string, init?: RequestInit): Promise<Bl
 	let response: Response;
 	try {
 		response = await fetch(buildApiUrl(path), {
-			credentials: 'include',
 			...init,
+			credentials: 'include',
 			headers,
 		});
 	} catch (error) {

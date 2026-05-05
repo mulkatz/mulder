@@ -53,7 +53,7 @@ function isExpectedDefaultSourceDocument404(text, locationUrl) {
 	const haystack = `${text} ${locationUrl ?? ''}`;
 	const encodedSourceId = sourceId.replaceAll('-', '\\-');
 	const documentPathPattern = new RegExp(
-		`/api/documents/${encodedSourceId}(?:/(?:pdf|layout|pages|stories|observability)(?:/\\d+)?)?`,
+		`/api/documents/${encodedSourceId}/(?:pdf|layout|pages|stories|observability)(?:/\\d+)?`,
 	);
 	return documentPathPattern.test(haystack);
 }
