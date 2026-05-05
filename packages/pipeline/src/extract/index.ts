@@ -48,6 +48,7 @@ import {
 } from '@mulder/core';
 import { PDFParse } from 'pdf-parse';
 import type pg from 'pg';
+import { ensureRawDocumentBlob } from '../ingest/raw-blob.js';
 import {
 	buildDocxFormatMetadata,
 	buildEmailFormatMetadata,
@@ -1304,12 +1305,25 @@ async function registerAttachmentChildSources(input: {
 		const fileHash = computeFileHash(attachment.content);
 		const existing = await findSourceByHash(input.pool, fileHash);
 		if (existing) {
-			summaries.push({ ...summary, childSourceId: existing.id });
+			try {
+				await ensureRawDocumentBlob({
+					services: input.services,
+					pool: input.pool,
+					contentHash: fileHash,
+					content: attachment.content,
+					mediaType: detection.mediaType,
+					storageExtension,
+					filename: attachment.filename,
+				});
+				summaries.push({ ...summary, childSourceId: existing.id });
+			} catch (cause: unknown) {
+				input.logger.warn({ err: cause, filename: attachment.filename }, 'Email attachment blob registration failed');
+				summaries.push(summary);
+			}
 			continue;
 		}
 
 		const childSourceId = randomUUID();
-		const storagePath = `raw/${childSourceId}/original.${storageExtension}`;
 		try {
 			const childMetadata = await metadataForAttachment({
 				buffer: attachment.content,
@@ -1319,7 +1333,15 @@ async function registerAttachmentChildSources(input: {
 				services: input.services,
 				sourceId: childSourceId,
 			});
-			await input.services.storage.upload(storagePath, attachment.content, detection.mediaType);
+			const storagePath = await ensureRawDocumentBlob({
+				services: input.services,
+				pool: input.pool,
+				contentHash: fileHash,
+				content: attachment.content,
+				mediaType: detection.mediaType,
+				storageExtension,
+				filename: attachment.filename,
+			});
 			const child = await createSource(input.pool, {
 				id: childSourceId,
 				filename: attachment.filename,
@@ -1333,16 +1355,12 @@ async function registerAttachmentChildSources(input: {
 				nativeTextRatio: childMetadata.nativeTextRatio,
 				metadata: childMetadata.formatMetadata,
 			});
-			if (child.id !== childSourceId) {
-				await input.services.storage.delete(storagePath).catch(() => undefined);
-			}
 			summaries.push({ ...summary, childSourceId: child.id });
 		} catch (cause: unknown) {
 			input.logger.warn(
 				{ err: cause, filename: attachment.filename },
 				'Email attachment child source registration failed',
 			);
-			await input.services.storage.delete(storagePath).catch(() => undefined);
 			summaries.push(summary);
 		}
 	}

@@ -22,6 +22,7 @@ const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 const FIXTURE_PDF = resolve(ROOT, 'fixtures/raw/native-text-sample.pdf');
 const STORAGE_DIR = resolve(ROOT, '.local/storage');
+const BLOBS_STORAGE_DIR = resolve(STORAGE_DIR, 'blobs');
 const RAW_STORAGE_DIR = resolve(STORAGE_DIR, 'raw');
 const EXTRACTED_STORAGE_DIR = resolve(STORAGE_DIR, 'extracted');
 const SEGMENTS_STORAGE_DIR = resolve(STORAGE_DIR, 'segments');
@@ -42,6 +43,7 @@ let workerModule: typeof import('@mulder/worker');
 let workerContext: WorkerRuntimeContext;
 let app: ApiApp;
 let pgAvailable = false;
+let blobsSnapshot: StorageSnapshot | null = null;
 let rawSnapshot: StorageSnapshot | null = null;
 let extractedSnapshot: StorageSnapshot | null = null;
 let segmentsSnapshot: StorageSnapshot | null = null;
@@ -95,6 +97,7 @@ function cleanState(): void {
 			'DELETE FROM entities',
 			'DELETE FROM stories',
 			'DELETE FROM sources',
+			'DELETE FROM document_blobs',
 		].join('; '),
 	);
 }
@@ -108,7 +111,7 @@ function sourceIdForFilename(filename: string): string {
 }
 
 function resetStorage(): void {
-	for (const snapshot of [rawSnapshot, extractedSnapshot, segmentsSnapshot]) {
+	for (const snapshot of [blobsSnapshot, rawSnapshot, extractedSnapshot, segmentsSnapshot]) {
 		if (snapshot) {
 			cleanStorageDirSince(snapshot);
 		}
@@ -183,6 +186,7 @@ describe('Spec 88 — Plain Text Ingestion on the Pre-Structured Path', () => {
 		writeFileSync(mdFile, '# Briefing\n\nMarkdown body stays **Markdown**.\n', 'utf-8');
 		writeFileSync(markdownFile, '# Memorandum\n\nExtended markdown extension.\n', 'utf-8');
 
+		blobsSnapshot = snapshotStorageDir(BLOBS_STORAGE_DIR);
 		rawSnapshot = snapshotStorageDir(RAW_STORAGE_DIR);
 		extractedSnapshot = snapshotStorageDir(EXTRACTED_STORAGE_DIR);
 		segmentsSnapshot = snapshotStorageDir(SEGMENTS_STORAGE_DIR);
@@ -253,19 +257,27 @@ describe('Spec 88 — Plain Text Ingestion on the Pre-Structured Path', () => {
 		const txt = runCli(['ingest', txtFile]);
 		expect(txt.exitCode, `${txt.stdout}\n${txt.stderr}`).toBe(0);
 		const txtSourceId = sourceIdForFilename(basename(txtFile));
-		const txtRow = db.runSql(
-			`SELECT source_type::text AS source_type, page_count, has_native_text, native_text_ratio, storage_path, format_metadata->>'media_type' AS media_type, format_metadata->>'encoding' AS encoding, format_metadata->>'line_count' AS line_count FROM sources WHERE id = ${sqlLiteral(txtSourceId)};`,
-		);
-		expect(txtRow).toBe(`text|0|f|0|raw/${txtSourceId}/original.txt|text/plain|utf-8|2`);
-		expect(existsSync(resolve(STORAGE_DIR, `raw/${txtSourceId}/original.txt`))).toBe(true);
+		const txtRow = db
+			.runSql(
+				`SELECT source_type::text AS source_type, page_count, has_native_text, native_text_ratio, storage_path, format_metadata->>'media_type' AS media_type, format_metadata->>'encoding' AS encoding, format_metadata->>'line_count' AS line_count FROM sources WHERE id = ${sqlLiteral(txtSourceId)};`,
+			)
+			.split('|');
+		expect(txtRow.slice(0, 4)).toEqual(['text', '0', 'f', '0']);
+		expect(txtRow[4]).toMatch(/^blobs\/sha256\/[a-f0-9]{2}\/[a-f0-9]{2}\/[a-f0-9]{64}\.txt$/);
+		expect(txtRow.slice(5)).toEqual(['text/plain', 'utf-8', '2']);
+		expect(existsSync(resolve(STORAGE_DIR, txtRow[4]))).toBe(true);
 
 		const md = runCli(['ingest', markdownFile]);
 		expect(md.exitCode, `${md.stdout}\n${md.stderr}`).toBe(0);
 		const mdSourceId = sourceIdForFilename(basename(markdownFile));
-		const mdRow = db.runSql(
-			`SELECT source_type::text AS source_type, storage_path, format_metadata->>'media_type' AS media_type FROM sources WHERE id = ${sqlLiteral(mdSourceId)};`,
-		);
-		expect(mdRow).toBe(`text|raw/${mdSourceId}/original.md|text/markdown`);
+		const mdRow = db
+			.runSql(
+				`SELECT source_type::text AS source_type, storage_path, format_metadata->>'media_type' AS media_type FROM sources WHERE id = ${sqlLiteral(mdSourceId)};`,
+			)
+			.split('|');
+		expect(mdRow[0]).toBe('text');
+		expect(mdRow[1]).toMatch(/^blobs\/sha256\/[a-f0-9]{2}\/[a-f0-9]{2}\/[a-f0-9]{64}\.md$/);
+		expect(mdRow[2]).toBe('text/markdown');
 	});
 
 	it('QA-04 and QA-05: directory discovery includes text and magic bytes stay authoritative', () => {
@@ -422,10 +434,14 @@ describe('Spec 88 — Plain Text Ingestion on the Pre-Structured Path', () => {
 
 		const processed = await processOneJob();
 		expect(processed.state).toBe('completed');
-		const sourceRow = db.runSql(
-			`SELECT source_type::text AS source_type, storage_path, format_metadata->>'media_type' AS media_type, format_metadata->>'cross_format_dedup_basis' AS dedup_basis, format_metadata->>'cross_format_dedup_key' LIKE 'sha256:%' AS has_dedup_key FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
-		);
-		expect(sourceRow).toBe(`text|raw/${sourceId}/original.md|text/markdown|text_content|t`);
+		const sourceRow = db
+			.runSql(
+				`SELECT source_type::text AS source_type, storage_path, format_metadata->>'media_type' AS media_type, format_metadata->>'cross_format_dedup_basis' AS dedup_basis, format_metadata->>'cross_format_dedup_key' LIKE 'sha256:%' AS has_dedup_key FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
+			)
+			.split('|');
+		expect(sourceRow[0]).toBe('text');
+		expect(sourceRow[1]).toMatch(/^blobs\/sha256\/[a-f0-9]{2}\/[a-f0-9]{2}\/[a-f0-9]{64}\.md$/);
+		expect(sourceRow.slice(2)).toEqual(['text/markdown', 'text_content', 't']);
 		expect(
 			db.runSql(
 				`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,

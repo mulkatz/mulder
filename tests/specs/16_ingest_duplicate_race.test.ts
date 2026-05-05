@@ -17,7 +17,7 @@ describe('Spec 16 — Ingest duplicate race regression', () => {
 		]);
 
 		const existingSourceId = randomUUID();
-		const existingStoragePath = `raw/${existingSourceId}/original.pdf`;
+		let canonicalBlobPath = '';
 		const now = new Date();
 		const queries: string[] = [];
 		const uploads: string[] = [];
@@ -25,10 +25,38 @@ describe('Spec 16 — Ingest duplicate race regression', () => {
 		const firestoreWrites: string[] = [];
 
 		const pool = {
-			query: async (sql: string) => {
+			query: async (sql: string, values: unknown[] = []) => {
 				queries.push(sql);
 				if (sql.includes('SELECT * FROM sources WHERE file_hash')) {
 					return { rows: [], rowCount: 0 };
+				}
+				if (sql.includes('SELECT * FROM document_blobs WHERE content_hash')) {
+					return { rows: [], rowCount: 0 };
+				}
+				if (sql.includes('INSERT INTO document_blobs')) {
+					canonicalBlobPath = String(values[1]);
+					return {
+						rows: [
+							{
+								content_hash: String(values[0]),
+								mulder_blob_id: randomUUID(),
+								storage_path: canonicalBlobPath,
+								storage_uri: String(values[2]),
+								mime_type: String(values[3]),
+								file_size_bytes: String(values[4]),
+								storage_class: 'standard',
+								storage_status: 'active',
+								original_filenames: ['native-text-sample.pdf'],
+								first_ingested_at: now,
+								last_accessed_at: now,
+								integrity_verified_at: null,
+								integrity_status: 'unverified',
+								created_at: now,
+								updated_at: now,
+							},
+						],
+						rowCount: 1,
+					};
 				}
 				if (sql.includes('INSERT INTO sources')) {
 					return {
@@ -36,8 +64,11 @@ describe('Spec 16 — Ingest duplicate race regression', () => {
 							{
 								id: existingSourceId,
 								filename: 'native-text-sample.pdf',
-								storage_path: existingStoragePath,
-								file_hash: 'race-hash',
+								storage_path: canonicalBlobPath,
+								file_hash: String(values[3]),
+								parent_source_id: null,
+								source_type: 'pdf',
+								format_metadata: {},
 								page_count: 1,
 								has_native_text: true,
 								native_text_ratio: 1,
@@ -61,6 +92,8 @@ describe('Spec 16 — Ingest duplicate race regression', () => {
 				upload: async (path: string) => {
 					uploads.push(path);
 				},
+				buildUri: (path: string) => `gs://test-bucket/${path}`,
+				exists: async () => false,
 				delete: async (path: string) => {
 					deletes.push(path);
 				},
@@ -84,12 +117,12 @@ describe('Spec 16 — Ingest duplicate race regression', () => {
 		expect(result.data).toHaveLength(1);
 		expect(result.data[0]).toMatchObject({
 			sourceId: existingSourceId,
-			storagePath: existingStoragePath,
+			storagePath: canonicalBlobPath,
 			duplicate: true,
 		});
 		expect(result.metadata.items_skipped).toBe(1);
 		expect(uploads).toHaveLength(1);
-		expect(deletes).toEqual(uploads);
+		expect(deletes).toEqual([]);
 		expect(firestoreWrites).toEqual([]);
 		expect(queries.some((sql) => sql.includes('source_steps'))).toBe(false);
 	});

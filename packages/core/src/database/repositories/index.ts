@@ -45,6 +45,17 @@ export type {
 	FtsSearchResult,
 	VectorSearchResult,
 } from './chunk.types.js';
+export type {
+	DocumentBlob,
+	DocumentBlobIntegrityStatus,
+	DocumentBlobStorageClass,
+	DocumentBlobStorageStatus,
+	UpsertDocumentBlobInput,
+} from './document-blob.repository.js';
+export {
+	findDocumentBlobByHash,
+	upsertDocumentBlob,
+} from './document-blob.repository.js';
 export type { EdgeTypePageFilter } from './edge.repository.js';
 export {
 	countEdges,

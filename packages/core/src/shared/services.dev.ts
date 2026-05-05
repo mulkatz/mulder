@@ -170,6 +170,10 @@ class DevStorageService implements StorageService {
 		this.logger.debug({ bucketPath }, 'DevStorageService: uploaded');
 	}
 
+	buildUri(bucketPath: string): string {
+		return `dev://storage/${bucketPath}`;
+	}
+
 	async createUploadSession(
 		bucketPath: string,
 		_options: CreateStorageUploadSessionOptions,

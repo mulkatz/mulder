@@ -24,6 +24,7 @@ import type {
 	StepError,
 } from '@mulder/core';
 import {
+	buildContentAddressedBlobPath,
 	computeUrlLifecycleNextAllowedAt,
 	createChildLogger,
 	createSource,
@@ -50,6 +51,7 @@ import {
 	normalizeCrossFormatText,
 	withCrossFormatDedupMetadata,
 } from './cross-format-dedup.js';
+import { ensureRawDocumentBlob } from './raw-blob.js';
 import {
 	buildDocxFormatMetadata,
 	buildEmailFormatMetadata,
@@ -887,6 +889,15 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		const existing = await findSourceByHash(ctx.pool, fileHash);
 		if (existing) {
 			log.info({ sourceId: existing.id, fileHash }, 'Duplicate file detected, skipping upload');
+			await ensureRawDocumentBlob({
+				services: ctx.services,
+				pool: ctx.pool,
+				contentHash: fileHash,
+				content: buffer,
+				mediaType: prepared.mediaType,
+				storageExtension: prepared.storageExtension,
+				filename,
+			});
 			return {
 				sourceId: existing.id,
 				filename,
@@ -929,7 +940,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 
 	// i. Dry run: skip upload and DB insert
 	const sourceId = randomUUID();
-	const storagePath = `raw/${sourceId}/original.${prepared.storageExtension}`;
+	let storagePath = buildContentAddressedBlobPath(fileHash, prepared.storageExtension);
 
 	if (ctx.dryRun) {
 		log.info({ sourceId, filename, pageCount: prepared.pageCount }, 'Dry run — skipping upload and DB insert');
@@ -957,9 +968,17 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		});
 	}
 
-	// j. Upload to storage
+	// j. Upload to content-addressed storage and register the blob
 	try {
-		await ctx.services.storage.upload(storagePath, buffer, prepared.mediaType);
+		storagePath = await ensureRawDocumentBlob({
+			services: ctx.services,
+			pool: ctx.pool,
+			contentHash: fileHash,
+			content: buffer,
+			mediaType: prepared.mediaType,
+			storageExtension: prepared.storageExtension,
+			filename,
+		});
 	} catch (cause: unknown) {
 		throw new IngestError(`Upload failed for ${filename}`, INGEST_ERROR_CODES.INGEST_UPLOAD_FAILED, {
 			cause,
@@ -983,20 +1002,6 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 	});
 
 	if (source.id !== sourceId) {
-		if (source.storagePath !== storagePath) {
-			try {
-				await ctx.services.storage.delete(storagePath);
-				log.info(
-					{ sourceId: source.id, duplicateUploadPath: storagePath },
-					'Duplicate file race detected, removed unused uploaded object',
-				);
-			} catch (cause: unknown) {
-				log.warn(
-					{ err: cause, sourceId: source.id, duplicateUploadPath: storagePath },
-					'Duplicate file race detected, but unused uploaded object cleanup failed',
-				);
-			}
-		}
 		return {
 			sourceId: source.id,
 			filename,

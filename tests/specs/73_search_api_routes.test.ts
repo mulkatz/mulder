@@ -78,6 +78,7 @@ function buildMockServices(): Services {
 	return {
 		storage: {
 			upload: async () => {},
+			buildUri: (path: string) => `gs://test-bucket/${path}`,
 			createUploadSession: async () => ({
 				url: '/api/uploads/documents/dev-upload?storage_path=raw/test/original.pdf',
 				method: 'PUT',

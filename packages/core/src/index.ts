@@ -65,6 +65,10 @@ export type {
 	DeadLetterRetryFilter,
 	DeadLetterRetryResult,
 	DequeueJobResult,
+	DocumentBlob,
+	DocumentBlobIntegrityStatus,
+	DocumentBlobStorageClass,
+	DocumentBlobStorageStatus,
 	EdgeType,
 	EdgeTypePageFilter,
 	EmbeddingCandidate,
@@ -125,6 +129,7 @@ export type {
 	UpdateSourceInput,
 	UpdateStoryInput,
 	UpdateTaxonomyEntryInput,
+	UpsertDocumentBlobInput,
 	UpsertEntityGroundingInput,
 	UpsertPipelineRunSourceInput,
 	UpsertSourceStepInput,
@@ -206,6 +211,7 @@ export {
 	findChunksBySourceId,
 	findChunksByStoryId,
 	findDeadLetterJobs,
+	findDocumentBlobByHash,
 	findEdgesByEntityId,
 	findEdgesByStoryId,
 	findEdgesByType,
@@ -277,6 +283,7 @@ export {
 	updateStory,
 	updateStoryStatus,
 	updateTaxonomyEntry,
+	upsertDocumentBlob,
 	upsertEdge,
 	upsertEntityByNameType,
 	upsertEntityGrounding,
@@ -291,6 +298,11 @@ export type { NativeTextDetectOptions, NativeTextResult, PdfMetadata } from './p
 export { detectNativeText, extractPdfMetadata } from './pipeline/index.js';
 // ── Prompt template engine ─────────────────────────────────
 export { clearPromptCaches, listTemplates, renderPrompt } from './prompts/index.js';
+export {
+	assertSha256ContentHash,
+	buildContentAddressedBlobPath,
+	buildContentAddressedBlobUri,
+} from './shared/blob-storage.js';
 export type {
 	BudgetablePipelineStep,
 	BudgetEstimate,
