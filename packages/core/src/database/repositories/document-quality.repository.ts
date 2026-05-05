@@ -75,7 +75,15 @@ function readStringArray(value: unknown): string[] {
 }
 
 function enumValue<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
-	return typeof value === 'string' && allowed.includes(value as T) ? (value as T) : fallback;
+	if (typeof value !== 'string') {
+		return fallback;
+	}
+	for (const item of allowed) {
+		if (item === value) {
+			return item;
+		}
+	}
+	return fallback;
 }
 
 function toDbDimensions(dimensions: DocumentQualityDimensions): Record<string, unknown> {

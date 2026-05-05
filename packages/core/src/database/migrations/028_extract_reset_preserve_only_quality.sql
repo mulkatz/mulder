@@ -1,4 +1,7 @@
--- Preserve upstream quality history when forced extract cleanup resets downstream artifacts.
+-- Tighten extract reset after adding the upstream quality step.
+--
+-- Extract resets should keep a completed quality assessment step, but must not
+-- preserve older ingest/downstream source_steps rows.
 
 CREATE OR REPLACE FUNCTION reset_pipeline_step(
   p_source_id UUID,
