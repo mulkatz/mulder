@@ -395,6 +395,31 @@ describe('Spec 98 - Content-addressed raw blob storage', () => {
 		expect(originalFilenameOccurrences(contentHash, 'same.txt')).toBe(1);
 	});
 
+	it('QA-04b: Exact duplicate CLI ingest keeps the first blob object when the submitted extension changes', () => {
+		if (!pgAvailable) return;
+		const content = '# Spec 98 exact duplicate extension mismatch\n';
+		const markdownFixture = writeFixture('qa-04b/original.md', content);
+		const textFixture = writeFixture('qa-04b/renamed.txt', content);
+		const contentHash = sha256(content);
+		const markdownPath = expectedBlobPath(contentHash, 'md');
+		const textPath = expectedBlobPath(contentHash, 'txt');
+
+		const first = runCli(['ingest', markdownFixture]);
+		expectSuccessful(first);
+		const second = runCli(['ingest', textFixture]);
+		expectSuccessful(second);
+
+		expect(sourceCountForHash(contentHash)).toBe(1);
+		expect(blobCountForHash(contentHash)).toBe(1);
+		expect(db.runSql(`SELECT storage_path FROM document_blobs WHERE content_hash = ${sqlLiteral(contentHash)};`)).toBe(
+			markdownPath,
+		);
+		expect(existsSync(storageObjectPath(markdownPath))).toBe(true);
+		expect(existsSync(storageObjectPath(textPath))).toBe(false);
+		expect(originalFilenameOccurrences(contentHash, 'original.md')).toBe(1);
+		expect(originalFilenameOccurrences(contentHash, 'renamed.txt')).toBe(1);
+	});
+
 	it('QA-05: API upload finalization canonicalizes provisional uploads into blob storage', async () => {
 		if (!pgAvailable) return;
 		const content = Buffer.from('Spec 98 API upload finalization.\n', 'utf-8');
@@ -461,6 +486,44 @@ describe('Spec 98 - Content-addressed raw blob storage', () => {
 				),
 			),
 		).toBe(0);
+		expect(second.finalizePayload).toMatchObject({
+			sourceId: second.sourceId,
+			result_status: 'duplicate',
+			resolved_source_id: first.sourceId,
+			duplicate_of_source_id: first.sourceId,
+		});
+	});
+
+	it('QA-06b: API exact duplicate upload keeps the first blob object when the submitted extension changes', async () => {
+		if (!pgAvailable) return;
+		const content = Buffer.from('# Spec 98 API duplicate extension mismatch\n', 'utf-8');
+		const contentHash = sha256(content);
+		const markdownPath = expectedBlobPath(contentHash, 'md');
+		const textPath = expectedBlobPath(contentHash, 'txt');
+
+		const first = await finalizeUpload({
+			filename: 'first-api-copy.md',
+			content,
+			contentType: 'text/markdown',
+			startPipeline: false,
+		});
+		const second = await finalizeUpload({
+			filename: 'second-api-copy.txt',
+			content,
+			contentType: 'text/plain',
+			startPipeline: true,
+		});
+
+		expect(sourceCountForHash(contentHash)).toBe(1);
+		expect(blobCountForHash(contentHash)).toBe(1);
+		expect(db.runSql(`SELECT storage_path FROM document_blobs WHERE content_hash = ${sqlLiteral(contentHash)};`)).toBe(
+			markdownPath,
+		);
+		expect(existsSync(storageObjectPath(markdownPath))).toBe(true);
+		expect(existsSync(storageObjectPath(textPath))).toBe(false);
+		expect(existsSync(storageObjectPath(second.provisionalPath))).toBe(false);
+		expect(originalFilenameOccurrences(contentHash, 'first-api-copy.md')).toBe(1);
+		expect(originalFilenameOccurrences(contentHash, 'second-api-copy.txt')).toBe(1);
 		expect(second.finalizePayload).toMatchObject({
 			sourceId: second.sourceId,
 			result_status: 'duplicate',

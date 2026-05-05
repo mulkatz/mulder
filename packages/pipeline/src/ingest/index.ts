@@ -30,6 +30,7 @@ import {
 	createSource,
 	detectNativeText,
 	extractPdfMetadata,
+	findDocumentBlobByHash,
 	findSourceByCrossFormatDedupKey,
 	findSourceByHash,
 	findUrlHostLifecycleByHost,
@@ -215,6 +216,19 @@ async function ensureRawDocumentBlob(input: {
 	storageExtension: string;
 	filename: string;
 }): Promise<string> {
+	const existingBlob = await findDocumentBlobByHash(input.pool, input.contentHash);
+	if (existingBlob) {
+		await upsertDocumentBlob(input.pool, {
+			contentHash: input.contentHash,
+			storagePath: existingBlob.storagePath,
+			storageUri: existingBlob.storageUri,
+			mimeType: existingBlob.mimeType,
+			fileSizeBytes: existingBlob.fileSizeBytes,
+			originalFilenames: [input.filename],
+		});
+		return existingBlob.storagePath;
+	}
+
 	const storagePath = buildContentAddressedBlobPath(input.contentHash, input.storageExtension);
 	const exists = await input.services.storage.exists(storagePath);
 	if (!exists) {
@@ -967,7 +981,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 
 	// i. Dry run: skip upload and DB insert
 	const sourceId = randomUUID();
-	const storagePath = buildContentAddressedBlobPath(fileHash, prepared.storageExtension);
+	let storagePath = buildContentAddressedBlobPath(fileHash, prepared.storageExtension);
 
 	if (ctx.dryRun) {
 		log.info({ sourceId, filename, pageCount: prepared.pageCount }, 'Dry run — skipping upload and DB insert');
@@ -997,7 +1011,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 
 	// j. Upload to content-addressed storage and register the blob
 	try {
-		await ensureRawDocumentBlob({
+		storagePath = await ensureRawDocumentBlob({
 			services: ctx.services,
 			pool: ctx.pool,
 			contentHash: fileHash,
