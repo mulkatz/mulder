@@ -101,6 +101,11 @@ function resetDatabase(): void {
 		'DROP TABLE IF EXISTS pipeline_run_sources CASCADE',
 		'DROP TABLE IF EXISTS pipeline_runs CASCADE',
 		'DROP TABLE IF EXISTS jobs CASCADE',
+		'DROP TABLE IF EXISTS monthly_budget_reservations CASCADE',
+		'DROP TABLE IF EXISTS api_sessions CASCADE',
+		'DROP TABLE IF EXISTS api_invitations CASCADE',
+		'DROP TABLE IF EXISTS api_users CASCADE',
+		'DROP TABLE IF EXISTS document_blobs CASCADE',
 		'DROP TYPE IF EXISTS job_status CASCADE',
 		'DROP TABLE IF EXISTS chunks CASCADE',
 		'DROP TABLE IF EXISTS story_entities CASCADE',
@@ -117,6 +122,7 @@ function resetDatabase(): void {
 		'DROP TABLE IF EXISTS source_steps CASCADE',
 		'DROP TABLE IF EXISTS sources CASCADE',
 		'DROP TABLE IF EXISTS mulder_migrations CASCADE',
+		'DROP TYPE IF EXISTS source_type CASCADE',
 		'DROP INDEX IF EXISTS idx_entities_geom',
 		'DROP EXTENSION IF EXISTS vector CASCADE',
 		'DROP EXTENSION IF EXISTS postgis CASCADE',
@@ -165,8 +171,7 @@ describe('Spec 07: Database Client + Migration Runner', () => {
 			const combined = stdout + stderr;
 
 			expect(exitCode).toBe(0);
-			// Structured log should confirm worker pool was created
-			expect(combined).toContain('Worker pool created');
+			expect(combined).toMatch(/Applied \d+ migration|Database is up to date/);
 		});
 	});
 
@@ -597,7 +602,16 @@ describe('Spec 07: Database Client + Migration Runner', () => {
 					await closeAllPools();
 				}
 			`,
-				{ timeout: 15000 },
+				{
+					timeout: 15000,
+					env: {
+						MULDER_TEST_CLOUD_SQL_HOST: '',
+						MULDER_TEST_CLOUD_SQL_PORT: '',
+						MULDER_TEST_CLOUD_SQL_DATABASE: '',
+						MULDER_TEST_CLOUD_SQL_USER: '',
+						MULDER_TEST_CLOUD_SQL_PASSWORD: '',
+					},
+				},
 			);
 
 			const combined = stdout + stderr;

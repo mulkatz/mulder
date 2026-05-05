@@ -10,7 +10,7 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import type { MulderConfig } from '../config/types.js';
 import { createEmailExtractorService } from './email-extractor.js';
 import type { Logger } from './logger.js';
@@ -651,7 +651,9 @@ export function createDevServices(_config: MulderConfig, logger: Logger): Servic
 	// fixtures/ = checked-in test data (read-only, deterministic)
 	// .local/storage/ = runtime data from dev-mode pipeline runs (gitignored)
 	const fixturesPath = join(process.cwd(), 'fixtures');
-	const storagePath = join(process.cwd(), '.local', 'storage');
+	const storagePath = process.env.MULDER_TEST_STORAGE_ROOT
+		? resolve(process.env.MULDER_TEST_STORAGE_ROOT)
+		: join(process.cwd(), '.local', 'storage');
 
 	logger.debug({ fixturesPath, storagePath }, 'Creating dev-mode services');
 

@@ -188,6 +188,10 @@ Everything beyond `project` and `ontology` has sensible defaults. See [`mulder.c
 | **CLI** | Commander.js |
 | **Testing** | Vitest |
 
+## Testing
+
+Mulder's test suite is split into explicit lanes for fast feedback and hermetic database/storage behavior. See the [testing strategy](./docs/testing-strategy.md) before adding or moving tests, especially for the currently small `unit` lane and the manual/opt-in `external` lane.
+
 ## Status
 
 Mulder's **CLI/backend track is complete through M9 Multi-Format Ingestion**: the v1.0 search pipeline is operational, the v2.0 intelligence layer is in place, production-safety tooling is covered, and ingestion now supports images, plain text, DOCX, spreadsheets, emails, URLs, lifecycle/refetch handling, and conservative cross-format deduplication.

@@ -39,8 +39,13 @@ export const MULDER_TEST_TABLES = [
 	'pipeline_run_sources',
 	'pipeline_runs',
 	'jobs',
+	'monthly_budget_reservations',
 	'url_lifecycle',
 	'url_host_lifecycle',
+	'api_sessions',
+	'api_invitations',
+	'api_users',
+	'document_blobs',
 	'source_steps',
 	'sources',
 ] as const;

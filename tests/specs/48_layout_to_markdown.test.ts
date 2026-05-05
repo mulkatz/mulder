@@ -27,6 +27,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:f
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
+import { testStoragePath } from '../lib/storage.js';
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -41,7 +42,7 @@ const FIXTURE_EXTRACTED_DIR = resolve(ROOT, 'fixtures/extracted');
 const GOLDEN_DIR = resolve(ROOT, 'eval/golden/layout-markdown');
 const FIXTURE_RAW_DIR = resolve(ROOT, 'fixtures/raw');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_RAW_DIR, 'native-text-sample.pdf');
-const EXTRACTED_STORAGE_DIR = resolve(ROOT, '.local/storage/extracted');
+const EXTRACTED_STORAGE_DIR = testStoragePath('extracted');
 
 const TMP_DIR = '/tmp/qa-48';
 

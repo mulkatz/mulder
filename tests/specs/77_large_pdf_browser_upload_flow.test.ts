@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import type { WorkerRuntimeContext } from '@mulder/worker';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
+import { testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CORE_DIR = resolve(ROOT, 'packages/core');
@@ -19,7 +20,7 @@ const WORKER_DIST = resolve(WORKER_DIR, 'dist/index.js');
 const API_APP_DIST = resolve(API_DIR, 'dist/app.js');
 const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
-const STORAGE_DIR = resolve(ROOT, '.local/storage');
+const STORAGE_DIR = testStoragePath();
 const BLOBS_STORAGE_DIR = resolve(STORAGE_DIR, 'blobs');
 const RAW_STORAGE_DIR = resolve(STORAGE_DIR, 'raw');
 const FIXTURE_PDF = resolve(ROOT, 'fixtures/raw/native-text-sample.pdf');

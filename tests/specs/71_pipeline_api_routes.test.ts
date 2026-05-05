@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import type { WorkerRuntimeContext } from '@mulder/worker';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
+import { testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CORE_DIR = resolve(ROOT, 'packages/core');
@@ -78,7 +79,7 @@ function cleanState(): void {
 }
 
 function cleanStorageFixtures(): void {
-	for (const dir of [resolve(ROOT, '.local/storage/extracted'), resolve(ROOT, '.local/storage/segments')]) {
+	for (const dir of [testStoragePath('extracted'), testStoragePath('segments')]) {
 		if (!existsSync(dir)) {
 			continue;
 		}

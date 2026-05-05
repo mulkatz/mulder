@@ -15,25 +15,46 @@ const TEST_DB_ENV = {
 	PGDATABASE: process.env.PGDATABASE ?? 'mulder',
 	MULDER_LOG_LEVEL: process.env.MULDER_LOG_LEVEL ?? 'silent',
 };
-const TRUNCATE_SQL = [
-	'TRUNCATE TABLE',
-	'chunks,',
-	'story_entities,',
-	'entity_edges,',
-	'entity_aliases,',
-	'taxonomy,',
-	'entities,',
-	'stories,',
-	'entity_grounding,',
-	'evidence_chains,',
-	'spatio_temporal_clusters,',
-	'pipeline_run_sources,',
-	'pipeline_runs,',
-	'jobs,',
-	'source_steps,',
+const MULDER_TEST_TABLES = [
+	'chunks',
+	'story_entities',
+	'entity_edges',
+	'entity_aliases',
+	'taxonomy',
+	'entities',
+	'stories',
+	'entity_grounding',
+	'evidence_chains',
+	'spatio_temporal_clusters',
+	'pipeline_run_sources',
+	'pipeline_runs',
+	'jobs',
+	'monthly_budget_reservations',
+	'url_lifecycle',
+	'url_host_lifecycle',
+	'api_sessions',
+	'api_invitations',
+	'api_users',
+	'document_blobs',
+	'source_steps',
 	'sources',
-	'CASCADE;',
-].join(' ');
+];
+const TRUNCATE_SQL = `
+DO $$
+DECLARE
+  tables text;
+BEGIN
+  SELECT string_agg(format('%I', tablename), ', ')
+    INTO tables
+    FROM pg_tables
+   WHERE schemaname = 'public'
+     AND tablename = ANY (ARRAY[${MULDER_TEST_TABLES.map((table) => `'${table}'`).join(', ')}]);
+
+  IF tables IS NOT NULL THEN
+    EXECUTE 'TRUNCATE TABLE ' || tables || ' CASCADE';
+  END IF;
+END $$;
+`;
 
 function runTsc(args) {
 	return execFileSync(process.execPath, [TSC, ...args], {

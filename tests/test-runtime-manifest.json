@@ -1,0 +1,44 @@
+{
+	"version": 1,
+	"defaultWeight": 600,
+	"schemaFiles": {
+		"tests/specs/07_database_client_migration_runner.test.ts": 1200,
+		"tests/specs/08_core_schema_migrations.test.ts": 900,
+		"tests/specs/09_job_queue_pipeline_tracking_migrations.test.ts": 900,
+		"tests/specs/14_source_repository.test.ts": 900,
+		"tests/specs/54_v2_schema_migrations.test.ts": 900,
+		"tests/specs/59_hermetic_test_infrastructure.test.ts": 900
+	},
+	"heavyFiles": {
+		"tests/specs/35_graph_step.test.ts": 1200,
+		"tests/specs/44_e2e_pipeline_integration.test.ts": 900,
+		"tests/specs/77_document_observability_route.test.ts": 1100,
+		"tests/specs/77_large_pdf_browser_upload_flow.test.ts": 1400,
+		"tests/specs/87_image_ingestion_layout_path.test.ts": 1400,
+		"tests/specs/88_plain_text_ingestion_prestructured_path.test.ts": 1200,
+		"tests/specs/89_docx_ingestion_prestructured_path.test.ts": 1600,
+		"tests/specs/90_spreadsheet_ingestion_prestructured_path.test.ts": 1900,
+		"tests/specs/91_email_ingestion_prestructured_path.test.ts": 900,
+		"tests/specs/92_url_ingestion_prestructured_path.test.ts": 1600,
+		"tests/specs/93_url_rendering_playwright_fallback.test.ts": 1100,
+		"tests/specs/94_url_lifecycle_refetch.test.ts": 1000,
+		"tests/specs/95_format_aware_extract_routing.test.ts": 1000,
+		"tests/specs/96_cross_format_ingest_dedup.test.ts": 1200,
+		"tests/specs/97_multi_format_golden_tests.test.ts": 1500,
+		"tests/specs/98_content_addressed_storage.test.ts": 2200
+	},
+	"externalFiles": {
+		"tests/specs/12_docker_compose.test.ts": 1200,
+		"tests/specs/20_fixture_generator.test.ts": 500,
+		"tests/specs/47_document_ai_extraction.test.ts": 500
+	},
+	"fileWeights": {
+		"tests/specs/16_ingest_step.test.ts": 1000,
+		"tests/specs/48_layout_to_markdown.test.ts": 900,
+		"tests/specs/50_taxonomy_export_curate_merge.test.ts": 900,
+		"tests/specs/53_export_commands.test.ts": 900,
+		"tests/specs/68_worker_loop.test.ts": 800,
+		"tests/specs/73_search_api_routes.test.ts": 800,
+		"tests/specs/78_selective_reprocessing.test.ts": 900
+	}
+}

@@ -26,6 +26,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
+import { testStoragePath } from '../lib/storage.js';
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -35,8 +36,8 @@ const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const FIXTURE_RAW_DIR = resolve(ROOT, 'fixtures/raw');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_RAW_DIR, 'native-text-sample.pdf');
-const EXTRACTED_STORAGE_DIR = resolve(ROOT, '.local/storage/extracted');
-const RAW_STORAGE_DIR = resolve(ROOT, '.local/storage/raw');
+const EXTRACTED_STORAGE_DIR = testStoragePath('extracted');
+const RAW_STORAGE_DIR = testStoragePath('raw');
 
 // ---------------------------------------------------------------------------
 // Docker / PG helpers (shared with spec 19, 48 container)

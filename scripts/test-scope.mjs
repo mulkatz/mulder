@@ -8,6 +8,12 @@ const ROOT = resolve(dirname(SCRIPT_PATH), '..');
 const SPECS_DIR = resolve(ROOT, 'docs/specs');
 const TESTS_DIR = resolve(ROOT, 'tests/specs');
 const VITEST = resolve(ROOT, 'node_modules/vitest/vitest.mjs');
+const TEST_RUNNER = resolve(ROOT, 'scripts/test-runner.mjs');
+const MANIFEST_PATH = resolve(ROOT, 'tests/test-runtime-manifest.json');
+
+const SERIAL_VITEST_ARGS = ['--no-file-parallelism', '--maxWorkers=1'];
+const PARALLEL_VITEST_ARGS = ['--fileParallelism=true'];
+const LANE_ORDER = ['unit', 'schema', 'db', 'heavy', 'external'];
 
 const SPEC_TEST_OVERRIDES = new Map([['77_document_observability_aggregation', ['77_document_observability_route']]]);
 
@@ -177,6 +183,49 @@ function resolveScope(scopeType, scopeValue) {
 	};
 }
 
+function readJson(path) {
+	return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+function loadManifest() {
+	if (!existsSync(MANIFEST_PATH)) {
+		throw new Error(`Runtime manifest not found: ${MANIFEST_PATH}`);
+	}
+	return readJson(MANIFEST_PATH);
+}
+
+function laneNameForFile(relativePath, manifest) {
+	if (relativePath.startsWith('packages/') || relativePath.startsWith('apps/')) {
+		return 'unit';
+	}
+	if (Object.hasOwn(manifest.schemaFiles ?? {}, relativePath)) {
+		return 'schema';
+	}
+	if (Object.hasOwn(manifest.heavyFiles ?? {}, relativePath)) {
+		return 'heavy';
+	}
+	if (Object.hasOwn(manifest.externalFiles ?? {}, relativePath)) {
+		return 'external';
+	}
+	return 'db';
+}
+
+function rewriteJUnitOutputArgs(extraArgs, suffix) {
+	return extraArgs.map((arg) => {
+		const prefix = '--outputFile.junit=';
+		if (!arg.startsWith(prefix)) {
+			return arg;
+		}
+		const path = arg.slice(prefix.length);
+		const extensionIndex = path.lastIndexOf('.');
+		const suffixed =
+			extensionIndex === -1
+				? `${path}-${suffix}`
+				: `${path.slice(0, extensionIndex)}-${suffix}${path.slice(extensionIndex)}`;
+		return `${prefix}${suffixed}`;
+	});
+}
+
 function printSelection(selection) {
 	process.stdout.write(
 		[
@@ -190,13 +239,53 @@ function printSelection(selection) {
 }
 
 function runVitest(selection, extraArgs) {
-	const result = spawnSync(process.execPath, [VITEST, 'run', ...extraArgs, ...selection.files], {
-		cwd: ROOT,
-		stdio: 'inherit',
-		env: process.env,
-	});
+	const manifest = loadManifest();
+	const filesByLane = new Map(LANE_ORDER.map((laneName) => [laneName, []]));
+	for (const file of selection.files) {
+		filesByLane.get(laneNameForFile(file, manifest)).push(file);
+	}
 
-	process.exit(result.status ?? 1);
+	let exitCode = 0;
+	const selectedLaneCount = [...filesByLane.values()].filter((files) => files.length > 0).length;
+	for (const laneName of LANE_ORDER) {
+		const laneFiles = filesByLane.get(laneName);
+		if (laneFiles.length === 0) {
+			continue;
+		}
+
+		const label = `scope-${selection.scopeType}-${selection.scopeValue}-${laneName}`;
+		const groupExtraArgs = selectedLaneCount > 1 ? rewriteJUnitOutputArgs(extraArgs, laneName) : extraArgs;
+		const vitestArgs = laneName === 'unit' ? PARALLEL_VITEST_ARGS : SERIAL_VITEST_ARGS;
+		process.stdout.write(
+			[`Scope lane ${laneName}`, `Files: ${laneFiles.length}`, ...laneFiles.map((file) => ` - ${file}`), ''].join('\n'),
+		);
+
+		const result = spawnSync(
+			process.execPath,
+			[
+				TEST_RUNNER,
+				'run',
+				label,
+				'--',
+				process.execPath,
+				VITEST,
+				'run',
+				...vitestArgs,
+				...groupExtraArgs,
+				...laneFiles,
+			],
+			{
+				cwd: ROOT,
+				stdio: 'inherit',
+				env: process.env,
+			},
+		);
+		if ((result.status ?? 1) !== 0) {
+			exitCode = result.status ?? 1;
+		}
+	}
+
+	process.exit(exitCode);
 }
 
 const rawArgs = process.argv.slice(2);
