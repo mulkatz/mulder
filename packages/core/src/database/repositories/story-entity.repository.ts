@@ -13,6 +13,7 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import { mergeArtifactProvenanceSql, stringifyArtifactProvenance } from './artifact-provenance.js';
 import { type EntityRow, mapEntityRow } from './entity.repository.js';
 import type { LinkStoryEntityInput, StoryEntityWithEntity, StoryEntityWithStory } from './entity.types.js';
 import { mapStoryRow, type StoryRow } from './story.repository.js';
@@ -62,18 +63,25 @@ function mapStoryWithJunctionRow(row: StoryWithJunctionRow): StoryEntityWithStor
 export async function linkStoryEntity(pool: pg.Pool, input: LinkStoryEntityInput): Promise<StoryEntityWithEntity> {
 	const sql = `
     WITH upserted AS (
-      INSERT INTO story_entities (story_id, entity_id, confidence, mention_count)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO story_entities (story_id, entity_id, confidence, mention_count, provenance)
+      VALUES ($1, $2, $3, $4, $5::jsonb)
       ON CONFLICT (story_id, entity_id) DO UPDATE SET
         confidence = EXCLUDED.confidence,
-        mention_count = EXCLUDED.mention_count
+        mention_count = EXCLUDED.mention_count,
+        provenance = ${mergeArtifactProvenanceSql('story_entities.provenance', 'EXCLUDED.provenance')}
       RETURNING *
     )
     SELECT e.*, u.confidence, u.mention_count
     FROM upserted u
     JOIN entities e ON e.id = u.entity_id
   `;
-	const params = [input.storyId, input.entityId, input.confidence ?? null, input.mentionCount ?? 1];
+	const params = [
+		input.storyId,
+		input.entityId,
+		input.confidence ?? null,
+		input.mentionCount ?? 1,
+		stringifyArtifactProvenance(input.provenance),
+	];
 
 	try {
 		const result = await pool.query<EntityWithJunctionRow>(sql, params);

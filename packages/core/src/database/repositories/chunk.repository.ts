@@ -15,6 +15,11 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import {
+	mapArtifactProvenanceFromDb,
+	mergeArtifactProvenanceSql,
+	stringifyArtifactProvenance,
+} from './artifact-provenance.js';
 import type {
 	Chunk,
 	ChunkFilter,
@@ -63,6 +68,7 @@ export function mapChunkRow(row: ChunkRow): Chunk {
 		isQuestion: row.is_question,
 		parentChunkId: row.parent_chunk_id,
 		metadata: row.metadata ?? {},
+		provenance: mapArtifactProvenanceFromDb(row.provenance),
 		createdAt: row.created_at,
 	};
 }
@@ -91,16 +97,24 @@ function formatEmbedding(embedding: number[] | null | undefined): string | null 
  */
 export async function createChunk(pool: pg.Pool, input: CreateChunkInput): Promise<Chunk> {
 	const embeddingLiteral = formatEmbedding(input.embedding);
-	const sql = `
-    INSERT INTO chunks (story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata)
-    VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9)
+	const hasExplicitId = input.id !== undefined;
+	const sql = hasExplicitId
+		? `
+    INSERT INTO chunks (id, story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, $9, $10, $11::jsonb)
     ON CONFLICT (id) DO UPDATE SET
       content = EXCLUDED.content,
       embedding = EXCLUDED.embedding,
-      metadata = EXCLUDED.metadata
+      metadata = EXCLUDED.metadata,
+      provenance = ${mergeArtifactProvenanceSql('chunks.provenance', 'EXCLUDED.provenance')}
+    RETURNING *, embedding::text
+  `
+		: `
+    INSERT INTO chunks (story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10::jsonb)
     RETURNING *, embedding::text
   `;
-	const params = [
+	const baseParams = [
 		input.storyId,
 		input.content,
 		input.chunkIndex,
@@ -110,7 +124,9 @@ export async function createChunk(pool: pg.Pool, input: CreateChunkInput): Promi
 		input.isQuestion ?? false,
 		input.parentChunkId ?? null,
 		JSON.stringify(input.metadata ?? {}),
+		stringifyArtifactProvenance(input.provenance),
 	];
+	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
 
 	try {
 		const result = await pool.query<ChunkRow>(sql, params);
@@ -147,6 +163,7 @@ export async function createChunks(pool: pg.Pool, inputs: CreateChunkInput[]): P
 	const isQuestions: boolean[] = [];
 	const parentChunkIds: (string | null)[] = [];
 	const metadatas: string[] = [];
+	const provenances: string[] = [];
 
 	for (const input of inputs) {
 		storyIds.push(input.storyId);
@@ -158,10 +175,11 @@ export async function createChunks(pool: pg.Pool, inputs: CreateChunkInput[]): P
 		isQuestions.push(input.isQuestion ?? false);
 		parentChunkIds.push(input.parentChunkId ?? null);
 		metadatas.push(JSON.stringify(input.metadata ?? {}));
+		provenances.push(stringifyArtifactProvenance(input.provenance));
 	}
 
 	const sql = `
-    INSERT INTO chunks (story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata)
+    INSERT INTO chunks (story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance)
     SELECT
       unnest($1::uuid[]),
       unnest($2::text[]),
@@ -171,11 +189,8 @@ export async function createChunks(pool: pg.Pool, inputs: CreateChunkInput[]): P
       unnest($6::vector[]),
       unnest($7::boolean[]),
       unnest($8::uuid[]),
-      unnest($9::jsonb[])
-    ON CONFLICT (id) DO UPDATE SET
-      content = EXCLUDED.content,
-      embedding = EXCLUDED.embedding,
-      metadata = EXCLUDED.metadata
+      unnest($9::jsonb[]),
+      unnest($10::jsonb[])
     RETURNING *, embedding::text
   `;
 
@@ -190,6 +205,7 @@ export async function createChunks(pool: pg.Pool, inputs: CreateChunkInput[]): P
 			isQuestions,
 			parentChunkIds,
 			metadatas,
+			provenances,
 		]);
 		repoLogger.debug({ count: result.rows.length, storyId: inputs[0].storyId }, 'Batch chunks created');
 		return result.rows.map(mapChunkRow);

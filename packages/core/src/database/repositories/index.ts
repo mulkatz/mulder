@@ -9,6 +9,15 @@
  * @see docs/specs/32_embedding_wrapper_semantic_chunker_chunk_repository.spec.md §4.5
  */
 
+export type { ArtifactProvenance, ArtifactProvenanceInput } from './artifact-provenance.js';
+export {
+	mapArtifactProvenanceFromDb,
+	mapArtifactProvenanceToDb,
+	mergeArtifactProvenanceSql,
+	normalizeArtifactProvenance,
+	provenanceForSource,
+	stringifyArtifactProvenance,
+} from './artifact-provenance.js';
 export {
 	createMonthlyBudgetReservation,
 	finalizeMonthlyBudgetReservation,

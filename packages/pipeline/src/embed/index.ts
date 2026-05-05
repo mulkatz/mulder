@@ -20,6 +20,7 @@ import {
 	EmbedError,
 	findStoryById,
 	getStepConfigHash,
+	provenanceForSource,
 	resetPipelineStep,
 	updateChunkEmbedding,
 	updateStoryStatus,
@@ -123,6 +124,7 @@ export async function execute(
 			context: { storyId: input.storyId },
 		});
 	}
+	const artifactProvenance = provenanceForSource(story.sourceId, input.extractionPipelineRun ?? null);
 
 	// 3. Validate status — must be at least "enriched"
 	const validStatuses = ['enriched', 'embedded', 'graphed', 'analyzed'];
@@ -234,6 +236,7 @@ export async function execute(
 				pageEnd: sc.pageEnd,
 				isQuestion: false,
 				metadata,
+				provenance: artifactProvenance,
 			};
 		});
 		contentChunks = await createChunks(pool, chunkInputs);
@@ -295,6 +298,7 @@ export async function execute(
 					isQuestion: true,
 					parentChunkId: qr.parentChunkId,
 					metadata: {},
+					provenance: artifactProvenance,
 				});
 				totalQuestionsGenerated++;
 			}

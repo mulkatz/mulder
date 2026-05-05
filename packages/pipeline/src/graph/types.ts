@@ -19,6 +19,7 @@ import type { StepError } from '@mulder/core';
 export interface GraphInput {
 	storyId: string;
 	force?: boolean;
+	extractionPipelineRun?: string | null;
 }
 
 /** Result data from the graph step. */

@@ -13,6 +13,11 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import {
+	mapArtifactProvenanceFromDb,
+	mergeArtifactProvenanceSql,
+	stringifyArtifactProvenance,
+} from './artifact-provenance.js';
 import { type EntityRow, mapEntityRow } from './entity.repository.js';
 import type { CreateEntityAliasInput, Entity, EntityAlias } from './entity.types.js';
 
@@ -28,6 +33,7 @@ interface EntityAliasRow {
 	entity_id: string;
 	alias: string;
 	source: string | null;
+	provenance: unknown;
 }
 
 function mapEntityAliasRow(row: EntityAliasRow): EntityAlias {
@@ -36,6 +42,7 @@ function mapEntityAliasRow(row: EntityAliasRow): EntityAlias {
 		entityId: row.entity_id,
 		alias: row.alias,
 		source: row.source,
+		provenance: mapArtifactProvenanceFromDb(row.provenance),
 	};
 }
 
@@ -50,21 +57,15 @@ function mapEntityAliasRow(row: EntityAliasRow): EntityAlias {
  * Uses a CTE to handle the DO NOTHING case by selecting back.
  */
 export async function createEntityAlias(pool: pg.Pool, input: CreateEntityAliasInput): Promise<EntityAlias> {
-	// Use a CTE: attempt INSERT, on conflict DO NOTHING.
-	// Then SELECT either the newly inserted row or the existing one.
 	const sql = `
-    WITH ins AS (
-      INSERT INTO entity_aliases (entity_id, alias, source)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (entity_id, alias) DO NOTHING
-      RETURNING *
-    )
-    SELECT * FROM ins
-    UNION ALL
-    SELECT * FROM entity_aliases WHERE entity_id = $1 AND alias = $2
-    LIMIT 1
+    INSERT INTO entity_aliases (entity_id, alias, source, provenance)
+    VALUES ($1, $2, $3, $4::jsonb)
+    ON CONFLICT (entity_id, alias) DO UPDATE SET
+      source = COALESCE(entity_aliases.source, EXCLUDED.source),
+      provenance = ${mergeArtifactProvenanceSql('entity_aliases.provenance', 'EXCLUDED.provenance')}
+    RETURNING *
   `;
-	const params = [input.entityId, input.alias, input.source ?? null];
+	const params = [input.entityId, input.alias, input.source ?? null, stringifyArtifactProvenance(input.provenance)];
 
 	try {
 		const result = await pool.query<EntityAliasRow>(sql, params);

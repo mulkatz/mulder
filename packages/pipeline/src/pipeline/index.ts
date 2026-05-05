@@ -600,7 +600,13 @@ async function runStepForSource(
 			if (storyStatusIndex(story.status) >= target && !force) {
 				continue;
 			}
-			await executeEnrich({ storyId: story.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
+			await executeEnrich(
+				{ storyId: story.id, force, extractionPipelineRun: ctx.runId },
+				ctx.config,
+				ctx.services,
+				ctx.pool,
+				ctx.logger,
+			);
 		}
 		return;
 	}
@@ -610,7 +616,13 @@ async function runStepForSource(
 			if (storyStatusIndex(story.status) >= target && !force) {
 				continue;
 			}
-			await executeEmbed({ storyId: story.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
+			await executeEmbed(
+				{ storyId: story.id, force, extractionPipelineRun: ctx.runId },
+				ctx.config,
+				ctx.services,
+				ctx.pool,
+				ctx.logger,
+			);
 		}
 		return;
 	}
@@ -620,7 +632,13 @@ async function runStepForSource(
 			if (storyStatusIndex(story.status) >= target && !force) {
 				continue;
 			}
-			await executeGraph({ storyId: story.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
+			await executeGraph(
+				{ storyId: story.id, force, extractionPipelineRun: ctx.runId },
+				ctx.config,
+				ctx.services,
+				ctx.pool,
+				ctx.logger,
+			);
 		}
 		return;
 	}

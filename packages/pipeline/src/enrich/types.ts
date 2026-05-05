@@ -19,6 +19,7 @@ import type { StepError } from '@mulder/core';
 export interface EnrichInput {
 	storyId: string;
 	force?: boolean;
+	extractionPipelineRun?: string | null;
 }
 
 /** Result from the enrich pipeline step. */
