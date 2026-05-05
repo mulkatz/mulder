@@ -117,6 +117,7 @@ export type {
 	MonthlyBudgetReservationStatus,
 	MonthlyBudgetSummary,
 	NormalizationResult,
+	PersistedSource,
 	PipelineRun,
 	PipelineRunSource,
 	PipelineRunSourceStatus,

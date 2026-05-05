@@ -261,6 +261,7 @@ export {
 export type {
 	CreateSourceInput,
 	FailedSourceInfo,
+	PersistedSource,
 	Source,
 	SourceFilter,
 	SourceFormatMetadata,

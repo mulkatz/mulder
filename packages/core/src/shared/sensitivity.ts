@@ -129,9 +129,13 @@ export function mostRestrictiveSensitivityLevel(
 	levels: readonly (SensitivityLevel | null | undefined)[],
 	fallback: SensitivityLevel = 'internal',
 ): SensitivityLevel {
-	let result = fallback;
+	let result: SensitivityLevel | undefined;
 	for (const level of levels) {
 		if (!level) {
+			continue;
+		}
+		if (!result) {
+			result = level;
 			continue;
 		}
 		const currentRank = SENSITIVITY_RANK.get(result) ?? 0;
@@ -140,7 +144,7 @@ export function mostRestrictiveSensitivityLevel(
 			result = level;
 		}
 	}
-	return result;
+	return result ?? fallback;
 }
 
 export function mergeSensitivityMetadata(

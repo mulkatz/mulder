@@ -17,7 +17,7 @@ import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../.
 import type {
 	CreateSourceInput,
 	FailedSourceInfo,
-	Source,
+	PersistedSource,
 	SourceFilter,
 	SourceFormatMetadata,
 	SourceStatus,
@@ -54,7 +54,7 @@ interface SourceRow {
 	reliability_score: number | null;
 	tags: string[] | null;
 	metadata: Record<string, unknown>;
-	sensitivity_level: Source['sensitivityLevel'];
+	sensitivity_level: PersistedSource['sensitivityLevel'];
 	sensitivity_metadata: unknown;
 	created_at: Date;
 	updated_at: Date;
@@ -77,7 +77,7 @@ interface SourceWithStepsRow extends SourceRow {
 	step_error_message: string | null;
 }
 
-function mapSourceRow(row: SourceRow): Source {
+function mapSourceRow(row: SourceRow): PersistedSource {
 	return {
 		id: row.id,
 		filename: row.filename,
@@ -175,7 +175,7 @@ function buildSourceFilterClause(filter?: SourceFilter): { conditions: string[];
  * On conflict (duplicate hash), returns the existing record with an updated
  * `updated_at` timestamp.
  */
-export async function createSource(pool: Queryable, input: CreateSourceInput): Promise<Source> {
+export async function createSource(pool: Queryable, input: CreateSourceInput): Promise<PersistedSource> {
 	const columns = input.id
 		? [
 				'id',
@@ -267,7 +267,7 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
  *
  * @returns The source, or `null` if not found.
  */
-export async function findSourceById(pool: Queryable, id: string): Promise<Source | null> {
+export async function findSourceById(pool: Queryable, id: string): Promise<PersistedSource | null> {
 	const sql = 'SELECT * FROM sources WHERE id = $1';
 
 	try {
@@ -289,7 +289,7 @@ export async function findSourceById(pool: Queryable, id: string): Promise<Sourc
  *
  * @returns The source, or `null` if not found.
  */
-export async function findSourceByHash(pool: Queryable, hash: string): Promise<Source | null> {
+export async function findSourceByHash(pool: Queryable, hash: string): Promise<PersistedSource | null> {
 	const sql = 'SELECT * FROM sources WHERE file_hash = $1';
 
 	try {
@@ -311,7 +311,10 @@ export async function findSourceByHash(pool: Queryable, hash: string): Promise<S
  *
  * The key lives in format_metadata so this remains migration-free for M9-J12.
  */
-export async function findSourceByCrossFormatDedupKey(pool: Queryable, dedupKey: string): Promise<Source | null> {
+export async function findSourceByCrossFormatDedupKey(
+	pool: Queryable,
+	dedupKey: string,
+): Promise<PersistedSource | null> {
 	const sql = `
     SELECT *
     FROM sources
@@ -340,7 +343,7 @@ export async function findSourceByCrossFormatDedupKey(pool: Queryable, dedupKey:
  * Supports filtering by status and tags, with pagination via limit/offset.
  * Results are ordered by `created_at DESC`.
  */
-export async function findAllSources(pool: pg.Pool, filter?: SourceFilter): Promise<Source[]> {
+export async function findAllSources(pool: pg.Pool, filter?: SourceFilter): Promise<PersistedSource[]> {
 	const { conditions, params } = buildSourceFilterClause(filter);
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -370,7 +373,7 @@ export interface SourceReliabilityFilter {
 /**
  * Finds all sources with a persisted reliability score.
  */
-export async function findScoredSources(pool: pg.Pool, filter?: SourceReliabilityFilter): Promise<Source[]> {
+export async function findScoredSources(pool: pg.Pool, filter?: SourceReliabilityFilter): Promise<PersistedSource[]> {
 	const limit = filter?.limit ?? 100;
 	const offset = filter?.offset ?? 0;
 	const sql = `
@@ -433,7 +436,7 @@ export async function countSources(pool: pg.Pool, filter?: SourceFilter): Promis
  *
  * @throws {DatabaseError} with `DB_NOT_FOUND` if the source does not exist.
  */
-export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourceInput): Promise<Source> {
+export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourceInput): Promise<PersistedSource> {
 	const setClauses: string[] = [];
 	const params: unknown[] = [];
 	let paramIndex = 1;
@@ -519,7 +522,7 @@ export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourc
  *
  * @throws {DatabaseError} with `DB_NOT_FOUND` if the source does not exist.
  */
-export async function updateSourceStatus(pool: pg.Pool, id: string, status: SourceStatus): Promise<Source> {
+export async function updateSourceStatus(pool: pg.Pool, id: string, status: SourceStatus): Promise<PersistedSource> {
 	const sql = 'UPDATE sources SET status = $1, updated_at = now() WHERE id = $2 RETURNING *';
 
 	try {
@@ -542,7 +545,7 @@ export async function updateSourceStatus(pool: pg.Pool, id: string, status: Sour
 	}
 }
 
-export async function updateSourceSensitivityFromArtifacts(pool: pg.Pool, sourceId: string): Promise<Source> {
+export async function updateSourceSensitivityFromArtifacts(pool: pg.Pool, sourceId: string): Promise<PersistedSource> {
 	const sql = `
     WITH artifact_sensitivity AS (
       SELECT sensitivity_level, sensitivity_metadata
