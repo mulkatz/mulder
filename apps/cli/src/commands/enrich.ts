@@ -13,7 +13,10 @@ import {
 	closeAllPools,
 	createLogger,
 	createServiceRegistry,
+	ENRICH_ERROR_CODES,
+	EnrichError,
 	findAllStories,
+	findSourceById,
 	findStoriesBySourceId,
 	findStoryById,
 	getWorkerPool,
@@ -172,6 +175,13 @@ export function registerEnrichCommands(program: Command): void {
 							const result = await executeEnrich({ storyId, force: options.force }, config, services, pool, logger);
 							results.push(result);
 						} else {
+							const source = await findSourceById(pool, storyId);
+							if (!source) {
+								throw new EnrichError(`Story not found: ${storyId}`, ENRICH_ERROR_CODES.ENRICH_STORY_NOT_FOUND, {
+									context: { storyId },
+								});
+							}
+
 							const stories = await findStoriesBySourceId(pool, storyId);
 							if (stories.length === 0) {
 								printSuccess('No stories found for this source');
