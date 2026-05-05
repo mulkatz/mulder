@@ -7,6 +7,7 @@ import { PIPELINE_ERROR_CODES } from '@mulder/core';
 import type { WorkerRuntimeContext } from '@mulder/worker';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
+import { testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CORE_DIR = resolve(ROOT, 'packages/core');
@@ -21,7 +22,7 @@ const API_APP_DIST = resolve(API_DIR, 'dist/app.js');
 const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 const CORE_MIGRATIONS_DIR = resolve(ROOT, 'packages/core/src/database/migrations');
-const SPEC_STORAGE_DIR = resolve(ROOT, '.local/storage/segments/spec-86');
+const SPEC_STORAGE_DIR = testStoragePath('segments', 'spec-86');
 
 type SourceTypeValue = 'pdf' | 'image' | 'text' | 'docx' | 'spreadsheet' | 'email' | 'url';
 type PipelineStepValue = 'ingest' | 'extract' | 'segment' | 'enrich' | 'embed' | 'graph';

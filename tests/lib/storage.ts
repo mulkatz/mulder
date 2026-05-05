@@ -1,7 +1,7 @@
 /**
- * Shared test helper: snapshot/diff cleanup for `.local/storage/*` directories.
+ * Shared test helper: snapshot/diff cleanup for dev storage directories.
  *
- * Dev-mode ingests write to `.local/storage/raw/{sourceId}/original.pdf`.
+ * Dev-mode ingests write to `${TEST_STORAGE_ROOT}/raw/{sourceId}/original.pdf`.
  * Tests that invoke `mulder ingest` must clean up these entries in `afterAll`
  * or they accumulate across runs.
  *
@@ -10,7 +10,7 @@
  *   let snapshot: StorageSnapshot;
  *
  *   beforeAll(() => {
- *     snapshot = snapshotStorageDir('.local/storage/raw');
+ *     snapshot = snapshotStorageDir(testStoragePath('raw'));
  *   });
  *
  *   afterAll(() => {
@@ -23,7 +23,17 @@
  */
 
 import { existsSync, readdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+
+const ROOT = resolve(import.meta.dirname, '../..');
+
+export const TEST_STORAGE_ROOT = process.env.MULDER_TEST_STORAGE_ROOT
+	? resolve(process.env.MULDER_TEST_STORAGE_ROOT)
+	: resolve(ROOT, '.local/storage');
+
+export function testStoragePath(...segments: string[]): string {
+	return segments.length === 0 ? TEST_STORAGE_ROOT : resolve(TEST_STORAGE_ROOT, ...segments);
+}
 
 export type StorageSnapshot = {
 	readonly dir: string;

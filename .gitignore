@@ -33,6 +33,7 @@ eval/metrics/*.json
 
 # Test
 coverage/
+.test-results/
 tests/data/
 
 # Build outputs

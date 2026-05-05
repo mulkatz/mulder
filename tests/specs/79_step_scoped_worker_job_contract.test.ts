@@ -8,6 +8,7 @@ import type { WorkerRuntimeContext } from '@mulder/worker';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
 import { truncateMulderTables } from '../lib/schema.js';
+import { testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CORE_DIR = resolve(ROOT, 'packages/core');
@@ -19,7 +20,7 @@ const PIPELINE_DIST = resolve(PIPELINE_DIR, 'dist/index.js');
 const WORKER_DIST = resolve(WORKER_DIR, 'dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 const FIXTURE_PDF = resolve(ROOT, 'fixtures/raw/native-text-sample.pdf');
-const STORAGE_ROOT = resolve(ROOT, '.local/storage');
+const STORAGE_ROOT = testStoragePath();
 const CORE_MIGRATIONS_DIR = resolve(ROOT, 'packages/core/src/database/migrations');
 
 type JobState = {

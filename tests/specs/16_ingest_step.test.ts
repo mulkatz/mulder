@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
-import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir } from '../lib/storage.js';
+import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir, testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -14,7 +14,7 @@ const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
 
 let tmpDir: string;
 let storageRawSnapshot: StorageSnapshot;
-const STORAGE_RAW_DIR = resolve(resolve(import.meta.dirname, '../..'), '.local/storage/raw');
+const STORAGE_RAW_DIR = testStoragePath('raw');
 
 /**
  * Black-box QA tests for Spec 16: Ingest Step

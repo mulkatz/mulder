@@ -4,11 +4,12 @@ import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
 import { ensureSchema } from '../lib/schema.js';
+import { testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const FIXTURE_DIR = resolve(ROOT, 'fixtures/raw');
-const EXTRACTED_DIR = resolve(ROOT, '.local/storage/extracted');
+const EXTRACTED_DIR = testStoragePath('extracted');
 const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
 
 /**
