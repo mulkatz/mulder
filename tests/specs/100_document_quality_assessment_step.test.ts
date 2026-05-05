@@ -828,6 +828,93 @@ describe('Spec 100: document quality assessment step', () => {
 		},
 	);
 
+	it.skipIf(!pgAvailable)(
+		'QA-10f: quality-gated reprocess does not run global analyze unless graph completes',
+		async () => {
+			const source = await createTestSource({
+				sourceType: 'pdf',
+				filename: 'spec100-reprocess-skip-analyze.pdf',
+				storagePath: 'raw/spec100-reprocess-skip-analyze.pdf',
+				formatMetadata: { media_type: 'application/pdf' },
+				nativeTextRatio: 0,
+				hasNativeText: false,
+			});
+			await coreModule.updateSourceStatus(pool, source.id, 'graphed');
+			await coreModule.createStory(pool, {
+				sourceId: source.id,
+				title: 'Stale Analyze Story',
+				gcsMarkdownUri: `segments/${source.id}/stale-analyze.md`,
+				gcsMetadataUri: `segments/${source.id}/stale-analyze.meta.json`,
+			});
+			await coreModule.createDocumentQualityAssessment(pool, {
+				sourceId: source.id,
+				assessmentMethod: 'human',
+				overallQuality: 'unusable',
+				processable: false,
+				recommendedPath: 'skip',
+				dimensions: qualityDimensions({ score: 0, method: 'n/a' }),
+				signals: { reviewer: 'spec100-reprocess-skip-analyze' },
+			});
+			await coreModule.upsertSourceStep(pool, {
+				sourceId: source.id,
+				stepName: 'quality',
+				status: 'completed',
+				configHash: coreModule.getStepConfigHash(config, 'quality'),
+			});
+			await coreModule.upsertSourceStep(pool, {
+				sourceId: source.id,
+				stepName: 'extract',
+				status: 'completed',
+				configHash: coreModule.getStepConfigHash(config, 'extract'),
+			});
+			await coreModule.upsertSourceStep(pool, {
+				sourceId: source.id,
+				stepName: 'segment',
+				status: 'completed',
+				configHash: coreModule.getStepConfigHash(config, 'segment'),
+			});
+			await coreModule.upsertSourceStep(pool, {
+				sourceId: source.id,
+				stepName: 'graph',
+				status: 'completed',
+				configHash: coreModule.getStepConfigHash(config, 'graph'),
+			});
+			const analysisEnabledConfig: import('@mulder/core').MulderConfig = {
+				...config,
+				analysis: {
+					...config.analysis,
+					enabled: true,
+					contradictions: false,
+					reliability: false,
+					evidence_chains: false,
+					spatio_temporal: false,
+				},
+			};
+
+			const result = await pipelineModule.executeReprocess(
+				{ step: 'extract' },
+				analysisEnabledConfig,
+				fakeServices(),
+				pool,
+				testLogger(),
+			);
+
+			expect(result.status).toBe('success');
+			expect(result.plan.globalAnalyzePlanned).toBe(true);
+			expect(result.summary.globalAnalyzeStatus).toBe('not-run');
+			expect(
+				db.runSql(
+					`SELECT status FROM source_steps WHERE source_id = ${sqlLiteral(source.id)} AND step_name = 'extract';`,
+				),
+			).toBe('skipped');
+			expect(
+				db.runSql(
+					`SELECT COALESCE((SELECT status FROM source_steps WHERE source_id = ${sqlLiteral(source.id)} AND step_name = 'graph'), 'missing');`,
+				),
+			).toBe('missing');
+		},
+	);
+
 	it.skipIf(!pgAvailable)('QA-11: CLI command runs one source and all eligible sources', async () => {
 		const one = await createTestSource({ filename: 'spec100-cli-one.txt' });
 		const first = runCli(['quality', one.id]);

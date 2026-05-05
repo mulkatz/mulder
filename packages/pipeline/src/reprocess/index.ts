@@ -692,6 +692,7 @@ export async function executeReprocess(
 	let completedSources = 0;
 	let failedSources = 0;
 	let partialSources = 0;
+	let completedGraphSourceCount = 0;
 
 	for (const sourcePlan of plan.sources) {
 		if (!sourcePlan.planned) {
@@ -726,6 +727,9 @@ export async function executeReprocess(
 				if (result.status === 'failed') {
 					failedStep = plannedStep.stepName;
 					break;
+				}
+				if (plannedStep.stepName === 'graph') {
+					completedGraphSourceCount++;
 				}
 				if (plannedStep.stepName === 'extract' && result.status === 'skipped') {
 					terminalSkippedStep = plannedStep.stepName;
@@ -784,7 +788,9 @@ export async function executeReprocess(
 		});
 	}
 
-	const globalAnalyzeStatus = await runGlobalAnalyzeIfNeeded(plan.globalAnalyzePlanned, config, services, pool, runLog);
+	const shouldRunGlobalAnalyze =
+		plan.globalAnalyzePlanned && (plan.plannedSourceCount === 0 || completedGraphSourceCount > 0);
+	const globalAnalyzeStatus = await runGlobalAnalyzeIfNeeded(shouldRunGlobalAnalyze, config, services, pool, runLog);
 	if (globalAnalyzeStatus !== 'not-run') {
 		await persistAnalyzeStepState(pool, config, globalAnalyzeStatus);
 	}
