@@ -100,7 +100,7 @@ function fakeServices(
 			delete: async () => undefined,
 			exists: async (path: string) => Object.hasOwn(downloads, path) || uploaded.has(path),
 			getUri: (path: string) => `gs://test/${path}`,
-			list: async () => ({ objects: [], prefixes: [] }),
+			list: async () => ({ paths: [] }),
 		},
 		firestore: {
 			setDocument: async () => undefined,
@@ -705,6 +705,128 @@ describe('Spec 100: document quality assessment step', () => {
 
 		expect(pipelineModule.isAutomaticExtractionAllowed({ assessment, source })).toBe(true);
 	});
+
+	it.skipIf(!pgAvailable)(
+		'QA-10d: non-text handwriting override without explicit processable is not automatically extractable',
+		async () => {
+			const source = await createTestSource({
+				sourceType: 'image',
+				filename: 'spec100-handwriting-omitted.png',
+				storagePath: 'raw/spec100-handwriting-omitted.png',
+				formatMetadata: {
+					media_type: 'image/png',
+					document_quality_override: {
+						overall_quality: 'low',
+						recommended_path: 'handwriting_recognition',
+					},
+				},
+			});
+
+			const qualityResult = await pipelineModule.executeQuality(
+				{ sourceId: source.id },
+				config,
+				fakeServices(),
+				pool,
+				testLogger(),
+			);
+			expect(qualityResult.status).toBe('success');
+			const assessment = qualityResult.data?.assessment;
+			expect(assessment).toBeDefined();
+			if (!assessment) {
+				throw new Error('quality assessment missing');
+			}
+			expect(assessment.processable).toBe(false);
+			expect(pipelineModule.isAutomaticExtractionAllowed({ assessment, source })).toBe(false);
+
+			const extractResult = await pipelineModule.executeExtract(
+				{ sourceId: source.id },
+				config,
+				fakeServices(),
+				pool,
+				testLogger(),
+			);
+			expect(extractResult.status).toBe('skipped');
+		},
+	);
+
+	it.skipIf(!pgAvailable)(
+		'QA-10e: quality-triggered reprocess preserves quality and stops after terminal extract skip',
+		async () => {
+			const source = await createTestSource({
+				sourceType: 'pdf',
+				filename: 'spec100-reprocess-skip.pdf',
+				storagePath: 'raw/spec100-reprocess-skip.pdf',
+				formatMetadata: { media_type: 'application/pdf' },
+				nativeTextRatio: 0,
+				hasNativeText: false,
+			});
+			await coreModule.updateSourceStatus(pool, source.id, 'graphed');
+			await coreModule.createStory(pool, {
+				sourceId: source.id,
+				title: 'Stale Story',
+				gcsMarkdownUri: `segments/${source.id}/stale.md`,
+				gcsMetadataUri: `segments/${source.id}/stale.meta.json`,
+			});
+			const assessment = await coreModule.createDocumentQualityAssessment(pool, {
+				sourceId: source.id,
+				assessmentMethod: 'human',
+				overallQuality: 'unusable',
+				processable: false,
+				recommendedPath: 'skip',
+				dimensions: qualityDimensions({ score: 0, method: 'n/a' }),
+				signals: { reviewer: 'spec100-reprocess-skip' },
+			});
+			await coreModule.upsertSourceStep(pool, {
+				sourceId: source.id,
+				stepName: 'quality',
+				status: 'completed',
+				configHash: coreModule.getStepConfigHash(config, 'quality'),
+			});
+			await coreModule.upsertSourceStep(pool, {
+				sourceId: source.id,
+				stepName: 'extract',
+				status: 'completed',
+				configHash: coreModule.getStepConfigHash(config, 'extract'),
+			});
+			await coreModule.upsertSourceStep(pool, {
+				sourceId: source.id,
+				stepName: 'segment',
+				status: 'completed',
+				configHash: coreModule.getStepConfigHash(config, 'segment'),
+			});
+
+			const result = await pipelineModule.executeReprocess(
+				{ step: 'extract' },
+				config,
+				fakeServices(),
+				pool,
+				testLogger(),
+			);
+
+			expect(result.status).toBe('success');
+			expect(Number(db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = ${sqlLiteral(source.id)};`))).toBe(0);
+			expect(
+				db.runSql(
+					`SELECT status FROM source_steps WHERE source_id = ${sqlLiteral(source.id)} AND step_name = 'quality';`,
+				),
+			).toBe('completed');
+			expect(
+				db.runSql(
+					`SELECT status FROM source_steps WHERE source_id = ${sqlLiteral(source.id)} AND step_name = 'extract';`,
+				),
+			).toBe('skipped');
+			expect(
+				db.runSql(
+					`SELECT COALESCE((SELECT status FROM source_steps WHERE source_id = ${sqlLiteral(source.id)} AND step_name = 'segment'), 'missing');`,
+				),
+			).toBe('missing');
+			expect(db.runSql(`SELECT status FROM sources WHERE id = ${sqlLiteral(source.id)};`)).toBe('ingested');
+			expect((await coreModule.findLatestDocumentQualityAssessment(pool, source.id))?.id).toBe(assessment.id);
+
+			const followupPlan = await pipelineModule.planReprocess({}, config, pool);
+			expect(followupPlan.plannedSourceCount).toBe(0);
+		},
+	);
 
 	it.skipIf(!pgAvailable)('QA-11: CLI command runs one source and all eligible sources', async () => {
 		const one = await createTestSource({ filename: 'spec100-cli-one.txt' });

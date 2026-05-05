@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type {
 	CompactDocumentQualitySummary,
@@ -20,6 +19,7 @@ import {
 	ExtractError,
 	findLatestDocumentQualityAssessment,
 	findSourceById,
+	getStepConfigHash,
 	normalizeDocumentQualityDimensions,
 	normalizeDocumentQualitySignals,
 	updateSource,
@@ -50,10 +50,6 @@ function readBoolean(value: unknown): boolean | null {
 
 function readString(value: unknown): string | null {
 	return typeof value === 'string' && value.length > 0 ? value : null;
-}
-
-function qualityConfigHash(config: MulderConfig): string {
-	return createHash('sha256').update(JSON.stringify(config.document_quality)).digest('hex');
 }
 
 function clamp01(value: number): number {
@@ -364,6 +360,7 @@ function getDocumentQualityOverride(source: Source): DocumentQualityOverride | n
 function applyOverride(
 	base: ReturnType<typeof buildAutomatedAssessment>,
 	override: DocumentQualityOverride | null,
+	source: Source,
 	config: MulderConfig,
 ): ReturnType<typeof buildAutomatedAssessment> & { assessmentMethod: 'automated' | 'human' } {
 	if (!override) {
@@ -373,7 +370,10 @@ function applyOverride(
 	const overallQuality = override.overallQuality ?? base.overallQuality;
 	const recommendedPath = override.recommendedPath ?? routeForQuality(config, overallQuality);
 	const processable =
-		override.processable ?? (recommendedPath !== 'skip' && recommendedPath !== 'manual_transcription_required');
+		override.processable ??
+		(recommendedPath === 'handwriting_recognition'
+			? isTextLike(source.sourceType)
+			: recommendedPath !== 'skip' && recommendedPath !== 'manual_transcription_required');
 
 	return {
 		overallQuality,
@@ -448,7 +448,7 @@ export async function execute(
 ): Promise<QualityResult> {
 	const startTime = performance.now();
 	const log = createChildLogger(logger, { step: STEP_NAME, sourceId: input.sourceId });
-	const stepConfigHash = qualityConfigHash(config);
+	const stepConfigHash = getStepConfigHash(config, STEP_NAME);
 
 	if (!pool) {
 		throw new ExtractError('Database pool is required for quality step', EXTRACT_ERROR_CODES.EXTRACT_SOURCE_NOT_FOUND, {
@@ -506,7 +506,7 @@ export async function execute(
 	}
 
 	const base = buildAutomatedAssessment({ source, config });
-	const assessmentInput = applyOverride(base, getDocumentQualityOverride(source), config);
+	const assessmentInput = applyOverride(base, getDocumentQualityOverride(source), source, config);
 	const assessment = await createDocumentQualityAssessment(pool, {
 		sourceId: input.sourceId,
 		assessmentMethod: assessmentInput.assessmentMethod,

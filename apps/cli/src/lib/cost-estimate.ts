@@ -352,7 +352,13 @@ export function mapPipelineStepsToEstimateSteps(plannedSteps: readonly PipelineS
 }
 
 export function mapReprocessStepsToEstimateSteps(steps: readonly ReprocessableStep[]): EstimatedStep[] {
-	return steps.map((step) => step);
+	const estimatedSteps: EstimatedStep[] = [];
+	for (const step of steps) {
+		if (step !== 'quality') {
+			estimatedSteps.push(step);
+		}
+	}
+	return estimatedSteps;
 }
 
 export async function promptYesNo(question: string): Promise<boolean> {

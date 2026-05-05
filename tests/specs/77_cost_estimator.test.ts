@@ -111,6 +111,9 @@ function prepareCompletedSource(name: string): string {
 	const sourceId = db.runSql(
 		"SELECT id FROM sources WHERE filename = 'native-text-sample.pdf' ORDER BY created_at DESC LIMIT 1;",
 	);
+	const quality = runCli(['quality', sourceId], { timeout: 240_000 });
+	expect(quality.exitCode, `${quality.stdout}\n${quality.stderr}`).toBe(0);
+
 	const extract = runCli(['extract', sourceId], { timeout: 240_000 });
 	expect(extract.exitCode, `${extract.stdout}\n${extract.stderr}`).toBe(0);
 	ensurePageImages(sourceId);
@@ -224,6 +227,7 @@ describe('Spec 77 — Cost Estimator', () => {
 		expect(rows).toContainEqual(expect.stringMatching(/^enrich:[0-9a-f]{64}$/));
 		expect(rows).toContainEqual(expect.stringMatching(/^extract:[0-9a-f]{64}$/));
 		expect(rows).toContainEqual(expect.stringMatching(/^graph:[0-9a-f]{64}$/));
+		expect(rows).toContainEqual(expect.stringMatching(/^quality:[0-9a-f]{64}$/));
 		expect(rows).toContainEqual(expect.stringMatching(/^segment:[0-9a-f]{64}$/));
 	});
 

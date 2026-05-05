@@ -35,6 +35,7 @@ import { execute as executeEmbed, forceCleanupSource as forceCleanupEmbedSource 
 import { execute as executeEnrich, forceCleanupSource as forceCleanupEnrichSource } from '../enrich/index.js';
 import { execute as executeExtract } from '../extract/index.js';
 import { execute as executeGraph } from '../graph/index.js';
+import { execute as executeQuality } from '../quality/index.js';
 import { execute as executeSegment } from '../segment/index.js';
 import type {
 	ReprocessInput,
@@ -58,7 +59,7 @@ export type {
 	ReprocessStepName,
 } from './types.js';
 
-const STEP_ORDER: readonly ReprocessStepName[] = ['extract', 'segment', 'enrich', 'embed', 'graph'] as const;
+const STEP_ORDER: readonly ReprocessStepName[] = ['quality', 'extract', 'segment', 'enrich', 'embed', 'graph'] as const;
 const SOURCE_STATUS_ORDER: readonly SourceStatus[] = [
 	'ingested',
 	'extracted',
@@ -69,6 +70,7 @@ const SOURCE_STATUS_ORDER: readonly SourceStatus[] = [
 	'analyzed',
 ] as const;
 const STEP_IMPACT: Record<ReprocessStepName, readonly ReprocessStepName[]> = {
+	quality: ['quality', 'extract', 'segment', 'enrich', 'embed', 'graph'],
 	extract: ['extract', 'segment', 'enrich', 'embed', 'graph'],
 	segment: ['segment', 'enrich', 'embed', 'graph'],
 	enrich: ['enrich', 'graph'],
@@ -94,6 +96,8 @@ function sourceStatusIndex(status: SourceStatus): number {
 
 function targetSourceStatusForStep(stepName: ReprocessStepName): SourceStatus {
 	switch (stepName) {
+		case 'quality':
+			return 'ingested';
 		case 'extract':
 			return 'extracted';
 		case 'segment':
@@ -131,6 +135,8 @@ function hasReachedStepPrerequisite(
 ): boolean {
 	const statusIndex = sourceStatusIndex(sourceStatus);
 	switch (stepName) {
+		case 'quality':
+			return statusIndex >= sourceStatusIndex('ingested');
 		case 'extract':
 			return statusIndex >= sourceStatusIndex('ingested');
 		case 'segment':
@@ -174,7 +180,13 @@ function getDirtyTrackedStepReason(
 	currentHash: string,
 ): ReprocessPlanReason | null {
 	const storedStep = findStoredStep(steps, stepName);
-	if (!storedStep || storedStep.status !== 'completed' || !storedStep.configHash) {
+	if (!storedStep?.configHash) {
+		return 'missing-history';
+	}
+	if (storedStep.status === 'skipped' && storedStep.configHash === currentHash) {
+		return null;
+	}
+	if (storedStep.status !== 'completed') {
 		return 'missing-history';
 	}
 	return storedStep.configHash === currentHash ? null : 'hash-mismatch';
@@ -232,6 +244,9 @@ function impactForStep(stepName: ReprocessStepName, sourceSteps: SourceStepRecor
 }
 
 function shouldForcePlannedStep(stepName: ReprocessStepName, dirtySteps: ReadonlySet<ReprocessStepName>): boolean {
+	if (dirtySteps.has('quality')) {
+		return stepName === 'quality' || stepName === 'extract';
+	}
 	if (dirtySteps.has(stepName)) {
 		return true;
 	}
@@ -374,6 +389,10 @@ async function executeStep(
 	logger: Logger,
 ): Promise<{ status: 'success' | 'partial' | 'failed' | 'skipped'; errors: StepError[] }> {
 	switch (stepName) {
+		case 'quality': {
+			const result = await executeQuality({ sourceId, force }, config, services, pool, logger);
+			return { status: result.status, errors: result.errors };
+		}
 		case 'extract': {
 			const result = await executeExtract({ sourceId, force }, config, services, pool, logger);
 			return { status: result.status, errors: result.errors };
@@ -681,6 +700,7 @@ export async function executeReprocess(
 
 		const sourceLog = createChildLogger(runLog, { sourceId: sourcePlan.sourceId });
 		let failedStep: ReprocessStepName | null = null;
+		let terminalSkippedStep: ReprocessStepName | null = null;
 		let sourceHadPartial = false;
 		let sourceErrors: StepError[] = [];
 		const preservedEmbedStep = shouldPreserveEmbedStep(sourcePlan)
@@ -705,6 +725,10 @@ export async function executeReprocess(
 				}
 				if (result.status === 'failed') {
 					failedStep = plannedStep.stepName;
+					break;
+				}
+				if (plannedStep.stepName === 'extract' && result.status === 'skipped') {
+					terminalSkippedStep = plannedStep.stepName;
 					break;
 				}
 				if (plannedStep.stepName === 'enrich' && !preservedEmbedStepRestored) {
@@ -743,8 +767,15 @@ export async function executeReprocess(
 
 		completedSources++;
 		const lastStep =
-			sourcePlan.steps[sourcePlan.steps.length - 1]?.stepName ?? sourcePlan.steps[0]?.stepName ?? 'extract';
-		await updateSourceStatus(pool, sourcePlan.sourceId, targetSourceStatusForStep(lastStep));
+			terminalSkippedStep ??
+			sourcePlan.steps[sourcePlan.steps.length - 1]?.stepName ??
+			sourcePlan.steps[0]?.stepName ??
+			'extract';
+		await updateSourceStatus(
+			pool,
+			sourcePlan.sourceId,
+			terminalSkippedStep === 'extract' ? 'ingested' : targetSourceStatusForStep(lastStep),
+		);
 		await upsertPipelineRunSource(pool, {
 			runId: run.id,
 			sourceId: sourcePlan.sourceId,

@@ -2064,7 +2064,7 @@ async function forceCleanup(sourceId: string, services: Services, pool: pg.Pool,
 	}
 	logger.debug({ sourceId, deletedFiles: existingSegments.paths.length }, 'Deleted downstream segment artifacts');
 
-	// 2. Atomic DB reset — cascading-deletes stories, chunks, edges, ALL source_steps
+	// 2. Atomic DB reset — cascading-deletes stories, chunks, edges, and downstream source_steps.
 	await resetPipelineStep(pool, sourceId, 'extract');
 	logger.info({ sourceId }, 'Force cleanup complete — source status reset to ingested');
 }
@@ -2182,6 +2182,12 @@ export async function execute(
 		assertFallbackOnlySupported(route, { sourceId: input.sourceId });
 	}
 
+	let didForceCleanup = false;
+	if (input.force && source.status !== 'ingested') {
+		await forceCleanup(input.sourceId, services, pool, log);
+		didForceCleanup = true;
+	}
+
 	const latestQuality = config.document_quality.enabled
 		? await findLatestDocumentQualityAssessment(pool, input.sourceId)
 		: null;
@@ -2245,7 +2251,7 @@ export async function execute(
 	}
 
 	// 3. Force cleanup if --force
-	if (input.force && source.status !== 'ingested') {
+	if (input.force && source.status !== 'ingested' && !didForceCleanup) {
 		await forceCleanup(input.sourceId, services, pool, log);
 	}
 

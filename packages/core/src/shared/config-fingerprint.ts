@@ -9,11 +9,12 @@
 import { createHash } from 'node:crypto';
 import type { MulderConfig } from '../config/index.js';
 
-export type ReprocessableStep = 'extract' | 'segment' | 'enrich' | 'embed' | 'graph';
+export type ReprocessableStep = 'quality' | 'extract' | 'segment' | 'enrich' | 'embed' | 'graph';
 
-const STEP_ORDER: readonly ReprocessableStep[] = ['extract', 'segment', 'enrich', 'embed', 'graph'] as const;
+const STEP_ORDER: readonly ReprocessableStep[] = ['quality', 'extract', 'segment', 'enrich', 'embed', 'graph'] as const;
 
 const FORCED_RERUNS: Record<ReprocessableStep, ReprocessableStep[]> = {
+	quality: ['quality', 'extract', 'segment', 'enrich', 'embed', 'graph'],
 	extract: ['extract', 'segment', 'enrich', 'embed', 'graph'],
 	segment: ['segment', 'enrich', 'embed', 'graph'],
 	enrich: ['enrich', 'graph'],
@@ -48,6 +49,10 @@ function hashProjection(value: unknown): string {
 
 function getConfigProjection(config: MulderConfig, step: ReprocessableStep): unknown {
 	switch (step) {
+		case 'quality':
+			return {
+				document_quality: config.document_quality,
+			};
 		case 'extract':
 			return {
 				extraction: config.extraction,
@@ -84,6 +89,7 @@ export function getStepConfigHash(config: MulderConfig, step: ReprocessableStep)
 
 export function getAllStepConfigHashes(config: MulderConfig): Record<ReprocessableStep, string> {
 	return {
+		quality: getStepConfigHash(config, 'quality'),
 		extract: getStepConfigHash(config, 'extract'),
 		segment: getStepConfigHash(config, 'segment'),
 		enrich: getStepConfigHash(config, 'enrich'),
