@@ -190,4 +190,5 @@ export interface StoryEntityWithEntity extends Entity {
 export interface StoryEntityWithStory extends Story {
 	confidence: number | null;
 	mentionCount: number;
+	provenance: ArtifactProvenance;
 }

@@ -34,9 +34,12 @@ let pgAvailable = false;
 let createEntity: (...args: unknown[]) => Promise<Record<string, unknown>>;
 let upsertEntityByNameType: (...args: unknown[]) => Promise<Record<string, unknown>>;
 let findEntityById: (...args: unknown[]) => Promise<Record<string, unknown> | null>;
+let updateEntity: (...args: unknown[]) => Promise<Record<string, unknown>>;
 let createEntityAlias: (...args: unknown[]) => Promise<Record<string, unknown>>;
 let findAliasesByEntityId: (...args: unknown[]) => Promise<Array<Record<string, unknown>>>;
 let linkStoryEntity: (...args: unknown[]) => Promise<Record<string, unknown>>;
+let findEntitiesByStoryId: (...args: unknown[]) => Promise<Array<Record<string, unknown>>>;
+let findStoriesByEntityId: (...args: unknown[]) => Promise<Array<Record<string, unknown>>>;
 let createEdge: (...args: unknown[]) => Promise<Record<string, unknown>>;
 let upsertEdge: (...args: unknown[]) => Promise<Record<string, unknown>>;
 let findEdgeById: (...args: unknown[]) => Promise<Record<string, unknown> | null>;
@@ -199,9 +202,12 @@ describe('Spec 99: Artifact Provenance Tracking', () => {
 		createEntity = coreMod.createEntity;
 		upsertEntityByNameType = coreMod.upsertEntityByNameType;
 		findEntityById = coreMod.findEntityById;
+		updateEntity = coreMod.updateEntity;
 		createEntityAlias = coreMod.createEntityAlias;
 		findAliasesByEntityId = coreMod.findAliasesByEntityId;
 		linkStoryEntity = coreMod.linkStoryEntity;
+		findEntitiesByStoryId = coreMod.findEntitiesByStoryId;
+		findStoriesByEntityId = coreMod.findStoriesByEntityId;
 		createEdge = coreMod.createEdge;
 		upsertEdge = coreMod.upsertEdge;
 		findEdgeById = coreMod.findEdgeById;
@@ -292,6 +298,29 @@ describe('Spec 99: Artifact Provenance Tracking', () => {
 		expect(sourceIds(mergedEntity.provenance)).toEqual([secondSourceId, sourceId].sort());
 		expect((mergedEntity.provenance as { extractionPipelineRun: string | null }).extractionPipelineRun).toBe(runId);
 
+		const selfCanonicalEntity = await upsertEntityByNameType(pool, {
+			name: 'Self Canonical Entity',
+			type: 'person',
+			provenance: provenanceA,
+		});
+		await updateEntity(pool, selfCanonicalEntity.id, {
+			canonicalId: selfCanonicalEntity.id,
+			provenance: provenanceA,
+		});
+		const mergedSelfCanonicalEntity = await upsertEntityByNameType(pool, {
+			name: 'Self Canonical Entity',
+			type: 'person',
+			provenance: provenanceB,
+		});
+		expect(mergedSelfCanonicalEntity.id).toBe(selfCanonicalEntity.id);
+		expect(mergedSelfCanonicalEntity.canonicalId).toBe(selfCanonicalEntity.id);
+		expect(sourceIds(mergedSelfCanonicalEntity.provenance)).toEqual([secondSourceId, sourceId].sort());
+		const selfCanonicalDuplicates = await pool.query<{ count: string }>(
+			'SELECT COUNT(*) FROM entities WHERE name = $1 AND type = $2',
+			['Self Canonical Entity', 'person'],
+		);
+		expect(Number.parseInt(selfCanonicalDuplicates.rows[0].count, 10)).toBe(1);
+
 		const alias = await createEntityAlias(pool, { entityId: entity.id, alias: 'Repo Alias', provenance: provenanceA });
 		const mergedAlias = await createEntityAlias(pool, {
 			entityId: entity.id,
@@ -309,6 +338,28 @@ describe('Spec 99: Artifact Provenance Tracking', () => {
 			provenance: provenanceA,
 		});
 		expect(storyEntity.id).toBe(entity.id);
+		expect(sourceIds(storyEntity.provenance)).toEqual([sourceId]);
+
+		const junctionEntity = await createEntity(pool, {
+			name: 'Junction Provenance Entity',
+			type: 'person',
+			provenance: provenanceA,
+		});
+		const junctionLink = await linkStoryEntity(pool, {
+			storyId,
+			entityId: junctionEntity.id,
+			confidence: 0.7,
+			mentionCount: 1,
+			provenance: provenanceB,
+		});
+		expect(sourceIds(junctionLink.provenance)).toEqual([secondSourceId]);
+
+		const storyEntities = await findEntitiesByStoryId(pool, storyId);
+		const foundJunctionEntity = storyEntities.find((item) => item.id === junctionEntity.id);
+		expect(sourceIds(foundJunctionEntity?.provenance)).toEqual([secondSourceId]);
+
+		const entityStories = await findStoriesByEntityId(pool, junctionEntity.id);
+		expect(sourceIds(entityStories[0].provenance)).toEqual([secondSourceId]);
 
 		const target = await createEntity(pool, { name: 'Repo Target', type: 'person', provenance: provenanceA });
 		const edge = await createEdge(pool, {
