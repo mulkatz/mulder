@@ -15,6 +15,12 @@ import type { Command } from 'commander';
 import { withErrorHandler } from '../lib/errors.js';
 import { printJson, printSuccess, printYaml } from '../lib/output.js';
 
+interface ConfigCommandOptions {
+	config?: string;
+	format?: string;
+	json?: boolean;
+}
+
 /**
  * Registers the `config` command group on the given Commander program.
  *
@@ -30,10 +36,11 @@ export function registerConfigCommands(program: Command): void {
 		.command('validate')
 		.description('Validate mulder.config.yaml against Zod schema')
 		.argument('[path]', 'path to config file')
+		.option('--config <path>', 'path to config file')
 		.option('--json', 'output validation result in JSON format')
 		.action(
-			withErrorHandler(async (path?: string, options?: { json?: boolean }) => {
-				const config = loadConfig(path);
+			withErrorHandler(async (path?: string, options?: ConfigCommandOptions) => {
+				const config = loadConfig(options?.config ?? path);
 
 				if (options?.json) {
 					printJson({ valid: true, project: config.project.name });
@@ -48,10 +55,11 @@ export function registerConfigCommands(program: Command): void {
 		.command('show')
 		.description('Print resolved config with defaults applied')
 		.argument('[path]', 'path to config file')
+		.option('--config <path>', 'path to config file')
 		.option('--format <format>', 'output format: json or yaml', 'json')
 		.action(
-			withErrorHandler(async (path?: string, options?: { format?: string }) => {
-				const config = loadConfig(path);
+			withErrorHandler(async (path?: string, options?: ConfigCommandOptions) => {
+				const config = loadConfig(options?.config ?? path);
 
 				if (options?.format === 'yaml') {
 					printYaml(config);
@@ -66,10 +74,11 @@ export function registerConfigCommands(program: Command): void {
 		.command('schema')
 		.description('Print generated JSON Schema for entity extraction structured output')
 		.argument('[path]', 'path to config file')
+		.option('--config <path>', 'path to config file')
 		.option('--json', 'output as formatted JSON (default behavior, explicit for scripting)')
 		.action(
-			withErrorHandler(async (path?: string) => {
-				const config = loadConfig(path);
+			withErrorHandler(async (path?: string, options?: ConfigCommandOptions) => {
+				const config = loadConfig(options?.config ?? path);
 				const schema = generateExtractionSchema(config.ontology, {
 					assertionClassificationEnabled: config.enrichment.assertion_classification.enabled,
 				});

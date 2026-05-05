@@ -56,7 +56,8 @@ CREATE OR REPLACE FUNCTION reset_pipeline_step(
 BEGIN
   IF p_step = 'extract' THEN
     DELETE FROM stories WHERE source_id = p_source_id;
-    DELETE FROM source_steps WHERE source_id = p_source_id;
+    DELETE FROM source_steps WHERE source_id = p_source_id
+      AND step_name <> 'quality';
     UPDATE sources SET status = 'ingested' WHERE id = p_source_id;
   END IF;
 
