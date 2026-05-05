@@ -224,8 +224,7 @@ function preChunkMarkdown(markdown: string, targetTokens: number): string[] {
  */
 function mergeExtractionResponses(responses: ExtractionResponse[]): ExtractionResponse {
 	const entityMap = new Map<string, ExtractionResponse['entities'][0]>();
-	const relationshipSet = new Set<string>();
-	const mergedRelationships: ExtractionResponse['relationships'] = [];
+	const relationshipMap = new Map<string, ExtractionResponse['relationships'][0]>();
 	const assertionMap = new Map<string, NonNullable<ExtractionResponse['assertions']>[0]>();
 
 	for (const response of responses) {
@@ -249,9 +248,16 @@ function mergeExtractionResponses(responses: ExtractionResponse[]): ExtractionRe
 
 		for (const rel of response.relationships) {
 			const key = `${rel.source_entity}:${rel.target_entity}:${rel.relationship_type}`;
-			if (!relationshipSet.has(key)) {
-				relationshipSet.add(key);
-				mergedRelationships.push(rel);
+			const existing = relationshipMap.get(key);
+			if (existing) {
+				relationshipMap.set(key, {
+					...existing,
+					confidence: Math.max(existing.confidence, rel.confidence),
+					attributes: { ...(existing.attributes ?? {}), ...(rel.attributes ?? {}) },
+					sensitivity: mergeExtractedSensitivity([existing.sensitivity, rel.sensitivity], 'internal'),
+				});
+			} else {
+				relationshipMap.set(key, rel);
 			}
 		}
 
@@ -272,7 +278,7 @@ function mergeExtractionResponses(responses: ExtractionResponse[]): ExtractionRe
 
 	const merged: ExtractionResponse = {
 		entities: [...entityMap.values()],
-		relationships: mergedRelationships,
+		relationships: [...relationshipMap.values()],
 	};
 	if (assertionMap.size > 0) {
 		merged.assertions = [...assertionMap.values()];

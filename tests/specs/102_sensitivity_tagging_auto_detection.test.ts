@@ -209,7 +209,13 @@ function confidenceMetadata(): import('@mulder/core').ConfidenceMetadata {
 	};
 }
 
-function fakeServices(storyUri: string, response: ExtractionResponse): import('@mulder/core').Services {
+function fakeServices(
+	storyUri: string,
+	response: ExtractionResponse | ExtractionResponse[],
+	options?: { markdown?: string; tokenCount?: number },
+): import('@mulder/core').Services {
+	const markdown = options?.markdown ?? '# Spec 102 Story\n\nA named person attended a private event.';
+	let responseIndex = 0;
 	return {
 		storage: {
 			upload: async () => 'gs://test/spec102',
@@ -217,7 +223,7 @@ function fakeServices(storyUri: string, response: ExtractionResponse): import('@
 				if (path !== storyUri) {
 					throw new Error(`unexpected storage download: ${path}`);
 				}
-				return Buffer.from('# Spec 102 Story\n\nA named person attended a private event.', 'utf-8');
+				return Buffer.from(markdown, 'utf-8');
 			},
 			delete: async () => undefined,
 			exists: async () => true,
@@ -237,14 +243,21 @@ function fakeServices(storyUri: string, response: ExtractionResponse): import('@
 			},
 		},
 		llm: {
-			countTokens: async () => 32,
+			countTokens: async () => options?.tokenCount ?? 32,
 			generateText: async () => {
 				throw new Error('generateText should not be called by Spec 102 enrich tests');
 			},
 			generateGrounded: async () => {
 				throw new Error('generateGrounded should not be called by Spec 102 enrich tests');
 			},
-			generateStructured: async () => response,
+			generateStructured: async () => {
+				if (!Array.isArray(response)) {
+					return response;
+				}
+				const next = response[Math.min(responseIndex, response.length - 1)];
+				responseIndex++;
+				return next;
+			},
 		},
 		embeddings: {
 			embed: async () => {
@@ -428,6 +441,73 @@ function extractionResponseWithoutSensitivity(): ExtractionResponse {
 			},
 		],
 	};
+}
+
+function duplicateRelationshipResponse(
+	level: SensitivityLevel,
+	options: { reason: string; confidence: number; piiTypes: PIIType[] },
+): ExtractionResponse {
+	const entityName = 'Spec Duplicate Person';
+	const eventName = 'Spec Duplicate Event';
+	return {
+		entities: [
+			{
+				name: entityName,
+				type: 'person',
+				confidence: 0.91,
+				attributes: {},
+				mentions: [entityName],
+				sensitivity: {
+					level: 'internal',
+					reason: 'internal_entity',
+					assigned_by: 'llm_auto',
+					assigned_at: '2026-05-05T00:00:00.000Z',
+					pii_types: [],
+					declassify_date: null,
+				},
+			},
+			{
+				name: eventName,
+				type: 'event',
+				confidence: 0.88,
+				attributes: {},
+				mentions: [eventName],
+				sensitivity: {
+					level: 'internal',
+					reason: 'internal_event',
+					assigned_by: 'llm_auto',
+					assigned_at: '2026-05-05T00:00:00.000Z',
+					pii_types: [],
+					declassify_date: null,
+				},
+			},
+		],
+		relationships: [
+			{
+				source_entity: entityName,
+				target_entity: eventName,
+				relationship_type: 'PARTICIPATED_IN',
+				confidence: options.confidence,
+				attributes: {},
+				sensitivity: {
+					level,
+					reason: options.reason,
+					assigned_by: 'llm_auto',
+					assigned_at: '2026-05-05T00:00:00.000Z',
+					pii_types: options.piiTypes,
+					declassify_date: null,
+				},
+			},
+		],
+		assertions: [],
+	};
+}
+
+function longPrechunkMarkdown(): string {
+	return [
+		`# Spec 102 Story\n\n${'First chunk relationship. '.repeat(700)}`,
+		`${'Second chunk relationship. '.repeat(700)}`,
+	].join('\n\n');
 }
 
 beforeAll(async () => {
@@ -670,6 +750,59 @@ describe('Spec 102: sensitivity tagging and auto-detection', () => {
 		expect(
 			db.runSql(`SELECT sensitivity_level FROM knowledge_assertions WHERE story_id = ${sqlLiteral(story.id)} LIMIT 1;`),
 		).toBe('confidential');
+	});
+
+	it.skipIf(!pgAvailable)('QA-05b: pre-chunk duplicate relationships merge most restrictive sensitivity', async () => {
+		const { story } = await createSegmentedStory('spec102-qa05b');
+		const runtimeConfig = enrichConfig(true);
+		const result = await pipelineModule.executeEnrich(
+			{ storyId: story.id, force: false },
+			{
+				...runtimeConfig,
+				enrichment: {
+					...runtimeConfig.enrichment,
+					max_story_tokens: 1,
+				},
+			},
+			fakeServices(
+				story.gcsMarkdownUri,
+				[
+					duplicateRelationshipResponse('internal', {
+						reason: 'internal_relationship',
+						confidence: 0.51,
+						piiTypes: ['location_private'],
+					}),
+					duplicateRelationshipResponse('confidential', {
+						reason: 'confidential_relationship',
+						confidence: 0.95,
+						piiTypes: ['legal'],
+					}),
+				],
+				{ markdown: longPrechunkMarkdown(), tokenCount: 20_001 },
+			),
+			pool,
+			logger,
+		);
+
+		expect(result.status).toBe('success');
+		expect(result.data?.chunksUsed).toBe(2);
+		expect(result.data?.relationshipsCreated).toBe(1);
+		expect(
+			db.runSql(`SELECT sensitivity_level FROM entity_edges WHERE story_id = ${sqlLiteral(story.id)} LIMIT 1;`),
+		).toBe('confidential');
+		expect(
+			Number(
+				db.runSql(
+					[
+						'SELECT COUNT(*)',
+						'FROM entity_edges',
+						`WHERE story_id = ${sqlLiteral(story.id)}`,
+						"  AND sensitivity_metadata->'pii_types' ? 'legal'",
+						"  AND sensitivity_metadata->'pii_types' ? 'location_private';",
+					].join('\n'),
+				),
+			),
+		).toBe(1);
 	});
 
 	it.skipIf(!pgAvailable)('QA-06: upward propagation updates story and source', async () => {
