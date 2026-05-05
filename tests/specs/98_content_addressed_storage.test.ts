@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -74,6 +74,35 @@ function runCli(args: string[], opts?: { timeout?: number }): { stdout: string; 
 		stderr: result.stderr ?? '',
 		exitCode: result.status ?? 1,
 	};
+}
+
+function runCliAsync(
+	args: string[],
+	opts?: { timeout?: number },
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+	return new Promise((resolveRun) => {
+		const child = spawn('node', [CLI_DIST, ...args], {
+			cwd: ROOT,
+			stdio: ['ignore', 'pipe', 'pipe'],
+			env: cliEnv(),
+		});
+		const stdout: Buffer[] = [];
+		const stderr: Buffer[] = [];
+		const timeout = setTimeout(() => {
+			child.kill('SIGKILL');
+		}, opts?.timeout ?? 180_000);
+
+		child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+		child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+		child.on('close', (code) => {
+			clearTimeout(timeout);
+			resolveRun({
+				stdout: Buffer.concat(stdout).toString('utf-8'),
+				stderr: Buffer.concat(stderr).toString('utf-8'),
+				exitCode: code ?? 1,
+			});
+		});
+	});
 }
 
 function combinedOutput(result: { stdout: string; stderr: string }): string {
@@ -161,6 +190,57 @@ function writeStorageObject(storagePath: string, content: Buffer): void {
 	writeFileSync(objectPath, content);
 }
 
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
+function installContentAddressedRaceTriggers(): void {
+	db.runSql(`
+CREATE OR REPLACE FUNCTION spec98_delay_document_blob_insert()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.storage_path LIKE '%.md' THEN
+    PERFORM pg_sleep(0.2);
+  ELSE
+    PERFORM pg_sleep(2.0);
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION spec98_delay_markdown_source_insert()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.storage_path LIKE '%.md' THEN
+    PERFORM pg_sleep(2.0);
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS spec98_delay_document_blob_insert ON document_blobs;
+CREATE TRIGGER spec98_delay_document_blob_insert
+BEFORE INSERT ON document_blobs
+FOR EACH ROW
+EXECUTE FUNCTION spec98_delay_document_blob_insert();
+
+DROP TRIGGER IF EXISTS spec98_delay_markdown_source_insert ON sources;
+CREATE TRIGGER spec98_delay_markdown_source_insert
+BEFORE INSERT ON sources
+FOR EACH ROW
+EXECUTE FUNCTION spec98_delay_markdown_source_insert();
+`);
+}
+
+function uninstallContentAddressedRaceTriggers(): void {
+	db.runSql(`
+DROP TRIGGER IF EXISTS spec98_delay_document_blob_insert ON document_blobs;
+DROP TRIGGER IF EXISTS spec98_delay_markdown_source_insert ON sources;
+DROP FUNCTION IF EXISTS spec98_delay_document_blob_insert();
+DROP FUNCTION IF EXISTS spec98_delay_markdown_source_insert();
+`);
+}
+
 async function apiPost(path: string, body: unknown): Promise<Response> {
 	return await app.request(`http://localhost${path}`, {
 		method: 'POST',
@@ -185,12 +265,12 @@ async function processOneJob() {
 	return await workerModule.processNextJob(workerContext, 'spec-98-worker');
 }
 
-async function finalizeUpload(args: {
+async function submitUpload(args: {
 	filename: string;
 	content: Buffer;
 	contentType: string;
 	startPipeline: boolean;
-}): Promise<{ sourceId: string; provisionalPath: string; jobId: string; finalizePayload: Record<string, unknown> }> {
+}): Promise<{ sourceId: string; provisionalPath: string; jobId: string }> {
 	const initiate = await apiPost('/api/uploads/documents/initiate', {
 		filename: args.filename,
 		size_bytes: args.content.byteLength,
@@ -211,6 +291,17 @@ async function finalizeUpload(args: {
 	const completeBody = await readJson(complete);
 	expect(complete.status, JSON.stringify(completeBody)).toBe(202);
 	const jobId = String((completeBody.data as Record<string, unknown>).job_id);
+
+	return { sourceId, provisionalPath, jobId };
+}
+
+async function finalizeUpload(args: {
+	filename: string;
+	content: Buffer;
+	contentType: string;
+	startPipeline: boolean;
+}): Promise<{ sourceId: string; provisionalPath: string; jobId: string; finalizePayload: Record<string, unknown> }> {
+	const { sourceId, provisionalPath, jobId } = await submitUpload(args);
 
 	const processed = await processOneJob();
 	expect(processed.state).toBe('completed');
@@ -420,6 +511,41 @@ describe('Spec 98 - Content-addressed raw blob storage', () => {
 		expect(originalFilenameOccurrences(contentHash, 'renamed.txt')).toBe(1);
 	});
 
+	it('QA-04c: Concurrent same-byte CLI ingests keep source storage aligned with the canonical blob path', async () => {
+		if (!pgAvailable) return;
+		const content = '# Spec 98 CLI extension race\n';
+		const markdownFixture = writeFixture('qa-04c/race.md', content);
+		const textFixture = writeFixture('qa-04c/race.txt', content);
+		const contentHash = sha256(content);
+		const markdownPath = expectedBlobPath(contentHash, 'md');
+		const textPath = expectedBlobPath(contentHash, 'txt');
+
+		installContentAddressedRaceTriggers();
+		try {
+			const markdownIngest = runCliAsync(['ingest', markdownFixture]);
+			await sleep(100);
+			const textIngest = runCliAsync(['ingest', textFixture]);
+			const [markdownResult, textResult] = await Promise.all([markdownIngest, textIngest]);
+			expectSuccessful(markdownResult);
+			expectSuccessful(textResult);
+		} finally {
+			uninstallContentAddressedRaceTriggers();
+		}
+
+		expect(sourceCountForHash(contentHash)).toBe(1);
+		expect(blobCountForHash(contentHash)).toBe(1);
+		const blobPath = db.runSql(
+			`SELECT storage_path FROM document_blobs WHERE content_hash = ${sqlLiteral(contentHash)};`,
+		);
+		expect([markdownPath, textPath]).toContain(blobPath);
+		const alternatePath = blobPath === markdownPath ? textPath : markdownPath;
+		expect(db.runSql(`SELECT storage_path FROM sources WHERE file_hash = ${sqlLiteral(contentHash)};`)).toBe(blobPath);
+		expect(existsSync(storageObjectPath(blobPath))).toBe(true);
+		expect(existsSync(storageObjectPath(alternatePath))).toBe(false);
+		expect(originalFilenameOccurrences(contentHash, 'race.md')).toBe(1);
+		expect(originalFilenameOccurrences(contentHash, 'race.txt')).toBe(1);
+	});
+
 	it('QA-05: API upload finalization canonicalizes provisional uploads into blob storage', async () => {
 		if (!pgAvailable) return;
 		const content = Buffer.from('Spec 98 API upload finalization.\n', 'utf-8');
@@ -572,6 +698,57 @@ describe('Spec 98 - Content-addressed raw blob storage', () => {
 			resolved_source_id: first.sourceId,
 			duplicate_of_source_id: first.sourceId,
 		});
+	});
+
+	it('QA-06d: Concurrent upload finalization keeps source storage aligned with the canonical blob path', async () => {
+		if (!pgAvailable) return;
+		const content = Buffer.from('# Spec 98 API extension race\n', 'utf-8');
+		const contentHash = sha256(content);
+		const markdownPath = expectedBlobPath(contentHash, 'md');
+		const textPath = expectedBlobPath(contentHash, 'txt');
+
+		const first = await submitUpload({
+			filename: 'api-race.md',
+			content,
+			contentType: 'text/markdown',
+			startPipeline: false,
+		});
+		const second = await submitUpload({
+			filename: 'api-race.txt',
+			content,
+			contentType: 'text/plain',
+			startPipeline: false,
+		});
+
+		installContentAddressedRaceTriggers();
+		try {
+			const [firstProcessed, secondProcessed] = await Promise.all([processOneJob(), processOneJob()]);
+			expect(firstProcessed.state).toBe('completed');
+			expect(secondProcessed.state).toBe('completed');
+		} finally {
+			uninstallContentAddressedRaceTriggers();
+		}
+
+		const firstPayload = readJsonCell(`SELECT payload::text FROM jobs WHERE id = ${sqlLiteral(first.jobId)};`);
+		const secondPayload = readJsonCell(`SELECT payload::text FROM jobs WHERE id = ${sqlLiteral(second.jobId)};`);
+		const resolvedSourceId = String(firstPayload.resolved_source_id ?? secondPayload.resolved_source_id);
+
+		expect(sourceCountForHash(contentHash)).toBe(1);
+		expect(blobCountForHash(contentHash)).toBe(1);
+		const blobPath = db.runSql(
+			`SELECT storage_path FROM document_blobs WHERE content_hash = ${sqlLiteral(contentHash)};`,
+		);
+		expect([markdownPath, textPath]).toContain(blobPath);
+		const alternatePath = blobPath === markdownPath ? textPath : markdownPath;
+		expect(
+			db.runSql(
+				`SELECT storage_path FROM sources WHERE id = ${sqlLiteral(resolvedSourceId)} AND file_hash = ${sqlLiteral(contentHash)};`,
+			),
+		).toBe(blobPath);
+		expect(existsSync(storageObjectPath(blobPath))).toBe(true);
+		expect(existsSync(storageObjectPath(alternatePath))).toBe(false);
+		expect(existsSync(storageObjectPath(first.provisionalPath))).toBe(false);
+		expect(existsSync(storageObjectPath(second.provisionalPath))).toBe(false);
 	});
 
 	it('QA-07: Cross-format duplicate behavior remains unchanged', () => {

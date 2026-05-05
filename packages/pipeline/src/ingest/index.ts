@@ -231,11 +231,13 @@ async function ensureRawDocumentBlob(input: {
 
 	const storagePath = buildContentAddressedBlobPath(input.contentHash, input.storageExtension);
 	const exists = await input.services.storage.exists(storagePath);
+	let uploadedAlternate = false;
 	if (!exists) {
 		await input.services.storage.upload(storagePath, input.content, input.mediaType);
+		uploadedAlternate = true;
 	}
 
-	await upsertDocumentBlob(input.pool, {
+	const blob = await upsertDocumentBlob(input.pool, {
 		contentHash: input.contentHash,
 		storagePath,
 		storageUri: input.services.storage.buildUri(storagePath),
@@ -244,7 +246,11 @@ async function ensureRawDocumentBlob(input: {
 		originalFilenames: [input.filename],
 	});
 
-	return storagePath;
+	if (uploadedAlternate && blob.storagePath !== storagePath) {
+		await input.services.storage.delete(storagePath);
+	}
+
+	return blob.storagePath;
 }
 
 function buildPdfFormatMetadata(pdfMeta: PdfMetadata): Record<string, unknown> {
