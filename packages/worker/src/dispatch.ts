@@ -101,6 +101,10 @@ function assertPipelineRunCompleted(job: WorkerJobEnvelope, status: string): voi
 
 const BROWSER_UPLOAD_PIPELINE_TAG = 'browser-upload';
 
+function isProvisionalRawUploadPath(storagePath: string): boolean {
+	return /^raw\/[^/]+\/original\.[a-z0-9][a-z0-9-]*$/u.test(storagePath);
+}
+
 function buildPdfMetadataJson(pdfMeta: Awaited<ReturnType<typeof extractPdfMetadata>>): Record<string, unknown> {
 	const pdfMetadataJson: Record<string, unknown> = {};
 	if (pdfMeta.pdfVersion) pdfMetadataJson.pdf_version = pdfMeta.pdfVersion;
@@ -237,6 +241,9 @@ async function finalizeUploadedDocument(
 
 	const existingSource = await findSourceById(pool, payload.sourceId);
 	if (existingSource) {
+		if (payload.storagePath !== existingSource.storagePath && isProvisionalRawUploadPath(payload.storagePath)) {
+			await services.storage.delete(payload.storagePath);
+		}
 		return {
 			result_status: 'created',
 			resolved_source_id: existingSource.id,
@@ -584,12 +591,7 @@ async function finalizeUploadedDocument(
 		if (source.id !== payload.sourceId) {
 			await client.query('ROLLBACK');
 			if (shouldCleanupOriginalUpload) {
-				await services.storage.delete(payload.storagePath).catch((cause: unknown) => {
-					log.warn(
-						{ err: cause, sourceId: payload.sourceId, storagePath: payload.storagePath, finalizedStoragePath },
-						'Duplicate upload finalized, but original cleanup failed',
-					);
-				});
+				await services.storage.delete(payload.storagePath);
 			}
 			return {
 				result_status: 'duplicate',
@@ -655,12 +657,7 @@ async function finalizeUploadedDocument(
 			});
 
 		if (shouldCleanupOriginalUpload) {
-			services.storage.delete(payload.storagePath).catch((cause: unknown) => {
-				log.warn(
-					{ err: cause, sourceId: source.id, storagePath: payload.storagePath, finalizedStoragePath },
-					'Uploaded object canonicalized, but original cleanup failed',
-				);
-			});
+			await services.storage.delete(payload.storagePath);
 		}
 
 		log.info({ sourceId: source.id, storagePath: finalizedStoragePath }, 'Browser upload finalized');

@@ -494,6 +494,48 @@ describe('Spec 98 - Content-addressed raw blob storage', () => {
 		});
 	});
 
+	it('QA-06c: API upload finalize retry cleans up a provisional object when the source already exists', async () => {
+		if (!pgAvailable) return;
+		const content = Buffer.from('Spec 98 API retry cleanup.\n', 'utf-8');
+
+		const first = await finalizeUpload({
+			filename: 'retry-cleanup.txt',
+			content,
+			contentType: 'text/plain',
+			startPipeline: false,
+		});
+
+		writeStorageObject(first.provisionalPath, content);
+		expect(existsSync(storageObjectPath(first.provisionalPath))).toBe(true);
+
+		const retryJobId = db.runSql(
+			`INSERT INTO jobs (type, payload, max_attempts) VALUES ('document_upload_finalize', ${sqlLiteral(
+				JSON.stringify({
+					sourceId: first.sourceId,
+					filename: 'retry-cleanup.txt',
+					storagePath: first.provisionalPath,
+					startPipeline: true,
+				}),
+			)}::jsonb, 3) RETURNING id;`,
+		);
+
+		const processed = await processOneJob();
+		expect(processed.state).toBe('completed');
+		expect(existsSync(storageObjectPath(first.provisionalPath))).toBe(false);
+		expect(
+			Number(
+				db.runSql(
+					`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND payload->>'sourceId' = ${sqlLiteral(first.sourceId)};`,
+				),
+			),
+		).toBe(0);
+		expect(readJsonCell(`SELECT payload::text FROM jobs WHERE id = ${sqlLiteral(retryJobId)};`)).toMatchObject({
+			sourceId: first.sourceId,
+			result_status: 'created',
+			resolved_source_id: first.sourceId,
+		});
+	});
+
 	it('QA-06b: API exact duplicate upload keeps the first blob object when the submitted extension changes', async () => {
 		if (!pgAvailable) return;
 		const content = Buffer.from('# Spec 98 API duplicate extension mismatch\n', 'utf-8');
