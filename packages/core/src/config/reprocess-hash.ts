@@ -8,9 +8,18 @@
 import { createHash } from 'node:crypto';
 import type { MulderConfig } from './types.js';
 
-export type ReprocessHashStepName = 'extract' | 'segment' | 'enrich' | 'embed' | 'graph' | 'ground' | 'analyze';
+export type ReprocessHashStepName =
+	| 'quality'
+	| 'extract'
+	| 'segment'
+	| 'enrich'
+	| 'embed'
+	| 'graph'
+	| 'ground'
+	| 'analyze';
 
 type ReprocessHashSubset =
+	| { document_quality: MulderConfig['document_quality'] }
 	| { extraction: MulderConfig['extraction'] }
 	| { extraction: { segmentation: MulderConfig['extraction']['segmentation'] } }
 	| {
@@ -60,6 +69,8 @@ function sortKeys(value: unknown): unknown {
  */
 export function getReprocessConfigSubset(config: MulderConfig, step: ReprocessHashStepName): ReprocessHashSubset {
 	switch (step) {
+		case 'quality':
+			return { document_quality: config.document_quality };
 		case 'extract':
 			return { extraction: config.extraction };
 		case 'segment':

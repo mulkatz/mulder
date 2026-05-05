@@ -27,7 +27,14 @@ interface ReprocessOptions {
 	costEstimate?: boolean;
 }
 
-const VALID_STEPS: readonly ReprocessStepName[] = ['extract', 'segment', 'enrich', 'embed', 'graph'] as const;
+const VALID_STEPS: readonly ReprocessStepName[] = [
+	'quality',
+	'extract',
+	'segment',
+	'enrich',
+	'embed',
+	'graph',
+] as const;
 
 function isReprocessStep(value: string): value is ReprocessStepName {
 	for (const step of VALID_STEPS) {

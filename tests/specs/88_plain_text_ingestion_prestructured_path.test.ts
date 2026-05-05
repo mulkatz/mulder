@@ -444,9 +444,14 @@ describe('Spec 88 — Plain Text Ingestion on the Pre-Structured Path', () => {
 		expect(sourceRow.slice(2)).toEqual(['text/markdown', 'text_content', 't']);
 		expect(
 			db.runSql(
-				`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
+				`SELECT COUNT(*) FROM jobs WHERE type = 'quality' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
 			),
 		).toBe('1');
+		expect(
+			db.runSql(
+				`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
+			),
+		).toBe('0');
 	});
 
 	it('QA-08 regression: API upload finalization reports cross-format text duplicates', async () => {
@@ -499,7 +504,7 @@ describe('Spec 88 — Plain Text Ingestion on the Pre-Structured Path', () => {
 		expect(existsSync(resolve(STORAGE_DIR, storagePath))).toBe(false);
 		expect(
 			db.runSql(
-				`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND payload->>'sourceId' = ${sqlLiteral(provisionalSourceId)};`,
+				`SELECT COUNT(*) FROM jobs WHERE type IN ('quality', 'extract') AND payload->>'sourceId' = ${sqlLiteral(provisionalSourceId)};`,
 			),
 		).toBe('0');
 

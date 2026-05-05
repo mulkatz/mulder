@@ -46,6 +46,7 @@ export const MULDER_TEST_TABLES = [
 	'api_invitations',
 	'api_users',
 	'document_blobs',
+	'document_quality_assessments',
 	'source_steps',
 	'sources',
 ] as const;

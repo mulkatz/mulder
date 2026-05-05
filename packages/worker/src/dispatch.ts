@@ -45,6 +45,7 @@ import {
 	executeExtract,
 	executeGraph,
 	executePipelineRun,
+	executeQuality,
 	executeSegment,
 	getCrossFormatDedupKey,
 	getStorageExtensionForDetection,
@@ -74,7 +75,7 @@ export interface DispatchResult {
 export type DispatchResultKind = DispatchResult['jobType'];
 
 function assertStepSucceeded(job: WorkerJobEnvelope, stepName: string, status: string): void {
-	if (status === 'success') {
+	if (status === 'success' || status === 'skipped') {
 		return;
 	}
 
@@ -658,13 +659,13 @@ async function finalizeUploadedDocument(
 				tag: BROWSER_UPLOAD_PIPELINE_TAG,
 				options: {
 					source_id: source.id,
-					from: 'extract',
+					from: 'quality',
 					up_to: null,
 					force: false,
 				},
 			});
 			const pipelineJob = await enqueueJob(client, {
-				type: 'extract',
+				type: 'quality',
 				payload: {
 					sourceId: source.id,
 					runId: run.id,
@@ -726,6 +727,11 @@ export const dispatchJob: WorkerDispatchFn = async (job, context) => {
 		case 'extract': {
 			const result = await executeExtract(job.payload, config, services, pool, log);
 			assertStepSucceeded(job, 'extract', result.status);
+			return;
+		}
+		case 'quality': {
+			const result = await executeQuality(job.payload, config, services, pool, log);
+			assertStepSucceeded(job, 'quality', result.status);
 			return;
 		}
 		case 'segment': {

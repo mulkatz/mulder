@@ -710,7 +710,7 @@ export async function deleteSourceStep(pool: pg.Pool, sourceId: string, stepName
  *
  * @returns The source step, or `null` if not found.
  */
-export async function findSourceStep(pool: pg.Pool, sourceId: string, stepName: string): Promise<SourceStep | null> {
+export async function findSourceStep(pool: Queryable, sourceId: string, stepName: string): Promise<SourceStep | null> {
 	const sql = 'SELECT * FROM source_steps WHERE source_id = $1 AND step_name = $2';
 
 	try {

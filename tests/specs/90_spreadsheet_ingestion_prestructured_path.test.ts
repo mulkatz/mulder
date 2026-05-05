@@ -782,9 +782,14 @@ describe('Spec 90 — Spreadsheet Ingestion on the Pre-Structured Path', () => {
 			expect(sourceRow.slice(2)).toEqual([mediaType, extension]);
 			expect(
 				db.runSql(
-					`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
+					`SELECT COUNT(*) FROM jobs WHERE type = 'quality' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
 				),
 			).toBe('1');
+			expect(
+				db.runSql(
+					`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
+				),
+			).toBe('0');
 			cleanState();
 			resetStorage();
 		}

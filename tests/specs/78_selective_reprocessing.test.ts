@@ -160,6 +160,15 @@ describe('Spec 78 — Selective Reprocessing', () => {
 
 		await services.storage.upload(source.storagePath, readFileSync(NATIVE_TEXT_PDF));
 
+		const qualityResult = await pipeline.executeQuality(
+			{ sourceId: source.id, force: false },
+			config,
+			services,
+			pool,
+			logger,
+		);
+		expect(qualityResult.status).not.toBe('failed');
+
 		const extractResult = await pipeline.executeExtract(
 			{ sourceId: source.id, force: false },
 			config,
@@ -232,6 +241,15 @@ describe('Spec 78 — Selective Reprocessing', () => {
 		});
 
 		await services.storage.upload(source.storagePath, readFileSync(NATIVE_TEXT_PDF));
+
+		const qualityResult = await pipeline.executeQuality(
+			{ sourceId: source.id, force: false },
+			config,
+			services,
+			pool,
+			logger,
+		);
+		expect(qualityResult.status).not.toBe('failed');
 
 		const extractResult = await pipeline.executeExtract(
 			{ sourceId: source.id, force: false },
@@ -439,6 +457,31 @@ describe('Spec 78 — Selective Reprocessing', () => {
 		expect(plan.plannedSourceCount).toBe(1);
 		expect(plan.sources[0]?.steps.map((step) => step.stepName)).toEqual(['enrich', 'embed', 'graph']);
 		expect(plan.sources[0]?.steps.map((step) => step.force)).toEqual([true, true, true]);
+	});
+
+	it('QA-08b: document quality config changes plan quality and downstream extract rerun', async () => {
+		if (!pgAvailable) return;
+
+		await seedProcessedSource('spec78-qa08b');
+
+		const tempConfig = resolve(ROOT, '.local', 'tmp-tests', 'spec78-qa08b-config.yaml');
+		mkdirSync(resolve(tempConfig, '..'), { recursive: true });
+		writeConfigWithReplacements(tempConfig, (base) =>
+			base.replace('native_text_ratio_threshold: 0.5', 'native_text_ratio_threshold: 0.6'),
+		);
+
+		const changedConfig = core.loadConfig(tempConfig);
+		const plan = await pipeline.planReprocess({}, changedConfig, pool);
+		expect(plan.plannedSourceCount).toBe(1);
+		expect(plan.sources[0]?.steps.map((step) => step.stepName)).toEqual([
+			'quality',
+			'extract',
+			'segment',
+			'enrich',
+			'embed',
+			'graph',
+		]);
+		expect(plan.sources[0]?.steps.map((step) => step.force)).toEqual([true, true, false, false, false, false]);
 	});
 
 	it('QA-09: graph-derived cleanup removes cross-source story references only', async () => {

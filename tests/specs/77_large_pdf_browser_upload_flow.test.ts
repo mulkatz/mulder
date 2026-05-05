@@ -354,7 +354,8 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 		expect(db.runSql(`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'ingest';`)).toBe(
 			'completed',
 		);
-		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending';"))).toBe(1);
+		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'quality' AND status = 'pending';"))).toBe(1);
+		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending';"))).toBe(0);
 		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'pipeline_run';"))).toBe(0);
 
 		const finalizePayload = readJsonCell(`SELECT payload::text FROM jobs WHERE id = '${jobId}';`);

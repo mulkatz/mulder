@@ -117,8 +117,8 @@ export interface LayoutDocument {
 
 /** Aggregate result of the extract step. */
 export interface ExtractResult {
-	/** Overall status: success if extraction passed, partial if some pages failed, failed if all failed. */
-	status: 'success' | 'partial' | 'failed';
+	/** Overall status: success if extraction passed, partial if some pages failed, skipped if routed away. */
+	status: 'success' | 'partial' | 'failed' | 'skipped';
 	/** Extraction data for the source. */
 	data: ExtractionData | null;
 	/** Per-page errors for failed pages. */
