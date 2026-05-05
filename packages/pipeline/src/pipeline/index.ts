@@ -836,6 +836,7 @@ export async function execute(
 		const sourceOutcomes: PipelineRunSourceOutcome[] = [];
 		let completedCount = 0;
 		let failedCount = 0;
+		let graphCompletedCount = 0;
 
 		const ctx: ProcessSourceContext = {
 			runId: run.id,
@@ -863,6 +864,9 @@ export async function execute(
 			});
 			if (result.status === 'completed') {
 				completedCount++;
+				if (result.finalStep === 'graph') {
+					graphCompletedCount++;
+				}
 			} else {
 				failedCount++;
 				errors.push({
@@ -879,7 +883,7 @@ export async function execute(
 			globalAnalysis = createSkippedGlobalAnalysis('planned steps stop before graph');
 		} else if (!config.analysis.enabled) {
 			globalAnalysis = createSkippedGlobalAnalysis('analysis disabled by config');
-		} else if (completedCount === 0) {
+		} else if (graphCompletedCount === 0) {
 			globalAnalysis = createSkippedGlobalAnalysis('no sources reached graph successfully');
 		} else {
 			const analyzeResult = await executeAnalyze({ full: true }, config, services, pool, runLog);

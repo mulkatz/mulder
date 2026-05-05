@@ -511,6 +511,64 @@ describe('Spec 100: document quality assessment step', () => {
 		).toBe('extract|completed');
 	});
 
+	it.skipIf(!pgAvailable)(
+		'QA-09d: quality-skipped extract prevents global analyze in a graph-planned run',
+		async () => {
+			const source = await createTestSource({
+				sourceType: 'pdf',
+				filename: 'spec100-terminal-analyze.pdf',
+				storagePath: 'raw/spec100-terminal-analyze.pdf',
+				formatMetadata: { media_type: 'application/pdf' },
+				nativeTextRatio: 0,
+				hasNativeText: false,
+			});
+			await coreModule.createDocumentQualityAssessment(pool, {
+				sourceId: source.id,
+				assessmentMethod: 'human',
+				overallQuality: 'unusable',
+				processable: false,
+				recommendedPath: 'skip',
+				dimensions: qualityDimensions({ score: 0, method: 'n/a' }),
+				signals: { reviewer: 'spec100-terminal-analyze' },
+			});
+			const analysisEnabledConfig: import('@mulder/core').MulderConfig = {
+				...config,
+				analysis: {
+					...config.analysis,
+					enabled: true,
+					contradictions: false,
+					reliability: false,
+					evidence_chains: false,
+					spatio_temporal: false,
+				},
+			};
+
+			const result = await pipelineModule.executePipelineRun(
+				{ options: { sourceIds: [source.id], from: 'quality' } },
+				analysisEnabledConfig,
+				fakeServices(),
+				pool,
+				testLogger(),
+			);
+
+			expect(result.status).toBe('success');
+			expect(result.data.sources[0]?.finalStep).toBe('extract');
+			expect(result.data.analysis.status).toBe('skipped');
+			expect(result.data.analysis.summary).toBe('no sources reached graph successfully');
+			expect(result.data.analysis.result).toBeNull();
+			expect(
+				db.runSql(
+					`SELECT status FROM source_steps WHERE source_id = ${sqlLiteral(source.id)} AND step_name = 'extract';`,
+				),
+			).toBe('skipped');
+			expect(
+				db.runSql(
+					`SELECT COALESCE((SELECT status FROM source_steps WHERE source_id = ${sqlLiteral(source.id)} AND step_name = 'graph'), 'missing');`,
+				),
+			).toBe('missing');
+		},
+	);
+
 	it.skipIf(!pgAvailable)('QA-10: processable quality propagates compact metadata to stories', async () => {
 		const source = await createTestSource({
 			sourceType: 'text',
