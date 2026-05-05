@@ -9,7 +9,7 @@ import {
 	SplitSquareHorizontal,
 	Workflow,
 } from 'lucide-react';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { lazy, type ReactNode, Suspense, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
@@ -26,7 +26,6 @@ import { useDocumentPages } from '@/features/documents/useDocumentPages';
 import { useDocumentStories } from '@/features/documents/useDocumentStories';
 import { useContradictions } from '@/features/evidence/useContradictions';
 import { type AppLocale, locales } from '@/i18n/resources';
-import { buildApiUrl } from '@/lib/api-client';
 import type { ContradictionRecord, DocumentStoryRecord, EntityRecord } from '@/lib/api-types';
 import { cn } from '@/lib/cn';
 import { getErrorMessage, isApiUnavailableError } from '@/lib/query-state';
@@ -34,6 +33,9 @@ import { getErrorMessage, isApiUnavailableError } from '@/lib/query-state';
 type ReaderViewMode = 'split' | 'original' | 'story';
 
 const READER_MODE_STORAGE_KEY = 'mulder.reader.viewMode';
+const PdfDocumentPane = lazy(() =>
+	import('@/features/documents/PdfDocumentPane').then((module) => ({ default: module.PdfDocumentPane })),
+);
 
 function readInitialReaderMode(): ReaderViewMode {
 	if (typeof window === 'undefined') return 'split';
@@ -255,10 +257,6 @@ function OriginalPane({
 	story?: DocumentStoryRecord;
 }) {
 	const { t } = useTranslation();
-	const pageHash = story?.page_start ? `#page=${story.page_start}` : '';
-	const pdfUrl = buildApiUrl(`/api/documents/${sourceId}/pdf${pageHash}`);
-	const [failedPdfUrl, setFailedPdfUrl] = useState<string | null>(null);
-	const pdfFailed = failedPdfUrl === pdfUrl;
 
 	return (
 		<section className="panel flex min-h-[640px] min-w-0 flex-col overflow-hidden">
@@ -277,19 +275,17 @@ function OriginalPane({
 			</Toolbar>
 			<div className="grid min-h-0 flex-1 gap-3 p-3 xl:grid-rows-[minmax(420px,1fr)_220px]">
 				<div className="min-h-[420px] overflow-hidden rounded-md border border-border bg-panel-raised">
-					{pdfFailed ? (
-						<div className="p-3">
-							<StateNotice tone="error" title={t('reader.pdfUnavailableTitle')}>
-								{t('reader.pdfUnavailableBody')}
-							</StateNotice>
-						</div>
-					) : null}
-					<iframe
-						className={cn('h-full min-h-[420px] w-full', pdfFailed && 'hidden')}
-						onError={() => setFailedPdfUrl(pdfUrl)}
-						src={pdfUrl}
-						title={t('reader.pdfTitle')}
-					/>
+					<Suspense
+						fallback={
+							<div className="h-full min-h-[420px] bg-panel-raised p-3">
+								<StateNotice tone="loading" title={t('reader.pdfLoadingTitle')}>
+									{t('reader.pdfLoadingBody')}
+								</StateNotice>
+							</div>
+						}
+					>
+						<PdfDocumentPane sourceId={sourceId} storyStartPage={story?.page_start} />
+					</Suspense>
 				</div>
 				<div className="min-h-0 overflow-hidden rounded-md border border-border bg-panel-raised">
 					<div className="border-b border-border px-3 py-2 text-xs font-medium text-text-subtle">

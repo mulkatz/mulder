@@ -45,12 +45,25 @@ const page = await context.newPage();
 const pageErrors = [];
 const consoleErrors = [];
 
-function isExpectedConsoleError(text) {
+function isExpectedDefaultSourceDocument404(text, locationUrl) {
+	if (configuredSourceId || !/status of 404/.test(text)) {
+		return false;
+	}
+
+	const haystack = `${text} ${locationUrl ?? ''}`;
+	const encodedSourceId = sourceId.replaceAll('-', '\\-');
+	const documentPathPattern = new RegExp(
+		`/api/documents/${encodedSourceId}(?:/(?:pdf|layout|pages|stories|observability)(?:/\\d+)?)?`,
+	);
+	return documentPathPattern.test(haystack);
+}
+
+function isExpectedConsoleError(text, locationUrl) {
 	if (/status of 401 \(Unauthorized\)/.test(text)) {
 		return true;
 	}
 
-	if (!configuredSourceId && (/status of 404/.test(text) || /X-Frame-Options.*deny/i.test(text))) {
+	if (isExpectedDefaultSourceDocument404(text, locationUrl)) {
 		return true;
 	}
 
@@ -61,7 +74,7 @@ page.on('pageerror', (error) => {
 	pageErrors.push(error.message);
 });
 page.on('console', (message) => {
-	if (message.type() === 'error' && !isExpectedConsoleError(message.text())) {
+	if (message.type() === 'error' && !isExpectedConsoleError(message.text(), message.location().url)) {
 		consoleErrors.push(message.text());
 	}
 });
@@ -117,6 +130,24 @@ try {
 	await page.waitForLoadState('networkidle');
 	await page.getByRole('button', { name: /original/i }).click();
 	await expectNoBrokenText('/sources/:id original');
+	const iframeCount = await page.locator('iframe').count();
+	if (iframeCount !== 0) {
+		throw new Error(`Source reader original mode rendered ${iframeCount} iframe(s)`);
+	}
+	if (configuredSourceId) {
+		await page.getByTestId('pdf-document-pane').waitFor({ state: 'visible', timeout: 10_000 });
+		await page.waitForFunction(
+			() => {
+				const pane = document.querySelector('[data-testid="pdf-document-pane"]');
+				return Boolean(
+					pane?.querySelector('canvas') ||
+						document.querySelector('[data-testid="pdf-document-error"], [data-testid="pdf-render-error"]'),
+				);
+			},
+			undefined,
+			{ timeout: 15_000 },
+		);
+	}
 	await page.getByRole('button', { name: /story/i }).click();
 	await expectNoBrokenText('/sources/:id story');
 
