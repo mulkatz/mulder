@@ -212,9 +212,20 @@ const documentQualitySchema = documentQualityObj.default(defaults(documentQualit
 
 // --- Enrichment ---
 
+const assertionClassificationSchema = z.object({
+	enabled: z.boolean().default(true),
+	conservative_labeling: z.boolean().default(true),
+	require_confidence_metadata: z.boolean().default(true),
+	default_provenance: z.enum(['llm_auto', 'human_reviewed', 'author_explicit']).default('llm_auto'),
+	reviewable: z.boolean().default(true),
+	review_depth: z.enum(['spot_check', 'single_review', 'double_review']).default('spot_check'),
+	spot_check_percentage: z.number().int().min(0).max(100).default(20),
+});
+
 const enrichmentObj = z.object({
 	model: z.string().default('gemini-2.5-flash'),
 	max_story_tokens: z.number().positive().int().default(15000),
+	assertion_classification: assertionClassificationSchema.default(defaults(assertionClassificationSchema)),
 });
 const enrichmentSchema = enrichmentObj.default(defaults(enrichmentObj));
 
@@ -531,6 +542,7 @@ export {
 	analysisSchema,
 	apiBudgetSchema,
 	apiSchema,
+	assertionClassificationSchema,
 	cloudSqlSchema,
 	deduplicationSchema,
 	documentAiSchema,

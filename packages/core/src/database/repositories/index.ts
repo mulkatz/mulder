@@ -200,6 +200,21 @@ export type {
 	JobStatus,
 	ReapJobsResult,
 } from './job.types.js';
+export {
+	deleteKnowledgeAssertionsForStory,
+	listKnowledgeAssertionsForSource,
+	listKnowledgeAssertionsForStory,
+	normalizeConfidenceMetadata,
+	upsertKnowledgeAssertion,
+} from './knowledge-assertion.repository.js';
+export type {
+	AssertionType,
+	ClassificationProvenance,
+	ConfidenceMetadata,
+	KnowledgeAssertion,
+	ListKnowledgeAssertionsInput,
+	UpsertKnowledgeAssertionInput,
+} from './knowledge-assertion.types.js';
 export type { PipelineStep } from './pipeline-reset.js';
 export { gcOrphanedEntities, resetPipelineStep } from './pipeline-reset.js';
 export {

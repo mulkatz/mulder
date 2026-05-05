@@ -13,8 +13,12 @@ import {
 	closeAllPools,
 	createLogger,
 	createServiceRegistry,
+	ENRICH_ERROR_CODES,
+	EnrichError,
 	findAllStories,
+	findSourceById,
 	findStoriesBySourceId,
+	findStoryById,
 	getWorkerPool,
 	loadConfig,
 } from '@mulder/core';
@@ -163,9 +167,55 @@ export function registerEnrichCommands(program: Command): void {
 							}
 						}
 					} else if (storyId) {
-						// Single story enrichment
-						const result = await executeEnrich({ storyId, force: options.force }, config, services, pool, logger);
-						results.push(result);
+						// Backward compatible target resolution: historically the
+						// positional argument was a story ID; source-level CLI specs also
+						// allow passing a source ID directly.
+						const story = await findStoryById(pool, storyId);
+						if (story) {
+							const result = await executeEnrich({ storyId, force: options.force }, config, services, pool, logger);
+							results.push(result);
+						} else {
+							const source = await findSourceById(pool, storyId);
+							if (!source) {
+								throw new EnrichError(`Story not found: ${storyId}`, ENRICH_ERROR_CODES.ENRICH_STORY_NOT_FOUND, {
+									context: { storyId },
+								});
+							}
+
+							const stories = await findStoriesBySourceId(pool, storyId);
+							if (stories.length === 0) {
+								printSuccess('No stories found for this source');
+								return;
+							}
+
+							if (options.force) {
+								await forceCleanupEnrichSource(storyId, pool, logger);
+							}
+
+							logger.info({ sourceId: storyId, storyCount: stories.length }, 'Enriching stories from source');
+
+							for (const storyForSource of stories) {
+								try {
+									const result = await executeEnrich(
+										{ storyId: storyForSource.id, force: false },
+										config,
+										services,
+										pool,
+										logger,
+									);
+									results.push(result);
+								} catch (error: unknown) {
+									const message = error instanceof Error ? error.message : String(error);
+									printError(`${storyForSource.id}: ${message}`);
+									results.push({
+										status: 'failed',
+										data: null,
+										errors: [{ code: 'ENRICH_STEP_FAILED', message }],
+										metadata: { duration_ms: 0, items_processed: 0, items_skipped: 0, items_cached: 0 },
+									});
+								}
+							}
+						}
 					}
 
 					// Print results table

@@ -17,6 +17,10 @@ import { z } from 'zod';
 import { z as z3 } from 'zod/v3';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
+export interface ExtractionSchemaOptions {
+	assertionClassificationEnabled?: boolean;
+}
+
 // ────────────────────────────────────────────────────────────
 // Attribute type mapping helpers
 // ────────────────────────────────────────────────────────────
@@ -119,7 +123,36 @@ function buildAttributesSchemaV3(entityTypes: readonly EntityTypeConfig[]): z3.Z
 /**
  * Builds the full extraction response Zod v3 schema for JSON Schema generation.
  */
-function buildExtractionResponseSchemaV3(ontology: OntologyConfig): z3.ZodObject<z3.ZodRawShape> {
+function buildConfidenceMetadataSchemaV3(): z3.ZodObject<z3.ZodRawShape> {
+	return z3.object({
+		witness_count: z3.number().nullable().describe('Number of independent witnesses, or null if unknown'),
+		measurement_based: z3.boolean().describe('Whether the assertion is based on an instrument or measurement'),
+		contemporaneous: z3.boolean().describe('Whether the assertion was documented close to the described event'),
+		corroborated: z3.boolean().describe('Whether independent corroboration is present in the story'),
+		peer_reviewed: z3.boolean().describe('Whether the assertion comes from peer-reviewed material'),
+		author_is_interpreter: z3.boolean().describe('Whether the author is interpreting their own source material'),
+	});
+}
+
+function buildAssertionSchemaV3(): z3.ZodObject<z3.ZodRawShape> {
+	return z3.object({
+		content: z3.string().describe('The concise assertion text, preserving the source meaning'),
+		assertion_type: z3
+			.enum(['observation', 'interpretation', 'hypothesis'])
+			.describe('Epistemic class for the assertion'),
+		confidence_metadata: buildConfidenceMetadataSchemaV3().describe('Confidence factors for the classification'),
+		classification_provenance: z3
+			.enum(['llm_auto', 'human_reviewed', 'author_explicit'])
+			.optional()
+			.describe('How the assertion classification was determined'),
+		entity_names: z3.array(z3.string()).optional().describe('Extracted entity names referenced by this assertion'),
+	});
+}
+
+function buildExtractionResponseSchemaV3(
+	ontology: OntologyConfig,
+	options?: ExtractionSchemaOptions,
+): z3.ZodObject<z3.ZodRawShape> {
 	const entityTypeNames = getEntityTypeNames(ontology);
 	const relationshipNames = ontology.relationships.map((r) => r.name).sort();
 
@@ -146,10 +179,18 @@ function buildExtractionResponseSchemaV3(ontology: OntologyConfig): z3.ZodObject
 		attributes: z3.object({}).passthrough().optional().describe('Optional relationship attributes'),
 	});
 
-	return z3.object({
+	const shape: z3.ZodRawShape = {
 		entities: z3.array(entitySchemaV3).describe('All entities extracted from the story'),
 		relationships: z3.array(relationshipSchemaV3).describe('All relationships between extracted entities'),
-	});
+	};
+
+	if (options?.assertionClassificationEnabled) {
+		shape.assertions = z3
+			.array(buildAssertionSchemaV3())
+			.describe('All classified assertions extracted from the story');
+	}
+
+	return z3.object(shape);
 }
 
 // ────────────────────────────────────────────────────────────
@@ -175,7 +216,28 @@ function buildAttributesSchemaV4(entityTypes: readonly EntityTypeConfig[]) {
  * Builds the full extraction response Zod v4 schema for runtime validation.
  * Returns a typed schema that can validate Gemini's structured output response.
  */
-function buildExtractionResponseSchemaV4(ontology: OntologyConfig) {
+function buildConfidenceMetadataSchemaV4() {
+	return z.object({
+		witness_count: z.number().nullable(),
+		measurement_based: z.boolean(),
+		contemporaneous: z.boolean(),
+		corroborated: z.boolean(),
+		peer_reviewed: z.boolean(),
+		author_is_interpreter: z.boolean(),
+	});
+}
+
+function buildAssertionSchemaV4() {
+	return z.object({
+		content: z.string(),
+		assertion_type: z.enum(['observation', 'interpretation', 'hypothesis']),
+		confidence_metadata: buildConfidenceMetadataSchemaV4(),
+		classification_provenance: z.optional(z.enum(['llm_auto', 'human_reviewed', 'author_explicit'])),
+		entity_names: z.optional(z.array(z.string())),
+	});
+}
+
+function buildExtractionResponseSchemaV4(ontology: OntologyConfig, options?: ExtractionSchemaOptions) {
 	const entityTypeNames = getEntityTypeNames(ontology);
 	const relationshipNames = ontology.relationships.map((r) => r.name).sort();
 
@@ -199,10 +261,19 @@ function buildExtractionResponseSchemaV4(ontology: OntologyConfig) {
 		attributes: z.optional(z.record(z.string(), z.unknown())),
 	});
 
-	return z.object({
+	const shape = {
 		entities: z.array(entitySchemaV4),
 		relationships: z.array(relationshipSchemaV4),
-	});
+	};
+
+	if (options?.assertionClassificationEnabled) {
+		return z.object({
+			...shape,
+			assertions: z.array(buildAssertionSchemaV4()),
+		});
+	}
+
+	return z.object(shape);
 }
 
 // ────────────────────────────────────────────────────────────
@@ -220,8 +291,11 @@ function buildExtractionResponseSchemaV4(ontology: OntologyConfig) {
  * identical JSON Schema (entity types and relationship types are sorted
  * alphabetically in their enum values).
  */
-export function generateExtractionSchema(ontology: OntologyConfig): Record<string, unknown> {
-	const schemaV3 = buildExtractionResponseSchemaV3(ontology);
+export function generateExtractionSchema(
+	ontology: OntologyConfig,
+	options?: ExtractionSchemaOptions,
+): Record<string, unknown> {
+	const schemaV3 = buildExtractionResponseSchemaV3(ontology, options);
 	const schema: Record<string, unknown> = zodToJsonSchema(schemaV3, {
 		$refStrategy: 'none',
 	});
@@ -235,6 +309,6 @@ export function generateExtractionSchema(ontology: OntologyConfig): Record<strin
  * The schema is dynamically built from the ontology config, so it matches
  * the JSON Schema sent to Gemini.
  */
-export function getExtractionResponseSchema(ontology: OntologyConfig): z.ZodType {
-	return buildExtractionResponseSchemaV4(ontology);
+export function getExtractionResponseSchema(ontology: OntologyConfig, options?: ExtractionSchemaOptions): z.ZodType {
+	return buildExtractionResponseSchemaV4(ontology, options);
 }
