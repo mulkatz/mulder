@@ -8,6 +8,8 @@
  * @see docs/functional-spec.md §4.3
  */
 
+import type { ArtifactProvenance, ArtifactProvenanceInput } from './artifact-provenance.js';
+
 // ────────────────────────────────────────────────────────────
 // Database row type (snake_case)
 // ────────────────────────────────────────────────────────────
@@ -25,6 +27,7 @@ export type ChunkRow = {
 	is_question: boolean;
 	parent_chunk_id: string | null;
 	metadata: Record<string, unknown>;
+	provenance: unknown;
 	created_at: Date;
 };
 
@@ -44,6 +47,7 @@ export type Chunk = {
 	isQuestion: boolean;
 	parentChunkId: string | null;
 	metadata: Record<string, unknown>;
+	provenance: ArtifactProvenance;
 	createdAt: Date;
 };
 
@@ -53,6 +57,7 @@ export type Chunk = {
 
 /** Input for creating a new chunk. */
 export type CreateChunkInput = {
+	id?: string;
 	storyId: string;
 	content: string;
 	chunkIndex: number;
@@ -62,6 +67,7 @@ export type CreateChunkInput = {
 	isQuestion?: boolean;
 	parentChunkId?: string | null;
 	metadata?: Record<string, unknown>;
+	provenance?: ArtifactProvenanceInput;
 };
 
 /** Filters for querying chunks. */

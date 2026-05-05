@@ -202,11 +202,29 @@ async function runStoryStepForPayload(
 
 	if (payload.storyId) {
 		if (jobType === 'enrich') {
-			await executeEnrich({ storyId: payload.storyId, force }, config, services, pool, log);
+			await executeEnrich(
+				{ storyId: payload.storyId, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
 		} else if (jobType === 'embed') {
-			await executeEmbed({ storyId: payload.storyId, force }, config, services, pool, log);
+			await executeEmbed(
+				{ storyId: payload.storyId, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
 		} else {
-			await executeGraph({ storyId: payload.storyId, force }, config, services, pool, log);
+			await executeGraph(
+				{ storyId: payload.storyId, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
 		}
 		return { status: 'success', story_count: 1 };
 	}
@@ -222,11 +240,29 @@ async function runStoryStepForPayload(
 	let processed = 0;
 	for (const story of stories) {
 		if (jobType === 'enrich') {
-			await executeEnrich({ storyId: story.id, force }, config, services, pool, log);
+			await executeEnrich(
+				{ storyId: story.id, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
 		} else if (jobType === 'embed') {
-			await executeEmbed({ storyId: story.id, force }, config, services, pool, log);
+			await executeEmbed(
+				{ storyId: story.id, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
 		} else {
-			await executeGraph({ storyId: story.id, force }, config, services, pool, log);
+			await executeGraph(
+				{ storyId: story.id, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
 		}
 		processed++;
 	}

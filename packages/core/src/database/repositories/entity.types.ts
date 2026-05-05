@@ -8,6 +8,7 @@
  * @see docs/functional-spec.md §4.3
  */
 
+import type { ArtifactProvenance, ArtifactProvenanceInput } from './artifact-provenance.js';
 import type { Story } from './story.types.js';
 
 // ────────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ export interface Entity {
 	 * runs taxonomy normalization, enabling cross-story grouping queries.
 	 */
 	taxonomyId: string | null;
+	provenance: ArtifactProvenance;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -55,6 +57,7 @@ export interface CreateEntityInput {
 	taxonomyStatus?: TaxonomyStatus;
 	/** Optional FK to the canonical taxonomy entry. */
 	taxonomyId?: string | null;
+	provenance?: ArtifactProvenanceInput;
 }
 
 /** Input for updating an entity. Partial -- only provided fields are updated. */
@@ -69,6 +72,7 @@ export interface UpdateEntityInput {
 	taxonomyStatus?: TaxonomyStatus;
 	/** Set to `null` to clear the taxonomy FK. */
 	taxonomyId?: string | null;
+	provenance?: ArtifactProvenanceInput;
 }
 
 /** Filters for querying entities. */
@@ -139,6 +143,7 @@ export interface EntityAlias {
 	entityId: string;
 	alias: string;
 	source: string | null;
+	provenance: ArtifactProvenance;
 }
 
 /** Input for creating a new entity alias. */
@@ -146,6 +151,7 @@ export interface CreateEntityAliasInput {
 	entityId: string;
 	alias: string;
 	source?: string;
+	provenance?: ArtifactProvenanceInput;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -158,6 +164,7 @@ export interface StoryEntity {
 	entityId: string;
 	confidence: number | null;
 	mentionCount: number;
+	provenance: ArtifactProvenance;
 }
 
 /** Input for linking a story to an entity. */
@@ -166,6 +173,7 @@ export interface LinkStoryEntityInput {
 	entityId: string;
 	confidence?: number;
 	mentionCount?: number;
+	provenance?: ArtifactProvenanceInput;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -182,4 +190,5 @@ export interface StoryEntityWithEntity extends Entity {
 export interface StoryEntityWithStory extends Story {
 	confidence: number | null;
 	mentionCount: number;
+	provenance: ArtifactProvenance;
 }

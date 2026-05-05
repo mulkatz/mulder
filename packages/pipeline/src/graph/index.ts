@@ -19,6 +19,7 @@ import {
 	GRAPH_ERROR_CODES,
 	GraphError,
 	getStepConfigHash,
+	provenanceForSource,
 	resetPipelineStep,
 	updateStoryStatus,
 	upsertEdge,
@@ -117,6 +118,7 @@ export async function execute(
 			context: { storyId: input.storyId },
 		});
 	}
+	const artifactProvenance = provenanceForSource(story.sourceId, input.extractionPipelineRun ?? null);
 
 	// 3. Validate status — must be at least "embedded"
 	const validStatuses = ['embedded', 'graphed', 'analyzed'];
@@ -193,6 +195,7 @@ export async function execute(
 					confidence: rel.confidence ?? undefined,
 					storyId: input.storyId,
 					edgeType: 'RELATIONSHIP',
+					provenance: artifactProvenance,
 				});
 				edgesUpdated++;
 			}
@@ -213,6 +216,7 @@ export async function execute(
 							attributes: { generatedBy: 'graph.cooccurrence_fallback' },
 							storyId: input.storyId,
 							edgeType: 'RELATIONSHIP',
+							provenance: artifactProvenance,
 						});
 						edgesCreated++;
 					}
@@ -259,6 +263,7 @@ export async function execute(
 						confidence: dup.similarity,
 						storyId: input.storyId,
 						edgeType: 'DUPLICATE_OF',
+						provenance: artifactProvenance,
 					});
 					duplicatesFound++;
 				}
@@ -317,6 +322,7 @@ export async function execute(
 				// confidence intentionally omitted — to be resolved by Analyze step
 				storyId: input.storyId,
 				edgeType: 'POTENTIAL_CONTRADICTION',
+				provenance: artifactProvenance,
 			});
 			contradictionsFlagged++;
 		}

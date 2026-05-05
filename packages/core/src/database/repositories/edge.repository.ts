@@ -14,6 +14,11 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import {
+	mapArtifactProvenanceFromDb,
+	mergeArtifactProvenanceSql,
+	stringifyArtifactProvenance,
+} from './artifact-provenance.js';
 import type { CreateEdgeInput, EdgeFilter, EdgeType, EntityEdge, UpdateEdgeInput } from './edge.types.js';
 
 const logger = createLogger();
@@ -33,6 +38,7 @@ interface EdgeRow {
 	story_id: string | null;
 	edge_type: EdgeType;
 	analysis: Record<string, unknown> | null;
+	provenance: unknown;
 	created_at: Date;
 }
 
@@ -47,6 +53,7 @@ function mapEdgeRow(row: EdgeRow): EntityEdge {
 		storyId: row.story_id,
 		edgeType: row.edge_type,
 		analysis: row.analysis,
+		provenance: mapArtifactProvenanceFromDb(row.provenance),
 		createdAt: row.created_at,
 	};
 }
@@ -62,13 +69,13 @@ export async function createEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
 	const hasExplicitId = input.id !== undefined;
 	const sql = hasExplicitId
 		? `
-    INSERT INTO entity_edges (id, source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    INSERT INTO entity_edges (id, source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
     RETURNING *
   `
 		: `
-    INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
     RETURNING *
   `;
 
@@ -81,6 +88,7 @@ export async function createEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
 		input.storyId ?? null,
 		input.edgeType ?? 'RELATIONSHIP',
 		input.analysis ? JSON.stringify(input.analysis) : null,
+		stringifyArtifactProvenance(input.provenance),
 	];
 	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
 
@@ -119,14 +127,15 @@ export async function upsertEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
 	}
 
 	const sql = `
-    INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
     ON CONFLICT (source_entity_id, target_entity_id, relationship, edge_type, story_id)
     WHERE story_id IS NOT NULL
     DO UPDATE SET
       attributes = EXCLUDED.attributes,
       confidence = EXCLUDED.confidence,
-      analysis = EXCLUDED.analysis
+      analysis = EXCLUDED.analysis,
+      provenance = ${mergeArtifactProvenanceSql('entity_edges.provenance', 'EXCLUDED.provenance')}
     RETURNING *
   `;
 
@@ -139,6 +148,7 @@ export async function upsertEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
 		input.storyId,
 		input.edgeType ?? 'RELATIONSHIP',
 		input.analysis ? JSON.stringify(input.analysis) : null,
+		stringifyArtifactProvenance(input.provenance),
 	];
 
 	try {

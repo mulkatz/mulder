@@ -18,6 +18,7 @@ import type { StepError } from '@mulder/core';
 export interface EmbedInput {
 	storyId: string;
 	force?: boolean;
+	extractionPipelineRun?: string | null;
 }
 
 /** Result from the embed pipeline step. */

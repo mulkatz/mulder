@@ -15,7 +15,7 @@
  * @see docs/functional-spec.md §2.4
  */
 
-import type { Entity, EntityResolutionConfig, Services } from '@mulder/core';
+import type { ArtifactProvenanceInput, Entity, EntityResolutionConfig, Services } from '@mulder/core';
 import {
 	createChildLogger,
 	createEntityAlias,
@@ -291,6 +291,7 @@ async function mergeEntities(
 	tier: ResolutionTier,
 	score: number,
 	evidence: string,
+	provenance?: ArtifactProvenanceInput,
 ): Promise<void> {
 	// Set canonical_id on the new entity
 	await updateEntity(pool, newEntity.id, {
@@ -302,11 +303,13 @@ async function mergeEntities(
 		entityId: canonicalEntity.id,
 		alias: newEntity.name,
 		source: `resolution:${tier}`,
+		provenance,
 	});
 
 	// Increment source_count on canonical entity
 	await updateEntity(pool, canonicalEntity.id, {
 		sourceCount: canonicalEntity.sourceCount + 1,
+		provenance,
 	});
 
 	resolutionLogger.info(
@@ -342,7 +345,7 @@ async function mergeEntities(
  * @returns Resolution result with action, canonical entity, match details, and tiers executed
  */
 export async function resolveEntity(options: ResolveEntityOptions): Promise<ResolutionResult> {
-	const { entity, pool, services, config } = options;
+	const { entity, pool, services, config, provenance } = options;
 	const tiersExecuted: ResolutionTier[] = [];
 
 	resolutionLogger.debug({ entityId: entity.id, name: entity.name, type: entity.type }, 'Starting entity resolution');
@@ -356,7 +359,7 @@ export async function resolveEntity(options: ResolveEntityOptions): Promise<Reso
 		const match = await runTier1(pool, entity);
 
 		if (match) {
-			await mergeEntities(pool, entity, match.entity, match.tier, match.score, match.evidence);
+			await mergeEntities(pool, entity, match.entity, match.tier, match.score, match.evidence, provenance);
 			return {
 				action: 'merged',
 				canonicalEntity: match.entity,
@@ -376,7 +379,7 @@ export async function resolveEntity(options: ResolveEntityOptions): Promise<Reso
 		tier2NearMisses = nearMisses;
 
 		if (match) {
-			await mergeEntities(pool, entity, match.entity, match.tier, match.score, match.evidence);
+			await mergeEntities(pool, entity, match.entity, match.tier, match.score, match.evidence, provenance);
 			return {
 				action: 'merged',
 				canonicalEntity: match.entity,
@@ -397,7 +400,7 @@ export async function resolveEntity(options: ResolveEntityOptions): Promise<Reso
 			const match = await runTier3(pool, entity, candidates, services);
 
 			if (match) {
-				await mergeEntities(pool, entity, match.entity, match.tier, match.score, match.evidence);
+				await mergeEntities(pool, entity, match.entity, match.tier, match.score, match.evidence, provenance);
 				return {
 					action: 'merged',
 					canonicalEntity: match.entity,

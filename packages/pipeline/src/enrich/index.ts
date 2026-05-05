@@ -22,6 +22,7 @@ import {
 	findStoryById,
 	getStepConfigHash,
 	linkStoryEntity,
+	provenanceForSource,
 	renderPrompt,
 	resetPipelineStep,
 	updateEntity,
@@ -240,6 +241,7 @@ export async function execute(
 			context: { storyId: input.storyId },
 		});
 	}
+	const artifactProvenance = provenanceForSource(story.sourceId, input.extractionPipelineRun ?? null);
 
 	// 2. Validate status — must be at least "segmented"
 	const validStatuses = ['segmented', 'enriched', 'embedded', 'graphed', 'analyzed'];
@@ -426,6 +428,7 @@ export async function execute(
 				type: extracted.type,
 				attributes: extracted.attributes,
 				taxonomyId: normResult.taxonomyEntry.id,
+				provenance: artifactProvenance,
 			});
 			entityNameToId.set(extracted.name, entity.id);
 			if (entity.taxonomyId) {
@@ -440,6 +443,7 @@ export async function execute(
 					pool,
 					services,
 					config: config.entity_resolution,
+					provenance: artifactProvenance,
 				});
 
 				if (resolution.action === 'merged') {
@@ -452,7 +456,7 @@ export async function execute(
 
 			// Set canonical_id to self if not merged (self-canonical)
 			if (!wasMerged && entity.canonicalId === null) {
-				await updateEntity(pool, entity.id, { canonicalId: entity.id });
+				await updateEntity(pool, entity.id, { canonicalId: entity.id, provenance: artifactProvenance });
 			}
 
 			// 11d. Link entity to story
@@ -461,6 +465,7 @@ export async function execute(
 				entityId: entityNameToId.get(extracted.name) ?? entity.id,
 				confidence: extracted.confidence,
 				mentionCount: extracted.mentions.length,
+				provenance: artifactProvenance,
 			});
 		} catch (cause: unknown) {
 			const message = cause instanceof Error ? cause.message : String(cause);
@@ -500,6 +505,7 @@ export async function execute(
 				storyId: input.storyId,
 				edgeType: 'RELATIONSHIP',
 				attributes: rel.attributes ?? {},
+				provenance: artifactProvenance,
 			});
 			relationshipsCreated++;
 		} catch (cause: unknown) {

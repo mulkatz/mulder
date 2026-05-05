@@ -13,6 +13,11 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import {
+	mapArtifactProvenanceFromDb,
+	mergeArtifactProvenanceSql,
+	stringifyArtifactProvenance,
+} from './artifact-provenance.js';
 import { type EntityRow, mapEntityRow } from './entity.repository.js';
 import type { LinkStoryEntityInput, StoryEntityWithEntity, StoryEntityWithStory } from './entity.types.js';
 import { mapStoryRow, type StoryRow } from './story.repository.js';
@@ -27,16 +32,18 @@ const repoLogger = createChildLogger(logger, { module: 'story-entity-repository'
 type EntityWithJunctionRow = EntityRow & {
 	confidence: number | null;
 	mention_count: number;
+	junction_provenance: unknown;
 };
 
 type StoryWithJunctionRow = StoryRow & {
 	confidence: number | null;
 	mention_count: number;
+	junction_provenance: unknown;
 };
 
 function mapEntityWithJunctionRow(row: EntityWithJunctionRow): StoryEntityWithEntity {
 	return {
-		...mapEntityRow(row),
+		...mapEntityRow({ ...row, provenance: row.junction_provenance }),
 		confidence: row.confidence,
 		mentionCount: row.mention_count,
 	};
@@ -47,6 +54,7 @@ function mapStoryWithJunctionRow(row: StoryWithJunctionRow): StoryEntityWithStor
 		...mapStoryRow(row),
 		confidence: row.confidence,
 		mentionCount: row.mention_count,
+		provenance: mapArtifactProvenanceFromDb(row.junction_provenance),
 	};
 }
 
@@ -62,18 +70,25 @@ function mapStoryWithJunctionRow(row: StoryWithJunctionRow): StoryEntityWithStor
 export async function linkStoryEntity(pool: pg.Pool, input: LinkStoryEntityInput): Promise<StoryEntityWithEntity> {
 	const sql = `
     WITH upserted AS (
-      INSERT INTO story_entities (story_id, entity_id, confidence, mention_count)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO story_entities (story_id, entity_id, confidence, mention_count, provenance)
+      VALUES ($1, $2, $3, $4, $5::jsonb)
       ON CONFLICT (story_id, entity_id) DO UPDATE SET
         confidence = EXCLUDED.confidence,
-        mention_count = EXCLUDED.mention_count
+        mention_count = EXCLUDED.mention_count,
+        provenance = ${mergeArtifactProvenanceSql('story_entities.provenance', 'EXCLUDED.provenance')}
       RETURNING *
     )
-    SELECT e.*, u.confidence, u.mention_count
+    SELECT e.*, u.confidence, u.mention_count, u.provenance AS junction_provenance
     FROM upserted u
     JOIN entities e ON e.id = u.entity_id
   `;
-	const params = [input.storyId, input.entityId, input.confidence ?? null, input.mentionCount ?? 1];
+	const params = [
+		input.storyId,
+		input.entityId,
+		input.confidence ?? null,
+		input.mentionCount ?? 1,
+		stringifyArtifactProvenance(input.provenance),
+	];
 
 	try {
 		const result = await pool.query<EntityWithJunctionRow>(sql, params);
@@ -95,7 +110,7 @@ export async function linkStoryEntity(pool: pg.Pool, input: LinkStoryEntityInput
  */
 export async function findEntitiesByStoryId(pool: pg.Pool, storyId: string): Promise<StoryEntityWithEntity[]> {
 	const sql = `
-    SELECT e.*, se.confidence, se.mention_count
+    SELECT e.*, se.confidence, se.mention_count, se.provenance AS junction_provenance
     FROM entities e
     JOIN story_entities se ON se.entity_id = e.id
     WHERE se.story_id = $1
@@ -120,7 +135,7 @@ export async function findEntitiesByStoryId(pool: pg.Pool, storyId: string): Pro
  */
 export async function findStoriesByEntityId(pool: pg.Pool, entityId: string): Promise<StoryEntityWithStory[]> {
 	const sql = `
-    SELECT s.*, se.confidence, se.mention_count
+    SELECT s.*, se.confidence, se.mention_count, se.provenance AS junction_provenance
     FROM stories s
     JOIN story_entities se ON se.story_id = s.id
     WHERE se.entity_id = $1

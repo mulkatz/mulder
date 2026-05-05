@@ -13,6 +13,11 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import {
+	mapArtifactProvenanceFromDb,
+	mergeArtifactProvenanceSql,
+	stringifyArtifactProvenance,
+} from './artifact-provenance.js';
 import type {
 	CreateEntityInput,
 	Entity,
@@ -46,6 +51,7 @@ export interface EntityRow {
 	source_count: number;
 	taxonomy_status: TaxonomyStatus;
 	taxonomy_id: string | null;
+	provenance: unknown;
 	created_at: Date;
 	updated_at: Date;
 }
@@ -63,6 +69,7 @@ export function mapEntityRow(row: EntityRow): Entity {
 		sourceCount: row.source_count,
 		taxonomyStatus: row.taxonomy_status,
 		taxonomyId: row.taxonomy_id,
+		provenance: mapArtifactProvenanceFromDb(row.provenance),
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -83,15 +90,19 @@ export async function createEntity(pool: pg.Pool, input: CreateEntityInput): Pro
 	const hasExplicitId = input.id !== undefined;
 	const sql = hasExplicitId
 		? `
-    INSERT INTO entities (id, name, type, canonical_id, attributes, taxonomy_status, taxonomy_id)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
-    ON CONFLICT (id) DO UPDATE SET updated_at = now()
+    INSERT INTO entities (id, name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+      provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+      updated_at = now()
     RETURNING *
   `
 		: `
-    INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id)
-    VALUES ($1, $2, $3, $4, $5, $6)
-    ON CONFLICT (id) DO UPDATE SET updated_at = now()
+    INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+      provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+      updated_at = now()
     RETURNING *
   `;
 	const baseParams = [
@@ -101,6 +112,7 @@ export async function createEntity(pool: pg.Pool, input: CreateEntityInput): Pro
 		JSON.stringify(input.attributes ?? {}),
 		input.taxonomyStatus ?? 'auto',
 		input.taxonomyId ?? null,
+		stringifyArtifactProvenance(input.provenance),
 	];
 	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
 
@@ -127,14 +139,42 @@ export async function createEntity(pool: pg.Pool, input: CreateEntityInput): Pro
  */
 export async function upsertEntityByNameType(pool: pg.Pool, input: CreateEntityInput): Promise<Entity> {
 	const sql = `
-    INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id)
-    VALUES ($1, $2, $3, $4, $5, $6)
-    ON CONFLICT (name, type) WHERE canonical_id IS NULL DO UPDATE SET
-      attributes = COALESCE(NULLIF($4::jsonb, '{}'::jsonb), entities.attributes),
-      taxonomy_status = COALESCE($5, entities.taxonomy_status),
-      taxonomy_id = COALESCE($6, entities.taxonomy_id),
-      updated_at = now()
-    RETURNING *
+    WITH existing AS (
+      UPDATE entities
+      SET
+        attributes = COALESCE(NULLIF($4::jsonb, '{}'::jsonb), entities.attributes),
+        taxonomy_status = COALESCE($5, entities.taxonomy_status),
+        taxonomy_id = COALESCE($6, entities.taxonomy_id),
+        provenance = ${mergeArtifactProvenanceSql('entities.provenance', '$7::jsonb')},
+        updated_at = now()
+      WHERE id = (
+        SELECT id
+        FROM entities
+        WHERE name = $1
+          AND type = $2
+          AND $3::uuid IS NULL
+          AND (canonical_id IS NULL OR canonical_id = id)
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+      )
+      RETURNING *
+    ),
+    inserted AS (
+      INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance)
+      SELECT $1, $2, $3, $4, $5, $6, $7::jsonb
+      WHERE NOT EXISTS (SELECT 1 FROM existing)
+      ON CONFLICT (name, type) WHERE canonical_id IS NULL DO UPDATE SET
+        attributes = COALESCE(NULLIF($4::jsonb, '{}'::jsonb), entities.attributes),
+        taxonomy_status = COALESCE($5, entities.taxonomy_status),
+        taxonomy_id = COALESCE($6, entities.taxonomy_id),
+        provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+        updated_at = now()
+      RETURNING *
+    )
+    SELECT * FROM existing
+    UNION ALL
+    SELECT * FROM inserted
+    LIMIT 1
   `;
 	const params = [
 		input.name,
@@ -143,6 +183,7 @@ export async function upsertEntityByNameType(pool: pg.Pool, input: CreateEntityI
 		JSON.stringify(input.attributes ?? {}),
 		input.taxonomyStatus ?? 'auto',
 		input.taxonomyId ?? null,
+		stringifyArtifactProvenance(input.provenance),
 	];
 
 	try {
@@ -384,6 +425,13 @@ export async function updateEntity(pool: pg.Pool, id: string, input: UpdateEntit
 	if (input.attributes !== undefined) {
 		setClauses.push(`attributes = $${paramIndex}`);
 		params.push(JSON.stringify(input.attributes));
+		paramIndex++;
+	}
+
+	if (input.provenance !== undefined) {
+		const incomingRef = `$${paramIndex}::jsonb`;
+		setClauses.push(`provenance = ${mergeArtifactProvenanceSql('entities.provenance', incomingRef)}`);
+		params.push(stringifyArtifactProvenance(input.provenance));
 		paramIndex++;
 	}
 
