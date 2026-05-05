@@ -67,16 +67,24 @@ export function registerQualityCommands(program: Command): void {
 				try {
 					const results: Array<{ sourceId: string; result: QualityResult }> = [];
 					if (options.all) {
-						const sources = await findAllSources(pool, { status: 'ingested', limit: 1000 });
-						for (const source of sources) {
-							const result = await executeQuality(
-								{ sourceId: source.id, force: options.force },
-								config,
-								services,
-								pool,
-								logger,
-							);
-							results.push({ sourceId: source.id, result });
+						const limit = 1000;
+						let offset = 0;
+						while (true) {
+							const sources = await findAllSources(pool, { status: 'ingested', limit, offset });
+							if (sources.length === 0) {
+								break;
+							}
+							for (const source of sources) {
+								const result = await executeQuality(
+									{ sourceId: source.id, force: options.force },
+									config,
+									services,
+									pool,
+									logger,
+								);
+								results.push({ sourceId: source.id, result });
+							}
+							offset += sources.length;
 						}
 					} else if (sourceId) {
 						const result = await executeQuality({ sourceId, force: options.force }, config, services, pool, logger);

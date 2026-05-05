@@ -543,7 +543,7 @@ async function processSource(source: Source, ctx: ProcessSourceContext): Promise
 		sourceLog.info({ step }, 'pipeline.source.start');
 
 		try {
-			await runStepForSource(step, currentSource, stories, ctx);
+			const stepOutcome = await runStepForSource(step, currentSource, stories, ctx);
 			finalStep = step;
 			const durationMs = Math.round(performance.now() - stepStart);
 			sourceLog.info({ step, duration_ms: durationMs }, 'pipeline.source.step.ok');
@@ -553,6 +553,10 @@ async function processSource(source: Source, ctx: ProcessSourceContext): Promise
 				currentStep: step,
 				status: 'processing',
 			});
+			if (stepOutcome === 'skipped-terminal') {
+				sourceLog.info({ step }, 'pipeline.source.step.skipped_terminal');
+				break;
+			}
 		} catch (cause: unknown) {
 			const message = cause instanceof Error ? cause.message : String(cause);
 			const code = hasStringCode(cause) ? cause.code : PIPELINE_ERROR_CODES.PIPELINE_STEP_FAILED;
@@ -588,20 +592,20 @@ async function runStepForSource(
 	source: Source,
 	stories: Story[],
 	ctx: ProcessSourceContext,
-): Promise<void> {
+): Promise<'completed' | 'skipped-terminal'> {
 	const force = ctx.options.force ?? false;
 
 	if (step === 'quality') {
 		await executeQuality({ sourceId: source.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
-		return;
+		return 'completed';
 	}
 	if (step === 'extract') {
-		await executeExtract({ sourceId: source.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
-		return;
+		const result = await executeExtract({ sourceId: source.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
+		return result.status === 'skipped' ? 'skipped-terminal' : 'completed';
 	}
 	if (step === 'segment') {
 		await executeSegment({ sourceId: source.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
-		return;
+		return 'completed';
 	}
 
 	// Fanout steps — iterate stories. Re-fetch to pick up newly created stories from a prior step.
@@ -621,7 +625,7 @@ async function runStepForSource(
 				ctx.logger,
 			);
 		}
-		return;
+		return 'completed';
 	}
 	if (step === 'embed') {
 		const target = storyStatusIndex('embedded');
@@ -637,7 +641,7 @@ async function runStepForSource(
 				ctx.logger,
 			);
 		}
-		return;
+		return 'completed';
 	}
 	if (step === 'graph') {
 		const target = storyStatusIndex('graphed');
@@ -653,8 +657,12 @@ async function runStepForSource(
 				ctx.logger,
 			);
 		}
-		return;
+		return 'completed';
 	}
+
+	throw new PipelineError(`Unsupported pipeline step: ${step}`, PIPELINE_ERROR_CODES.PIPELINE_INVALID_STEP_RANGE, {
+		context: { step },
+	});
 }
 
 // ────────────────────────────────────────────────────────────

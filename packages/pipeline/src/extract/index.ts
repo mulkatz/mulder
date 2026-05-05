@@ -2182,7 +2182,9 @@ export async function execute(
 		assertFallbackOnlySupported(route, { sourceId: input.sourceId });
 	}
 
-	const latestQuality = await findLatestDocumentQualityAssessment(pool, input.sourceId);
+	const latestQuality = config.document_quality.enabled
+		? await findLatestDocumentQualityAssessment(pool, input.sourceId)
+		: null;
 	const qualitySummary =
 		latestQuality && config.document_quality.quality_propagation.enabled
 			? buildCompactDocumentQualitySummary(latestQuality)

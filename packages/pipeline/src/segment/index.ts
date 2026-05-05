@@ -11,10 +11,11 @@
 
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import type { Logger, MulderConfig, Services, StepError } from '@mulder/core';
+import type { CompactDocumentQualitySummary, Logger, MulderConfig, Services, StepError } from '@mulder/core';
 import {
 	createChildLogger,
 	createStory,
+	findLatestDocumentQualityAssessment,
 	findSourceById,
 	getStepConfigHash,
 	renderPrompt,
@@ -26,6 +27,7 @@ import {
 } from '@mulder/core';
 import type pg from 'pg';
 import type { LayoutDocument, LayoutPage } from '../extract/types.js';
+import { buildCompactDocumentQualitySummary } from '../quality/index.js';
 import { getSegmentationJsonSchema, segmentationResponseSchema } from './schema.js';
 import type { SegmentationData, SegmentedStory, SegmentInput, SegmentResult } from './types.js';
 
@@ -36,6 +38,13 @@ export type { SegmentationData, SegmentedStory, SegmentInput, SegmentResult } fr
 // ────────────────────────────────────────────────────────────
 
 const STEP_NAME = 'segment';
+
+function mergeQualitySummary(
+	metadata: Record<string, unknown>,
+	qualitySummary?: CompactDocumentQualitySummary | null,
+): Record<string, unknown> {
+	return qualitySummary ? { ...metadata, ...qualitySummary } : metadata;
+}
 
 // ────────────────────────────────────────────────────────────
 // Force cleanup
@@ -330,6 +339,13 @@ export async function execute(
 
 	// 9. Process each identified story
 	const segmentedStories: SegmentedStory[] = [];
+	const latestQuality = config.document_quality.enabled
+		? await findLatestDocumentQualityAssessment(pool, input.sourceId)
+		: null;
+	const qualitySummary =
+		latestQuality && config.document_quality.quality_propagation.enabled
+			? buildCompactDocumentQualitySummary(latestQuality)
+			: null;
 
 	for (const story of stories) {
 		const storyId = randomUUID();
@@ -379,11 +395,14 @@ export async function execute(
 			gcsMarkdownUri: markdownUri,
 			gcsMetadataUri: metadataUri,
 			extractionConfidence: story.confidence,
-			metadata: {
-				source_type: source.sourceType,
-				dateReferences: story.date_references,
-				geographicReferences: story.geographic_references,
-			},
+			metadata: mergeQualitySummary(
+				{
+					source_type: source.sourceType,
+					dateReferences: story.date_references,
+					geographicReferences: story.geographic_references,
+				},
+				qualitySummary,
+			),
 		});
 
 		segmentedStories.push({

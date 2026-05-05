@@ -415,7 +415,7 @@ export function isAutomaticExtractionAllowed(input: {
 		return false;
 	}
 	if (input.assessment.recommendedPath === 'handwriting_recognition') {
-		return isTextLike(input.source.sourceType);
+		return input.assessment.processable;
 	}
 	return true;
 }

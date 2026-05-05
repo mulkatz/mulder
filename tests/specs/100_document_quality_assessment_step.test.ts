@@ -79,9 +79,12 @@ function testLogger() {
 	return coreModule.createLogger({ level: 'silent' });
 }
 
-function fakeServices(downloads: Record<string, string | Buffer> = {}): import('@mulder/core').Services {
+function fakeServices(
+	downloads: Record<string, string | Buffer> = {},
+	overrides: Record<string, unknown> = {},
+): import('@mulder/core').Services {
 	const uploaded = new Map<string, { content: string | Buffer; contentType?: string }>();
-	return {
+	const baseServices = {
 		storage: {
 			upload: async (path: string, content: string | Buffer, contentType?: string) => {
 				uploaded.set(path, { content, contentType });
@@ -160,7 +163,8 @@ function fakeServices(downloads: Record<string, string | Buffer> = {}): import('
 				throw new Error('url extraction should not be called by Spec 100 defaults');
 			},
 		},
-	} as unknown as import('@mulder/core').Services;
+	};
+	return { ...baseServices, ...overrides } as unknown as import('@mulder/core').Services;
 }
 
 async function createTestSource(input?: {
@@ -183,6 +187,35 @@ async function createTestSource(input?: {
 		nativeTextRatio: input?.nativeTextRatio ?? 1,
 		hasNativeText: input?.hasNativeText ?? true,
 		pageCount: input?.pageCount ?? 1,
+	});
+}
+
+function qualityDimensions(input?: {
+	score?: number;
+	method?: 'ocr_confidence' | 'llm_visual' | 'n/a';
+	pagesTotal?: number;
+	pagesReadable?: number;
+}) {
+	return coreModule.normalizeDocumentQualityDimensions({
+		text_readability: {
+			score: input?.score ?? 0.8,
+			method: input?.method ?? 'ocr_confidence',
+			details: 'spec100',
+		},
+		image_quality: { score: 0.9, issues: [] },
+		language_detection: { primary_language: 'en', confidence: 0.95, mixed_languages: false },
+		document_structure: {
+			type: 'printed_text',
+			has_annotations: false,
+			has_marginalia: false,
+			multi_column: false,
+		},
+		content_completeness: {
+			pages_total: input?.pagesTotal ?? 1,
+			pages_readable: input?.pagesReadable ?? 1,
+			missing_pages_suspected: false,
+			truncated: false,
+		},
 	});
 }
 
@@ -392,6 +425,92 @@ describe('Spec 100: document quality assessment step', () => {
 		expect(Number(db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = ${sqlLiteral(source.id)};`))).toBe(0);
 	});
 
+	it.skipIf(!pgAvailable)(
+		'QA-09b: disabled quality config does not gate extract with a prior skip assessment',
+		async () => {
+			const source = await createTestSource({
+				sourceType: 'text',
+				filename: 'spec100-disabled.md',
+				storagePath: 'raw/spec100-disabled.md',
+				formatMetadata: { media_type: 'text/markdown' },
+			});
+			await coreModule.createDocumentQualityAssessment(pool, {
+				sourceId: source.id,
+				assessmentMethod: 'human',
+				overallQuality: 'unusable',
+				processable: false,
+				recommendedPath: 'skip',
+				dimensions: qualityDimensions({ score: 0, method: 'n/a' }),
+				signals: { reviewer: 'spec100-disabled' },
+			});
+			const disabledConfig = {
+				...config,
+				document_quality: { ...config.document_quality, enabled: false },
+			};
+			const result = await pipelineModule.executeExtract(
+				{ sourceId: source.id },
+				disabledConfig,
+				fakeServices({ 'raw/spec100-disabled.md': '# Disabled Quality\n\nExtract me.' }),
+				pool,
+				testLogger(),
+			);
+
+			expect(result.status).toBe('success');
+			expect(Number(db.runSql(`SELECT COUNT(*) FROM stories WHERE source_id = ${sqlLiteral(source.id)};`))).toBe(1);
+			expect(
+				db.runSql(
+					`SELECT status FROM source_steps WHERE source_id = ${sqlLiteral(source.id)} AND step_name = 'extract';`,
+				),
+			).toBe('completed');
+		},
+	);
+
+	it.skipIf(!pgAvailable)('QA-09c: quality-skipped extract terminates the synchronous pipeline', async () => {
+		const source = await createTestSource({
+			sourceType: 'pdf',
+			filename: 'spec100-terminal.pdf',
+			storagePath: 'raw/spec100-terminal.pdf',
+			formatMetadata: { media_type: 'application/pdf' },
+			nativeTextRatio: 0,
+			hasNativeText: false,
+		});
+		await coreModule.updateSourceStatus(pool, source.id, 'extracted');
+		await coreModule.createDocumentQualityAssessment(pool, {
+			sourceId: source.id,
+			assessmentMethod: 'human',
+			overallQuality: 'unusable',
+			processable: false,
+			recommendedPath: 'skip',
+			dimensions: qualityDimensions({ score: 0, method: 'n/a' }),
+			signals: { reviewer: 'spec100-terminal' },
+		});
+
+		const result = await pipelineModule.executePipelineRun(
+			{ options: { sourceIds: [source.id], from: 'extract', upTo: 'segment', force: true } },
+			config,
+			fakeServices(),
+			pool,
+			testLogger(),
+		);
+
+		expect(result.status).toBe('success');
+		expect(
+			db.runSql(
+				`SELECT status FROM source_steps WHERE source_id = ${sqlLiteral(source.id)} AND step_name = 'extract';`,
+			),
+		).toBe('skipped');
+		expect(
+			db.runSql(
+				`SELECT COALESCE((SELECT status FROM source_steps WHERE source_id = ${sqlLiteral(source.id)} AND step_name = 'segment'), 'missing');`,
+			),
+		).toBe('missing');
+		expect(
+			db.runSql(
+				`SELECT current_step || '|' || status FROM pipeline_run_sources WHERE source_id = ${sqlLiteral(source.id)} ORDER BY updated_at DESC LIMIT 1;`,
+			),
+		).toBe('extract|completed');
+	});
+
 	it.skipIf(!pgAvailable)('QA-10: processable quality propagates compact metadata to stories', async () => {
 		const source = await createTestSource({
 			sourceType: 'text',
@@ -434,6 +553,99 @@ describe('Spec 100: document quality assessment step', () => {
 			document_quality_assessment_id: qualityResult.data?.assessment.id,
 		});
 		expect(storyMetadata.extraction_confidence).toBe(0.7);
+	});
+
+	it.skipIf(!pgAvailable)('QA-10b: layout segmentation propagates compact quality metadata to stories', async () => {
+		const source = await createTestSource({
+			sourceType: 'pdf',
+			filename: 'spec100-layout.pdf',
+			storagePath: 'raw/spec100-layout.pdf',
+			formatMetadata: { media_type: 'application/pdf' },
+			nativeTextRatio: 1,
+			hasNativeText: true,
+		});
+		await coreModule.updateSourceStatus(pool, source.id, 'extracted');
+		const assessment = await coreModule.createDocumentQualityAssessment(pool, {
+			sourceId: source.id,
+			assessmentMethod: 'human',
+			overallQuality: 'medium',
+			processable: true,
+			recommendedPath: 'enhanced_ocr',
+			dimensions: qualityDimensions({ score: 0.7, method: 'ocr_confidence' }),
+			signals: { reviewer: 'spec100-layout' },
+		});
+		const layout = {
+			sourceId: source.id,
+			pageCount: 1,
+			primaryMethod: 'native',
+			extractedAt: new Date().toISOString(),
+			pages: [{ pageNumber: 1, method: 'native', confidence: 0.9, text: 'Layout story text.' }],
+			metadata: { visionFallbackCount: 0, visionFallbackCapped: false },
+		};
+		const services = fakeServices(
+			{
+				[`extracted/${source.id}/layout.json`]: JSON.stringify(layout),
+				[`extracted/${source.id}/pages/page-001.png`]: Buffer.from('png'),
+			},
+			{
+				llm: {
+					generateText: async () => {
+						throw new Error('generateText should not be called by segment');
+					},
+					generateGrounded: async () => {
+						throw new Error('generateGrounded should not be called by segment');
+					},
+					generateStructured: async () => ({
+						stories: [
+							{
+								title: 'Layout Story',
+								subtitle: null,
+								language: 'en',
+								category: 'news',
+								page_start: 1,
+								page_end: 1,
+								date_references: [],
+								geographic_references: [],
+								confidence: 0.88,
+								content_markdown: '# Layout Story\n\nLayout story text.',
+							},
+						],
+					}),
+				},
+			},
+		);
+
+		const result = await pipelineModule.executeSegment({ sourceId: source.id }, config, services, pool, testLogger());
+		expect(result.status).toBe('success');
+		const storyMetadata = JSON.parse(
+			db.runSql(`SELECT metadata::text FROM stories WHERE source_id = ${sqlLiteral(source.id)} LIMIT 1;`),
+		) as Record<string, unknown>;
+		expect(storyMetadata).toMatchObject({
+			source_document_quality: 'medium',
+			extraction_path: 'enhanced_ocr',
+			document_quality_assessment_id: assessment.id,
+		});
+		expect(storyMetadata.extraction_confidence).toBe(0.7);
+	});
+
+	it.skipIf(!pgAvailable)('QA-10c: processable handwriting override is automatically extractable', async () => {
+		const source = await createTestSource({
+			sourceType: 'image',
+			filename: 'spec100-handwriting.png',
+			storagePath: 'raw/spec100-handwriting.png',
+			formatMetadata: { media_type: 'image/png' },
+		});
+		const assessment = await coreModule.createDocumentQualityAssessment(pool, {
+			sourceId: source.id,
+			assessmentMethod: 'human',
+			overallQuality: 'low',
+			processable: true,
+			recommendedPath: 'handwriting_recognition',
+			dimensions: qualityDimensions({ score: 0.4, method: 'n/a' }),
+			signals: { reviewer: 'spec100-handwriting' },
+		});
+
+		expect(pipelineModule.isAutomaticExtractionAllowed({ assessment, source })).toBe(true);
 	});
 
 	it.skipIf(!pgAvailable)('QA-11: CLI command runs one source and all eligible sources', async () => {
