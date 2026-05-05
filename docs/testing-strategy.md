@@ -27,8 +27,11 @@ Use scoped or affected tests during feature work:
 
 ```bash
 pnpm test:scope run step Mx-Yz -- --reporter=verbose
+pnpm test:affected:plan -- origin/main
 pnpm test:affected -- origin/main -- --reporter=verbose
 ```
+
+The affected runner is intentionally explainable: `test:affected:plan` prints the changed files, the rule that matched each file, selected specs, lanes, and estimated weight. A normal feature PR should stay near 8-15 minutes; broad changes may use the parallel affected lane jobs and should still target 20 minutes. If an affected plan unexpectedly selects most of the suite for an ordinary feature change, refine the mapping before continuing feature work.
 
 Use full lane runs when changing shared infrastructure, migrations, worker dispatch, storage, or pipeline orchestration:
 
@@ -38,3 +41,4 @@ MULDER_TEST_ISOLATED_DB=true pnpm test:lane -- db 1 2 -- --reporter=verbose
 MULDER_TEST_ISOLATED_DB=true pnpm test:lane -- heavy 1 3 -- --reporter=verbose
 ```
 
+The full suite remains the merge safety net for pushes to `milestone/**` and `main`. PR affected mappings may be narrower than the full suite, but milestone tips must still pass the complete schema/db/heavy gates before merging onward.

@@ -11,7 +11,15 @@ const GCP_WORKFLOW = resolve(ROOT, '.github/workflows/gcp-tests.yml');
 const README = resolve(ROOT, 'README.md');
 const TESTING_STRATEGY_DOC = resolve(ROOT, 'docs/testing-strategy.md');
 const TEST_SCOPE_SCRIPT = resolve(ROOT, 'scripts/test-scope.mjs');
+const TEST_LANES_SCRIPT = resolve(ROOT, 'scripts/test-lanes.mjs');
 const PACKAGE_JSON = resolve(ROOT, 'package.json');
+
+type AffectedPlan = {
+	totalFiles: number;
+	lanes: Record<string, { count: number; files: string[]; totalWeight: number }>;
+	files: Array<{ relativePath: string; lane: string; weight: number }>;
+	rules: Array<{ changedFile: string; rule: string; selectedFiles: string[] }>;
+};
 
 function runVitest(args: string[], env?: Record<string, string>): { stdout: string; stderr: string; exitCode: number } {
 	const result = spawnSync('pnpm', ['vitest', 'run', ...args], {
@@ -36,6 +44,27 @@ function runVitest(args: string[], env?: Record<string, string>): { stdout: stri
 		stderr: result.stderr ?? '',
 		exitCode: result.status ?? 1,
 	};
+}
+
+function runTestLanes(args: string[]): { stdout: string; stderr: string; exitCode: number } {
+	const result = spawnSync('node', [TEST_LANES_SCRIPT, ...args], {
+		cwd: ROOT,
+		encoding: 'utf-8',
+		timeout: 60_000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+	});
+
+	return {
+		stdout: result.stdout ?? '',
+		stderr: result.stderr ?? '',
+		exitCode: result.status ?? 1,
+	};
+}
+
+function affectedPlanFor(changedFile: string): AffectedPlan {
+	const result = runTestLanes(['affected-plan', '--changed-file', changedFile, '--json']);
+	expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
+	return JSON.parse(result.stdout) as AffectedPlan;
 }
 
 function resetSchemaToMissing(): void {
@@ -112,12 +141,21 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		const gcpWorkflow = readFileSync(GCP_WORKFLOW, 'utf-8');
 
 		expect(ciWorkflow).toContain("if: github.event_name == 'pull_request'");
+		expect(ciWorkflow).toContain('pr-affected-plan');
+		expect(ciWorkflow).toContain('pr-affected-schema');
+		expect(ciWorkflow).toContain('pr-affected-db');
+		expect(ciWorkflow).toContain('pr-affected-heavy');
 		expect(ciWorkflow).toContain('pr-affected-tests');
+		expect(ciWorkflow).toContain('Check affected lane results');
 		expect(ciWorkflow).toContain('full-schema-tests');
 		expect(ciWorkflow).toContain('full-db-tests');
 		expect(ciWorkflow).toContain('full-heavy-tests');
 		expect(ciWorkflow).toContain('full-external-tests');
-		expect(ciWorkflow).toContain('pnpm test:affected');
+		expect(ciWorkflow).toContain('affected-plan origin/');
+		expect(ciWorkflow).toContain('--json > .test-results/affected-plan.json');
+		expect(ciWorkflow).toContain('pnpm test:affected:lane -- schema');
+		expect(ciWorkflow).toContain('pnpm test:affected:lane -- db');
+		expect(ciWorkflow).toContain('pnpm test:affected:lane -- heavy');
 		expect(ciWorkflow).toContain('pnpm test:lane -- schema');
 		expect(ciWorkflow).toContain('pnpm test:lane -- db');
 		expect(ciWorkflow).toContain('pnpm test:lane -- heavy');
@@ -146,7 +184,103 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		expect(testingStrategy).toContain(
 			'Put tests that require real Docker, GCP credentials, paid services, or live external services in `external`',
 		);
+		expect(testingStrategy).toContain('pnpm test:affected:plan');
+		expect(testingStrategy).toContain('normal feature PR should stay near 8-15 minutes');
 		expect(testingStrategy).toContain('pnpm test:lanes:verify');
+	});
+
+	it('QA-05d: affected planning stays narrow for reprocess config changes', () => {
+		const plan = affectedPlanFor('packages/core/src/config/reprocess-hash.ts');
+		const files = plan.files.map((file) => file.relativePath);
+
+		expect(plan.totalFiles).toBeLessThan(20);
+		expect(files).toEqual(
+			expect.arrayContaining([
+				'tests/specs/03_config_loader.test.ts',
+				'tests/specs/77_cost_estimator.test.ts',
+				'tests/specs/78_selective_reprocessing.test.ts',
+				'tests/specs/100_document_quality_assessment_step.test.ts',
+			]),
+		);
+		expect(files).not.toContain('tests/specs/77_large_pdf_browser_upload_flow.test.ts');
+		expect(files).not.toContain('tests/specs/78_devlog_system.test.ts');
+		expect(plan.lanes.heavy.count).toBe(0);
+	});
+
+	it('QA-05e: testinfra changes select infrastructure smokes instead of the full suite', () => {
+		const plan = affectedPlanFor('scripts/test-lanes.mjs');
+		const files = plan.files.map((file) => file.relativePath);
+
+		expect(plan.totalFiles).toBe(2);
+		expect(files).toEqual(
+			expect.arrayContaining([
+				'tests/specs/02_monorepo_setup.test.ts',
+				'tests/specs/59_hermetic_test_infrastructure.test.ts',
+			]),
+		);
+		expect(plan.lanes.heavy.count).toBe(0);
+		expect(plan.lanes.db.count + plan.lanes.schema.count).toBe(2);
+	});
+
+	it('QA-05e2: affected planning maps colliding spec docs to exact tests', () => {
+		const plan = affectedPlanFor('docs/specs/77_cost_estimator.spec.md');
+		const files = plan.files.map((file) => file.relativePath);
+
+		expect(plan.totalFiles).toBe(1);
+		expect(files).toEqual(['tests/specs/77_cost_estimator.test.ts']);
+		expect(files).not.toContain('tests/specs/77_large_pdf_browser_upload_flow.test.ts');
+		expect(files).not.toContain('tests/specs/77_document_observability_route.test.ts');
+	});
+
+	it('QA-05e3: package-level affected planning uses package-specific mappings', () => {
+		const retrievalPlan = affectedPlanFor('packages/retrieval/src/orchestrator.ts');
+		const taxonomyPlan = affectedPlanFor('packages/taxonomy/src/merge.ts');
+
+		expect(retrievalPlan.files.map((file) => file.relativePath)).toEqual(
+			expect.arrayContaining([
+				'tests/specs/37_vector_search_retrieval.test.ts',
+				'tests/specs/42_hybrid_retrieval_orchestrator.test.ts',
+				'tests/specs/43_retrieval_metrics.test.ts',
+			]),
+		);
+		expect(retrievalPlan.totalFiles).toBeLessThan(10);
+		expect(retrievalPlan.lanes.heavy.count).toBe(0);
+
+		expect(taxonomyPlan.files.map((file) => file.relativePath)).toEqual(
+			expect.arrayContaining([
+				'tests/specs/27_taxonomy_normalization.test.ts',
+				'tests/specs/50_taxonomy_export_curate_merge.test.ts',
+			]),
+		);
+		expect(taxonomyPlan.totalFiles).toBeLessThan(10);
+	});
+
+	it('QA-05f: affected lane shards pass cleanly when their selected shard is empty', () => {
+		const emptyDbShard = runTestLanes([
+			'affected-lane',
+			'db',
+			'2',
+			'2',
+			'--changed-file',
+			'scripts/test-lanes.mjs',
+			'--',
+			'--reporter=verbose',
+		]);
+		const emptyHeavyShard = runTestLanes([
+			'affected-lane',
+			'heavy',
+			'1',
+			'3',
+			'--changed-file',
+			'packages/core/src/config/reprocess-hash.ts',
+			'--',
+			'--reporter=verbose',
+		]);
+
+		expect(emptyDbShard.exitCode, `${emptyDbShard.stdout}\n${emptyDbShard.stderr}`).toBe(0);
+		expect(emptyDbShard.stdout).toContain('No tests selected for affected-db-2-of-2; passing.');
+		expect(emptyHeavyShard.exitCode, `${emptyHeavyShard.stdout}\n${emptyHeavyShard.stderr}`).toBe(0);
+		expect(emptyHeavyShard.stdout).toContain('No tests selected for affected-heavy-1-of-3; passing.');
 	});
 
 	it('QA-06: the lane runner and dev storage honor isolated test storage roots', () => {

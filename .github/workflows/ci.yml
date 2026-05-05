@@ -12,6 +12,7 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -29,6 +30,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -50,6 +52,7 @@ jobs:
   health:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: build
     services:
       postgres:
@@ -119,6 +122,7 @@ jobs:
   unit-tests:
     name: unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: build
     steps:
       - uses: actions/checkout@v6
@@ -154,11 +158,64 @@ jobs:
           path: .test-results
           if-no-files-found: ignore
 
-  pr-affected-tests:
+  pr-affected-plan:
     if: github.event_name == 'pull_request'
-    name: affected tests
+    name: affected plan
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [build, health]
+    outputs:
+      has_schema: ${{ steps.plan.outputs.has_schema }}
+      has_db: ${{ steps.plan.outputs.has_db }}
+      has_heavy: ${{ steps.plan.outputs.has_heavy }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Prepare test results
+        run: mkdir -p .test-results
+
+      - name: Build affected plan
+        id: plan
+        run: |
+          node scripts/test-lanes.mjs affected-plan origin/${{ github.base_ref }} --json > .test-results/affected-plan.json
+          node scripts/test-lanes.mjs affected-plan origin/${{ github.base_ref }} | tee .test-results/affected-plan.txt
+          node <<'NODE'
+          const fs = require('node:fs');
+          const plan = JSON.parse(fs.readFileSync('.test-results/affected-plan.json', 'utf8'));
+          const output = process.env.GITHUB_OUTPUT;
+          for (const lane of ['schema', 'db', 'heavy']) {
+            fs.appendFileSync(output, `has_${lane}=${plan.lanes[lane].count > 0 ? 'true' : 'false'}\n`);
+          }
+          NODE
+        env:
+          MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
+
+      - name: Upload affected plan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: affected-plan
+          path: .test-results
+          if-no-files-found: ignore
+
+  pr-affected-schema:
+    if: github.event_name == 'pull_request' && needs.pr-affected-plan.outputs.has_schema == 'true'
+    name: affected schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build, health, pr-affected-plan]
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -208,8 +265,13 @@ jobs:
       - name: Prepare test results
         run: mkdir -p .test-results
 
-      - name: Run affected tests
-        run: pnpm test:affected -- origin/${{ github.base_ref }} -- --reporter=verbose --reporter=junit --outputFile.junit=.test-results/affected-junit.xml
+      - name: Show affected schema plan
+        run: node scripts/test-lanes.mjs affected-plan origin/${{ github.base_ref }} | tee .test-results/affected-schema-plan.txt
+        env:
+          MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
+
+      - name: Run affected schema tests
+        run: pnpm test:affected:lane -- schema origin/${{ github.base_ref }} -- --reporter=verbose --reporter=junit --outputFile.junit=.test-results/affected-schema-junit.xml
         env:
           NODE_ENV: test
           PGHOST: localhost
@@ -220,18 +282,217 @@ jobs:
           MULDER_TEST_ISOLATED_DB: "true"
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
 
-      - name: Upload affected test artifacts
+      - name: Upload affected schema artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: affected-test-results
+          name: affected-schema-test-results
           path: .test-results
           if-no-files-found: ignore
+
+  pr-affected-db:
+    if: github.event_name == 'pull_request' && needs.pr-affected-plan.outputs.has_db == 'true'
+    name: affected db (${{ matrix.shard_index }}/${{ matrix.shard_total }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build, health, pr-affected-plan]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_index: [1, 2]
+        shard_total: [2]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: mulder
+          POSTGRES_PASSWORD: mulder
+          POSTGRES_DB: mulder
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mulder"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Install PostGIS into PostgreSQL container
+        run: |
+          PG_CONTAINER=$(docker ps -q --filter "ancestor=pgvector/pgvector:pg17")
+          docker exec "$PG_CONTAINER" bash -c "apt-get update && apt-get install -y --no-install-recommends postgresql-17-postgis-3 postgresql-17-postgis-3-scripts && rm -rf /var/lib/apt/lists/*"
+
+      - name: Install PostgreSQL extensions
+        run: |
+          PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+          PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+
+      - name: Setup test config
+        run: cp mulder.config.example.yaml mulder.config.yaml
+
+      - name: Prepare test results
+        run: mkdir -p .test-results
+
+      - name: Show affected db plan
+        run: node scripts/test-lanes.mjs affected-plan origin/${{ github.base_ref }} | tee .test-results/affected-db-${{ matrix.shard_index }}-plan.txt
+        env:
+          MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
+
+      - name: Run affected db tests
+        run: pnpm test:affected:lane -- db ${{ matrix.shard_index }} ${{ matrix.shard_total }} origin/${{ github.base_ref }} -- --reporter=verbose --reporter=junit --outputFile.junit=.test-results/affected-db-${{ matrix.shard_index }}-junit.xml
+        env:
+          NODE_ENV: test
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: mulder
+          PGPASSWORD: mulder
+          PGDATABASE: mulder
+          MULDER_TEST_ISOLATED_DB: "true"
+          MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
+
+      - name: Upload affected DB artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: affected-db-test-results-${{ matrix.shard_index }}
+          path: .test-results
+          if-no-files-found: ignore
+
+  pr-affected-heavy:
+    if: github.event_name == 'pull_request' && needs.pr-affected-plan.outputs.has_heavy == 'true'
+    name: affected heavy (${{ matrix.shard_index }}/${{ matrix.shard_total }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build, health, pr-affected-plan]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_index: [1, 2, 3]
+        shard_total: [3]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: mulder
+          POSTGRES_PASSWORD: mulder
+          POSTGRES_DB: mulder
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mulder"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Install PostGIS into PostgreSQL container
+        run: |
+          PG_CONTAINER=$(docker ps -q --filter "ancestor=pgvector/pgvector:pg17")
+          docker exec "$PG_CONTAINER" bash -c "apt-get update && apt-get install -y --no-install-recommends postgresql-17-postgis-3 postgresql-17-postgis-3-scripts && rm -rf /var/lib/apt/lists/*"
+
+      - name: Install PostgreSQL extensions
+        run: |
+          PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+          PGPASSWORD=mulder psql -h localhost -U mulder -d mulder -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+
+      - name: Setup test config
+        run: cp mulder.config.example.yaml mulder.config.yaml
+
+      - name: Prepare test results
+        run: mkdir -p .test-results
+
+      - name: Show affected heavy plan
+        run: node scripts/test-lanes.mjs affected-plan origin/${{ github.base_ref }} | tee .test-results/affected-heavy-${{ matrix.shard_index }}-plan.txt
+        env:
+          MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
+
+      - name: Run affected heavy tests
+        run: pnpm test:affected:lane -- heavy ${{ matrix.shard_index }} ${{ matrix.shard_total }} origin/${{ github.base_ref }} -- --reporter=verbose --reporter=junit --outputFile.junit=.test-results/affected-heavy-${{ matrix.shard_index }}-junit.xml
+        env:
+          NODE_ENV: test
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: mulder
+          PGPASSWORD: mulder
+          PGDATABASE: mulder
+          MULDER_TEST_ISOLATED_DB: "true"
+          MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
+
+      - name: Upload affected heavy artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: affected-heavy-test-results-${{ matrix.shard_index }}
+          path: .test-results
+          if-no-files-found: ignore
+
+  pr-affected-tests:
+    if: always() && github.event_name == 'pull_request'
+    name: affected tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [pr-affected-plan, pr-affected-schema, pr-affected-db, pr-affected-heavy]
+    steps:
+      - name: Check affected lane results
+        run: |
+          echo "plan: ${{ needs.pr-affected-plan.result }}"
+          echo "schema: ${{ needs.pr-affected-schema.result }}"
+          echo "db: ${{ needs.pr-affected-db.result }}"
+          echo "heavy: ${{ needs.pr-affected-heavy.result }}"
+
+          if [ "${{ needs.pr-affected-plan.result }}" != "success" ]; then
+            exit 1
+          fi
+
+          for result in "${{ needs.pr-affected-schema.result }}" "${{ needs.pr-affected-db.result }}" "${{ needs.pr-affected-heavy.result }}"; do
+            case "$result" in
+              success|skipped)
+                ;;
+              *)
+                exit 1
+                ;;
+            esac
+          done
 
   full-schema-tests:
     if: github.event_name != 'pull_request'
     name: schema tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: build
     services:
       postgres:
@@ -306,6 +567,7 @@ jobs:
     if: github.event_name != 'pull_request'
     name: db tests (${{ matrix.shard_index }}/${{ matrix.shard_total }})
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: build
     strategy:
       fail-fast: false
@@ -385,6 +647,7 @@ jobs:
     if: github.event_name != 'pull_request'
     name: heavy tests (${{ matrix.shard_index }}/${{ matrix.shard_total }})
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: build
     strategy:
       fail-fast: false
@@ -464,6 +727,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     name: external tests (manual)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: build
     steps:
       - uses: actions/checkout@v6
@@ -504,6 +768,7 @@ jobs:
 
   app:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 

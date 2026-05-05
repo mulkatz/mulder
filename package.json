@@ -21,6 +21,8 @@
 		"worker:service": "node scripts/run-worker-service.mjs",
 		"test:scope": "node scripts/test-scope.mjs",
 		"test:affected": "node scripts/test-lanes.mjs affected",
+		"test:affected:plan": "node scripts/test-lanes.mjs affected-plan",
+		"test:affected:lane": "node scripts/test-lanes.mjs affected-lane",
 		"test:lane": "node scripts/test-lanes.mjs run",
 		"test:lanes:verify": "node scripts/test-lanes.mjs verify",
 		"test:lanes:summary": "node scripts/test-lanes.mjs summary",
