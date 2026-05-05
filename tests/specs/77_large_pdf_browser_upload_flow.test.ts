@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -19,6 +20,7 @@ const API_APP_DIST = resolve(API_DIR, 'dist/app.js');
 const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 const STORAGE_DIR = resolve(ROOT, '.local/storage');
+const BLOBS_STORAGE_DIR = resolve(STORAGE_DIR, 'blobs');
 const RAW_STORAGE_DIR = resolve(STORAGE_DIR, 'raw');
 const FIXTURE_PDF = resolve(ROOT, 'fixtures/raw/native-text-sample.pdf');
 const MAX_BODY_BYTES = 10 * 1024 * 1024;
@@ -75,18 +77,24 @@ function cleanState(): void {
 			'DELETE FROM entities',
 			'DELETE FROM stories',
 			'DELETE FROM sources',
+			'DELETE FROM document_blobs',
 		].join('; '),
 	);
 }
 
-function cleanRawStorage(): void {
-	if (!existsSync(RAW_STORAGE_DIR)) {
+function cleanStorageDir(dir: string): void {
+	if (!existsSync(dir)) {
 		return;
 	}
 
-	for (const entry of readdirSync(RAW_STORAGE_DIR)) {
-		rmSync(join(RAW_STORAGE_DIR, entry), { recursive: true, force: true });
+	for (const entry of readdirSync(dir)) {
+		rmSync(join(dir, entry), { recursive: true, force: true });
 	}
+}
+
+function cleanUploadStorage(): void {
+	cleanStorageDir(RAW_STORAGE_DIR);
+	cleanStorageDir(BLOBS_STORAGE_DIR);
 }
 
 function writeUploadedObject(sourceId: string, content: Buffer): string {
@@ -95,6 +103,11 @@ function writeUploadedObject(sourceId: string, content: Buffer): string {
 	const storagePath = join(dir, 'original.pdf');
 	writeFileSync(storagePath, content);
 	return storagePath;
+}
+
+function expectedBlobPath(content: Buffer, extension: string): string {
+	const contentHash = createHash('sha256').update(content).digest('hex');
+	return `blobs/sha256/${contentHash.slice(0, 2)}/${contentHash.slice(2, 4)}/${contentHash}.${extension}`;
 }
 
 async function loadApiApp(): Promise<{ request: (input: string | Request, init?: RequestInit) => Promise<Response> }> {
@@ -211,13 +224,13 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 
 	beforeEach(() => {
 		cleanState();
-		cleanRawStorage();
+		cleanUploadStorage();
 	});
 
 	afterAll(() => {
 		try {
 			cleanState();
-			cleanRawStorage();
+			cleanUploadStorage();
 		} catch {
 			// Ignore cleanup failures.
 		}
@@ -288,6 +301,7 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 	});
 
 	it('QA-03: complete + finalize creates a source and queues the pipeline job', async () => {
+		const expectedStoragePath = expectedBlobPath(fixturePdf, 'pdf');
 		const initiate = await apiPost(app, '/api/uploads/documents/initiate', {
 			filename: 'native-text-sample.pdf',
 			size_bytes: fixturePdf.byteLength,
@@ -325,11 +339,13 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 		expect(sourceRow).toMatchObject({
 			id: sourceId,
 			filename: 'native-text-sample.pdf',
-			storage_path: storagePath,
+			storage_path: expectedStoragePath,
 			status: 'ingested',
 			tags: ['review'],
 			source_type: 'pdf',
 		});
+		expect(existsSync(resolve(STORAGE_DIR, expectedStoragePath))).toBe(true);
+		expect(existsSync(resolve(STORAGE_DIR, storagePath))).toBe(false);
 		const formatMetadata = sourceRow.format_metadata as Record<string, unknown>;
 		const legacyMetadata = sourceRow.metadata as Record<string, unknown>;
 		expect(formatMetadata).toEqual(legacyMetadata);
