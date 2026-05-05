@@ -533,19 +533,28 @@ describe('Spec 98 - Content-addressed raw blob storage', () => {
 	});
 
 	it('QA-07: Cross-format duplicate behavior remains unchanged', () => {
-		const result = spawnSync(
-			'npx',
-			['vitest', 'run', 'tests/specs/96_cross_format_ingest_dedup.test.ts', '--reporter=verbose'],
-			{
-				cwd: ROOT,
-				encoding: 'utf-8',
-				timeout: 1_300_000,
-				stdio: ['pipe', 'pipe', 'pipe'],
-				env: cliEnv(),
-			},
-		);
-		expect(result.status ?? 1, `${result.stdout ?? ''}\n${result.stderr ?? ''}`).toBe(0);
-	}, 1_400_000);
+		if (!pgAvailable) return;
+		const reportText = 'Spec 98 Cross-Format Duplicate Report\n\nAlpha beta gamma.\n';
+		const reportTxt = writeFixture('qa-07/report.txt', reportText);
+		const markdownContent = reportText.replaceAll('\n', '\r\n');
+		const reportMd = writeFixture('qa-07/report.md', markdownContent);
+		const textHash = sha256(reportText);
+		const markdownHash = sha256(markdownContent);
+
+		const first = runCli(['ingest', reportTxt]);
+		expectSuccessful(first);
+		const existingSourceId = sourceIdForFilename('report.txt');
+
+		const second = runCli(['ingest', reportMd]);
+		expectSuccessful(second);
+
+		expect(combinedOutput(second)).toMatch(/duplicate/i);
+		expect(combinedOutput(second)).toContain(existingSourceId);
+		expect(db.runSql('SELECT COUNT(*) FROM sources;')).toBe('1');
+		expect(blobCountForHash(textHash)).toBe(1);
+		expect(blobCountForHash(markdownHash)).toBe(0);
+		expect(existsSync(storageObjectPath(expectedBlobPath(markdownHash, 'md')))).toBe(false);
+	});
 
 	it('QA-08: Derived artifacts remain source-addressed', () => {
 		if (!pgAvailable) return;
