@@ -18,6 +18,7 @@
 		"lint:fix": "biome check --write .",
 		"test:api:e2e": "node scripts/test-api-e2e.mjs",
 		"invite:owner": "node scripts/create-owner-invite.mjs",
+		"smoke:app": "node scripts/smoke-app-playwright.mjs",
 		"smoke:live": "node scripts/smoke-live-api.mjs",
 		"worker:service": "node scripts/run-worker-service.mjs",
 		"test:scope": "node scripts/test-scope.mjs",
@@ -30,6 +31,7 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.10",
+		"@playwright/test": "^1.59.1",
 		"@types/pg": "^8.20.0",
 		"pdf-lib": "^1.17.1",
 		"pg": "^8.20.0",
