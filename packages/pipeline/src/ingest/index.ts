@@ -30,7 +30,6 @@ import {
 	createSource,
 	detectNativeText,
 	extractPdfMetadata,
-	findDocumentBlobByHash,
 	findSourceByCrossFormatDedupKey,
 	findSourceByHash,
 	findUrlHostLifecycleByHost,
@@ -41,7 +40,6 @@ import {
 	recordUrlLifecycleFetch,
 	resolveUrlPolitenessDelayMs,
 	sleepForUrlPoliteness,
-	upsertDocumentBlob,
 	upsertSourceStep,
 	urlLifecycleHeaderValue,
 } from '@mulder/core';
@@ -53,6 +51,7 @@ import {
 	normalizeCrossFormatText,
 	withCrossFormatDedupMetadata,
 } from './cross-format-dedup.js';
+import { ensureRawDocumentBlob } from './raw-blob.js';
 import {
 	buildDocxFormatMetadata,
 	buildEmailFormatMetadata,
@@ -205,52 +204,6 @@ export const resolvePdfFiles = resolveIngestFiles;
  */
 function computeFileHash(buffer: Buffer): string {
 	return createHash('sha256').update(buffer).digest('hex');
-}
-
-async function ensureRawDocumentBlob(input: {
-	services: Services;
-	pool: pg.Pool;
-	contentHash: string;
-	content: Buffer;
-	mediaType: string;
-	storageExtension: string;
-	filename: string;
-}): Promise<string> {
-	const existingBlob = await findDocumentBlobByHash(input.pool, input.contentHash);
-	if (existingBlob) {
-		await upsertDocumentBlob(input.pool, {
-			contentHash: input.contentHash,
-			storagePath: existingBlob.storagePath,
-			storageUri: existingBlob.storageUri,
-			mimeType: existingBlob.mimeType,
-			fileSizeBytes: existingBlob.fileSizeBytes,
-			originalFilenames: [input.filename],
-		});
-		return existingBlob.storagePath;
-	}
-
-	const storagePath = buildContentAddressedBlobPath(input.contentHash, input.storageExtension);
-	const exists = await input.services.storage.exists(storagePath);
-	let uploadedAlternate = false;
-	if (!exists) {
-		await input.services.storage.upload(storagePath, input.content, input.mediaType);
-		uploadedAlternate = true;
-	}
-
-	const blob = await upsertDocumentBlob(input.pool, {
-		contentHash: input.contentHash,
-		storagePath,
-		storageUri: input.services.storage.buildUri(storagePath),
-		mimeType: input.mediaType,
-		fileSizeBytes: input.content.byteLength,
-		originalFilenames: [input.filename],
-	});
-
-	if (uploadedAlternate && blob.storagePath !== storagePath) {
-		await input.services.storage.delete(storagePath);
-	}
-
-	return blob.storagePath;
 }
 
 function buildPdfFormatMetadata(pdfMeta: PdfMetadata): Record<string, unknown> {

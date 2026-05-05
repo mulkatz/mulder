@@ -270,12 +270,14 @@ describe('Spec 91 — Email Ingestion on the Pre-Structured Path', () => {
 
 		const child = db
 			.runSql(
-				`SELECT source_type::text, parent_source_id::text, storage_path FROM sources WHERE parent_source_id = ${sqlLiteral(sourceId)};`,
+				`SELECT s.source_type::text, s.parent_source_id::text, s.storage_path, s.file_hash, b.storage_path, b.original_filenames::text FROM sources s JOIN document_blobs b ON b.content_hash = s.file_hash WHERE s.parent_source_id = ${sqlLiteral(sourceId)};`,
 			)
 			.split('|');
 		expect(child[0]).toBe('text');
 		expect(child[1]).toBe(sourceId);
-		expect(child[2]).toMatch(/^raw\/[0-9a-f-]+\/original\.txt$/);
+		expect(child[2]).toMatch(/^blobs\/sha256\/[a-f0-9]{2}\/[a-f0-9]{2}\/[a-f0-9]{64}\.txt$/);
+		expect(child[4]).toBe(child[2]);
+		expect(child[5]).toContain('attachment-note.txt');
 		expect(existsSync(resolve(STORAGE_DIR, child[2]))).toBe(true);
 	});
 
