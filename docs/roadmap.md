@@ -287,7 +287,7 @@ Must complete before first real archive data ingest. Without these foundations, 
 
 | Status | Step | What | Spec |
 |--------|------|------|------|
-| ⚪ | K1 | Content-addressed storage — GCS layout migration, SHA-256 dedup | §A2 |
+| 🟡 | K1 | Content-addressed storage — GCS layout migration, SHA-256 dedup | §A2 |
 | ⚪ | K2 | Provenance tracking — `source_document_ids` on all artifacts | §A6.1 |
 | ⚪ | K3 | Document quality assessment step | §A4 |
 | ⚪ | K4 | Assertion classification in Enrich step | §A3 |
