@@ -13,6 +13,7 @@ const CLI_DIR = resolve(ROOT, 'apps/cli');
 const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 const STORAGE_DIR = resolve(ROOT, '.local/storage');
+const BLOBS_STORAGE_DIR = resolve(STORAGE_DIR, 'blobs');
 const RAW_STORAGE_DIR = resolve(STORAGE_DIR, 'raw');
 const EXTRACTED_STORAGE_DIR = resolve(STORAGE_DIR, 'extracted');
 const SEGMENTS_STORAGE_DIR = resolve(STORAGE_DIR, 'segments');
@@ -22,6 +23,7 @@ let emlFile: string;
 let relatedEmlFile: string;
 let fakeEmlFile: string;
 let fakeMsgFile: string;
+let blobsSnapshot: StorageSnapshot | null = null;
 let rawSnapshot: StorageSnapshot | null = null;
 let extractedSnapshot: StorageSnapshot | null = null;
 let segmentsSnapshot: StorageSnapshot | null = null;
@@ -109,6 +111,7 @@ function cleanState(): void {
 			'DELETE FROM entities',
 			'DELETE FROM stories',
 			'DELETE FROM sources',
+			'DELETE FROM document_blobs',
 		].join('; '),
 	);
 }
@@ -122,7 +125,7 @@ function sourceIdForFilename(filename: string): string {
 }
 
 function resetStorage(): void {
-	for (const snapshot of [rawSnapshot, extractedSnapshot, segmentsSnapshot]) {
+	for (const snapshot of [blobsSnapshot, rawSnapshot, extractedSnapshot, segmentsSnapshot]) {
 		if (snapshot) {
 			cleanStorageDirSince(snapshot);
 		}
@@ -159,6 +162,7 @@ beforeAll(() => {
 	writeFileSync(fakeEmlFile, 'This is plain text renamed to an email file.\n', 'utf-8');
 	writeFileSync(fakeMsgFile, Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00, 0x00]));
 
+	blobsSnapshot = snapshotStorageDir(BLOBS_STORAGE_DIR);
 	rawSnapshot = snapshotStorageDir(RAW_STORAGE_DIR);
 	extractedSnapshot = snapshotStorageDir(EXTRACTED_STORAGE_DIR);
 	segmentsSnapshot = snapshotStorageDir(SEGMENTS_STORAGE_DIR);
@@ -229,11 +233,12 @@ describe('Spec 91 — Email Ingestion on the Pre-Structured Path', () => {
 			'0',
 			'f',
 			'0',
-			`raw/${sourceId}/original.eml`,
+			expect.stringMatching(/^blobs\/sha256\/[a-f0-9]{2}\/[a-f0-9]{2}\/[a-f0-9]{64}\.eml$/),
 			'message/rfc822',
 			'eml',
 			'Spec 91 Email',
 		]);
+		expect(existsSync(resolve(STORAGE_DIR, sourceRow[4]))).toBe(true);
 
 		const duplicate = runCli(['ingest', emlFile]);
 		expect(duplicate.exitCode, `${duplicate.stdout}\n${duplicate.stderr}`).toBe(0);

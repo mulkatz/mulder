@@ -22,6 +22,7 @@ const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 const FIXTURE_PDF = resolve(ROOT, 'fixtures/raw/native-text-sample.pdf');
 const STORAGE_DIR = resolve(ROOT, '.local/storage');
+const BLOBS_STORAGE_DIR = resolve(STORAGE_DIR, 'blobs');
 const RAW_STORAGE_DIR = resolve(STORAGE_DIR, 'raw');
 const EXTRACTED_STORAGE_DIR = resolve(STORAGE_DIR, 'extracted');
 const SEGMENTS_STORAGE_DIR = resolve(STORAGE_DIR, 'segments');
@@ -42,6 +43,7 @@ let workerModule: typeof import('@mulder/worker');
 let workerContext: WorkerRuntimeContext;
 let app: ApiApp;
 let pgAvailable = false;
+let blobsSnapshot: StorageSnapshot | null = null;
 let rawSnapshot: StorageSnapshot | null = null;
 let extractedSnapshot: StorageSnapshot | null = null;
 let segmentsSnapshot: StorageSnapshot | null = null;
@@ -232,6 +234,7 @@ function cleanState(): void {
 			'DELETE FROM entities',
 			'DELETE FROM stories',
 			'DELETE FROM sources',
+			'DELETE FROM document_blobs',
 		].join('; '),
 	);
 }
@@ -245,7 +248,7 @@ function sourceIdForFilename(filename: string): string {
 }
 
 function resetStorage(): void {
-	for (const snapshot of [rawSnapshot, extractedSnapshot, segmentsSnapshot]) {
+	for (const snapshot of [blobsSnapshot, rawSnapshot, extractedSnapshot, segmentsSnapshot]) {
 		if (snapshot) {
 			cleanStorageDirSince(snapshot);
 		}
@@ -348,6 +351,7 @@ beforeAll(async () => {
 	);
 	writeFileSync(fakeDocx, createZip([{ name: 'not-word/readme.txt', data: 'This ZIP is not an Office document.' }]));
 
+	blobsSnapshot = snapshotStorageDir(BLOBS_STORAGE_DIR);
 	rawSnapshot = snapshotStorageDir(RAW_STORAGE_DIR);
 	extractedSnapshot = snapshotStorageDir(EXTRACTED_STORAGE_DIR);
 	segmentsSnapshot = snapshotStorageDir(SEGMENTS_STORAGE_DIR);
@@ -431,7 +435,7 @@ describe('Spec 89 — DOCX Ingestion on the Pre-Structured Path', () => {
 			'0',
 			'f',
 			'0',
-			`raw/${sourceId}/original.docx`,
+			expect.stringMatching(/^blobs\/sha256\/[a-f0-9]{2}\/[a-f0-9]{2}\/[a-f0-9]{64}\.docx$/),
 			DOCX_MEDIA_TYPE,
 			'docx',
 			String(readFileSync(briefDocx).byteLength),
@@ -439,7 +443,7 @@ describe('Spec 89 — DOCX Ingestion on the Pre-Structured Path', () => {
 			'office_open_xml',
 			'mammoth',
 		]);
-		expect(existsSync(resolve(STORAGE_DIR, `raw/${sourceId}/original.docx`))).toBe(true);
+		expect(existsSync(resolve(STORAGE_DIR, row[4]))).toBe(true);
 	});
 
 	it('QA-03: DOCX detection rejects arbitrary ZIP files', () => {
@@ -593,7 +597,7 @@ describe('Spec 89 — DOCX Ingestion on the Pre-Structured Path', () => {
 			.split('|');
 		expect(sourceRow).toEqual([
 			'docx',
-			`raw/${sourceId}/original.docx`,
+			expect.stringMatching(/^blobs\/sha256\/[a-f0-9]{2}\/[a-f0-9]{2}\/[a-f0-9]{64}\.docx$/),
 			DOCX_MEDIA_TYPE,
 			'docx',
 			String(content.byteLength),
@@ -664,9 +668,11 @@ describe('Spec 89 — CLI Test Matrix', () => {
 		const result = runCli(['ingest', briefDocx]);
 		expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
 		const sourceId = sourceIdForFilename(basename(briefDocx));
-		expect(
-			db.runSql(`SELECT source_type::text || '|' || storage_path FROM sources WHERE id = ${sqlLiteral(sourceId)};`),
-		).toBe(`docx|raw/${sourceId}/original.docx`);
+		const row = db
+			.runSql(`SELECT source_type::text, storage_path FROM sources WHERE id = ${sqlLiteral(sourceId)};`)
+			.split('|');
+		expect(row[0]).toBe('docx');
+		expect(row[1]).toMatch(/^blobs\/sha256\/[a-f0-9]{2}\/[a-f0-9]{2}\/[a-f0-9]{64}\.docx$/);
 	});
 
 	it('CLI-MATRIX-03: ingest --dry-run rejects an arbitrary ZIP renamed to DOCX', () => {

@@ -22,6 +22,7 @@ const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 const FIXTURE_PDF = resolve(ROOT, 'fixtures/raw/native-text-sample.pdf');
 const STORAGE_DIR = resolve(ROOT, '.local/storage');
+const BLOBS_STORAGE_DIR = resolve(STORAGE_DIR, 'blobs');
 const RAW_STORAGE_DIR = resolve(STORAGE_DIR, 'raw');
 const EXTRACTED_STORAGE_DIR = resolve(STORAGE_DIR, 'extracted');
 const SEGMENTS_STORAGE_DIR = resolve(STORAGE_DIR, 'segments');
@@ -48,6 +49,7 @@ let workerModule: typeof import('@mulder/worker');
 let workerContext: WorkerRuntimeContext;
 let app: ApiApp;
 let pgAvailable = false;
+let blobsSnapshot: StorageSnapshot | null = null;
 let rawSnapshot: StorageSnapshot | null = null;
 let extractedSnapshot: StorageSnapshot | null = null;
 let segmentsSnapshot: StorageSnapshot | null = null;
@@ -289,6 +291,7 @@ function cleanState(): void {
 			'DELETE FROM entities',
 			'DELETE FROM stories',
 			'DELETE FROM sources',
+			'DELETE FROM document_blobs',
 		].join('; '),
 	);
 }
@@ -302,7 +305,7 @@ function sourceIdForFilename(filename: string): string {
 }
 
 function resetStorage(): void {
-	for (const snapshot of [rawSnapshot, extractedSnapshot, segmentsSnapshot]) {
+	for (const snapshot of [blobsSnapshot, rawSnapshot, extractedSnapshot, segmentsSnapshot]) {
 		if (snapshot) {
 			cleanStorageDirSince(snapshot);
 		}
@@ -438,6 +441,7 @@ beforeAll(async () => {
 	);
 	writeFileSync(briefDocx, createDocxBuffer('Brief', 'DOCX magic byte compatibility check.'));
 
+	blobsSnapshot = snapshotStorageDir(BLOBS_STORAGE_DIR);
 	rawSnapshot = snapshotStorageDir(RAW_STORAGE_DIR);
 	extractedSnapshot = snapshotStorageDir(EXTRACTED_STORAGE_DIR);
 	segmentsSnapshot = snapshotStorageDir(SEGMENTS_STORAGE_DIR);
@@ -530,7 +534,7 @@ describe('Spec 90 — Spreadsheet Ingestion on the Pre-Structured Path', () => {
 			'0',
 			'f',
 			'0',
-			`raw/${csvSourceId}/original.csv`,
+			expect.stringMatching(/^blobs\/sha256\/[a-f0-9]{2}\/[a-f0-9]{2}\/[a-f0-9]{64}\.csv$/),
 			CSV_MEDIA_TYPE,
 			'csv',
 			'csv',
@@ -538,7 +542,7 @@ describe('Spec 90 — Spreadsheet Ingestion on the Pre-Structured Path', () => {
 			'utf-8',
 			',',
 		]);
-		expect(existsSync(resolve(STORAGE_DIR, `raw/${csvSourceId}/original.csv`))).toBe(true);
+		expect(existsSync(resolve(STORAGE_DIR, csvRow[4]))).toBe(true);
 
 		const xlsx = runCli(['ingest', xlsxFile]);
 		expect(xlsx.exitCode, `${xlsx.stdout}\n${xlsx.stderr}`).toBe(0);
@@ -553,7 +557,7 @@ describe('Spec 90 — Spreadsheet Ingestion on the Pre-Structured Path', () => {
 			'0',
 			'f',
 			'0',
-			`raw/${xlsxSourceId}/original.xlsx`,
+			expect.stringMatching(/^blobs\/sha256\/[a-f0-9]{2}\/[a-f0-9]{2}\/[a-f0-9]{64}\.xlsx$/),
 			XLSX_MEDIA_TYPE,
 			'xlsx',
 			'xlsx',
@@ -563,7 +567,7 @@ describe('Spec 90 — Spreadsheet Ingestion on the Pre-Structured Path', () => {
 			't',
 			't',
 		]);
-		expect(existsSync(resolve(STORAGE_DIR, `raw/${xlsxSourceId}/original.xlsx`))).toBe(true);
+		expect(existsSync(resolve(STORAGE_DIR, xlsxRow[4]))).toBe(true);
 	});
 
 	it('QA-04: Spreadsheet detection rejects arbitrary ZIP files', () => {
@@ -768,10 +772,14 @@ describe('Spec 90 — Spreadsheet Ingestion on the Pre-Structured Path', () => {
 
 			const processed = await processOneJob();
 			expect(processed.state).toBe('completed');
-			const sourceRow = db.runSql(
-				`SELECT source_type::text, storage_path, format_metadata->>'media_type', format_metadata->>'tabular_format' FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
-			);
-			expect(sourceRow).toBe(`spreadsheet|raw/${sourceId}/original.${extension}|${mediaType}|${extension}`);
+			const sourceRow = db
+				.runSql(
+					`SELECT source_type::text, storage_path, format_metadata->>'media_type', format_metadata->>'tabular_format' FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
+				)
+				.split('|');
+			expect(sourceRow[0]).toBe('spreadsheet');
+			expect(sourceRow[1]).toMatch(new RegExp(`^blobs/sha256/[a-f0-9]{2}/[a-f0-9]{2}/[a-f0-9]{64}\\.${extension}$`));
+			expect(sourceRow.slice(2)).toEqual([mediaType, extension]);
 			expect(
 				db.runSql(
 					`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
@@ -848,9 +856,11 @@ describe('Spec 90 — CLI Test Matrix', () => {
 		const result = runCli(['ingest', csvFile]);
 		expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
 		const sourceId = sourceIdForFilename(basename(csvFile));
-		expect(db.runSql(`SELECT source_type::text, storage_path FROM sources WHERE id = ${sqlLiteral(sourceId)};`)).toBe(
-			`spreadsheet|raw/${sourceId}/original.csv`,
-		);
+		const row = db
+			.runSql(`SELECT source_type::text, storage_path FROM sources WHERE id = ${sqlLiteral(sourceId)};`)
+			.split('|');
+		expect(row[0]).toBe('spreadsheet');
+		expect(row[1]).toMatch(/^blobs\/sha256\/[a-f0-9]{2}\/[a-f0-9]{2}\/[a-f0-9]{64}\.csv$/);
 	});
 
 	it('CLI-MATRIX-04: ingest persists a valid XLSX with canonical raw storage', () => {
@@ -859,9 +869,11 @@ describe('Spec 90 — CLI Test Matrix', () => {
 		const result = runCli(['ingest', xlsxFile]);
 		expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
 		const sourceId = sourceIdForFilename(basename(xlsxFile));
-		expect(db.runSql(`SELECT source_type::text, storage_path FROM sources WHERE id = ${sqlLiteral(sourceId)};`)).toBe(
-			`spreadsheet|raw/${sourceId}/original.xlsx`,
-		);
+		const row = db
+			.runSql(`SELECT source_type::text, storage_path FROM sources WHERE id = ${sqlLiteral(sourceId)};`)
+			.split('|');
+		expect(row[0]).toBe('spreadsheet');
+		expect(row[1]).toMatch(/^blobs\/sha256\/[a-f0-9]{2}\/[a-f0-9]{2}\/[a-f0-9]{64}\.xlsx$/);
 	});
 
 	it('CLI-MATRIX-05: ingest --dry-run rejects an arbitrary ZIP renamed to XLSX', () => {
