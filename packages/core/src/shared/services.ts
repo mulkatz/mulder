@@ -52,6 +52,9 @@ export interface StorageService {
 	/** Upload content (Buffer or string) to a bucket path. */
 	upload(bucketPath: string, content: Buffer | string, contentType?: string): Promise<void>;
 
+	/** Build a stable URI for a bucket path without accessing the object. */
+	buildUri(bucketPath: string): string;
+
 	/** Create a browser-facing direct upload session for a bucket path. */
 	createUploadSession(bucketPath: string, options: CreateStorageUploadSessionOptions): Promise<StorageUploadSession>;
 

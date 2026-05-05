@@ -24,6 +24,7 @@ import type {
 	StepError,
 } from '@mulder/core';
 import {
+	buildContentAddressedBlobPath,
 	computeUrlLifecycleNextAllowedAt,
 	createChildLogger,
 	createSource,
@@ -39,6 +40,7 @@ import {
 	recordUrlLifecycleFetch,
 	resolveUrlPolitenessDelayMs,
 	sleepForUrlPoliteness,
+	upsertDocumentBlob,
 	upsertSourceStep,
 	urlLifecycleHeaderValue,
 } from '@mulder/core';
@@ -202,6 +204,33 @@ export const resolvePdfFiles = resolveIngestFiles;
  */
 function computeFileHash(buffer: Buffer): string {
 	return createHash('sha256').update(buffer).digest('hex');
+}
+
+async function ensureRawDocumentBlob(input: {
+	services: Services;
+	pool: pg.Pool;
+	contentHash: string;
+	content: Buffer;
+	mediaType: string;
+	storageExtension: string;
+	filename: string;
+}): Promise<string> {
+	const storagePath = buildContentAddressedBlobPath(input.contentHash, input.storageExtension);
+	const exists = await input.services.storage.exists(storagePath);
+	if (!exists) {
+		await input.services.storage.upload(storagePath, input.content, input.mediaType);
+	}
+
+	await upsertDocumentBlob(input.pool, {
+		contentHash: input.contentHash,
+		storagePath,
+		storageUri: input.services.storage.buildUri(storagePath),
+		mimeType: input.mediaType,
+		fileSizeBytes: input.content.byteLength,
+		originalFilenames: [input.filename],
+	});
+
+	return storagePath;
 }
 
 function buildPdfFormatMetadata(pdfMeta: PdfMetadata): Record<string, unknown> {
@@ -887,6 +916,15 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		const existing = await findSourceByHash(ctx.pool, fileHash);
 		if (existing) {
 			log.info({ sourceId: existing.id, fileHash }, 'Duplicate file detected, skipping upload');
+			await ensureRawDocumentBlob({
+				services: ctx.services,
+				pool: ctx.pool,
+				contentHash: fileHash,
+				content: buffer,
+				mediaType: prepared.mediaType,
+				storageExtension: prepared.storageExtension,
+				filename,
+			});
 			return {
 				sourceId: existing.id,
 				filename,
@@ -929,7 +967,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 
 	// i. Dry run: skip upload and DB insert
 	const sourceId = randomUUID();
-	const storagePath = `raw/${sourceId}/original.${prepared.storageExtension}`;
+	const storagePath = buildContentAddressedBlobPath(fileHash, prepared.storageExtension);
 
 	if (ctx.dryRun) {
 		log.info({ sourceId, filename, pageCount: prepared.pageCount }, 'Dry run — skipping upload and DB insert');
@@ -957,9 +995,17 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		});
 	}
 
-	// j. Upload to storage
+	// j. Upload to content-addressed storage and register the blob
 	try {
-		await ctx.services.storage.upload(storagePath, buffer, prepared.mediaType);
+		await ensureRawDocumentBlob({
+			services: ctx.services,
+			pool: ctx.pool,
+			contentHash: fileHash,
+			content: buffer,
+			mediaType: prepared.mediaType,
+			storageExtension: prepared.storageExtension,
+			filename,
+		});
 	} catch (cause: unknown) {
 		throw new IngestError(`Upload failed for ${filename}`, INGEST_ERROR_CODES.INGEST_UPLOAD_FAILED, {
 			cause,
@@ -983,20 +1029,6 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 	});
 
 	if (source.id !== sourceId) {
-		if (source.storagePath !== storagePath) {
-			try {
-				await ctx.services.storage.delete(storagePath);
-				log.info(
-					{ sourceId: source.id, duplicateUploadPath: storagePath },
-					'Duplicate file race detected, removed unused uploaded object',
-				);
-			} catch (cause: unknown) {
-				log.warn(
-					{ err: cause, sourceId: source.id, duplicateUploadPath: storagePath },
-					'Duplicate file race detected, but unused uploaded object cleanup failed',
-				);
-			}
-		}
 		return {
 			sourceId: source.id,
 			filename,

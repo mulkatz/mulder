@@ -102,6 +102,10 @@ class GcpStorageService implements StorageService {
 		});
 	}
 
+	buildUri(bucketPath: string): string {
+		return `gs://${this.bucketName}/${bucketPath}`;
+	}
+
 	async createUploadSession(
 		bucketPath: string,
 		options: CreateStorageUploadSessionOptions,
