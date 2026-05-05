@@ -291,7 +291,7 @@ Must complete before first real archive data ingest. Without these foundations, 
 | 🟢 | K2 | Provenance tracking — `source_document_ids` on all artifacts | §A6.1 |
 | 🟢 | K3 | Document quality assessment step | §A4 |
 | 🟢 | K4 | Assertion classification in Enrich step | §A3 |
-| ⚪ | K5 | Sensitivity level tagging + auto-detection | §A5 |
+| 🟡 | K5 | Sensitivity level tagging + auto-detection | §A5 |
 | ⚪ | K6 | Source rollback — soft-delete + cascading purge | §A6 |
 | ⚪ | K7 | Ingest provenance data model — AcquisitionContext, ArchiveLocation, Archive, CustodyChain | §A2.3 |
 | ⚪ | K8 | Collection management — create, tag, defaults | §A2.3 |
