@@ -201,6 +201,7 @@ jobs:
           NODE
         env:
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
+          MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
 
       - name: Upload affected plan artifacts
         if: always()
@@ -269,6 +270,7 @@ jobs:
         run: node scripts/test-lanes.mjs affected-plan origin/${{ github.base_ref }} | tee .test-results/affected-schema-plan.txt
         env:
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
+          MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
 
       - name: Run affected schema tests
         run: pnpm test:affected:lane -- schema origin/${{ github.base_ref }} -- --reporter=verbose --reporter=junit --outputFile.junit=.test-results/affected-schema-junit.xml
@@ -281,6 +283,7 @@ jobs:
           PGDATABASE: mulder
           MULDER_TEST_ISOLATED_DB: "true"
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
+          MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
 
       - name: Upload affected schema artifacts
         if: always()
@@ -354,6 +357,7 @@ jobs:
         run: node scripts/test-lanes.mjs affected-plan origin/${{ github.base_ref }} | tee .test-results/affected-db-${{ matrix.shard_index }}-plan.txt
         env:
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
+          MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
 
       - name: Run affected db tests
         run: pnpm test:affected:lane -- db ${{ matrix.shard_index }} ${{ matrix.shard_total }} origin/${{ github.base_ref }} -- --reporter=verbose --reporter=junit --outputFile.junit=.test-results/affected-db-${{ matrix.shard_index }}-junit.xml
@@ -366,6 +370,7 @@ jobs:
           PGDATABASE: mulder
           MULDER_TEST_ISOLATED_DB: "true"
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
+          MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
 
       - name: Upload affected DB artifacts
         if: always()
@@ -439,6 +444,7 @@ jobs:
         run: node scripts/test-lanes.mjs affected-plan origin/${{ github.base_ref }} | tee .test-results/affected-heavy-${{ matrix.shard_index }}-plan.txt
         env:
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
+          MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
 
       - name: Run affected heavy tests
         run: pnpm test:affected:lane -- heavy ${{ matrix.shard_index }} ${{ matrix.shard_total }} origin/${{ github.base_ref }} -- --reporter=verbose --reporter=junit --outputFile.junit=.test-results/affected-heavy-${{ matrix.shard_index }}-junit.xml
@@ -451,6 +457,7 @@ jobs:
           PGDATABASE: mulder
           MULDER_TEST_ISOLATED_DB: "true"
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
+          MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
 
       - name: Upload affected heavy artifacts
         if: always()

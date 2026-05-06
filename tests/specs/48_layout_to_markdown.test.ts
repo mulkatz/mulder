@@ -37,6 +37,7 @@ const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const PIPELINE_DIST = resolve(ROOT, 'packages/pipeline/dist/index.js');
 const CORE_DIST = resolve(ROOT, 'packages/core/dist/index.js');
+const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
 const FIXTURE_EXTRACTED_DIR = resolve(ROOT, 'fixtures/extracted');
 const GOLDEN_DIR = resolve(ROOT, 'eval/golden/layout-markdown');
@@ -67,7 +68,7 @@ function runCli(
 		encoding: 'utf-8',
 		timeout: opts?.timeout ?? 90_000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ...process.env, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
+		env: { ...process.env, MULDER_CONFIG: EXAMPLE_CONFIG, PGPASSWORD: db.TEST_PG_PASSWORD, ...opts?.env },
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -188,7 +189,7 @@ describe('Spec 48 — Layout-to-Markdown Converter', () => {
 			console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
 		} else {
 			// Ensure schema is migrated (idempotent — matches spec 19 pattern).
-			const migrate = runCli(['db', 'migrate', resolve(ROOT, 'mulder.config.example.yaml')]);
+			const migrate = runCli(['db', 'migrate', EXAMPLE_CONFIG]);
 			if (migrate.exitCode !== 0) {
 				throw new Error(`Migration failed: ${migrate.stdout} ${migrate.stderr}`);
 			}
@@ -423,7 +424,7 @@ describe('Spec 48 — Layout-to-Markdown Converter', () => {
 
 		const sourceId = ingestNativeTextPdf();
 
-		const config = loadConfig(resolve(ROOT, 'mulder.config.yaml'));
+		const config = loadConfig(EXAMPLE_CONFIG);
 		const logger = createLogger({ level: 'silent' });
 		const services = createServiceRegistry(config, logger);
 		const pool = getWorkerPool(config.gcp.cloud_sql);
@@ -465,7 +466,7 @@ describe('Spec 48 — Layout-to-Markdown Converter', () => {
 
 		const sourceId = ingestNativeTextPdf();
 
-		const config = loadConfig(resolve(ROOT, 'mulder.config.yaml'));
+		const config = loadConfig(EXAMPLE_CONFIG);
 		const logger = createLogger({ level: 'silent' });
 		const realServices = createServiceRegistry(config, logger);
 		const pool = getWorkerPool(config.gcp.cloud_sql);

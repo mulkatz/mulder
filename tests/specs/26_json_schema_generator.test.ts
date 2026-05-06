@@ -1,12 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
-const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.yaml');
+const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
 /**
  * Black-box QA tests for Spec 26: JSON Schema Generator
@@ -24,11 +24,14 @@ const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.yaml');
  * Uses spawnSync with no shell for safety (equivalent to execFileSync).
  */
 function runCli(args: string[], options?: { cwd?: string }): { stdout: string; stderr: string; exitCode: number } {
+	const env = { ...process.env };
+	delete env.MULDER_CONFIG;
 	const result = spawnSync('node', [CLI, ...args], {
 		cwd: options?.cwd ?? ROOT,
 		encoding: 'utf-8',
 		timeout: 15000,
 		stdio: ['pipe', 'pipe', 'pipe'],
+		env,
 	});
 	return {
 		stdout: result.stdout ?? '',
@@ -480,13 +483,18 @@ describe('CLI Smoke Tests: config schema', () => {
 
 	describe('SMOKE-08: runs without explicit config path (uses default)', () => {
 		it('uses mulder.config.yaml from cwd when no path given', () => {
-			const { stdout, exitCode } = runCli(['config', 'schema']);
+			const tempConfigDir = mkdtempSync(join(tmpdir(), 'mulder-spec26-default-config-'));
+			try {
+				copyFileSync(EXAMPLE_CONFIG, join(tempConfigDir, 'mulder.config.yaml'));
+				const { stdout, exitCode } = runCli(['config', 'schema'], { cwd: tempConfigDir });
 
-			// Should work because mulder.config.yaml exists in ROOT
-			expect(exitCode).toBe(0);
+				expect(exitCode).toBe(0);
 
-			const parsed = JSON.parse(stdout);
-			expect(parsed.type).toBe('object');
+				const parsed = JSON.parse(stdout);
+				expect(parsed.type).toBe('object');
+			} finally {
+				rmSync(tempConfigDir, { recursive: true, force: true });
+			}
 		});
 	});
 });
