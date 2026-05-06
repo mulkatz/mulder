@@ -9,6 +9,15 @@
  * @see docs/specs/32_embedding_wrapper_semantic_chunker_chunk_repository.spec.md §4.5
  */
 
+export type { ArtifactProvenance, ArtifactProvenanceInput } from './artifact-provenance.js';
+export {
+	mapArtifactProvenanceFromDb,
+	mapArtifactProvenanceToDb,
+	mergeArtifactProvenanceSql,
+	normalizeArtifactProvenance,
+	provenanceForSource,
+	stringifyArtifactProvenance,
+} from './artifact-provenance.js';
 export {
 	createMonthlyBudgetReservation,
 	finalizeMonthlyBudgetReservation,
@@ -45,6 +54,62 @@ export type {
 	FtsSearchResult,
 	VectorSearchResult,
 } from './chunk.types.js';
+export {
+	addCollectionTags,
+	createCollection,
+	findCollectionById,
+	findCollectionByName,
+	listCollections,
+	normalizeCollectionTags,
+	removeCollectionTags,
+	resolveCollectionForIngest,
+	setCollectionTags,
+	summarizeCollection,
+	updateCollection,
+	upsertArchiveMirrorCollection,
+} from './collection.repository.js';
+export type {
+	Collection,
+	CollectionDefaults,
+	CollectionInput,
+	CollectionListOptions,
+	CollectionSummary,
+	CollectionType,
+	CollectionUpdateInput,
+	CollectionVisibility,
+	ResolveCollectionForIngestInput,
+} from './collection.types.js';
+export type {
+	DocumentBlob,
+	DocumentBlobIntegrityStatus,
+	DocumentBlobStorageClass,
+	DocumentBlobStorageStatus,
+	UpsertDocumentBlobInput,
+} from './document-blob.repository.js';
+export {
+	findDocumentBlobByHash,
+	upsertDocumentBlob,
+} from './document-blob.repository.js';
+export {
+	createDocumentQualityAssessment,
+	findDocumentQualityAssessmentById,
+	findLatestDocumentQualityAssessment,
+	listDocumentQualityAssessmentsForSource,
+	normalizeDocumentQualityDimensions,
+	normalizeDocumentQualitySignals,
+} from './document-quality.repository.js';
+export type {
+	CompactDocumentQualitySummary,
+	CreateDocumentQualityAssessmentInput,
+	DocumentOverallQuality,
+	DocumentQualityAssessment,
+	DocumentQualityAssessmentMethod,
+	DocumentQualityDimensions,
+	DocumentQualityOverride,
+	DocumentQualitySignals,
+	DocumentStructureType,
+	ExtractionPath,
+} from './document-quality.types.js';
 export type { EdgeTypePageFilter } from './edge.repository.js';
 export {
 	countEdges,
@@ -135,6 +200,55 @@ export {
 export type { GraphTraversalResult } from './graph-traversal.repository.js';
 export { traverseGraph } from './graph-traversal.repository.js';
 export {
+	createArchive,
+	findAcquisitionContextById,
+	findArchiveById,
+	findOriginalSourceForContext,
+	listAcquisitionContextsForBlob,
+	listAcquisitionContextsForSource,
+	listArchiveLocationsForBlob,
+	listArchives,
+	listCustodyChainForContext,
+	markAcquisitionContextsForSourceDeleted,
+	recordAcquisitionContext,
+	recordArchiveLocation,
+	recordCustodyStep,
+	recordIngestProvenance,
+	recordOriginalSource,
+	replaceCustodyChain,
+	restoreAcquisitionContextsForSource,
+	upsertArchive,
+} from './ingest-provenance.repository.js';
+export type {
+	AcquisitionChannel,
+	AcquisitionContext,
+	AcquisitionContextInput,
+	AcquisitionContextStatus,
+	Archive,
+	ArchiveCompleteness,
+	ArchiveInput,
+	ArchiveLocation,
+	ArchiveLocationInput,
+	ArchiveSourceStatus,
+	ArchiveStatus,
+	ArchiveType,
+	AuthenticityStatus,
+	CustodyAction,
+	CustodyHolderType,
+	CustodyStep,
+	CustodyStepInput,
+	IngestProvenanceBundle,
+	OriginalSource,
+	OriginalSourceInput,
+	OriginalSourceType,
+	PathSegment,
+	PathSegmentType,
+	PhysicalLocation,
+	RecordIngestProvenanceInput,
+	SubmittedBy,
+	SubmittedByType,
+} from './ingest-provenance.types.js';
+export {
 	countJobs,
 	dequeueJob,
 	enqueueJob,
@@ -160,6 +274,21 @@ export type {
 	JobStatus,
 	ReapJobsResult,
 } from './job.types.js';
+export {
+	deleteKnowledgeAssertionsForStory,
+	listKnowledgeAssertionsForSource,
+	listKnowledgeAssertionsForStory,
+	normalizeConfidenceMetadata,
+	upsertKnowledgeAssertion,
+} from './knowledge-assertion.repository.js';
+export type {
+	AssertionType,
+	ClassificationProvenance,
+	ConfidenceMetadata,
+	KnowledgeAssertion,
+	ListKnowledgeAssertionsInput,
+	UpsertKnowledgeAssertionInput,
+} from './knowledge-assertion.types.js';
 export type { PipelineStep } from './pipeline-reset.js';
 export { gcOrphanedEntities, resetPipelineStep } from './pipeline-reset.js';
 export {
@@ -199,12 +328,14 @@ export {
 	findSourcesWithFailedSteps,
 	findSourcesWithSteps,
 	updateSource,
+	updateSourceSensitivityFromArtifacts,
 	updateSourceStatus,
 	upsertSourceStep,
 } from './source.repository.js';
 export type {
 	CreateSourceInput,
 	FailedSourceInfo,
+	PersistedSource,
 	Source,
 	SourceFilter,
 	SourceFormatMetadata,
@@ -217,6 +348,29 @@ export type {
 	UpdateSourceInput,
 	UpsertSourceStepInput,
 } from './source.types.js';
+export {
+	findSourceDeletionForSource,
+	listAuditEventsForSource,
+	listSourceDeletions,
+	planSourcePurge,
+	purgeSource,
+	restoreSource,
+	softDeleteSource,
+} from './source-rollback.repository.js';
+export type {
+	AuditLogEvent,
+	PurgeSourceInput,
+	RestoreSourceInput,
+	SoftDeleteSourceInput,
+	SourceDeletion,
+	SourceDeletionState,
+	SourceDeletionStatus,
+	SourcePurgeEffects,
+	SourcePurgePlan,
+	SourcePurgeReport,
+	SourcePurgeSubsystemCount,
+	SourceRollbackOrphanHandling,
+} from './source-rollback.types.js';
 export type {
 	ClusterableEntityEvent,
 	CreateSpatioTemporalClusterInput,
@@ -244,6 +398,7 @@ export {
 	findStoriesBySourceId,
 	findStoryById,
 	updateStory,
+	updateStorySensitivityFromArtifacts,
 	updateStoryStatus,
 } from './story.repository.js';
 export type {

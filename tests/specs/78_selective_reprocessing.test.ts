@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
 import { ensureSchema, truncateMulderTables } from '../lib/schema.js';
+import { testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -15,7 +16,7 @@ const PIPELINE_DIST = resolve(ROOT, 'packages/pipeline/dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 const FIXTURE_DIR = resolve(ROOT, 'fixtures/raw');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
-const EXTRACTED_DIR = resolve(ROOT, '.local/storage/extracted');
+const EXTRACTED_DIR = testStoragePath('extracted');
 
 function runCli(
 	args: string[],
@@ -159,6 +160,15 @@ describe('Spec 78 — Selective Reprocessing', () => {
 
 		await services.storage.upload(source.storagePath, readFileSync(NATIVE_TEXT_PDF));
 
+		const qualityResult = await pipeline.executeQuality(
+			{ sourceId: source.id, force: false },
+			config,
+			services,
+			pool,
+			logger,
+		);
+		expect(qualityResult.status).not.toBe('failed');
+
 		const extractResult = await pipeline.executeExtract(
 			{ sourceId: source.id, force: false },
 			config,
@@ -231,6 +241,15 @@ describe('Spec 78 — Selective Reprocessing', () => {
 		});
 
 		await services.storage.upload(source.storagePath, readFileSync(NATIVE_TEXT_PDF));
+
+		const qualityResult = await pipeline.executeQuality(
+			{ sourceId: source.id, force: false },
+			config,
+			services,
+			pool,
+			logger,
+		);
+		expect(qualityResult.status).not.toBe('failed');
 
 		const extractResult = await pipeline.executeExtract(
 			{ sourceId: source.id, force: false },
@@ -438,6 +457,31 @@ describe('Spec 78 — Selective Reprocessing', () => {
 		expect(plan.plannedSourceCount).toBe(1);
 		expect(plan.sources[0]?.steps.map((step) => step.stepName)).toEqual(['enrich', 'embed', 'graph']);
 		expect(plan.sources[0]?.steps.map((step) => step.force)).toEqual([true, true, true]);
+	});
+
+	it('QA-08b: document quality config changes plan quality and downstream extract rerun', async () => {
+		if (!pgAvailable) return;
+
+		await seedProcessedSource('spec78-qa08b');
+
+		const tempConfig = resolve(ROOT, '.local', 'tmp-tests', 'spec78-qa08b-config.yaml');
+		mkdirSync(resolve(tempConfig, '..'), { recursive: true });
+		writeConfigWithReplacements(tempConfig, (base) =>
+			base.replace('native_text_ratio_threshold: 0.5', 'native_text_ratio_threshold: 0.6'),
+		);
+
+		const changedConfig = core.loadConfig(tempConfig);
+		const plan = await pipeline.planReprocess({}, changedConfig, pool);
+		expect(plan.plannedSourceCount).toBe(1);
+		expect(plan.sources[0]?.steps.map((step) => step.stepName)).toEqual([
+			'quality',
+			'extract',
+			'segment',
+			'enrich',
+			'embed',
+			'graph',
+		]);
+		expect(plan.sources[0]?.steps.map((step) => step.force)).toEqual([true, true, false, false, false, false]);
 	});
 
 	it('QA-09: graph-derived cleanup removes cross-source story references only', async () => {

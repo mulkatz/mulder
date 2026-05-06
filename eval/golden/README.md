@@ -7,10 +7,86 @@ Ground-truth annotations for evaluating pipeline quality. Each JSON file in a su
 - `extraction/` — Ground truth for extraction step (CER/WER metrics)
 - `segmentation/` — Ground truth for segment boundaries (Boundary Accuracy, Segment Count)
 - `entities/` — Ground truth for entity extraction (Precision/Recall/F1 per type)
+- `quality-routing/` — Ground truth for document quality routing and extraction gate behavior
+- `assertions/` — Ground truth for assertion classification labels and confidence metadata
 - `retrieval/` — Ground truth for hybrid retrieval (Precision@k, Recall@k, MRR, nDCG@10)
 - `multi-format/` — Deterministic M9 black-box manifest for source type, route, story, skip, and duplicate contracts
 
 ## Annotation Formats
+
+### Quality Routing (`quality-routing/*.json`)
+
+```json
+{
+  "caseId": "string — stable case identifier",
+  "sourceSlug": "string — matches fixtures/quality-routing/{slug or case}.json",
+  "difficulty": "simple | moderate | complex",
+  "expected": {
+    "overallQuality": "high | medium | low | unusable",
+    "processable": "boolean",
+    "recommendedPath": "standard | enhanced_ocr | visual_extraction | handwriting_recognition | manual_transcription_required | skip",
+    "extractionGateOutcome": "allow | skip",
+    "qualityMetadata": {
+      "source_document_quality": "high | medium | low",
+      "extraction_path": "same value as recommendedPath",
+      "extraction_confidence": "number from 0.0 to 1.0"
+    },
+    "signals": {
+      "signal_name": "generic expected signal value"
+    }
+  },
+  "annotation": {
+    "author": "string",
+    "date": "string — ISO date",
+    "notes": "string (optional)"
+  }
+}
+```
+
+Rules:
+
+1. Cover all quality values (`high`, `medium`, `low`, `unusable`) in the checked-in set.
+2. Keep signals generic and observable; do not encode domain policy or production internals.
+3. Fixtures in `fixtures/quality-routing/` mirror the quality assessment, extraction gate outcome, and propagated metadata.
+4. Mismatches are reported by field path; runners do not call live OCR, LLM, storage, or database services.
+
+### Assertion Classification (`assertions/*.json`)
+
+```json
+{
+  "caseId": "string — stable case identifier",
+  "segmentId": "string — stable segment identifier",
+  "sourceSlug": "string — source document slug for context",
+  "difficulty": "simple | moderate | complex",
+  "expected": {
+    "content": "string — assertion text",
+    "assertionType": "observation | interpretation | hypothesis",
+    "classificationProvenance": "llm_auto | human_reviewed | author_explicit",
+    "confidenceMetadata": {
+      "witness_count": "number or null",
+      "measurement_based": "boolean",
+      "contemporaneous": "boolean",
+      "corroborated": "boolean",
+      "peer_reviewed": "boolean",
+      "author_is_interpreter": "boolean"
+    },
+    "entityNames": ["string (optional)"],
+    "qualityMetadata": "object (optional)"
+  },
+  "annotation": {
+    "author": "string",
+    "date": "string — ISO date",
+    "notes": "string (optional)"
+  }
+}
+```
+
+Rules:
+
+1. Cover all assertion types (`observation`, `interpretation`, `hypothesis`) in the checked-in set.
+2. Every golden case must include complete confidence metadata.
+3. Fixtures in `fixtures/assertions/` mirror extracted assertion output plus optional persisted metadata.
+4. Classification examples must stay domain-agnostic; use generic document, review, or process examples.
 
 ### Multi-Format (`multi-format/manifest.json`)
 

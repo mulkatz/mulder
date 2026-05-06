@@ -10,7 +10,7 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import type { MulderConfig } from '../config/types.js';
 import { createEmailExtractorService } from './email-extractor.js';
 import type { Logger } from './logger.js';
@@ -92,6 +92,20 @@ function extractEnumValues(schema: Record<string, unknown>, arrayProp: string, f
 	return enumValues.filter((v): v is string => typeof v === 'string');
 }
 
+function arrayItemRequiresProperty(schema: Record<string, unknown>, arrayProp: string, fieldProp: string): boolean {
+	const required = getNestedProperty(schema, 'properties', arrayProp, 'items', 'required');
+	return Array.isArray(required) && required.some((value) => value === fieldProp);
+}
+
+function devSensitivityFixture(reason: string): Record<string, unknown> {
+	return {
+		level: 'internal',
+		reason,
+		pii_types: [],
+		declassify_date: null,
+	};
+}
+
 function slugify(value: string): string {
 	return (
 		value
@@ -168,6 +182,10 @@ class DevStorageService implements StorageService {
 		mkdirSync(dir, { recursive: true });
 		writeFileSync(fullPath, content);
 		this.logger.debug({ bucketPath }, 'DevStorageService: uploaded');
+	}
+
+	buildUri(bucketPath: string): string {
+		return `dev://storage/${bucketPath}`;
 	}
 
 	async createUploadSession(
@@ -363,50 +381,95 @@ class DevLlmService implements LlmService {
 			// Extract valid entity types and relationship types from the JSON Schema
 			const entityTypes = extractEnumValues(options.schema, 'entities', 'type');
 			const relationshipTypes = extractEnumValues(options.schema, 'relationships', 'relationship_type');
+			const requiresEntitySensitivity = arrayItemRequiresProperty(options.schema, 'entities', 'sensitivity');
+			const requiresRelationshipSensitivity = arrayItemRequiresProperty(options.schema, 'relationships', 'sensitivity');
+			const requiresAssertionSensitivity = arrayItemRequiresProperty(options.schema, 'assertions', 'sensitivity');
 
 			// Build entities using valid types from the schema
 			const entities: Array<Record<string, unknown>> = [];
 			if (entityTypes.includes('person')) {
-				entities.push({
+				const entity: Record<string, unknown> = {
 					name: 'Dev Test Person',
 					type: 'person',
 					confidence: 0.9,
 					attributes: { role: 'researcher' },
 					mentions: ['Dev Test Person'],
-				});
+				};
+				if (requiresEntitySensitivity) {
+					entity.sensitivity = devSensitivityFixture('dev_mode_fixture');
+				}
+				entities.push(entity);
 			}
 			if (entityTypes.includes('location')) {
-				entities.push({
+				const entity: Record<string, unknown> = {
 					name: 'Dev Test Location',
 					type: 'location',
 					confidence: 0.85,
 					attributes: { region: 'Europe' },
 					mentions: ['Dev Test Location'],
-				});
+				};
+				if (requiresEntitySensitivity) {
+					entity.sensitivity = devSensitivityFixture('dev_mode_fixture');
+				}
+				entities.push(entity);
 			}
 			// Fallback: if neither person nor location is in schema, use the first available type
 			if (entities.length === 0 && entityTypes.length > 0) {
-				entities.push({
+				const entity: Record<string, unknown> = {
 					name: 'Dev Test Entity',
 					type: entityTypes[0],
 					confidence: 0.9,
 					attributes: {},
 					mentions: ['Dev Test Entity'],
-				});
+				};
+				if (requiresEntitySensitivity) {
+					entity.sensitivity = devSensitivityFixture('dev_mode_fixture');
+				}
+				entities.push(entity);
 			}
 
 			// Build relationships only if we have a valid relationship type and two entities
 			const relationships: Array<Record<string, unknown>> = [];
 			if (entities.length >= 2 && relationshipTypes.length > 0) {
-				relationships.push({
+				const relationship: Record<string, unknown> = {
 					source_entity: String(entities[0].name),
 					target_entity: String(entities[1].name),
 					relationship_type: relationshipTypes[0],
 					confidence: 0.8,
-				});
+				};
+				if (requiresRelationshipSensitivity) {
+					relationship.sensitivity = devSensitivityFixture('dev_mode_fixture');
+				}
+				relationships.push(relationship);
 			}
 
-			result = JSON.parse(JSON.stringify({ entities, relationships }));
+			const assertions: Array<Record<string, unknown>> = [];
+			if (hasProperty('assertions')) {
+				const assertion: Record<string, unknown> = {
+					content: 'Dev mode fixture records a classified observation from the story text.',
+					assertion_type: 'observation',
+					confidence_metadata: {
+						witness_count: null,
+						measurement_based: false,
+						contemporaneous: false,
+						corroborated: false,
+						peer_reviewed: false,
+						author_is_interpreter: false,
+					},
+					classification_provenance: 'llm_auto',
+					entity_names: entities.map((entity) => String(entity.name)),
+				};
+				if (requiresAssertionSensitivity) {
+					assertion.sensitivity = devSensitivityFixture('dev_mode_fixture');
+				}
+				assertions.push(assertion);
+			}
+
+			result = JSON.parse(
+				JSON.stringify(
+					hasProperty('assertions') ? { entities, relationships, assertions } : { entities, relationships },
+				),
+			);
 		}
 		// Detect entity resolution schema by checking for 'same_entity' property
 		else if (hasProperty('same_entity')) {
@@ -647,7 +710,9 @@ export function createDevServices(_config: MulderConfig, logger: Logger): Servic
 	// fixtures/ = checked-in test data (read-only, deterministic)
 	// .local/storage/ = runtime data from dev-mode pipeline runs (gitignored)
 	const fixturesPath = join(process.cwd(), 'fixtures');
-	const storagePath = join(process.cwd(), '.local', 'storage');
+	const storagePath = process.env.MULDER_TEST_STORAGE_ROOT
+		? resolve(process.env.MULDER_TEST_STORAGE_ROOT)
+		: join(process.cwd(), '.local', 'storage');
 
 	logger.debug({ fixturesPath, storagePath }, 'Creating dev-mode services');
 

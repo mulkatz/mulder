@@ -28,24 +28,52 @@ const dbLogger = createChildLogger(logger, { module: 'database' });
 let workerPool: Pool | null = null;
 let queryPool: Pool | null = null;
 
+function parseTestPortOverride(value: string | undefined): number | undefined {
+	if (!value) return undefined;
+	const port = Number.parseInt(value, 10);
+	return Number.isInteger(port) && port > 0 ? port : undefined;
+}
+
+function withTestCloudSqlOverrides(config: CloudSqlConfig): CloudSqlConfig {
+	if (
+		!process.env.MULDER_TEST_CLOUD_SQL_HOST &&
+		!process.env.MULDER_TEST_CLOUD_SQL_PORT &&
+		!process.env.MULDER_TEST_CLOUD_SQL_DATABASE &&
+		!process.env.MULDER_TEST_CLOUD_SQL_USER &&
+		!process.env.MULDER_TEST_CLOUD_SQL_PASSWORD
+	) {
+		return config;
+	}
+
+	return {
+		...config,
+		host: process.env.MULDER_TEST_CLOUD_SQL_HOST ?? config.host,
+		port: parseTestPortOverride(process.env.MULDER_TEST_CLOUD_SQL_PORT) ?? config.port,
+		database: process.env.MULDER_TEST_CLOUD_SQL_DATABASE ?? config.database,
+		user: process.env.MULDER_TEST_CLOUD_SQL_USER ?? config.user,
+		password: process.env.MULDER_TEST_CLOUD_SQL_PASSWORD ?? config.password,
+	};
+}
+
 /**
  * Builds the base `pg.PoolConfig` from the Mulder Cloud SQL config.
  * Enables SSL for non-localhost connections.
  */
 function buildPoolConfig(config: CloudSqlConfig): pg.PoolConfig {
+	const effectiveConfig = withTestCloudSqlOverrides(config);
 	const poolConfig: pg.PoolConfig = {
-		host: config.host,
-		port: config.port,
-		database: config.database,
-		user: config.user,
+		host: effectiveConfig.host,
+		port: effectiveConfig.port,
+		database: effectiveConfig.database,
+		user: effectiveConfig.user,
 	};
 
-	if (config.password) {
-		poolConfig.password = config.password;
+	if (effectiveConfig.password) {
+		poolConfig.password = effectiveConfig.password;
 	}
 
 	// Enable SSL for non-localhost connections (Cloud SQL)
-	const isLocal = config.host === 'localhost' || config.host === '127.0.0.1';
+	const isLocal = effectiveConfig.host === 'localhost' || effectiveConfig.host === '127.0.0.1';
 	if (!isLocal) {
 		poolConfig.ssl = { rejectUnauthorized: false };
 	}

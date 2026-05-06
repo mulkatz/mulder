@@ -4,7 +4,7 @@
 
 import type { SourceStatus, StepError } from '@mulder/core';
 
-export type ReprocessStepName = 'extract' | 'segment' | 'enrich' | 'embed' | 'graph';
+export type ReprocessStepName = 'quality' | 'extract' | 'segment' | 'enrich' | 'embed' | 'graph';
 
 export type ReprocessPlanReason = 'hash-mismatch' | 'missing-history' | 'forced-step' | 'downstream';
 

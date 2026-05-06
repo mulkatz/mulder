@@ -81,7 +81,16 @@ function buildMockServices(state: FirestoreState) {
 	return {
 		storage: {
 			upload: async () => {},
+			buildUri: (path: string) => `gs://test-bucket/${path}`,
 			download: async () => Buffer.from(''),
+			createUploadSession: async (path: string) => ({
+				url: `/api/uploads/documents/dev-upload?storage_path=${encodeURIComponent(path)}`,
+				method: 'PUT',
+				headers: {},
+				transport: 'dev_proxy',
+				expiresAt: null,
+			}),
+			getMetadata: async () => null,
 			exists: async () => false,
 			list: async () => ({ paths: [] }),
 			delete: async () => {},

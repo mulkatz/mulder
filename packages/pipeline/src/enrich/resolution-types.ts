@@ -9,7 +9,7 @@
  * @see docs/functional-spec.md §2.4
  */
 
-import type { Entity, EntityResolutionConfig, Services } from '@mulder/core';
+import type { ArtifactProvenanceInput, Entity, EntityResolutionConfig, Services } from '@mulder/core';
 import type pg from 'pg';
 
 /** Which resolution tier produced the match. */
@@ -47,4 +47,6 @@ export interface ResolveEntityOptions {
 	services: Services;
 	/** Entity resolution config. */
 	config: EntityResolutionConfig;
+	/** Provenance to merge onto aliases/canonical entities when resolution merges. */
+	provenance?: ArtifactProvenanceInput;
 }

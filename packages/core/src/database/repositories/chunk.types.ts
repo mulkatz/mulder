@@ -8,6 +8,9 @@
  * @see docs/functional-spec.md §4.3
  */
 
+import type { SensitivityLevel, SensitivityMetadata } from '../../shared/sensitivity.js';
+import type { ArtifactProvenance, ArtifactProvenanceInput } from './artifact-provenance.js';
+
 // ────────────────────────────────────────────────────────────
 // Database row type (snake_case)
 // ────────────────────────────────────────────────────────────
@@ -25,6 +28,9 @@ export type ChunkRow = {
 	is_question: boolean;
 	parent_chunk_id: string | null;
 	metadata: Record<string, unknown>;
+	provenance: unknown;
+	sensitivity_level: SensitivityLevel;
+	sensitivity_metadata: unknown;
 	created_at: Date;
 };
 
@@ -44,6 +50,9 @@ export type Chunk = {
 	isQuestion: boolean;
 	parentChunkId: string | null;
 	metadata: Record<string, unknown>;
+	provenance: ArtifactProvenance;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
 	createdAt: Date;
 };
 
@@ -53,6 +62,7 @@ export type Chunk = {
 
 /** Input for creating a new chunk. */
 export type CreateChunkInput = {
+	id?: string;
 	storyId: string;
 	content: string;
 	chunkIndex: number;
@@ -62,12 +72,16 @@ export type CreateChunkInput = {
 	isQuestion?: boolean;
 	parentChunkId?: string | null;
 	metadata?: Record<string, unknown>;
+	provenance?: ArtifactProvenanceInput;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 };
 
 /** Filters for querying chunks. */
 export type ChunkFilter = {
 	storyId?: string;
 	isQuestion?: boolean;
+	includeDeleted?: boolean;
 };
 
 // ────────────────────────────────────────────────────────────

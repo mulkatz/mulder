@@ -22,6 +22,7 @@ import {
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
+import { testStoragePath } from '../lib/storage.js';
 
 /**
  * Black-box QA tests for Spec 42: Hybrid Retrieval Orchestrator (M4-E6).
@@ -48,8 +49,8 @@ import * as db from '../lib/db.js';
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const FIXTURE_DIR = resolve(ROOT, 'fixtures/raw');
-const EXTRACTED_DIR = resolve(ROOT, '.local/storage/extracted');
-const SEGMENTS_DIR = resolve(ROOT, '.local/storage/segments');
+const EXTRACTED_DIR = testStoragePath('extracted');
+const SEGMENTS_DIR = testStoragePath('segments');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
@@ -201,11 +202,11 @@ function runFullPipeline(pdfPath: string): string {
 
 function makePool(): pg.Pool {
 	return new pg.Pool({
-		host: '127.0.0.1',
-		port: 5432,
-		user: 'mulder',
-		password: 'mulder',
-		database: 'mulder',
+		host: db.TEST_PG_HOST,
+		port: db.TEST_PG_PORT,
+		user: db.TEST_PG_USER,
+		password: db.TEST_PG_PASSWORD,
+		database: db.TEST_PG_DATABASE,
 		max: 4,
 	});
 }

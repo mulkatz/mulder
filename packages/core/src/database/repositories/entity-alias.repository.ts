@@ -13,11 +13,35 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
-import { type EntityRow, mapEntityRow } from './entity.repository.js';
+import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
+import {
+	mapArtifactProvenanceFromDb,
+	mergeArtifactProvenanceSql,
+	stringifyArtifactProvenance,
+} from './artifact-provenance.js';
+import { type EntityRow, entityActiveSourceClause, mapEntityRow } from './entity.repository.js';
 import type { CreateEntityAliasInput, Entity, EntityAlias } from './entity.types.js';
+import { queryWithSensitivityColumnFallback, queryWithSourceDeletionStatusFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'entity-alias-repository' });
+
+function aliasActiveSourceClause(aliasAlias: string): string {
+	return `
+    (
+      NOT EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(COALESCE(${aliasAlias}.provenance->'source_document_ids', '[]'::jsonb)) AS alias_sources(source_id)
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(COALESCE(${aliasAlias}.provenance->'source_document_ids', '[]'::jsonb)) AS alias_sources(source_id)
+        JOIN sources alias_src ON alias_src.id::text = alias_sources.source_id
+        WHERE alias_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+      )
+    )
+  `;
+}
 
 // ────────────────────────────────────────────────────────────
 // Row mapper (snake_case DB -> camelCase TS)
@@ -28,6 +52,9 @@ interface EntityAliasRow {
 	entity_id: string;
 	alias: string;
 	source: string | null;
+	provenance: unknown;
+	sensitivity_level: EntityAlias['sensitivityLevel'];
+	sensitivity_metadata: unknown;
 }
 
 function mapEntityAliasRow(row: EntityAliasRow): EntityAlias {
@@ -36,6 +63,9 @@ function mapEntityAliasRow(row: EntityAliasRow): EntityAlias {
 		entityId: row.entity_id,
 		alias: row.alias,
 		source: row.source,
+		provenance: mapArtifactProvenanceFromDb(row.provenance),
+		sensitivityLevel: row.sensitivity_level ?? 'internal',
+		sensitivityMetadata: normalizeSensitivityMetadata(row.sensitivity_metadata, row.sensitivity_level ?? 'internal'),
 	};
 }
 
@@ -50,24 +80,37 @@ function mapEntityAliasRow(row: EntityAliasRow): EntityAlias {
  * Uses a CTE to handle the DO NOTHING case by selecting back.
  */
 export async function createEntityAlias(pool: pg.Pool, input: CreateEntityAliasInput): Promise<EntityAlias> {
-	// Use a CTE: attempt INSERT, on conflict DO NOTHING.
-	// Then SELECT either the newly inserted row or the existing one.
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 	const sql = `
-    WITH ins AS (
-      INSERT INTO entity_aliases (entity_id, alias, source)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (entity_id, alias) DO NOTHING
-      RETURNING *
-    )
-    SELECT * FROM ins
-    UNION ALL
-    SELECT * FROM entity_aliases WHERE entity_id = $1 AND alias = $2
-    LIMIT 1
+    INSERT INTO entity_aliases (entity_id, alias, source, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4::jsonb, $5, $6::jsonb)
+    ON CONFLICT (entity_id, alias) DO UPDATE SET
+      source = COALESCE(entity_aliases.source, EXCLUDED.source),
+      provenance = ${mergeArtifactProvenanceSql('entity_aliases.provenance', 'EXCLUDED.provenance')},
+      sensitivity_level = EXCLUDED.sensitivity_level,
+      sensitivity_metadata = EXCLUDED.sensitivity_metadata
+    RETURNING *
   `;
-	const params = [input.entityId, input.alias, input.source ?? null];
+	const legacySql = `
+    INSERT INTO entity_aliases (entity_id, alias, source, provenance)
+    VALUES ($1, $2, $3, $4::jsonb)
+    ON CONFLICT (entity_id, alias) DO UPDATE SET
+      source = COALESCE(entity_aliases.source, EXCLUDED.source),
+      provenance = ${mergeArtifactProvenanceSql('entity_aliases.provenance', 'EXCLUDED.provenance')}
+    RETURNING *
+  `;
+	const params = [
+		input.entityId,
+		input.alias,
+		input.source ?? null,
+		stringifyArtifactProvenance(input.provenance),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
+	];
+	const legacyParams = params.slice(0, -2);
 
 	try {
-		const result = await pool.query<EntityAliasRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EntityAliasRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug(
 			{ aliasId: row.id, entityId: input.entityId, alias: input.alias },
@@ -85,11 +128,31 @@ export async function createEntityAlias(pool: pg.Pool, input: CreateEntityAliasI
 /**
  * Finds all aliases for an entity, ordered alphabetically.
  */
-export async function findAliasesByEntityId(pool: pg.Pool, entityId: string): Promise<EntityAlias[]> {
-	const sql = 'SELECT * FROM entity_aliases WHERE entity_id = $1 ORDER BY alias';
+export async function findAliasesByEntityId(
+	pool: pg.Pool,
+	entityId: string,
+	options?: { includeDeleted?: boolean },
+): Promise<EntityAlias[]> {
+	const sql = `
+    SELECT ea.*
+    FROM entity_aliases ea
+    JOIN entities e ON e.id = ea.entity_id
+    WHERE ea.entity_id = $1
+      ${options?.includeDeleted ? '' : `AND ${aliasActiveSourceClause('ea')} AND ${entityActiveSourceClause('e')}`}
+    ORDER BY ea.alias
+  `;
+	const legacySql = `
+    SELECT ea.*
+    FROM entity_aliases ea
+    JOIN entities e ON e.id = ea.entity_id
+    WHERE ea.entity_id = $1
+    ORDER BY ea.alias
+  `;
 
 	try {
-		const result = await pool.query<EntityAliasRow>(sql, [entityId]);
+		const result = await queryWithSourceDeletionStatusFallback<EntityAliasRow>(pool, sql, [entityId], legacySql, [
+			entityId,
+		]);
 		return result.rows.map(mapEntityAliasRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find aliases by entity ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
@@ -106,12 +169,17 @@ export async function findAliasesByEntityId(pool: pg.Pool, entityId: string): Pr
  *
  * @returns The entity, or `null` if no alias matches.
  */
-export async function findEntityByAlias(pool: pg.Pool, alias: string): Promise<Entity | null> {
+export async function findEntityByAlias(
+	pool: pg.Pool,
+	alias: string,
+	options?: { includeDeleted?: boolean },
+): Promise<Entity | null> {
 	const sql = `
     SELECT e.*
     FROM entities e
     JOIN entity_aliases ea ON ea.entity_id = e.id
     WHERE ea.alias = $1
+      ${options?.includeDeleted ? '' : `AND ${aliasActiveSourceClause('ea')} AND ${entityActiveSourceClause('e')}`}
     LIMIT 1
   `;
 

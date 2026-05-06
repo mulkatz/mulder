@@ -15,6 +15,12 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
+import {
+	mapArtifactProvenanceFromDb,
+	mergeArtifactProvenanceSql,
+	stringifyArtifactProvenance,
+} from './artifact-provenance.js';
 import type {
 	Chunk,
 	ChunkFilter,
@@ -23,6 +29,7 @@ import type {
 	FtsSearchResult,
 	VectorSearchResult,
 } from './chunk.types.js';
+import { queryWithSensitivityColumnFallback, queryWithSourceDeletionStatusFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'chunk-repository' });
@@ -63,6 +70,9 @@ export function mapChunkRow(row: ChunkRow): Chunk {
 		isQuestion: row.is_question,
 		parentChunkId: row.parent_chunk_id,
 		metadata: row.metadata ?? {},
+		provenance: mapArtifactProvenanceFromDb(row.provenance),
+		sensitivityLevel: row.sensitivity_level ?? 'internal',
+		sensitivityMetadata: normalizeSensitivityMetadata(row.sensitivity_metadata, row.sensitivity_level ?? 'internal'),
 		createdAt: row.created_at,
 	};
 }
@@ -91,16 +101,43 @@ function formatEmbedding(embedding: number[] | null | undefined): string | null 
  */
 export async function createChunk(pool: pg.Pool, input: CreateChunkInput): Promise<Chunk> {
 	const embeddingLiteral = formatEmbedding(input.embedding);
-	const sql = `
-    INSERT INTO chunks (story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata)
-    VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9)
+	const hasExplicitId = input.id !== undefined;
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
+	const sql = hasExplicitId
+		? `
+    INSERT INTO chunks (id, story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, $9, $10, $11::jsonb, $12, $13::jsonb)
     ON CONFLICT (id) DO UPDATE SET
       content = EXCLUDED.content,
       embedding = EXCLUDED.embedding,
-      metadata = EXCLUDED.metadata
+      metadata = EXCLUDED.metadata,
+      provenance = ${mergeArtifactProvenanceSql('chunks.provenance', 'EXCLUDED.provenance')},
+      sensitivity_level = EXCLUDED.sensitivity_level,
+      sensitivity_metadata = EXCLUDED.sensitivity_metadata
+    RETURNING *, embedding::text
+  `
+		: `
+    INSERT INTO chunks (story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10::jsonb, $11, $12::jsonb)
     RETURNING *, embedding::text
   `;
-	const params = [
+	const legacySql = hasExplicitId
+		? `
+    INSERT INTO chunks (id, story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, $9, $10, $11::jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+      content = EXCLUDED.content,
+      embedding = EXCLUDED.embedding,
+      metadata = EXCLUDED.metadata,
+      provenance = ${mergeArtifactProvenanceSql('chunks.provenance', 'EXCLUDED.provenance')}
+    RETURNING *, embedding::text
+  `
+		: `
+    INSERT INTO chunks (story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10::jsonb)
+    RETURNING *, embedding::text
+  `;
+	const baseParams = [
 		input.storyId,
 		input.content,
 		input.chunkIndex,
@@ -110,10 +147,16 @@ export async function createChunk(pool: pg.Pool, input: CreateChunkInput): Promi
 		input.isQuestion ?? false,
 		input.parentChunkId ?? null,
 		JSON.stringify(input.metadata ?? {}),
+		stringifyArtifactProvenance(input.provenance),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
+	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
+	const legacyBaseParams = baseParams.slice(0, -2);
+	const legacyParams = hasExplicitId ? [input.id, ...legacyBaseParams] : legacyBaseParams;
 
 	try {
-		const result = await pool.query<ChunkRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<ChunkRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ chunkId: row.id, storyId: input.storyId }, 'Chunk created');
 		return mapChunkRow(row);
@@ -147,6 +190,9 @@ export async function createChunks(pool: pg.Pool, inputs: CreateChunkInput[]): P
 	const isQuestions: boolean[] = [];
 	const parentChunkIds: (string | null)[] = [];
 	const metadatas: string[] = [];
+	const provenances: string[] = [];
+	const sensitivityLevels: string[] = [];
+	const sensitivityMetadatas: string[] = [];
 
 	for (const input of inputs) {
 		storyIds.push(input.storyId);
@@ -158,10 +204,14 @@ export async function createChunks(pool: pg.Pool, inputs: CreateChunkInput[]): P
 		isQuestions.push(input.isQuestion ?? false);
 		parentChunkIds.push(input.parentChunkId ?? null);
 		metadatas.push(JSON.stringify(input.metadata ?? {}));
+		provenances.push(stringifyArtifactProvenance(input.provenance));
+		const sensitivityLevel = input.sensitivityLevel ?? 'internal';
+		sensitivityLevels.push(sensitivityLevel);
+		sensitivityMetadatas.push(stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel));
 	}
 
 	const sql = `
-    INSERT INTO chunks (story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata)
+    INSERT INTO chunks (story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance, sensitivity_level, sensitivity_metadata)
     SELECT
       unnest($1::uuid[]),
       unnest($2::text[]),
@@ -171,11 +221,10 @@ export async function createChunks(pool: pg.Pool, inputs: CreateChunkInput[]): P
       unnest($6::vector[]),
       unnest($7::boolean[]),
       unnest($8::uuid[]),
-      unnest($9::jsonb[])
-    ON CONFLICT (id) DO UPDATE SET
-      content = EXCLUDED.content,
-      embedding = EXCLUDED.embedding,
-      metadata = EXCLUDED.metadata
+      unnest($9::jsonb[]),
+      unnest($10::jsonb[]),
+      unnest($11::text[]),
+      unnest($12::jsonb[])
     RETURNING *, embedding::text
   `;
 
@@ -190,6 +239,9 @@ export async function createChunks(pool: pg.Pool, inputs: CreateChunkInput[]): P
 			isQuestions,
 			parentChunkIds,
 			metadatas,
+			provenances,
+			sensitivityLevels,
+			sensitivityMetadatas,
 		]);
 		repoLogger.debug({ count: result.rows.length, storyId: inputs[0].storyId }, 'Batch chunks created');
 		return result.rows.map(mapChunkRow);
@@ -210,11 +262,29 @@ export async function createChunks(pool: pg.Pool, inputs: CreateChunkInput[]): P
  *
  * @returns The chunk, or `null` if not found.
  */
-export async function findChunkById(pool: pg.Pool, id: string): Promise<Chunk | null> {
-	const sql = 'SELECT *, embedding::text FROM chunks WHERE id = $1';
+export async function findChunkById(
+	pool: pg.Pool,
+	id: string,
+	options?: { includeDeleted?: boolean },
+): Promise<Chunk | null> {
+	const sql = `
+    SELECT c.*, c.embedding::text
+    FROM chunks c
+    JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
+    WHERE c.id = $1
+      ${options?.includeDeleted ? '' : "AND src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"}
+  `;
+	const legacySql = `
+    SELECT c.*, c.embedding::text
+    FROM chunks c
+    JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
+    WHERE c.id = $1
+  `;
 
 	try {
-		const result = await pool.query<ChunkRow>(sql, [id]);
+		const result = await queryWithSourceDeletionStatusFallback<ChunkRow>(pool, sql, [id], legacySql, [id]);
 		if (result.rows.length === 0) {
 			return null;
 		}
@@ -235,22 +305,41 @@ export async function findChunkById(pool: pg.Pool, id: string): Promise<Chunk | 
 export async function findChunksByStoryId(
 	pool: pg.Pool,
 	storyId: string,
-	filter?: { isQuestion?: boolean },
+	filter?: { isQuestion?: boolean; includeDeleted?: boolean },
 ): Promise<Chunk[]> {
-	const conditions = ['story_id = $1'];
+	const conditions = ['c.story_id = $1'];
 	const params: unknown[] = [storyId];
 	let paramIndex = 2;
 
 	if (filter?.isQuestion !== undefined) {
-		conditions.push(`is_question = $${paramIndex}`);
+		conditions.push(`c.is_question = $${paramIndex}`);
 		params.push(filter.isQuestion);
 		paramIndex++;
 	}
+	const legacyConditions = [...conditions];
+	if (!filter?.includeDeleted) {
+		conditions.push("src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
+	}
 
-	const sql = `SELECT *, embedding::text FROM chunks WHERE ${conditions.join(' AND ')} ORDER BY chunk_index ASC`;
+	const sql = `
+    SELECT c.*, c.embedding::text
+    FROM chunks c
+    JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY c.chunk_index ASC
+  `;
+	const legacySql = `
+    SELECT c.*, c.embedding::text
+    FROM chunks c
+    JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
+    WHERE ${legacyConditions.join(' AND ')}
+    ORDER BY c.chunk_index ASC
+  `;
 
 	try {
-		const result = await pool.query<ChunkRow>(sql, params);
+		const result = await queryWithSourceDeletionStatusFallback<ChunkRow>(pool, sql, params, legacySql, params);
 		return result.rows.map(mapChunkRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find chunks by story ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
@@ -263,17 +352,31 @@ export async function findChunksByStoryId(
 /**
  * Finds all chunks belonging to a source (via stories JOIN).
  */
-export async function findChunksBySourceId(pool: pg.Pool, sourceId: string): Promise<Chunk[]> {
+export async function findChunksBySourceId(
+	pool: pg.Pool,
+	sourceId: string,
+	options?: { includeDeleted?: boolean },
+): Promise<Chunk[]> {
 	const sql = `
     SELECT c.*, c.embedding::text
     FROM chunks c
     JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
+    WHERE s.source_id = $1
+      ${options?.includeDeleted ? '' : "AND src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"}
+    ORDER BY c.chunk_index ASC
+  `;
+	const legacySql = `
+    SELECT c.*, c.embedding::text
+    FROM chunks c
+    JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
     WHERE s.source_id = $1
     ORDER BY c.chunk_index ASC
   `;
 
 	try {
-		const result = await pool.query<ChunkRow>(sql, [sourceId]);
+		const result = await queryWithSourceDeletionStatusFallback<ChunkRow>(pool, sql, [sourceId], legacySql, [sourceId]);
 		return result.rows.map(mapChunkRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find chunks by source ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
@@ -292,22 +395,40 @@ export async function countChunks(pool: pg.Pool, filter?: ChunkFilter): Promise<
 	let paramIndex = 1;
 
 	if (filter?.storyId) {
-		conditions.push(`story_id = $${paramIndex}`);
+		conditions.push(`c.story_id = $${paramIndex}`);
 		params.push(filter.storyId);
 		paramIndex++;
 	}
 
 	if (filter?.isQuestion !== undefined) {
-		conditions.push(`is_question = $${paramIndex}`);
+		conditions.push(`c.is_question = $${paramIndex}`);
 		params.push(filter.isQuestion);
 		paramIndex++;
 	}
+	const legacyConditions = [...conditions];
+	if (!filter?.includeDeleted) {
+		conditions.push("src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
+	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-	const sql = `SELECT COUNT(*) FROM chunks ${whereClause}`;
+	const legacyWhereClause = legacyConditions.length > 0 ? `WHERE ${legacyConditions.join(' AND ')}` : '';
+	const sql = `
+    SELECT COUNT(*)
+    FROM chunks c
+    JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
+    ${whereClause}
+  `;
+	const legacySql = `
+    SELECT COUNT(*)
+    FROM chunks c
+    JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
+    ${legacyWhereClause}
+	`;
 
 	try {
-		const result = await pool.query<{ count: string }>(sql, params);
+		const result = await queryWithSourceDeletionStatusFallback<{ count: string }>(pool, sql, params, legacySql, params);
 		return Number.parseInt(result.rows[0].count, 10);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to count chunks', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
@@ -415,22 +536,25 @@ export async function searchByVector(
 	filter?: { storyIds?: string[] },
 ): Promise<VectorSearchResult[]> {
 	const embeddingLiteral = formatEmbedding(queryEmbedding);
-	const conditions = ['embedding IS NOT NULL'];
+	const conditions = ['chunks.embedding IS NOT NULL'];
 	const params: unknown[] = [embeddingLiteral, limit];
 	let paramIndex = 3;
 
 	if (filter?.storyIds && filter.storyIds.length > 0) {
-		conditions.push(`story_id = ANY($${paramIndex}::uuid[])`);
+		conditions.push(`chunks.story_id = ANY($${paramIndex}::uuid[])`);
 		params.push(filter.storyIds);
 		paramIndex++;
 	}
 
 	const whereClause = conditions.join(' AND ');
 	const sql = `
-    SELECT *, embedding::text, (embedding <=> $1::vector) AS distance
+    SELECT chunks.*, chunks.embedding::text, (chunks.embedding <=> $1::vector) AS distance
     FROM chunks
+    JOIN stories ON stories.id = chunks.story_id
+    JOIN sources ON sources.id = stories.source_id
     WHERE ${whereClause}
-    ORDER BY embedding <=> $1::vector
+      AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+    ORDER BY chunks.embedding <=> $1::vector
     LIMIT $2
   `;
 
@@ -488,22 +612,25 @@ export async function searchByVectorWithEfSearch(
 	}
 
 	const embeddingLiteral = formatEmbedding(queryEmbedding);
-	const conditions = ['embedding IS NOT NULL'];
+	const conditions = ['chunks.embedding IS NOT NULL'];
 	const params: unknown[] = [embeddingLiteral, limit];
 	let paramIndex = 3;
 
 	if (filter?.storyIds && filter.storyIds.length > 0) {
-		conditions.push(`story_id = ANY($${paramIndex}::uuid[])`);
+		conditions.push(`chunks.story_id = ANY($${paramIndex}::uuid[])`);
 		params.push(filter.storyIds);
 		paramIndex++;
 	}
 
 	const whereClause = conditions.join(' AND ');
 	const sql = `
-    SELECT *, embedding::text, (embedding <=> $1::vector) AS distance
+    SELECT chunks.*, chunks.embedding::text, (chunks.embedding <=> $1::vector) AS distance
     FROM chunks
+    JOIN stories ON stories.id = chunks.story_id
+    JOIN sources ON sources.id = stories.source_id
     WHERE ${whereClause}
-    ORDER BY embedding <=> $1::vector
+      AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+    ORDER BY chunks.embedding <=> $1::vector
     LIMIT $2
   `;
 
@@ -563,12 +690,12 @@ export async function searchByFts(
 	limit: number,
 	filter?: { storyIds?: string[]; excludeQuestions?: boolean },
 ): Promise<FtsSearchResult[]> {
-	const conditions = ["fts_vector @@ plainto_tsquery('simple', $1)"];
+	const conditions = ["chunks.fts_vector @@ plainto_tsquery('simple', $1)"];
 	const params: unknown[] = [query, limit];
 	let paramIndex = 3;
 
 	if (filter?.storyIds && filter.storyIds.length > 0) {
-		conditions.push(`story_id = ANY($${paramIndex}::uuid[])`);
+		conditions.push(`chunks.story_id = ANY($${paramIndex}::uuid[])`);
 		params.push(filter.storyIds);
 		paramIndex++;
 	}
@@ -576,16 +703,19 @@ export async function searchByFts(
 	if (filter?.excludeQuestions === true) {
 		// Literal boolean predicate — no bind parameter needed and no SQL
 		// injection risk because the value is not user-controlled.
-		conditions.push('is_question = false');
+		conditions.push('chunks.is_question = false');
 	}
 
 	const whereClause = conditions.join(' AND ');
 	const sql = `
-    SELECT *, embedding::text,
-      ts_rank(fts_vector, plainto_tsquery('simple', $1)) AS rank
+    SELECT chunks.*, chunks.embedding::text,
+      ts_rank(chunks.fts_vector, plainto_tsquery('simple', $1)) AS rank
     FROM chunks
+    JOIN stories ON stories.id = chunks.story_id
+    JOIN sources ON sources.id = stories.source_id
     WHERE ${whereClause}
-    ORDER BY ts_rank(fts_vector, plainto_tsquery('simple', $1)) DESC
+      AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+    ORDER BY ts_rank(chunks.fts_vector, plainto_tsquery('simple', $1)) DESC
     LIMIT $2
   `;
 

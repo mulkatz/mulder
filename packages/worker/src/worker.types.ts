@@ -19,7 +19,7 @@ import type pg from 'pg';
 // Supported job types
 // ────────────────────────────────────────────────────────────
 
-export type SourceStepJobType = 'extract' | 'segment';
+export type SourceStepJobType = 'quality' | 'extract' | 'segment';
 export type StoryStepJobType = 'enrich' | 'embed' | 'graph';
 export type StepScopedJobType = SourceStepJobType | StoryStepJobType;
 export type UploadFinalizeJobType = 'document_upload_finalize';
@@ -75,6 +75,7 @@ export interface DocumentUploadFinalizeJobPayload {
 export type LegacyPipelineRunJobPayload = PipelineRunJobPayload;
 
 export type WorkerJobPayloadMap = {
+	quality: SourceStepJobPayload;
 	extract: SourceStepJobPayload;
 	segment: SourceStepJobPayload;
 	enrich: StoryStepJobPayload;
@@ -213,6 +214,7 @@ export function describeWorkerError(error: unknown): string {
 
 export function isSupportedJobType(type: string): type is SupportedJobType {
 	return (
+		type === 'quality' ||
 		type === 'extract' ||
 		type === 'segment' ||
 		type === 'enrich' ||
@@ -267,7 +269,14 @@ function invalidPayload(
 }
 
 export function isWorkerPipelineStep(value: string): value is WorkerPipelineStepName {
-	return value === 'extract' || value === 'segment' || value === 'enrich' || value === 'embed' || value === 'graph';
+	return (
+		value === 'quality' ||
+		value === 'extract' ||
+		value === 'segment' ||
+		value === 'enrich' ||
+		value === 'embed' ||
+		value === 'graph'
+	);
 }
 
 function parseStepChainingPayload(
@@ -474,7 +483,7 @@ export function parseWorkerJobPayload(
 	jobType: WorkerJobType,
 	payload: unknown,
 ): WorkerJobPayloadMap[WorkerJobType] {
-	if (jobType === 'extract' || jobType === 'segment') {
+	if (jobType === 'quality' || jobType === 'extract' || jobType === 'segment') {
 		return parseSourceStepPayload(jobId, jobType, payload);
 	}
 
@@ -497,6 +506,12 @@ export function parseWorkerJobEnvelope(job: Job): WorkerJobEnvelope {
 	}
 
 	switch (job.type) {
+		case 'quality':
+			return {
+				...job,
+				type: 'quality',
+				payload: parseWorkerJobPayload(job.id, 'quality', job.payload),
+			};
 		case 'extract':
 			return {
 				...job,

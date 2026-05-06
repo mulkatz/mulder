@@ -4,12 +4,13 @@ import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
 import { ensureSchema, truncateMulderTables } from '../lib/schema.js';
+import { testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const FIXTURE_DIR = resolve(ROOT, 'fixtures/raw');
-const EXTRACTED_DIR = resolve(ROOT, '.local/storage/extracted');
-const SEGMENTS_DIR = resolve(ROOT, '.local/storage/segments');
+const EXTRACTED_DIR = testStoragePath('extracted');
+const SEGMENTS_DIR = testStoragePath('segments');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
@@ -110,6 +111,9 @@ function prepareCompletedSource(name: string): string {
 	const sourceId = db.runSql(
 		"SELECT id FROM sources WHERE filename = 'native-text-sample.pdf' ORDER BY created_at DESC LIMIT 1;",
 	);
+	const quality = runCli(['quality', sourceId], { timeout: 240_000 });
+	expect(quality.exitCode, `${quality.stdout}\n${quality.stderr}`).toBe(0);
+
 	const extract = runCli(['extract', sourceId], { timeout: 240_000 });
 	expect(extract.exitCode, `${extract.stdout}\n${extract.stderr}`).toBe(0);
 	ensurePageImages(sourceId);
@@ -223,6 +227,7 @@ describe('Spec 77 — Cost Estimator', () => {
 		expect(rows).toContainEqual(expect.stringMatching(/^enrich:[0-9a-f]{64}$/));
 		expect(rows).toContainEqual(expect.stringMatching(/^extract:[0-9a-f]{64}$/));
 		expect(rows).toContainEqual(expect.stringMatching(/^graph:[0-9a-f]{64}$/));
+		expect(rows).toContainEqual(expect.stringMatching(/^quality:[0-9a-f]{64}$/));
 		expect(rows).toContainEqual(expect.stringMatching(/^segment:[0-9a-f]{64}$/));
 	});
 

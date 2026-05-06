@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
-import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir } from '../lib/storage.js';
+import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir, testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CORE_DIR = resolve(ROOT, 'packages/core');
@@ -13,7 +13,8 @@ const PIPELINE_DIR = resolve(ROOT, 'packages/pipeline');
 const CLI_DIR = resolve(ROOT, 'apps/cli');
 const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
-const STORAGE_DIR = resolve(ROOT, '.local/storage');
+const STORAGE_DIR = testStoragePath();
+const BLOBS_STORAGE_DIR = resolve(STORAGE_DIR, 'blobs');
 const RAW_STORAGE_DIR = resolve(STORAGE_DIR, 'raw');
 const EXTRACTED_STORAGE_DIR = resolve(STORAGE_DIR, 'extracted');
 const SEGMENTS_STORAGE_DIR = resolve(STORAGE_DIR, 'segments');
@@ -25,6 +26,7 @@ const PNG_BYTES = Buffer.from(
 
 let tmpDir = '';
 let pgAvailable = false;
+let blobsSnapshot: StorageSnapshot | null = null;
 let rawSnapshot: StorageSnapshot | null = null;
 let extractedSnapshot: StorageSnapshot | null = null;
 let segmentsSnapshot: StorageSnapshot | null = null;
@@ -118,12 +120,13 @@ function cleanState(): void {
 			'DELETE FROM entities',
 			'DELETE FROM stories',
 			'DELETE FROM sources',
+			'DELETE FROM document_blobs',
 		].join('; '),
 	);
 }
 
 function resetStorage(): void {
-	for (const snapshot of [rawSnapshot, extractedSnapshot, segmentsSnapshot]) {
+	for (const snapshot of [blobsSnapshot, rawSnapshot, extractedSnapshot, segmentsSnapshot]) {
 		if (snapshot) {
 			cleanStorageDirSince(snapshot);
 		}
@@ -179,6 +182,7 @@ beforeAll(async () => {
 	process.env.NODE_ENV = 'test';
 
 	tmpDir = mkdtempSync(join(tmpdir(), 'mulder-qa-96-'));
+	blobsSnapshot = snapshotStorageDir(BLOBS_STORAGE_DIR);
 	rawSnapshot = snapshotStorageDir(RAW_STORAGE_DIR);
 	extractedSnapshot = snapshotStorageDir(EXTRACTED_STORAGE_DIR);
 	segmentsSnapshot = snapshotStorageDir(SEGMENTS_STORAGE_DIR);
@@ -373,7 +377,11 @@ describe('Spec 96 - Cross-format ingest dedup', () => {
 			"SELECT source_type::text, format_metadata ? 'cross_format_dedup_key' FROM sources WHERE filename = 'pixel.png';",
 		);
 		expect(metadataFlags).toBe('image|f');
-		expect(existsSync(resolve(STORAGE_DIR, `raw/${sourceIdForFilename('pixel.png')}/original.png`))).toBe(true);
+		const storagePath = db.runSql(
+			`SELECT storage_path FROM sources WHERE id = ${sqlLiteral(sourceIdForFilename('pixel.png'))};`,
+		);
+		expect(storagePath).toMatch(/^blobs\/sha256\/[a-f0-9]{2}\/[a-f0-9]{2}\/[a-f0-9]{64}\.png$/);
+		expect(existsSync(resolve(STORAGE_DIR, storagePath))).toBe(true);
 	});
 
 	it('QA-06: graph-level dedup remains unchanged', () => {

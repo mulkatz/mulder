@@ -14,10 +14,44 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
+import {
+	mapArtifactProvenanceFromDb,
+	mergeArtifactProvenanceSql,
+	stringifyArtifactProvenance,
+} from './artifact-provenance.js';
 import type { CreateEdgeInput, EdgeFilter, EdgeType, EntityEdge, UpdateEdgeInput } from './edge.types.js';
+import { queryWithSensitivityColumnFallback, queryWithSourceDeletionStatusFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'edge-repository' });
+
+function edgeActiveSourceClause(edgeAlias: string): string {
+	return `
+    (
+      EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(COALESCE(${edgeAlias}.provenance->'source_document_ids', '[]'::jsonb)) AS edge_sources(source_id)
+        JOIN sources edge_src ON edge_src.id::text = edge_sources.source_id
+        WHERE edge_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM stories edge_story
+        JOIN sources edge_story_src ON edge_story_src.id = edge_story.source_id
+        WHERE edge_story.id = ${edgeAlias}.story_id
+          AND edge_story_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+      )
+      OR (
+        ${edgeAlias}.story_id IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(COALESCE(${edgeAlias}.provenance->'source_document_ids', '[]'::jsonb)) AS edge_sources(source_id)
+        )
+      )
+    )
+  `;
+}
 
 // ────────────────────────────────────────────────────────────
 // Row mapper (snake_case DB -> camelCase TS)
@@ -33,6 +67,9 @@ interface EdgeRow {
 	story_id: string | null;
 	edge_type: EdgeType;
 	analysis: Record<string, unknown> | null;
+	provenance: unknown;
+	sensitivity_level: EntityEdge['sensitivityLevel'];
+	sensitivity_metadata: unknown;
 	created_at: Date;
 }
 
@@ -47,6 +84,9 @@ function mapEdgeRow(row: EdgeRow): EntityEdge {
 		storyId: row.story_id,
 		edgeType: row.edge_type,
 		analysis: row.analysis,
+		provenance: mapArtifactProvenanceFromDb(row.provenance),
+		sensitivityLevel: row.sensitivity_level ?? 'internal',
+		sensitivityMetadata: normalizeSensitivityMetadata(row.sensitivity_metadata, row.sensitivity_level ?? 'internal'),
 		createdAt: row.created_at,
 	};
 }
@@ -60,15 +100,27 @@ function mapEdgeRow(row: EdgeRow): EntityEdge {
  */
 export async function createEdge(pool: pg.Pool, input: CreateEdgeInput): Promise<EntityEdge> {
 	const hasExplicitId = input.id !== undefined;
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 	const sql = hasExplicitId
 		? `
-    INSERT INTO entity_edges (id, source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    INSERT INTO entity_edges (id, source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12::jsonb)
     RETURNING *
   `
 		: `
-    INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb)
+    RETURNING *
+  `;
+	const legacySql = hasExplicitId
+		? `
+    INSERT INTO entity_edges (id, source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+    RETURNING *
+  `
+		: `
+    INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
     RETURNING *
   `;
 
@@ -81,11 +133,16 @@ export async function createEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
 		input.storyId ?? null,
 		input.edgeType ?? 'RELATIONSHIP',
 		input.analysis ? JSON.stringify(input.analysis) : null,
+		stringifyArtifactProvenance(input.provenance),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
 	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
+	const legacyBaseParams = baseParams.slice(0, -2);
+	const legacyParams = hasExplicitId ? [input.id, ...legacyBaseParams] : legacyBaseParams;
 
 	try {
-		const result = await pool.query<EdgeRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EdgeRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ edgeId: row.id, relationship: input.relationship, edgeType: row.edge_type }, 'Edge created');
 		return mapEdgeRow(row);
@@ -118,15 +175,31 @@ export async function upsertEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
 		return createEdge(pool, input);
 	}
 
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 	const sql = `
-    INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb)
     ON CONFLICT (source_entity_id, target_entity_id, relationship, edge_type, story_id)
     WHERE story_id IS NOT NULL
     DO UPDATE SET
       attributes = EXCLUDED.attributes,
       confidence = EXCLUDED.confidence,
-      analysis = EXCLUDED.analysis
+      analysis = EXCLUDED.analysis,
+      provenance = ${mergeArtifactProvenanceSql('entity_edges.provenance', 'EXCLUDED.provenance')},
+      sensitivity_level = EXCLUDED.sensitivity_level,
+      sensitivity_metadata = EXCLUDED.sensitivity_metadata
+    RETURNING *
+  `;
+	const legacySql = `
+    INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+    ON CONFLICT (source_entity_id, target_entity_id, relationship, edge_type, story_id)
+    WHERE story_id IS NOT NULL
+    DO UPDATE SET
+      attributes = EXCLUDED.attributes,
+      confidence = EXCLUDED.confidence,
+      analysis = EXCLUDED.analysis,
+      provenance = ${mergeArtifactProvenanceSql('entity_edges.provenance', 'EXCLUDED.provenance')}
     RETURNING *
   `;
 
@@ -139,10 +212,14 @@ export async function upsertEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
 		input.storyId,
 		input.edgeType ?? 'RELATIONSHIP',
 		input.analysis ? JSON.stringify(input.analysis) : null,
+		stringifyArtifactProvenance(input.provenance),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
+	const legacyParams = params.slice(0, -2);
 
 	try {
-		const result = await pool.query<EdgeRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EdgeRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ edgeId: row.id, relationship: input.relationship, edgeType: row.edge_type }, 'Edge upserted');
 		return mapEdgeRow(row);
@@ -164,11 +241,25 @@ export async function upsertEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
  *
  * @returns The edge, or `null` if not found.
  */
-export async function findEdgeById(pool: pg.Pool, id: string): Promise<EntityEdge | null> {
-	const sql = 'SELECT * FROM entity_edges WHERE id = $1';
+export async function findEdgeById(
+	pool: pg.Pool,
+	id: string,
+	options?: { includeDeleted?: boolean },
+): Promise<EntityEdge | null> {
+	const sql = `
+    SELECT ee.*
+    FROM entity_edges ee
+    WHERE ee.id = $1
+      ${options?.includeDeleted ? '' : `AND ${edgeActiveSourceClause('ee')}`}
+  `;
+	const legacySql = `
+    SELECT ee.*
+    FROM entity_edges ee
+    WHERE ee.id = $1
+  `;
 
 	try {
-		const result = await pool.query<EdgeRow>(sql, [id]);
+		const result = await queryWithSourceDeletionStatusFallback<EdgeRow>(pool, sql, [id], legacySql, [id]);
 		if (result.rows.length === 0) {
 			return null;
 		}
@@ -184,8 +275,18 @@ export async function findEdgeById(pool: pg.Pool, id: string): Promise<EntityEdg
 /**
  * Finds all outgoing edges from a source entity, ordered by creation time.
  */
-export async function findEdgesBySourceEntityId(pool: pg.Pool, sourceEntityId: string): Promise<EntityEdge[]> {
-	const sql = 'SELECT * FROM entity_edges WHERE source_entity_id = $1 ORDER BY created_at';
+export async function findEdgesBySourceEntityId(
+	pool: pg.Pool,
+	sourceEntityId: string,
+	options?: { includeDeleted?: boolean },
+): Promise<EntityEdge[]> {
+	const sql = `
+    SELECT ee.*
+    FROM entity_edges ee
+    WHERE ee.source_entity_id = $1
+      ${options?.includeDeleted ? '' : `AND ${edgeActiveSourceClause('ee')}`}
+    ORDER BY ee.created_at
+  `;
 
 	try {
 		const result = await pool.query<EdgeRow>(sql, [sourceEntityId]);
@@ -201,8 +302,18 @@ export async function findEdgesBySourceEntityId(pool: pg.Pool, sourceEntityId: s
 /**
  * Finds all incoming edges to a target entity, ordered by creation time.
  */
-export async function findEdgesByTargetEntityId(pool: pg.Pool, targetEntityId: string): Promise<EntityEdge[]> {
-	const sql = 'SELECT * FROM entity_edges WHERE target_entity_id = $1 ORDER BY created_at';
+export async function findEdgesByTargetEntityId(
+	pool: pg.Pool,
+	targetEntityId: string,
+	options?: { includeDeleted?: boolean },
+): Promise<EntityEdge[]> {
+	const sql = `
+    SELECT ee.*
+    FROM entity_edges ee
+    WHERE ee.target_entity_id = $1
+      ${options?.includeDeleted ? '' : `AND ${edgeActiveSourceClause('ee')}`}
+    ORDER BY ee.created_at
+  `;
 
 	try {
 		const result = await pool.query<EdgeRow>(sql, [targetEntityId]);
@@ -218,8 +329,18 @@ export async function findEdgesByTargetEntityId(pool: pg.Pool, targetEntityId: s
 /**
  * Finds all edges connected to an entity (both directions), ordered by creation time.
  */
-export async function findEdgesByEntityId(pool: pg.Pool, entityId: string): Promise<EntityEdge[]> {
-	const sql = 'SELECT * FROM entity_edges WHERE source_entity_id = $1 OR target_entity_id = $1 ORDER BY created_at';
+export async function findEdgesByEntityId(
+	pool: pg.Pool,
+	entityId: string,
+	options?: { includeDeleted?: boolean },
+): Promise<EntityEdge[]> {
+	const sql = `
+    SELECT ee.*
+    FROM entity_edges ee
+    WHERE (ee.source_entity_id = $1 OR ee.target_entity_id = $1)
+      ${options?.includeDeleted ? '' : `AND ${edgeActiveSourceClause('ee')}`}
+    ORDER BY ee.created_at
+  `;
 
 	try {
 		const result = await pool.query<EdgeRow>(sql, [entityId]);
@@ -235,8 +356,18 @@ export async function findEdgesByEntityId(pool: pg.Pool, entityId: string): Prom
 /**
  * Finds all edges referencing a specific story, ordered by creation time.
  */
-export async function findEdgesByStoryId(pool: pg.Pool, storyId: string): Promise<EntityEdge[]> {
-	const sql = 'SELECT * FROM entity_edges WHERE story_id = $1 ORDER BY created_at';
+export async function findEdgesByStoryId(
+	pool: pg.Pool,
+	storyId: string,
+	options?: { includeDeleted?: boolean },
+): Promise<EntityEdge[]> {
+	const sql = `
+    SELECT ee.*
+    FROM entity_edges ee
+    WHERE ee.story_id = $1
+      ${options?.includeDeleted ? '' : `AND ${edgeActiveSourceClause('ee')}`}
+    ORDER BY ee.created_at
+  `;
 
 	try {
 		const result = await pool.query<EdgeRow>(sql, [storyId]);
@@ -252,8 +383,18 @@ export async function findEdgesByStoryId(pool: pg.Pool, storyId: string): Promis
 /**
  * Finds all edges of a specific type (e.g., all POTENTIAL_CONTRADICTION edges).
  */
-export async function findEdgesByType(pool: pg.Pool, edgeType: EdgeType): Promise<EntityEdge[]> {
-	const sql = 'SELECT * FROM entity_edges WHERE edge_type = $1 ORDER BY created_at';
+export async function findEdgesByType(
+	pool: pg.Pool,
+	edgeType: EdgeType,
+	options?: { includeDeleted?: boolean },
+): Promise<EntityEdge[]> {
+	const sql = `
+    SELECT ee.*
+    FROM entity_edges ee
+    WHERE ee.edge_type = $1
+      ${options?.includeDeleted ? '' : `AND ${edgeActiveSourceClause('ee')}`}
+    ORDER BY ee.created_at
+  `;
 
 	try {
 		const result = await pool.query<EdgeRow>(sql, [edgeType]);
@@ -273,12 +414,17 @@ export async function findEdgesBetweenEntities(
 	pool: pg.Pool,
 	entityIdA: string,
 	entityIdB: string,
+	options?: { includeDeleted?: boolean },
 ): Promise<EntityEdge[]> {
 	const sql = `
-    SELECT * FROM entity_edges
-    WHERE (source_entity_id = $1 AND target_entity_id = $2)
-       OR (source_entity_id = $2 AND target_entity_id = $1)
-    ORDER BY created_at
+    SELECT ee.*
+    FROM entity_edges ee
+    WHERE (
+      (ee.source_entity_id = $1 AND ee.target_entity_id = $2)
+      OR (ee.source_entity_id = $2 AND ee.target_entity_id = $1)
+    )
+      ${options?.includeDeleted ? '' : `AND ${edgeActiveSourceClause('ee')}`}
+    ORDER BY ee.created_at
   `;
 
 	try {
@@ -303,33 +449,36 @@ export async function findAllEdges(pool: pg.Pool, filter?: EdgeFilter): Promise<
 	let paramIndex = 1;
 
 	if (filter?.sourceEntityId) {
-		conditions.push(`source_entity_id = $${paramIndex}`);
+		conditions.push(`ee.source_entity_id = $${paramIndex}`);
 		params.push(filter.sourceEntityId);
 		paramIndex++;
 	}
 
 	if (filter?.targetEntityId) {
-		conditions.push(`target_entity_id = $${paramIndex}`);
+		conditions.push(`ee.target_entity_id = $${paramIndex}`);
 		params.push(filter.targetEntityId);
 		paramIndex++;
 	}
 
 	if (filter?.edgeType) {
-		conditions.push(`edge_type = $${paramIndex}`);
+		conditions.push(`ee.edge_type = $${paramIndex}`);
 		params.push(filter.edgeType);
 		paramIndex++;
 	}
 
 	if (filter?.storyId) {
-		conditions.push(`story_id = $${paramIndex}`);
+		conditions.push(`ee.story_id = $${paramIndex}`);
 		params.push(filter.storyId);
 		paramIndex++;
 	}
 
 	if (filter?.relationship) {
-		conditions.push(`relationship = $${paramIndex}`);
+		conditions.push(`ee.relationship = $${paramIndex}`);
 		params.push(filter.relationship);
 		paramIndex++;
+	}
+	if (!filter?.includeDeleted) {
+		conditions.push(edgeActiveSourceClause('ee'));
 	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -337,7 +486,7 @@ export async function findAllEdges(pool: pg.Pool, filter?: EdgeFilter): Promise<
 	const limit = filter?.limit ?? 100;
 	const offset = filter?.offset ?? 0;
 
-	const sql = `SELECT * FROM entity_edges ${whereClause} ORDER BY created_at ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+	const sql = `SELECT ee.* FROM entity_edges ee ${whereClause} ORDER BY ee.created_at ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
 	params.push(limit, offset);
 
 	try {
@@ -353,6 +502,7 @@ export async function findAllEdges(pool: pg.Pool, filter?: EdgeFilter): Promise<
 
 export interface EdgeTypePageFilter {
 	edgeTypes: EdgeType[];
+	includeDeleted?: boolean;
 	limit?: number;
 	offset?: number;
 }
@@ -368,10 +518,11 @@ export async function findAllEdgesByTypes(pool: pg.Pool, filter: EdgeTypePageFil
 	const limit = filter.limit ?? 100;
 	const offset = filter.offset ?? 0;
 	const sql = `
-    SELECT *
-    FROM entity_edges
-    WHERE edge_type = ANY($1::text[])
-    ORDER BY created_at ASC, id ASC
+    SELECT ee.*
+    FROM entity_edges ee
+    WHERE ee.edge_type = ANY($1::text[])
+      ${filter.includeDeleted ? '' : `AND ${edgeActiveSourceClause('ee')}`}
+    ORDER BY ee.created_at ASC, ee.id ASC
     LIMIT $2 OFFSET $3
   `;
 
@@ -389,12 +540,21 @@ export async function findAllEdgesByTypes(pool: pg.Pool, filter: EdgeTypePageFil
 /**
  * Counts edges matching any of the provided edge types.
  */
-export async function countEdgesByTypes(pool: pg.Pool, edgeTypes: EdgeType[]): Promise<number> {
+export async function countEdgesByTypes(
+	pool: pg.Pool,
+	edgeTypes: EdgeType[],
+	options?: { includeDeleted?: boolean },
+): Promise<number> {
 	if (edgeTypes.length === 0) {
 		return 0;
 	}
 
-	const sql = 'SELECT COUNT(*) FROM entity_edges WHERE edge_type = ANY($1::text[])';
+	const sql = `
+    SELECT COUNT(*)
+    FROM entity_edges ee
+    WHERE ee.edge_type = ANY($1::text[])
+      ${options?.includeDeleted ? '' : `AND ${edgeActiveSourceClause('ee')}`}
+  `;
 
 	try {
 		const result = await pool.query<{ count: string }>(sql, [edgeTypes]);
@@ -416,37 +576,40 @@ export async function countEdges(pool: pg.Pool, filter?: EdgeFilter): Promise<nu
 	let paramIndex = 1;
 
 	if (filter?.sourceEntityId) {
-		conditions.push(`source_entity_id = $${paramIndex}`);
+		conditions.push(`ee.source_entity_id = $${paramIndex}`);
 		params.push(filter.sourceEntityId);
 		paramIndex++;
 	}
 
 	if (filter?.targetEntityId) {
-		conditions.push(`target_entity_id = $${paramIndex}`);
+		conditions.push(`ee.target_entity_id = $${paramIndex}`);
 		params.push(filter.targetEntityId);
 		paramIndex++;
 	}
 
 	if (filter?.edgeType) {
-		conditions.push(`edge_type = $${paramIndex}`);
+		conditions.push(`ee.edge_type = $${paramIndex}`);
 		params.push(filter.edgeType);
 		paramIndex++;
 	}
 
 	if (filter?.storyId) {
-		conditions.push(`story_id = $${paramIndex}`);
+		conditions.push(`ee.story_id = $${paramIndex}`);
 		params.push(filter.storyId);
 		paramIndex++;
 	}
 
 	if (filter?.relationship) {
-		conditions.push(`relationship = $${paramIndex}`);
+		conditions.push(`ee.relationship = $${paramIndex}`);
 		params.push(filter.relationship);
 		paramIndex++;
 	}
+	if (!filter?.includeDeleted) {
+		conditions.push(edgeActiveSourceClause('ee'));
+	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-	const sql = `SELECT COUNT(*) FROM entity_edges ${whereClause}`;
+	const sql = `SELECT COUNT(*) FROM entity_edges ee ${whereClause}`;
 
 	try {
 		const result = await pool.query<{ count: string }>(sql, params);
@@ -492,6 +655,16 @@ export async function updateEdge(pool: pg.Pool, id: string, input: UpdateEdgeInp
 	if (input.analysis !== undefined) {
 		setClauses.push(`analysis = $${paramIndex}`);
 		params.push(input.analysis ? JSON.stringify(input.analysis) : null);
+		paramIndex++;
+	}
+
+	if (input.sensitivityLevel !== undefined || input.sensitivityMetadata !== undefined) {
+		const sensitivityLevel = input.sensitivityLevel ?? 'internal';
+		setClauses.push(`sensitivity_level = $${paramIndex}`);
+		params.push(sensitivityLevel);
+		paramIndex++;
+		setClauses.push(`sensitivity_metadata = $${paramIndex}::jsonb`);
+		params.push(stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel));
 		paramIndex++;
 	}
 

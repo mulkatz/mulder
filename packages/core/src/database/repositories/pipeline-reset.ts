@@ -11,7 +11,7 @@
 
 import type pg from 'pg';
 
-export type PipelineStep = 'extract' | 'segment' | 'enrich' | 'embed' | 'graph';
+export type PipelineStep = 'quality' | 'extract' | 'segment' | 'enrich' | 'embed' | 'graph';
 
 /**
  * Calls the reset_pipeline_step() PL/pgSQL function.

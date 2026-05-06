@@ -8,12 +8,25 @@
 import { createHash } from 'node:crypto';
 import type { MulderConfig } from './types.js';
 
-export type ReprocessHashStepName = 'extract' | 'segment' | 'enrich' | 'embed' | 'graph' | 'ground' | 'analyze';
+export type ReprocessHashStepName =
+	| 'quality'
+	| 'extract'
+	| 'segment'
+	| 'enrich'
+	| 'embed'
+	| 'graph'
+	| 'ground'
+	| 'analyze';
 
 type ReprocessHashSubset =
+	| { document_quality: MulderConfig['document_quality'] }
 	| { extraction: MulderConfig['extraction'] }
 	| { extraction: { segmentation: MulderConfig['extraction']['segmentation'] } }
 	| {
+			access_control: {
+				enabled: MulderConfig['access_control']['enabled'];
+				sensitivity: MulderConfig['access_control']['sensitivity'];
+			};
 			ontology: MulderConfig['ontology'];
 			enrichment: MulderConfig['enrichment'];
 			taxonomy: MulderConfig['taxonomy'];
@@ -60,12 +73,18 @@ function sortKeys(value: unknown): unknown {
  */
 export function getReprocessConfigSubset(config: MulderConfig, step: ReprocessHashStepName): ReprocessHashSubset {
 	switch (step) {
+		case 'quality':
+			return { document_quality: config.document_quality };
 		case 'extract':
 			return { extraction: config.extraction };
 		case 'segment':
 			return { extraction: { segmentation: config.extraction.segmentation } };
 		case 'enrich':
 			return {
+				access_control: {
+					enabled: config.access_control.enabled,
+					sensitivity: config.access_control.sensitivity,
+				},
 				ontology: config.ontology,
 				enrichment: config.enrichment,
 				taxonomy: config.taxonomy,

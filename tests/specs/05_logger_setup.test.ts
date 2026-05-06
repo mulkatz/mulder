@@ -45,7 +45,7 @@ describe('Spec 05: Logger Setup — Pino Structured JSON', () => {
 
 		const result = spawnSync('node', [scriptPath], {
 			cwd: ROOT,
-			env: { ...process.env, ...env },
+			env: { ...process.env, MULDER_LOG_LEVEL: 'info', ...env },
 			encoding: 'utf-8',
 			timeout: 15000,
 		});

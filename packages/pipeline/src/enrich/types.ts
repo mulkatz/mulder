@@ -9,7 +9,15 @@
  * @see docs/functional-spec.md §2.4
  */
 
-import type { StepError } from '@mulder/core';
+import type {
+	AssertionType,
+	ClassificationProvenance,
+	ConfidenceMetadata,
+	PIIType,
+	SensitivityAssignmentSource,
+	SensitivityLevel,
+	StepError,
+} from '@mulder/core';
 
 // ────────────────────────────────────────────────────────────
 // Step input / output
@@ -19,6 +27,7 @@ import type { StepError } from '@mulder/core';
 export interface EnrichInput {
 	storyId: string;
 	force?: boolean;
+	extractionPipelineRun?: string | null;
 }
 
 /** Result from the enrich pipeline step. */
@@ -40,6 +49,7 @@ export interface EnrichmentData {
 	entitiesExtracted: number;
 	entitiesResolved: number;
 	relationshipsCreated: number;
+	assertionsPersisted: number;
 	taxonomyEntriesAdded: number;
 	/**
 	 * Number of entity rows in this story whose `taxonomy_id` was set
@@ -50,6 +60,15 @@ export interface EnrichmentData {
 	taxonomyLinked: number;
 	/** 1 if no pre-chunking, N if pre-chunked. */
 	chunksUsed: number;
+}
+
+export interface ExtractedSensitivityMetadata {
+	level: SensitivityLevel;
+	reason: string;
+	assigned_by?: SensitivityAssignmentSource;
+	assigned_at?: string;
+	pii_types: PIIType[];
+	declassify_date: string | null;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -63,6 +82,7 @@ export interface ExtractedEntity {
 	confidence: number;
 	attributes: Record<string, unknown>;
 	mentions: string[];
+	sensitivity?: ExtractedSensitivityMetadata;
 }
 
 /** A relationship extracted from a story by Gemini. */
@@ -72,10 +92,29 @@ export interface ExtractedRelationship {
 	relationship_type: string;
 	confidence: number;
 	attributes?: Record<string, unknown>;
+	sensitivity?: ExtractedSensitivityMetadata;
+}
+
+/** A classified assertion extracted from a story by Gemini. */
+export interface ExtractedAssertion {
+	content: string;
+	assertion_type: AssertionType;
+	confidence_metadata: {
+		witness_count: ConfidenceMetadata['witnessCount'];
+		measurement_based: ConfidenceMetadata['measurementBased'];
+		contemporaneous: ConfidenceMetadata['contemporaneous'];
+		corroborated: ConfidenceMetadata['corroborated'];
+		peer_reviewed: ConfidenceMetadata['peerReviewed'];
+		author_is_interpreter: ConfidenceMetadata['authorIsInterpreter'];
+	};
+	classification_provenance?: ClassificationProvenance;
+	entity_names?: string[];
+	sensitivity?: ExtractedSensitivityMetadata;
 }
 
 /** The full extraction response from Gemini. */
 export interface ExtractionResponse {
 	entities: ExtractedEntity[];
 	relationships: ExtractedRelationship[];
+	assertions?: ExtractedAssertion[];
 }

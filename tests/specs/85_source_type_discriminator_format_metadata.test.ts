@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
-import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir } from '../lib/storage.js';
+import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir, testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -12,7 +12,7 @@ const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 const DB_MODULE = resolve(ROOT, 'packages/core/dist/database/index.js');
 const FIXTURE_DIR = resolve(ROOT, 'fixtures/raw');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
-const STORAGE_RAW_DIR = resolve(ROOT, '.local/storage/raw');
+const STORAGE_RAW_DIR = testStoragePath('raw');
 
 const SOURCE_TYPES = ['pdf', 'image', 'text', 'docx', 'spreadsheet', 'email', 'url'] as const;
 const DB_CONFIG_JSON = JSON.stringify({

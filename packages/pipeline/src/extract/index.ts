@@ -15,6 +15,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type {
+	CompactDocumentQualitySummary,
 	DocumentAiResult,
 	EmailAttachmentSummary,
 	EmailExtractionResult,
@@ -37,6 +38,7 @@ import {
 	EXTRACT_ERROR_CODES,
 	ExtractError,
 	extractPdfMetadata,
+	findLatestDocumentQualityAssessment,
 	findSourceByHash,
 	findSourceById,
 	getStepConfigHash,
@@ -48,6 +50,7 @@ import {
 } from '@mulder/core';
 import { PDFParse } from 'pdf-parse';
 import type pg from 'pg';
+import { ensureRawDocumentBlob } from '../ingest/raw-blob.js';
 import {
 	buildDocxFormatMetadata,
 	buildEmailFormatMetadata,
@@ -64,6 +67,7 @@ import {
 	isSupportedTextFilename,
 	isSupportedTextMediaType,
 } from '../ingest/source-type.js';
+import { buildCompactDocumentQualitySummary, isAutomaticExtractionAllowed } from '../quality/index.js';
 import { layoutToMarkdown } from './layout-to-markdown.js';
 import { assertFallbackOnlySupported, requireExtractRoute } from './source-routing.js';
 import type { ExtractInput, ExtractionData, ExtractResult, LayoutBlock, LayoutDocument, LayoutPage } from './types.js';
@@ -101,6 +105,13 @@ export type {
 // ────────────────────────────────────────────────────────────
 
 const STEP_NAME = 'extract';
+
+function mergeQualitySummary(
+	metadata: Record<string, unknown>,
+	qualitySummary?: CompactDocumentQualitySummary | null,
+): Record<string, unknown> {
+	return qualitySummary ? { ...metadata, ...qualitySummary } : metadata;
+}
 
 // ────────────────────────────────────────────────────────────
 // Native text extraction (Path A)
@@ -314,10 +325,12 @@ async function extractTextSource(input: {
 	filename: string;
 	storagePath: string;
 	formatMetadata: Record<string, unknown>;
+	sourceMetadata: Record<string, unknown>;
 	config: MulderConfig;
 	services: Services;
 	pool: pg.Pool;
 	stepConfigHash: string;
+	qualitySummary?: CompactDocumentQualitySummary | null;
 	logger: Logger;
 }): Promise<ExtractionData> {
 	let buffer: Buffer;
@@ -376,11 +389,14 @@ async function extractTextSource(input: {
 		gcsMarkdownUri: markdownUri,
 		gcsMetadataUri: metadataUri,
 		extractionConfidence: 1.0,
-		metadata: {
-			source_type: 'text',
-			is_markdown: isMarkdown,
-			original_storage_path: input.storagePath,
-		},
+		metadata: mergeQualitySummary(
+			{
+				source_type: 'text',
+				is_markdown: isMarkdown,
+				original_storage_path: input.storagePath,
+			},
+			input.qualitySummary,
+		),
 	});
 
 	await updateSourceStatus(input.pool, input.sourceId, 'extracted');
@@ -456,6 +472,7 @@ async function extractDocxSource(input: {
 	services: Services;
 	pool: pg.Pool;
 	stepConfigHash: string;
+	qualitySummary?: CompactDocumentQualitySummary | null;
 	logger: Logger;
 }): Promise<ExtractionData> {
 	let buffer: Buffer;
@@ -515,12 +532,15 @@ async function extractDocxSource(input: {
 		gcsMarkdownUri: markdownUri,
 		gcsMetadataUri: metadataUri,
 		extractionConfidence: 1.0,
-		metadata: {
-			source_type: 'docx',
-			office_format: 'docx',
-			extraction_engine: officeResult.extractionEngine,
-			original_storage_path: input.storagePath,
-		},
+		metadata: mergeQualitySummary(
+			{
+				source_type: 'docx',
+				office_format: 'docx',
+				extraction_engine: officeResult.extractionEngine,
+				original_storage_path: input.storagePath,
+			},
+			input.qualitySummary,
+		),
 	});
 
 	await updateSourceStatus(input.pool, input.sourceId, 'extracted');
@@ -775,6 +795,7 @@ async function writeSpreadsheetStory(input: {
 	services: Services;
 	pool: pg.Pool;
 	storagePath: string;
+	qualitySummary?: CompactDocumentQualitySummary | null;
 }): Promise<void> {
 	const rows = input.sheet.rows.slice(input.rowStart - 1, input.rowEnd);
 	const hints = extractSpreadsheetHints({
@@ -827,17 +848,20 @@ async function writeSpreadsheetStory(input: {
 		gcsMarkdownUri: markdownUri,
 		gcsMetadataUri: metadataUri,
 		extractionConfidence: 1.0,
-		metadata: {
-			source_type: 'spreadsheet',
-			tabular_format: input.tabularFormat,
-			sheet_name: input.sheet.name,
-			row_start: input.rowStart,
-			row_end: input.rowEnd,
-			row_count: rows.length,
-			column_count: input.sheet.headers.length,
-			entity_hints: hints,
-			original_storage_path: input.storagePath,
-		},
+		metadata: mergeQualitySummary(
+			{
+				source_type: 'spreadsheet',
+				tabular_format: input.tabularFormat,
+				sheet_name: input.sheet.name,
+				row_start: input.rowStart,
+				row_end: input.rowEnd,
+				row_count: rows.length,
+				column_count: input.sheet.headers.length,
+				entity_hints: hints,
+				original_storage_path: input.storagePath,
+			},
+			input.qualitySummary,
+		),
 	});
 }
 
@@ -846,10 +870,12 @@ async function extractSpreadsheetSource(input: {
 	filename: string;
 	storagePath: string;
 	formatMetadata: Record<string, unknown>;
+	sourceMetadata: Record<string, unknown>;
 	config: MulderConfig;
 	services: Services;
 	pool: pg.Pool;
 	stepConfigHash: string;
+	qualitySummary?: CompactDocumentQualitySummary | null;
 	logger: Logger;
 }): Promise<ExtractionData> {
 	let buffer: Buffer;
@@ -903,6 +929,7 @@ async function extractSpreadsheetSource(input: {
 					services: input.services,
 					pool: input.pool,
 					storagePath: input.storagePath,
+					qualitySummary: input.qualitySummary,
 				});
 				storyCount++;
 			}
@@ -915,19 +942,15 @@ async function extractSpreadsheetSource(input: {
 		);
 	}
 
+	const updatedFormatMetadata = buildSpreadsheetFormatMetadata({
+		buffer,
+		filename: input.filename,
+		extractionResult,
+		mediaType,
+	});
 	await updateSource(input.pool, input.sourceId, {
-		formatMetadata: buildSpreadsheetFormatMetadata({
-			buffer,
-			filename: input.filename,
-			extractionResult,
-			mediaType,
-		}),
-		metadata: buildSpreadsheetFormatMetadata({
-			buffer,
-			filename: input.filename,
-			extractionResult,
-			mediaType,
-		}),
+		formatMetadata: updatedFormatMetadata,
+		metadata: { ...input.sourceMetadata, ...updatedFormatMetadata },
 		status: 'extracted',
 	});
 	await upsertSourceStep(input.pool, {
@@ -1304,12 +1327,25 @@ async function registerAttachmentChildSources(input: {
 		const fileHash = computeFileHash(attachment.content);
 		const existing = await findSourceByHash(input.pool, fileHash);
 		if (existing) {
-			summaries.push({ ...summary, childSourceId: existing.id });
+			try {
+				await ensureRawDocumentBlob({
+					services: input.services,
+					pool: input.pool,
+					contentHash: fileHash,
+					content: attachment.content,
+					mediaType: detection.mediaType,
+					storageExtension,
+					filename: attachment.filename,
+				});
+				summaries.push({ ...summary, childSourceId: existing.id });
+			} catch (cause: unknown) {
+				input.logger.warn({ err: cause, filename: attachment.filename }, 'Email attachment blob registration failed');
+				summaries.push(summary);
+			}
 			continue;
 		}
 
 		const childSourceId = randomUUID();
-		const storagePath = `raw/${childSourceId}/original.${storageExtension}`;
 		try {
 			const childMetadata = await metadataForAttachment({
 				buffer: attachment.content,
@@ -1319,7 +1355,15 @@ async function registerAttachmentChildSources(input: {
 				services: input.services,
 				sourceId: childSourceId,
 			});
-			await input.services.storage.upload(storagePath, attachment.content, detection.mediaType);
+			const storagePath = await ensureRawDocumentBlob({
+				services: input.services,
+				pool: input.pool,
+				contentHash: fileHash,
+				content: attachment.content,
+				mediaType: detection.mediaType,
+				storageExtension,
+				filename: attachment.filename,
+			});
 			const child = await createSource(input.pool, {
 				id: childSourceId,
 				filename: attachment.filename,
@@ -1333,16 +1377,12 @@ async function registerAttachmentChildSources(input: {
 				nativeTextRatio: childMetadata.nativeTextRatio,
 				metadata: childMetadata.formatMetadata,
 			});
-			if (child.id !== childSourceId) {
-				await input.services.storage.delete(storagePath).catch(() => undefined);
-			}
 			summaries.push({ ...summary, childSourceId: child.id });
 		} catch (cause: unknown) {
 			input.logger.warn(
 				{ err: cause, filename: attachment.filename },
 				'Email attachment child source registration failed',
 			);
-			await input.services.storage.delete(storagePath).catch(() => undefined);
 			summaries.push(summary);
 		}
 	}
@@ -1354,10 +1394,12 @@ async function extractEmailSource(input: {
 	filename: string;
 	storagePath: string;
 	formatMetadata: Record<string, unknown>;
+	sourceMetadata: Record<string, unknown>;
 	config: MulderConfig;
 	services: Services;
 	pool: pg.Pool;
 	stepConfigHash: string;
+	qualitySummary?: CompactDocumentQualitySummary | null;
 	logger: Logger;
 }): Promise<ExtractionData> {
 	let buffer: Buffer;
@@ -1442,17 +1484,20 @@ async function extractEmailSource(input: {
 		gcsMarkdownUri: markdownUri,
 		gcsMetadataUri: metadataUri,
 		extractionConfidence: 1.0,
-		metadata: {
-			source_type: 'email',
-			email_format: emailResult.emailFormat,
-			message_id: emailResult.headers.messageId,
-			thread_id: emailResult.headers.threadId,
-			subject: emailResult.headers.subject,
-			sent_at: emailResult.headers.sentAt,
-			attachments,
-			entity_hints: hints,
-			original_storage_path: input.storagePath,
-		},
+		metadata: mergeQualitySummary(
+			{
+				source_type: 'email',
+				email_format: emailResult.emailFormat,
+				message_id: emailResult.headers.messageId,
+				thread_id: emailResult.headers.threadId,
+				subject: emailResult.headers.subject,
+				sent_at: emailResult.headers.sentAt,
+				attachments,
+				entity_hints: hints,
+				original_storage_path: input.storagePath,
+			},
+			input.qualitySummary,
+		),
 	});
 
 	const updatedFormatMetadata = buildEmailFormatMetadata(buffer, input.filename, mediaType, {
@@ -1464,7 +1509,7 @@ async function extractEmailSource(input: {
 	});
 	await updateSource(input.pool, input.sourceId, {
 		formatMetadata: updatedFormatMetadata,
-		metadata: updatedFormatMetadata,
+		metadata: { ...input.sourceMetadata, ...updatedFormatMetadata },
 		status: 'extracted',
 	});
 	await upsertSourceStep(input.pool, {
@@ -1659,10 +1704,12 @@ async function extractUrlSource(input: {
 	filename: string;
 	storagePath: string;
 	formatMetadata: Record<string, unknown>;
+	sourceMetadata: Record<string, unknown>;
 	config: MulderConfig;
 	services: Services;
 	pool: pg.Pool;
 	stepConfigHash: string;
+	qualitySummary?: CompactDocumentQualitySummary | null;
 	logger: Logger;
 }): Promise<ExtractionData> {
 	let buffer: Buffer;
@@ -1725,22 +1772,25 @@ async function extractUrlSource(input: {
 		gcsMarkdownUri: markdownUri,
 		gcsMetadataUri: metadataUri,
 		extractionConfidence: 1.0,
-		metadata: {
-			source_type: 'url',
-			original_url: storyMetadata.original_url,
-			final_url: storyMetadata.final_url,
-			canonical_url: storyMetadata.canonical_url,
-			host: storyMetadata.host,
-			site_name: storyMetadata.site_name,
-			byline: storyMetadata.byline,
-			published_time: storyMetadata.published_time,
-			modified_time: storyMetadata.modified_time,
-			rendering_method: storyMetadata.rendering_method,
-			rendering_engine: storyMetadata.rendering_engine,
-			parser_engine: urlResult.parserEngine,
-			entity_hints: urlResult.entityHints,
-			original_storage_path: input.storagePath,
-		},
+		metadata: mergeQualitySummary(
+			{
+				source_type: 'url',
+				original_url: storyMetadata.original_url,
+				final_url: storyMetadata.final_url,
+				canonical_url: storyMetadata.canonical_url,
+				host: storyMetadata.host,
+				site_name: storyMetadata.site_name,
+				byline: storyMetadata.byline,
+				published_time: storyMetadata.published_time,
+				modified_time: storyMetadata.modified_time,
+				rendering_method: storyMetadata.rendering_method,
+				rendering_engine: storyMetadata.rendering_engine,
+				parser_engine: urlResult.parserEngine,
+				entity_hints: urlResult.entityHints,
+				original_storage_path: input.storagePath,
+			},
+			input.qualitySummary,
+		),
 	});
 
 	const updatedFormatMetadata = {
@@ -1757,7 +1807,7 @@ async function extractUrlSource(input: {
 	};
 	await updateSource(input.pool, input.sourceId, {
 		formatMetadata: updatedFormatMetadata,
-		metadata: updatedFormatMetadata,
+		metadata: { ...input.sourceMetadata, ...updatedFormatMetadata },
 		status: 'extracted',
 	});
 	await upsertSourceStep(input.pool, {
@@ -2014,7 +2064,7 @@ async function forceCleanup(sourceId: string, services: Services, pool: pg.Pool,
 	}
 	logger.debug({ sourceId, deletedFiles: existingSegments.paths.length }, 'Deleted downstream segment artifacts');
 
-	// 2. Atomic DB reset — cascading-deletes stories, chunks, edges, ALL source_steps
+	// 2. Atomic DB reset — cascading-deletes stories, chunks, edges, and downstream source_steps.
 	await resetPipelineStep(pool, sourceId, 'extract');
 	logger.info({ sourceId }, 'Force cleanup complete — source status reset to ingested');
 }
@@ -2132,6 +2182,48 @@ export async function execute(
 		assertFallbackOnlySupported(route, { sourceId: input.sourceId });
 	}
 
+	let didForceCleanup = false;
+	if (input.force && source.status !== 'ingested') {
+		await forceCleanup(input.sourceId, services, pool, log);
+		didForceCleanup = true;
+	}
+
+	const latestQuality = config.document_quality.enabled
+		? await findLatestDocumentQualityAssessment(pool, input.sourceId)
+		: null;
+	const qualitySummary =
+		latestQuality && config.document_quality.quality_propagation.enabled
+			? buildCompactDocumentQualitySummary(latestQuality)
+			: null;
+	if (latestQuality && !isAutomaticExtractionAllowed({ assessment: latestQuality, source })) {
+		await upsertSourceStep(pool, {
+			sourceId: input.sourceId,
+			stepName: STEP_NAME,
+			status: 'skipped',
+			configHash: stepConfigHash,
+			errorMessage: `quality route ${latestQuality.recommendedPath} is not automatically extractable`,
+		});
+		log.info(
+			{
+				assessmentId: latestQuality.id,
+				overallQuality: latestQuality.overallQuality,
+				recommendedPath: latestQuality.recommendedPath,
+			},
+			'Extract skipped by document quality assessment',
+		);
+		return {
+			status: 'skipped',
+			data: null,
+			errors: [],
+			metadata: {
+				duration_ms: Math.round(performance.now() - startTime),
+				items_processed: 0,
+				items_skipped: source.pageCount ?? 1,
+				items_cached: 0,
+			},
+		};
+	}
+
 	// 2. Validate status
 	const validStatuses = ['ingested', 'extracted', 'segmented', 'enriched', 'embedded', 'graphed', 'analyzed'];
 	if (!validStatuses.includes(source.status)) {
@@ -2159,7 +2251,7 @@ export async function execute(
 	}
 
 	// 3. Force cleanup if --force
-	if (input.force && source.status !== 'ingested') {
+	if (input.force && source.status !== 'ingested' && !didForceCleanup) {
 		await forceCleanup(input.sourceId, services, pool, log);
 	}
 
@@ -2174,10 +2266,12 @@ export async function execute(
 					filename: source.filename,
 					storagePath: source.storagePath,
 					formatMetadata: source.formatMetadata,
+					sourceMetadata: source.metadata,
 					config,
 					services,
 					pool,
 					stepConfigHash,
+					qualitySummary,
 					logger: log,
 				});
 				break;
@@ -2190,6 +2284,7 @@ export async function execute(
 					services,
 					pool,
 					stepConfigHash,
+					qualitySummary,
 					logger: log,
 				});
 				break;
@@ -2199,10 +2294,12 @@ export async function execute(
 					filename: source.filename,
 					storagePath: source.storagePath,
 					formatMetadata: source.formatMetadata,
+					sourceMetadata: source.metadata,
 					config,
 					services,
 					pool,
 					stepConfigHash,
+					qualitySummary,
 					logger: log,
 				});
 				break;
@@ -2212,10 +2309,12 @@ export async function execute(
 					filename: source.filename,
 					storagePath: source.storagePath,
 					formatMetadata: source.formatMetadata,
+					sourceMetadata: source.metadata,
 					config,
 					services,
 					pool,
 					stepConfigHash,
+					qualitySummary,
 					logger: log,
 				});
 				break;
@@ -2225,10 +2324,12 @@ export async function execute(
 					filename: source.filename,
 					storagePath: source.storagePath,
 					formatMetadata: source.formatMetadata,
+					sourceMetadata: source.metadata,
 					config,
 					services,
 					pool,
 					stepConfigHash,
+					qualitySummary,
 					logger: log,
 				});
 				break;

@@ -24,6 +24,7 @@ import type {
 	StepError,
 } from '@mulder/core';
 import {
+	buildContentAddressedBlobPath,
 	computeUrlLifecycleNextAllowedAt,
 	createChildLogger,
 	createSource,
@@ -35,10 +36,12 @@ import {
 	INGEST_ERROR_CODES,
 	IngestError,
 	normalizeUrlLifecycleHost,
+	recordIngestProvenance,
 	recordUrlHostLifecycle,
 	recordUrlLifecycleFetch,
 	resolveUrlPolitenessDelayMs,
 	sleepForUrlPoliteness,
+	upsertDocumentBlob,
 	upsertSourceStep,
 	urlLifecycleHeaderValue,
 } from '@mulder/core';
@@ -50,6 +53,7 @@ import {
 	normalizeCrossFormatText,
 	withCrossFormatDedupMetadata,
 } from './cross-format-dedup.js';
+import { ensureRawDocumentBlob } from './raw-blob.js';
 import {
 	buildDocxFormatMetadata,
 	buildEmailFormatMetadata,
@@ -71,7 +75,7 @@ import {
 	sanitizeUrlInputForDisplay,
 	URL_SNAPSHOT_MEDIA_TYPE,
 } from './source-type.js';
-import type { IngestFileResult, IngestInput, IngestResult } from './types.js';
+import type { IngestFileResult, IngestInput, IngestProvenanceInput, IngestResult } from './types.js';
 import { filenameForUrlSnapshot, prepareUrlSnapshot } from './url-snapshot.js';
 
 export type {
@@ -139,7 +143,8 @@ export {
 	URL_SNAPSHOT_MEDIA_TYPE,
 	XLSX_MEDIA_TYPE,
 } from './source-type.js';
-export type { IngestFileResult, IngestInput, IngestResult } from './types.js';
+export type { IngestFileResult, IngestInput, IngestProvenanceInput, IngestResult } from './types.js';
+export { ingestProvenanceInputSchema, parseIngestProvenanceInput } from './types.js';
 
 const STEP_NAME = 'ingest';
 
@@ -227,6 +232,7 @@ interface ProcessFileContext {
 	pool: pg.Pool | undefined;
 	logger: Logger;
 	tags?: string[];
+	provenance?: IngestProvenanceInput;
 	dryRun: boolean;
 }
 
@@ -258,6 +264,42 @@ function isIngestibleSourceType(sourceType: SourceType): sourceType is Ingestibl
 function stringMetadataValue(metadata: SourceFormatMetadata, key: string): string | null {
 	const value = metadata[key];
 	return typeof value === 'string' ? value : null;
+}
+
+async function recordSuccessfulIngestProvenance(input: {
+	ctx: ProcessFileContext;
+	source: Source;
+	blobContentHash: string;
+	defaultChannel: 'manual_upload' | 'web_research';
+}): Promise<void> {
+	if (!input.ctx.pool || input.ctx.dryRun) {
+		return;
+	}
+
+	const explicitContext = input.ctx.provenance?.context;
+	await recordIngestProvenance(input.ctx.pool, {
+		blobContentHash: input.blobContentHash,
+		sourceId: input.source.id,
+		context: {
+			channel: explicitContext?.channel ?? input.defaultChannel,
+			submittedBy: {
+				userId: explicitContext?.submittedBy?.userId ?? 'mulder-cli',
+				type: explicitContext?.submittedBy?.type ?? 'system',
+				role: explicitContext?.submittedBy?.role ?? null,
+			},
+			submittedAt: explicitContext?.submittedAt,
+			collectionId: explicitContext?.collectionId ?? null,
+			submissionNotes: explicitContext?.submissionNotes ?? null,
+			submissionMetadata: explicitContext?.submissionMetadata ?? {},
+			authenticityStatus: explicitContext?.authenticityStatus ?? 'unverified',
+			authenticityNotes: explicitContext?.authenticityNotes ?? null,
+		},
+		originalSource: input.ctx.provenance?.originalSource ?? null,
+		custodyChain: input.ctx.provenance?.custodyChain ?? [],
+		archive: input.ctx.provenance?.archive ?? null,
+		archiveLocation: input.ctx.provenance?.archiveLocation,
+		config: input.ctx.config.ingest_provenance,
+	});
 }
 
 function buildUrlCrossFormatDedupContent(title: string | null, readabilityMarkdown: string | null): string | null {
@@ -391,6 +433,14 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 		const existing = await findSourceByHash(ctx.pool, fileHash);
 		if (existing) {
 			log.info({ sourceId: existing.id, fileHash }, 'Duplicate URL snapshot detected, skipping upload');
+			await upsertDocumentBlob(ctx.pool, {
+				contentHash: fileHash,
+				storagePath: existing.storagePath,
+				storageUri: ctx.services.storage.buildUri(existing.storagePath),
+				mimeType: URL_SNAPSHOT_MEDIA_TYPE,
+				fileSizeBytes: prepared.html.byteLength,
+				originalFilenames: [filename],
+			});
 			await recordUrlLifecycleForFetch({
 				ctx,
 				source: existing,
@@ -399,6 +449,12 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 				fileHash,
 				storagePath: existing.storagePath,
 				changeKind: 'unchanged',
+			});
+			await recordSuccessfulIngestProvenance({
+				ctx,
+				source: existing,
+				blobContentHash: fileHash,
+				defaultChannel: 'web_research',
 			});
 			return {
 				sourceId: existing.id,
@@ -494,6 +550,14 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 
 	if (source.id !== sourceId) {
 		await ctx.services.storage.delete(storagePath).catch(() => undefined);
+		await upsertDocumentBlob(ctx.pool, {
+			contentHash: fileHash,
+			storagePath: source.storagePath,
+			storageUri: ctx.services.storage.buildUri(source.storagePath),
+			mimeType: URL_SNAPSHOT_MEDIA_TYPE,
+			fileSizeBytes: prepared.html.byteLength,
+			originalFilenames: [filename],
+		});
 		await recordUrlLifecycleForFetch({
 			ctx,
 			source,
@@ -502,6 +566,12 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 			fileHash,
 			storagePath: source.storagePath,
 			changeKind: 'unchanged',
+		});
+		await recordSuccessfulIngestProvenance({
+			ctx,
+			source,
+			blobContentHash: fileHash,
+			defaultChannel: 'web_research',
 		});
 		return {
 			sourceId: source.id,
@@ -517,6 +587,14 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 		};
 	}
 
+	await upsertDocumentBlob(ctx.pool, {
+		contentHash: fileHash,
+		storagePath: source.storagePath,
+		storageUri: ctx.services.storage.buildUri(source.storagePath),
+		mimeType: URL_SNAPSHOT_MEDIA_TYPE,
+		fileSizeBytes: prepared.html.byteLength,
+		originalFilenames: [filename],
+	});
 	await recordUrlLifecycleForFetch({
 		ctx,
 		source,
@@ -525,6 +603,12 @@ async function processUrl(inputUrl: string, ctx: ProcessFileContext): Promise<In
 		fileHash,
 		storagePath: source.storagePath,
 		changeKind: 'initial',
+	});
+	await recordSuccessfulIngestProvenance({
+		ctx,
+		source,
+		blobContentHash: fileHash,
+		defaultChannel: 'web_research',
 	});
 
 	await upsertSourceStep(ctx.pool, {
@@ -887,6 +971,21 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		const existing = await findSourceByHash(ctx.pool, fileHash);
 		if (existing) {
 			log.info({ sourceId: existing.id, fileHash }, 'Duplicate file detected, skipping upload');
+			await ensureRawDocumentBlob({
+				services: ctx.services,
+				pool: ctx.pool,
+				contentHash: fileHash,
+				content: buffer,
+				mediaType: prepared.mediaType,
+				storageExtension: prepared.storageExtension,
+				filename,
+			});
+			await recordSuccessfulIngestProvenance({
+				ctx,
+				source: existing,
+				blobContentHash: fileHash,
+				defaultChannel: 'manual_upload',
+			});
 			return {
 				sourceId: existing.id,
 				filename,
@@ -929,7 +1028,7 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 
 	// i. Dry run: skip upload and DB insert
 	const sourceId = randomUUID();
-	const storagePath = `raw/${sourceId}/original.${prepared.storageExtension}`;
+	let storagePath = buildContentAddressedBlobPath(fileHash, prepared.storageExtension);
 
 	if (ctx.dryRun) {
 		log.info({ sourceId, filename, pageCount: prepared.pageCount }, 'Dry run — skipping upload and DB insert');
@@ -957,9 +1056,17 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		});
 	}
 
-	// j. Upload to storage
+	// j. Upload to content-addressed storage and register the blob
 	try {
-		await ctx.services.storage.upload(storagePath, buffer, prepared.mediaType);
+		storagePath = await ensureRawDocumentBlob({
+			services: ctx.services,
+			pool: ctx.pool,
+			contentHash: fileHash,
+			content: buffer,
+			mediaType: prepared.mediaType,
+			storageExtension: prepared.storageExtension,
+			filename,
+		});
 	} catch (cause: unknown) {
 		throw new IngestError(`Upload failed for ${filename}`, INGEST_ERROR_CODES.INGEST_UPLOAD_FAILED, {
 			cause,
@@ -983,20 +1090,12 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 	});
 
 	if (source.id !== sourceId) {
-		if (source.storagePath !== storagePath) {
-			try {
-				await ctx.services.storage.delete(storagePath);
-				log.info(
-					{ sourceId: source.id, duplicateUploadPath: storagePath },
-					'Duplicate file race detected, removed unused uploaded object',
-				);
-			} catch (cause: unknown) {
-				log.warn(
-					{ err: cause, sourceId: source.id, duplicateUploadPath: storagePath },
-					'Duplicate file race detected, but unused uploaded object cleanup failed',
-				);
-			}
-		}
+		await recordSuccessfulIngestProvenance({
+			ctx,
+			source,
+			blobContentHash: fileHash,
+			defaultChannel: 'manual_upload',
+		});
 		return {
 			sourceId: source.id,
 			filename,
@@ -1017,6 +1116,12 @@ async function processFile(filePath: string, ctx: ProcessFileContext): Promise<I
 		sourceId: source.id,
 		stepName: STEP_NAME,
 		status: 'completed',
+	});
+	await recordSuccessfulIngestProvenance({
+		ctx,
+		source,
+		blobContentHash: fileHash,
+		defaultChannel: 'manual_upload',
 	});
 
 	// m. Firestore observability (fire-and-forget)
@@ -1118,6 +1223,7 @@ export async function execute(
 		pool,
 		logger: log,
 		tags: input.tags,
+		provenance: input.provenance,
 		dryRun: input.dryRun ?? false,
 	};
 

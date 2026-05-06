@@ -11,18 +11,21 @@
 import { createHash } from 'node:crypto';
 import type { MulderConfig, Services, SourceFormatMetadata, SourceType } from '@mulder/core';
 import {
+	buildContentAddressedBlobPath,
 	createChildLogger,
 	createPipelineRun,
 	createSource,
 	detectNativeText,
 	enqueueJob,
 	extractPdfMetadata,
+	findDocumentBlobByHash,
 	findSourceByCrossFormatDedupKey,
 	findSourceByHash,
 	findSourceById,
 	findStoriesBySourceId,
 	INGEST_ERROR_CODES,
 	IngestError,
+	upsertDocumentBlob,
 	upsertPipelineRunSource,
 	upsertSourceStep,
 } from '@mulder/core';
@@ -42,6 +45,7 @@ import {
 	executeExtract,
 	executeGraph,
 	executePipelineRun,
+	executeQuality,
 	executeSegment,
 	getCrossFormatDedupKey,
 	getStorageExtensionForDetection,
@@ -53,6 +57,7 @@ import {
 	type PipelineRunOptions,
 	withCrossFormatDedupMetadata,
 } from '@mulder/pipeline';
+import type pg from 'pg';
 import {
 	type DocumentUploadFinalizeJobPayload,
 	type StoryStepJobPayload,
@@ -70,7 +75,7 @@ export interface DispatchResult {
 export type DispatchResultKind = DispatchResult['jobType'];
 
 function assertStepSucceeded(job: WorkerJobEnvelope, stepName: string, status: string): void {
-	if (status === 'success') {
+	if (status === 'success' || status === 'skipped') {
 		return;
 	}
 
@@ -96,6 +101,10 @@ function assertPipelineRunCompleted(job: WorkerJobEnvelope, status: string): voi
 }
 
 const BROWSER_UPLOAD_PIPELINE_TAG = 'browser-upload';
+
+function isProvisionalRawUploadPath(storagePath: string): boolean {
+	return /^raw\/[^/]+\/original\.[a-z0-9][a-z0-9-]*$/u.test(storagePath);
+}
 
 function buildPdfMetadataJson(pdfMeta: Awaited<ReturnType<typeof extractPdfMetadata>>): Record<string, unknown> {
 	const pdfMetadataJson: Record<string, unknown> = {};
@@ -133,6 +142,52 @@ function isFinalizableSourceType(sourceType: SourceType): sourceType is Finaliza
 	);
 }
 
+async function ensureFinalizedUploadBlob(input: {
+	services: Services;
+	pool: pg.Pool;
+	contentHash: string;
+	content: Buffer;
+	mediaType: string;
+	storageExtension: string;
+	filename: string;
+}): Promise<string> {
+	const existingBlob = await findDocumentBlobByHash(input.pool, input.contentHash);
+	if (existingBlob) {
+		await upsertDocumentBlob(input.pool, {
+			contentHash: input.contentHash,
+			storagePath: existingBlob.storagePath,
+			storageUri: existingBlob.storageUri,
+			mimeType: existingBlob.mimeType,
+			fileSizeBytes: existingBlob.fileSizeBytes,
+			originalFilenames: [input.filename],
+		});
+		return existingBlob.storagePath;
+	}
+
+	const storagePath = buildContentAddressedBlobPath(input.contentHash, input.storageExtension);
+	const exists = await input.services.storage.exists(storagePath);
+	let uploadedAlternate = false;
+	if (!exists) {
+		await input.services.storage.upload(storagePath, input.content, input.mediaType);
+		uploadedAlternate = true;
+	}
+
+	const blob = await upsertDocumentBlob(input.pool, {
+		contentHash: input.contentHash,
+		storagePath,
+		storageUri: input.services.storage.buildUri(storagePath),
+		mimeType: input.mediaType,
+		fileSizeBytes: input.content.byteLength,
+		originalFilenames: [input.filename],
+	});
+
+	if (uploadedAlternate && blob.storagePath !== storagePath) {
+		await input.services.storage.delete(storagePath);
+	}
+
+	return blob.storagePath;
+}
+
 async function runStoryStepForPayload(
 	jobType: 'enrich' | 'embed' | 'graph',
 	payload: StoryStepJobPayload,
@@ -148,11 +203,29 @@ async function runStoryStepForPayload(
 
 	if (payload.storyId) {
 		if (jobType === 'enrich') {
-			await executeEnrich({ storyId: payload.storyId, force }, config, services, pool, log);
+			await executeEnrich(
+				{ storyId: payload.storyId, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
 		} else if (jobType === 'embed') {
-			await executeEmbed({ storyId: payload.storyId, force }, config, services, pool, log);
+			await executeEmbed(
+				{ storyId: payload.storyId, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
 		} else {
-			await executeGraph({ storyId: payload.storyId, force }, config, services, pool, log);
+			await executeGraph(
+				{ storyId: payload.storyId, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
 		}
 		return { status: 'success', story_count: 1 };
 	}
@@ -168,11 +241,29 @@ async function runStoryStepForPayload(
 	let processed = 0;
 	for (const story of stories) {
 		if (jobType === 'enrich') {
-			await executeEnrich({ storyId: story.id, force }, config, services, pool, log);
+			await executeEnrich(
+				{ storyId: story.id, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
 		} else if (jobType === 'embed') {
-			await executeEmbed({ storyId: story.id, force }, config, services, pool, log);
+			await executeEmbed(
+				{ storyId: story.id, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
 		} else {
-			await executeGraph({ storyId: story.id, force }, config, services, pool, log);
+			await executeGraph(
+				{ storyId: story.id, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
 		}
 		processed++;
 	}
@@ -193,6 +284,9 @@ async function finalizeUploadedDocument(
 
 	const existingSource = await findSourceById(pool, payload.sourceId);
 	if (existingSource) {
+		if (payload.storagePath !== existingSource.storagePath && isProvisionalRawUploadPath(payload.storagePath)) {
+			await services.storage.delete(payload.storagePath);
+		}
 		return {
 			result_status: 'created',
 			resolved_source_id: existingSource.id,
@@ -270,6 +364,18 @@ async function finalizeUploadedDocument(
 	const fileHash = createHash('sha256').update(buffer).digest('hex');
 	const duplicateSource = await findSourceByHash(pool, fileHash);
 	if (duplicateSource && duplicateSource.id !== payload.sourceId) {
+		const duplicateStorageExtension = getStorageExtensionForDetection(detection);
+		if (duplicateStorageExtension && detection.mediaType) {
+			await ensureFinalizedUploadBlob({
+				services,
+				pool,
+				contentHash: fileHash,
+				content: buffer,
+				mediaType: detection.mediaType,
+				storageExtension: duplicateStorageExtension,
+				filename: payload.filename,
+			});
+		}
 		await services.storage.delete(payload.storagePath);
 		return {
 			result_status: 'duplicate',
@@ -496,11 +602,16 @@ async function finalizeUploadedDocument(
 		}
 	}
 
-	const finalizedStoragePath = `raw/${payload.sourceId}/original.${finalizedMetadata.storageExtension}`;
+	const finalizedStoragePath = await ensureFinalizedUploadBlob({
+		services,
+		pool,
+		contentHash: fileHash,
+		content: buffer,
+		mediaType: finalizedMetadata.mediaType,
+		storageExtension: finalizedMetadata.storageExtension,
+		filename: payload.filename,
+	});
 	const shouldCleanupOriginalUpload = payload.storagePath !== finalizedStoragePath;
-	if (shouldCleanupOriginalUpload) {
-		await services.storage.upload(finalizedStoragePath, buffer, finalizedMetadata.mediaType);
-	}
 
 	const client = await pool.connect();
 	try {
@@ -522,14 +633,8 @@ async function finalizeUploadedDocument(
 
 		if (source.id !== payload.sourceId) {
 			await client.query('ROLLBACK');
-			await services.storage.delete(finalizedStoragePath);
 			if (shouldCleanupOriginalUpload) {
-				await services.storage.delete(payload.storagePath).catch((cause: unknown) => {
-					log.warn(
-						{ err: cause, sourceId: payload.sourceId, storagePath: payload.storagePath, finalizedStoragePath },
-						'Duplicate upload finalized, but original cleanup failed',
-					);
-				});
+				await services.storage.delete(payload.storagePath);
 			}
 			return {
 				result_status: 'duplicate',
@@ -554,13 +659,13 @@ async function finalizeUploadedDocument(
 				tag: BROWSER_UPLOAD_PIPELINE_TAG,
 				options: {
 					source_id: source.id,
-					from: 'extract',
+					from: 'quality',
 					up_to: null,
 					force: false,
 				},
 			});
 			const pipelineJob = await enqueueJob(client, {
-				type: 'extract',
+				type: 'quality',
 				payload: {
 					sourceId: source.id,
 					runId: run.id,
@@ -595,12 +700,7 @@ async function finalizeUploadedDocument(
 			});
 
 		if (shouldCleanupOriginalUpload) {
-			services.storage.delete(payload.storagePath).catch((cause: unknown) => {
-				log.warn(
-					{ err: cause, sourceId: source.id, storagePath: payload.storagePath, finalizedStoragePath },
-					'Uploaded object canonicalized, but original cleanup failed',
-				);
-			});
+			await services.storage.delete(payload.storagePath);
 		}
 
 		log.info({ sourceId: source.id, storagePath: finalizedStoragePath }, 'Browser upload finalized');
@@ -627,6 +727,11 @@ export const dispatchJob: WorkerDispatchFn = async (job, context) => {
 		case 'extract': {
 			const result = await executeExtract(job.payload, config, services, pool, log);
 			assertStepSucceeded(job, 'extract', result.status);
+			return;
+		}
+		case 'quality': {
+			const result = await executeQuality(job.payload, config, services, pool, log);
+			assertStepSucceeded(job, 'quality', result.status);
 			return;
 		}
 		case 'segment': {

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const PIPELINE_STEP_VALUES = ['extract', 'segment', 'enrich', 'embed', 'graph'] as const;
+export const PIPELINE_STEP_VALUES = ['quality', 'extract', 'segment', 'enrich', 'embed', 'graph'] as const;
 
 export const PipelineStepSchema = z.enum(PIPELINE_STEP_VALUES);
 

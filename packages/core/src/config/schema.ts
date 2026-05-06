@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod';
+import { PII_TYPES, SENSITIVITY_LEVELS } from '../shared/sensitivity.js';
 
 /**
  * Zod 4 helper: `.default({})` no longer works because the default must match
@@ -14,6 +15,8 @@ import { z } from 'zod';
 function defaults<T extends z.ZodObject<z.ZodRawShape>>(schema: T): z.output<T> {
 	return schema.parse({});
 }
+
+const sensitivityLevelSchema = z.enum(SENSITIVITY_LEVELS);
 
 // --- Attribute Types ---
 
@@ -137,6 +140,45 @@ const ingestionObj = z.object({
 });
 const ingestionSchema = ingestionObj.default(defaults(ingestionObj));
 
+// --- Ingest Provenance ---
+
+const ingestProvenanceRequiredMetadataSchema = z.object({
+	channel: z.boolean().default(true),
+	submitted_by: z.boolean().default(true),
+	collection_id: z.boolean().default(false),
+	original_source: z.boolean().default(false),
+	custody_chain: z.boolean().default(false),
+});
+
+const ingestProvenanceArchivesSchema = z.object({
+	auto_register: z.boolean().default(true),
+});
+
+const collectionDefaultPolicySchema = z.object({
+	name: z.string().min(1),
+	description: z.string().default(''),
+	type: z.enum(['archive_mirror', 'thematic', 'import_batch', 'curated', 'other']).default('import_batch'),
+	visibility: z.enum(['private', 'team', 'public']).default('private'),
+	created_by: z.string().min(1).default('system'),
+	tags: z.array(z.string().min(1)).default([]),
+});
+
+const ingestProvenanceCollectionsSchema = z.object({
+	auto_create_from_archive: z.boolean().default(true),
+	auto_tag_from_path_segments: z.boolean().default(true),
+	default_collection: collectionDefaultPolicySchema.nullable().default(null),
+	default_sensitivity_level: sensitivityLevelSchema.default('internal'),
+	default_language: z.string().min(1).default('und'),
+	default_credibility_profile_id: z.string().uuid().nullable().default(null),
+});
+
+const ingestProvenanceObj = z.object({
+	required_metadata: ingestProvenanceRequiredMetadataSchema.default(defaults(ingestProvenanceRequiredMetadataSchema)),
+	archives: ingestProvenanceArchivesSchema.default(defaults(ingestProvenanceArchivesSchema)),
+	collections: ingestProvenanceCollectionsSchema.default(defaults(ingestProvenanceCollectionsSchema)),
+});
+const ingestProvenanceSchema = ingestProvenanceObj.default(defaults(ingestProvenanceObj));
+
 // --- Extraction ---
 
 const segmentationConfigSchema = z.object({
@@ -151,11 +193,123 @@ const extractionObj = z.object({
 });
 const extractionSchema = extractionObj.default(defaults(extractionObj));
 
+// --- Document Quality ---
+
+const documentQualityAssessmentSchema = z.object({
+	method: z.enum(['ocr_confidence', 'gemini_vision', 'both']).default('ocr_confidence'),
+	engine: z.string().min(1).nullable().default(null),
+	ocr_confidence_threshold: z.number().min(0).max(1).default(0.7),
+	native_text_ratio_threshold: z.number().min(0).max(1).default(0.5),
+});
+
+const extractionPathSchema = z.enum([
+	'standard',
+	'enhanced_ocr',
+	'visual_extraction',
+	'handwriting_recognition',
+	'manual_transcription_required',
+	'skip',
+]);
+
+function documentQualityRouteSchema(defaultPath: z.infer<typeof extractionPathSchema>) {
+	return z.object({
+		path: extractionPathSchema.default(defaultPath),
+		fallback: extractionPathSchema.optional(),
+		create_manual_task: z.boolean().optional(),
+	});
+}
+
+const highQualityRouteSchema = documentQualityRouteSchema('standard');
+const mediumQualityRouteSchema = documentQualityRouteSchema('enhanced_ocr');
+const lowQualityRouteSchema = documentQualityRouteSchema('visual_extraction');
+const unusableQualityRouteSchema = documentQualityRouteSchema('skip');
+
+const documentQualityRoutingSchema = z.object({
+	high: highQualityRouteSchema.default({ path: 'standard' }),
+	medium: mediumQualityRouteSchema.default({ path: 'enhanced_ocr', fallback: 'visual_extraction' }),
+	low: lowQualityRouteSchema.default({ path: 'visual_extraction', fallback: 'manual_transcription_required' }),
+	unusable: unusableQualityRouteSchema.default({ path: 'skip', create_manual_task: false }),
+});
+
+const documentQualityPropagationSchema = z.object({
+	enabled: z.boolean().default(true),
+	low_quality_embedding_weight: z.number().min(0).max(1).default(0.5),
+	low_quality_assertion_penalty: z.number().min(0).max(1).default(0.3),
+});
+
+const documentQualityManualQueueSchema = z.object({
+	enabled: z.boolean().default(false),
+	notify_reviewers: z.boolean().default(false),
+	priority: z.enum(['low', 'normal', 'high']).default('normal'),
+});
+
+const documentQualityObj = z.object({
+	enabled: z.boolean().default(true),
+	assessment: documentQualityAssessmentSchema.default(defaults(documentQualityAssessmentSchema)),
+	routing: documentQualityRoutingSchema.default(defaults(documentQualityRoutingSchema)),
+	quality_propagation: documentQualityPropagationSchema.default(defaults(documentQualityPropagationSchema)),
+	manual_queue: documentQualityManualQueueSchema.default(defaults(documentQualityManualQueueSchema)),
+});
+const documentQualitySchema = documentQualityObj.default(defaults(documentQualityObj));
+
+// --- Access Control ---
+
+const piiTypeSchema = z.enum(PII_TYPES);
+
+const accessControlSensitivitySchema = z.object({
+	levels: z.array(sensitivityLevelSchema).default([...SENSITIVITY_LEVELS]),
+	default_level: sensitivityLevelSchema.default('internal'),
+	auto_detection: z.boolean().default(true),
+	propagation: z.enum(['upward']).default('upward'),
+	pii_types: z.array(piiTypeSchema).default([...PII_TYPES]),
+});
+
+const accessControlRbacSchema = z.object({
+	roles_source: z.string().min(1).default('config/roles.yaml'),
+	default_role: z.string().min(1).default('analyst'),
+});
+
+const accessControlExternalQueryGateSchema = z.object({
+	enabled: z.boolean().default(false),
+});
+
+const accessControlObj = z.object({
+	enabled: z.boolean().default(true),
+	sensitivity: accessControlSensitivitySchema.default(defaults(accessControlSensitivitySchema)),
+	rbac: accessControlRbacSchema.default(defaults(accessControlRbacSchema)),
+	external_query_gate: accessControlExternalQueryGateSchema.default(defaults(accessControlExternalQueryGateSchema)),
+});
+const accessControlSchema = accessControlObj.default(defaults(accessControlObj));
+
+// --- Source Rollback ---
+
+const sourceRollbackObj = z.object({
+	undo_window_hours: z.number().positive().int().default(72),
+	auto_purge_after_undo_window: z.boolean().default(true),
+	require_reason: z.boolean().default(true),
+	require_confirmation: z.boolean().default(true),
+	orphan_handling: z.enum(['mark', 'delete']).default('mark'),
+	journal_annotation: z.boolean().default(true),
+	notify_on_purge: z.boolean().default(true),
+});
+const sourceRollbackSchema = sourceRollbackObj.default(defaults(sourceRollbackObj));
+
 // --- Enrichment ---
+
+const assertionClassificationSchema = z.object({
+	enabled: z.boolean().default(true),
+	conservative_labeling: z.boolean().default(true),
+	require_confidence_metadata: z.boolean().default(true),
+	default_provenance: z.enum(['llm_auto', 'human_reviewed', 'author_explicit']).default('llm_auto'),
+	reviewable: z.boolean().default(true),
+	review_depth: z.enum(['spot_check', 'single_review', 'double_review']).default('spot_check'),
+	spot_check_percentage: z.number().int().min(0).max(100).default(20),
+});
 
 const enrichmentObj = z.object({
 	model: z.string().default('gemini-2.5-flash'),
 	max_story_tokens: z.number().positive().int().default(15000),
+	assertion_classification: assertionClassificationSchema.default(defaults(assertionClassificationSchema)),
 });
 const enrichmentSchema = enrichmentObj.default(defaults(enrichmentObj));
 
@@ -407,7 +561,11 @@ const baseMulderConfigSchema = z.object({
 	dev_mode: z.boolean().default(false),
 	ontology: ontologySchema,
 	ingestion: ingestionSchema,
+	ingest_provenance: ingestProvenanceSchema,
 	extraction: extractionSchema,
+	document_quality: documentQualitySchema,
+	access_control: accessControlSchema,
+	source_rollback: sourceRollbackSchema,
 	enrichment: enrichmentSchema,
 	taxonomy: taxonomySchema,
 	entity_resolution: entityResolutionSchema,
@@ -468,12 +626,16 @@ export const mulderConfigSchema = baseMulderConfigSchema.superRefine((data, ctx)
 
 // Export section schemas for reuse
 export {
+	accessControlSchema,
+	accessControlSensitivitySchema,
 	analysisSchema,
 	apiBudgetSchema,
 	apiSchema,
+	assertionClassificationSchema,
 	cloudSqlSchema,
 	deduplicationSchema,
 	documentAiSchema,
+	documentQualitySchema,
 	embeddingSchema,
 	enrichmentSchema,
 	entityResolutionSchema,
@@ -483,6 +645,7 @@ export {
 	graphSchema,
 	groundingSchema,
 	ingestionSchema,
+	ingestProvenanceSchema,
 	ontologySchema,
 	patternDiscoverySchema,
 	pipelineSchema,
@@ -490,6 +653,7 @@ export {
 	relationshipSchema,
 	retrievalSchema,
 	safetySchema,
+	sourceRollbackSchema,
 	storageSchema,
 	taxonomySchema,
 	thresholdsSchema,

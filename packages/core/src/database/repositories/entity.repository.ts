@@ -13,6 +13,12 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
+import {
+	mapArtifactProvenanceFromDb,
+	mergeArtifactProvenanceSql,
+	stringifyArtifactProvenance,
+} from './artifact-provenance.js';
 import type {
 	CreateEntityInput,
 	Entity,
@@ -21,6 +27,7 @@ import type {
 	TaxonomyStatus,
 	UpdateEntityInput,
 } from './entity.types.js';
+import { queryWithSensitivityColumnFallback, queryWithSourceDeletionStatusFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'entity-repository' });
@@ -28,6 +35,38 @@ const repoLogger = createChildLogger(logger, { module: 'entity-repository' });
 /** Type guard for Record<string, unknown> — avoids `as` assertions. */
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function entityActiveSourceClause(entityAlias: string): string {
+	return `
+    (
+      EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(COALESCE(${entityAlias}.provenance->'source_document_ids', '[]'::jsonb)) AS entity_sources(source_id)
+        JOIN sources entity_src ON entity_src.id::text = entity_sources.source_id
+        WHERE entity_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM story_entities entity_story_links
+        JOIN stories entity_stories ON entity_stories.id = entity_story_links.story_id
+        JOIN sources entity_story_src ON entity_story_src.id = entity_stories.source_id
+        WHERE entity_story_links.entity_id = ${entityAlias}.id
+          AND entity_story_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+      )
+      OR (
+        NOT EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(COALESCE(${entityAlias}.provenance->'source_document_ids', '[]'::jsonb)) AS entity_sources(source_id)
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM story_entities entity_story_links
+          WHERE entity_story_links.entity_id = ${entityAlias}.id
+        )
+      )
+    )
+  `;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -46,6 +85,9 @@ export interface EntityRow {
 	source_count: number;
 	taxonomy_status: TaxonomyStatus;
 	taxonomy_id: string | null;
+	provenance: unknown;
+	sensitivity_level: Entity['sensitivityLevel'];
+	sensitivity_metadata: unknown;
 	created_at: Date;
 	updated_at: Date;
 }
@@ -63,6 +105,9 @@ export function mapEntityRow(row: EntityRow): Entity {
 		sourceCount: row.source_count,
 		taxonomyStatus: row.taxonomy_status,
 		taxonomyId: row.taxonomy_id,
+		provenance: mapArtifactProvenanceFromDb(row.provenance),
+		sensitivityLevel: row.sensitivity_level ?? 'internal',
+		sensitivityMetadata: normalizeSensitivityMetadata(row.sensitivity_metadata, row.sensitivity_level ?? 'internal'),
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -81,17 +126,43 @@ export function mapEntityRow(row: EntityRow): Entity {
  */
 export async function createEntity(pool: pg.Pool, input: CreateEntityInput): Promise<Entity> {
 	const hasExplicitId = input.id !== undefined;
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 	const sql = hasExplicitId
 		? `
-    INSERT INTO entities (id, name, type, canonical_id, attributes, taxonomy_status, taxonomy_id)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
-    ON CONFLICT (id) DO UPDATE SET updated_at = now()
+    INSERT INTO entities (id, name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10::jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+      provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+      sensitivity_level = EXCLUDED.sensitivity_level,
+      sensitivity_metadata = EXCLUDED.sensitivity_metadata,
+      updated_at = now()
     RETURNING *
   `
 		: `
-    INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id)
-    VALUES ($1, $2, $3, $4, $5, $6)
-    ON CONFLICT (id) DO UPDATE SET updated_at = now()
+    INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+      provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+      sensitivity_level = EXCLUDED.sensitivity_level,
+      sensitivity_metadata = EXCLUDED.sensitivity_metadata,
+      updated_at = now()
+    RETURNING *
+  `;
+	const legacySql = hasExplicitId
+		? `
+    INSERT INTO entities (id, name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+      provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+      updated_at = now()
+    RETURNING *
+  `
+		: `
+    INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance)
+    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+      provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+      updated_at = now()
     RETURNING *
   `;
 	const baseParams = [
@@ -101,11 +172,16 @@ export async function createEntity(pool: pg.Pool, input: CreateEntityInput): Pro
 		JSON.stringify(input.attributes ?? {}),
 		input.taxonomyStatus ?? 'auto',
 		input.taxonomyId ?? null,
+		stringifyArtifactProvenance(input.provenance),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
 	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
+	const legacyBaseParams = baseParams.slice(0, -2);
+	const legacyParams = hasExplicitId ? [input.id, ...legacyBaseParams] : legacyBaseParams;
 
 	try {
-		const result = await pool.query<EntityRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EntityRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ entityId: row.id, name: input.name, type: input.type }, 'Entity created or found');
 		return mapEntityRow(row);
@@ -126,15 +202,86 @@ export async function createEntity(pool: pg.Pool, input: CreateEntityInput): Pro
  * and bumps `updated_at`.
  */
 export async function upsertEntityByNameType(pool: pg.Pool, input: CreateEntityInput): Promise<Entity> {
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 	const sql = `
-    INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id)
-    VALUES ($1, $2, $3, $4, $5, $6)
-    ON CONFLICT (name, type) WHERE canonical_id IS NULL DO UPDATE SET
-      attributes = COALESCE(NULLIF($4::jsonb, '{}'::jsonb), entities.attributes),
-      taxonomy_status = COALESCE($5, entities.taxonomy_status),
-      taxonomy_id = COALESCE($6, entities.taxonomy_id),
-      updated_at = now()
-    RETURNING *
+    WITH existing AS (
+      UPDATE entities
+      SET
+        attributes = COALESCE(NULLIF($4::jsonb, '{}'::jsonb), entities.attributes),
+        taxonomy_status = COALESCE($5, entities.taxonomy_status),
+        taxonomy_id = COALESCE($6, entities.taxonomy_id),
+        provenance = ${mergeArtifactProvenanceSql('entities.provenance', '$7::jsonb')},
+        sensitivity_level = $8,
+        sensitivity_metadata = $9::jsonb,
+        updated_at = now()
+      WHERE id = (
+        SELECT id
+        FROM entities
+        WHERE name = $1
+          AND type = $2
+          AND $3::uuid IS NULL
+          AND (canonical_id IS NULL OR canonical_id = id)
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+      )
+      RETURNING *
+    ),
+    inserted AS (
+      INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance, sensitivity_level, sensitivity_metadata)
+      SELECT $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb
+      WHERE NOT EXISTS (SELECT 1 FROM existing)
+      ON CONFLICT (name, type) WHERE canonical_id IS NULL DO UPDATE SET
+        attributes = COALESCE(NULLIF($4::jsonb, '{}'::jsonb), entities.attributes),
+        taxonomy_status = COALESCE($5, entities.taxonomy_status),
+        taxonomy_id = COALESCE($6, entities.taxonomy_id),
+        provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+        sensitivity_level = EXCLUDED.sensitivity_level,
+        sensitivity_metadata = EXCLUDED.sensitivity_metadata,
+        updated_at = now()
+      RETURNING *
+    )
+    SELECT * FROM existing
+    UNION ALL
+    SELECT * FROM inserted
+    LIMIT 1
+  `;
+	const legacySql = `
+    WITH existing AS (
+      UPDATE entities
+      SET
+        attributes = COALESCE(NULLIF($4::jsonb, '{}'::jsonb), entities.attributes),
+        taxonomy_status = COALESCE($5, entities.taxonomy_status),
+        taxonomy_id = COALESCE($6, entities.taxonomy_id),
+        provenance = ${mergeArtifactProvenanceSql('entities.provenance', '$7::jsonb')},
+        updated_at = now()
+      WHERE id = (
+        SELECT id
+        FROM entities
+        WHERE name = $1
+          AND type = $2
+          AND $3::uuid IS NULL
+          AND (canonical_id IS NULL OR canonical_id = id)
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+      )
+      RETURNING *
+    ),
+    inserted AS (
+      INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance)
+      SELECT $1, $2, $3, $4, $5, $6, $7::jsonb
+      WHERE NOT EXISTS (SELECT 1 FROM existing)
+      ON CONFLICT (name, type) WHERE canonical_id IS NULL DO UPDATE SET
+        attributes = COALESCE(NULLIF($4::jsonb, '{}'::jsonb), entities.attributes),
+        taxonomy_status = COALESCE($5, entities.taxonomy_status),
+        taxonomy_id = COALESCE($6, entities.taxonomy_id),
+        provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+        updated_at = now()
+      RETURNING *
+    )
+    SELECT * FROM existing
+    UNION ALL
+    SELECT * FROM inserted
+    LIMIT 1
   `;
 	const params = [
 		input.name,
@@ -143,10 +290,14 @@ export async function upsertEntityByNameType(pool: pg.Pool, input: CreateEntityI
 		JSON.stringify(input.attributes ?? {}),
 		input.taxonomyStatus ?? 'auto',
 		input.taxonomyId ?? null,
+		stringifyArtifactProvenance(input.provenance),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
+	const legacyParams = params.slice(0, -2);
 
 	try {
-		const result = await pool.query<EntityRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EntityRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ entityId: row.id, name: input.name, type: input.type }, 'Entity upserted by name+type');
 		return mapEntityRow(row);
@@ -163,11 +314,25 @@ export async function upsertEntityByNameType(pool: pg.Pool, input: CreateEntityI
  *
  * @returns The entity, or `null` if not found.
  */
-export async function findEntityById(pool: pg.Pool, id: string): Promise<Entity | null> {
-	const sql = 'SELECT * FROM entities WHERE id = $1';
+export async function findEntityById(
+	pool: pg.Pool,
+	id: string,
+	options?: { includeDeleted?: boolean },
+): Promise<Entity | null> {
+	const sql = `
+    SELECT e.*
+    FROM entities e
+    WHERE e.id = $1
+      ${options?.includeDeleted ? '' : `AND ${entityActiveSourceClause('e')}`}
+  `;
+	const legacySql = `
+    SELECT e.*
+    FROM entities e
+    WHERE e.id = $1
+  `;
 
 	try {
-		const result = await pool.query<EntityRow>(sql, [id]);
+		const result = await queryWithSourceDeletionStatusFallback<EntityRow>(pool, sql, [id], legacySql, [id]);
 		if (result.rows.length === 0) {
 			return null;
 		}
@@ -183,8 +348,18 @@ export async function findEntityById(pool: pg.Pool, id: string): Promise<Entity 
 /**
  * Finds all entities of a given type, ordered by name.
  */
-export async function findEntitiesByType(pool: pg.Pool, type: string): Promise<Entity[]> {
-	const sql = 'SELECT * FROM entities WHERE type = $1 ORDER BY name';
+export async function findEntitiesByType(
+	pool: pg.Pool,
+	type: string,
+	options?: { includeDeleted?: boolean },
+): Promise<Entity[]> {
+	const sql = `
+    SELECT e.*
+    FROM entities e
+    WHERE e.type = $1
+      ${options?.includeDeleted ? '' : `AND ${entityActiveSourceClause('e')}`}
+    ORDER BY e.name
+  `;
 
 	try {
 		const result = await pool.query<EntityRow>(sql, [type]);
@@ -200,8 +375,18 @@ export async function findEntitiesByType(pool: pg.Pool, type: string): Promise<E
 /**
  * Finds all entities pointing to a canonical entity (merged entities).
  */
-export async function findEntitiesByCanonicalId(pool: pg.Pool, canonicalId: string): Promise<Entity[]> {
-	const sql = 'SELECT * FROM entities WHERE canonical_id = $1 ORDER BY name';
+export async function findEntitiesByCanonicalId(
+	pool: pg.Pool,
+	canonicalId: string,
+	options?: { includeDeleted?: boolean },
+): Promise<Entity[]> {
+	const sql = `
+    SELECT e.*
+    FROM entities e
+    WHERE e.canonical_id = $1
+      ${options?.includeDeleted ? '' : `AND ${entityActiveSourceClause('e')}`}
+    ORDER BY e.name
+  `;
 
 	try {
 		const result = await pool.query<EntityRow>(sql, [canonicalId]);
@@ -226,27 +411,30 @@ export async function findAllEntities(pool: pg.Pool, filter?: EntityFilter): Pro
 	let paramIndex = 1;
 
 	if (filter?.type) {
-		conditions.push(`type = $${paramIndex}`);
+		conditions.push(`e.type = $${paramIndex}`);
 		params.push(filter.type);
 		paramIndex++;
 	}
 
 	if (filter?.canonicalId) {
-		conditions.push(`canonical_id = $${paramIndex}`);
+		conditions.push(`e.canonical_id = $${paramIndex}`);
 		params.push(filter.canonicalId);
 		paramIndex++;
 	}
 
 	if (filter?.taxonomyStatus) {
-		conditions.push(`taxonomy_status = $${paramIndex}`);
+		conditions.push(`e.taxonomy_status = $${paramIndex}`);
 		params.push(filter.taxonomyStatus);
 		paramIndex++;
 	}
 
 	if (filter?.search) {
-		conditions.push(`name ILIKE '%' || $${paramIndex} || '%'`);
+		conditions.push(`e.name ILIKE '%' || $${paramIndex} || '%'`);
 		params.push(filter.search);
 		paramIndex++;
+	}
+	if (!filter?.includeDeleted) {
+		conditions.push(entityActiveSourceClause('e'));
 	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -254,7 +442,7 @@ export async function findAllEntities(pool: pg.Pool, filter?: EntityFilter): Pro
 	const limit = filter?.limit ?? 100;
 	const offset = filter?.offset ?? 0;
 
-	const sql = `SELECT * FROM entities ${whereClause} ORDER BY name ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+	const sql = `SELECT e.* FROM entities e ${whereClause} ORDER BY e.name ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
 	params.push(limit, offset);
 
 	try {
@@ -277,31 +465,34 @@ export async function countEntities(pool: pg.Pool, filter?: EntityFilter): Promi
 	let paramIndex = 1;
 
 	if (filter?.type) {
-		conditions.push(`type = $${paramIndex}`);
+		conditions.push(`e.type = $${paramIndex}`);
 		params.push(filter.type);
 		paramIndex++;
 	}
 
 	if (filter?.canonicalId) {
-		conditions.push(`canonical_id = $${paramIndex}`);
+		conditions.push(`e.canonical_id = $${paramIndex}`);
 		params.push(filter.canonicalId);
 		paramIndex++;
 	}
 
 	if (filter?.taxonomyStatus) {
-		conditions.push(`taxonomy_status = $${paramIndex}`);
+		conditions.push(`e.taxonomy_status = $${paramIndex}`);
 		params.push(filter.taxonomyStatus);
 		paramIndex++;
 	}
 
 	if (filter?.search) {
-		conditions.push(`name ILIKE '%' || $${paramIndex} || '%'`);
+		conditions.push(`e.name ILIKE '%' || $${paramIndex} || '%'`);
 		params.push(filter.search);
 		paramIndex++;
 	}
+	if (!filter?.includeDeleted) {
+		conditions.push(entityActiveSourceClause('e'));
+	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-	const sql = `SELECT COUNT(*) FROM entities ${whereClause}`;
+	const sql = `SELECT COUNT(*) FROM entities e ${whereClause}`;
 
 	try {
 		const result = await pool.query<{ count: string }>(sql, params);
@@ -330,7 +521,8 @@ export async function getEntityCorroborationStats(pool: pg.Pool): Promise<Entity
     SELECT
       COUNT(*) FILTER (WHERE corroboration_score IS NOT NULL AND taxonomy_status <> 'merged') AS scored_count,
       COALESCE(AVG(corroboration_score) FILTER (WHERE corroboration_score IS NOT NULL AND taxonomy_status <> 'merged'), 0) AS avg_corroboration
-    FROM entities
+    FROM entities e
+    WHERE ${entityActiveSourceClause('e')}
   `;
 
 	try {
@@ -384,6 +576,23 @@ export async function updateEntity(pool: pg.Pool, id: string, input: UpdateEntit
 	if (input.attributes !== undefined) {
 		setClauses.push(`attributes = $${paramIndex}`);
 		params.push(JSON.stringify(input.attributes));
+		paramIndex++;
+	}
+
+	if (input.provenance !== undefined) {
+		const incomingRef = `$${paramIndex}::jsonb`;
+		setClauses.push(`provenance = ${mergeArtifactProvenanceSql('entities.provenance', incomingRef)}`);
+		params.push(stringifyArtifactProvenance(input.provenance));
+		paramIndex++;
+	}
+
+	if (input.sensitivityLevel !== undefined || input.sensitivityMetadata !== undefined) {
+		const sensitivityLevel = input.sensitivityLevel ?? 'internal';
+		setClauses.push(`sensitivity_level = $${paramIndex}`);
+		params.push(sensitivityLevel);
+		paramIndex++;
+		setClauses.push(`sensitivity_metadata = $${paramIndex}::jsonb`);
+		params.push(stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel));
 		paramIndex++;
 	}
 

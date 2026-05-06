@@ -12,29 +12,54 @@
  */
 
 import { performance } from 'node:perf_hooks';
-import type { Logger, MulderConfig, Services, StepError } from '@mulder/core';
+import type {
+	DocumentQualityAssessment,
+	Logger,
+	MulderConfig,
+	SensitivityLevel,
+	SensitivityMetadata,
+	Services,
+	StepError,
+} from '@mulder/core';
 import {
 	createChildLogger,
+	defaultSensitivityMetadata,
 	deleteEdgesByStoryId,
+	deleteKnowledgeAssertionsForStory,
 	deleteStoryEntitiesByStoryId,
 	ENRICH_ERROR_CODES,
 	EnrichError,
+	findLatestDocumentQualityAssessment,
 	findStoryById,
 	getStepConfigHash,
 	linkStoryEntity,
+	mapSensitivityMetadataToDb,
+	mergeSensitivityMetadata,
+	normalizeConfidenceMetadata,
+	normalizeSensitivityMetadata,
+	provenanceForSource,
 	renderPrompt,
 	resetPipelineStep,
 	updateEntity,
+	updateSourceSensitivityFromArtifacts,
+	updateStorySensitivityFromArtifacts,
 	updateStoryStatus,
 	upsertEdge,
 	upsertEntityByNameType,
+	upsertKnowledgeAssertion,
 	upsertSourceStep,
 } from '@mulder/core';
 import { normalizeTaxonomy } from '@mulder/taxonomy';
 import type pg from 'pg';
 import { resolveEntity } from './resolution.js';
 import { generateExtractionSchema, getExtractionResponseSchema } from './schema.js';
-import type { EnrichInput, EnrichmentData, EnrichResult, ExtractionResponse } from './types.js';
+import type {
+	EnrichInput,
+	EnrichmentData,
+	EnrichResult,
+	ExtractedSensitivityMetadata,
+	ExtractionResponse,
+} from './types.js';
 
 export { resolveEntity } from './resolution.js';
 export type {
@@ -43,6 +68,7 @@ export type {
 	ResolutionTier,
 	ResolveEntityOptions,
 } from './resolution-types.js';
+export type { ExtractionSchemaOptions } from './schema.js';
 export {
 	generateExtractionSchema,
 	getEntityTypeNames,
@@ -52,8 +78,10 @@ export type {
 	EnrichInput,
 	EnrichmentData,
 	EnrichResult,
+	ExtractedAssertion,
 	ExtractedEntity,
 	ExtractedRelationship,
+	ExtractedSensitivityMetadata,
 	ExtractionResponse,
 } from './types.js';
 
@@ -86,6 +114,66 @@ const PARAGRAPH_CHARS_PER_TOKEN = 2;
 
 function estimateParagraphTokens(text: string): number {
 	return Math.ceil(text.length / PARAGRAPH_CHARS_PER_TOKEN);
+}
+
+function buildAssertionQualityMetadata(assessment: DocumentQualityAssessment | null): Record<string, unknown> | null {
+	if (!assessment) {
+		return null;
+	}
+
+	return {
+		document_quality_assessment_id: assessment.id,
+		overall_quality: assessment.overallQuality,
+		processable: assessment.processable,
+		recommended_path: assessment.recommendedPath,
+		assessed_at: assessment.assessedAt.toISOString(),
+	};
+}
+
+function mapAssertionEntityIds(
+	entityNames: readonly string[] | undefined,
+	entityNameToId: Map<string, string>,
+): string[] {
+	if (!entityNames) {
+		return [];
+	}
+
+	const entityIds = new Set<string>();
+	for (const entityName of entityNames) {
+		const id = entityNameToId.get(entityName.trim());
+		if (id) {
+			entityIds.add(id);
+		}
+	}
+	return [...entityIds].sort();
+}
+
+function toExtractedSensitivityMetadata(value: unknown, fallbackLevel: SensitivityLevel): ExtractedSensitivityMetadata {
+	const metadata = normalizeSensitivityMetadata(value, fallbackLevel);
+	const dbMetadata = mapSensitivityMetadataToDb(metadata);
+	return {
+		level: metadata.level,
+		reason: metadata.reason,
+		assigned_by: metadata.assignedBy,
+		assigned_at: metadata.assignedAt,
+		pii_types: metadata.piiTypes,
+		declassify_date: typeof dbMetadata.declassify_date === 'string' ? dbMetadata.declassify_date : null,
+	};
+}
+
+function mergeExtractedSensitivity(
+	items: readonly (ExtractedSensitivityMetadata | undefined)[],
+	fallbackLevel: SensitivityLevel,
+): ExtractedSensitivityMetadata {
+	return toExtractedSensitivityMetadata(mergeSensitivityMetadata(items, fallbackLevel), fallbackLevel);
+}
+
+function detectedSensitivityMetadata(value: unknown, fallbackLevel: SensitivityLevel): SensitivityMetadata {
+	const metadata = normalizeSensitivityMetadata(value, fallbackLevel);
+	return {
+		...metadata,
+		assignedBy: 'llm_auto',
+	};
 }
 
 // ────────────────────────────────────────────────────────────
@@ -136,8 +224,8 @@ function preChunkMarkdown(markdown: string, targetTokens: number): string[] {
  */
 function mergeExtractionResponses(responses: ExtractionResponse[]): ExtractionResponse {
 	const entityMap = new Map<string, ExtractionResponse['entities'][0]>();
-	const relationshipSet = new Set<string>();
-	const mergedRelationships: ExtractionResponse['relationships'] = [];
+	const relationshipMap = new Map<string, ExtractionResponse['relationships'][0]>();
+	const assertionMap = new Map<string, NonNullable<ExtractionResponse['assertions']>[0]>();
 
 	for (const response of responses) {
 		for (const entity of response.entities) {
@@ -151,6 +239,7 @@ function mergeExtractionResponses(responses: ExtractionResponse[]): ExtractionRe
 					confidence: Math.max(existing.confidence, entity.confidence),
 					mentions: mergedMentions,
 					attributes: { ...existing.attributes, ...entity.attributes },
+					sensitivity: mergeExtractedSensitivity([existing.sensitivity, entity.sensitivity], 'internal'),
 				});
 			} else {
 				entityMap.set(key, entity);
@@ -159,17 +248,42 @@ function mergeExtractionResponses(responses: ExtractionResponse[]): ExtractionRe
 
 		for (const rel of response.relationships) {
 			const key = `${rel.source_entity}:${rel.target_entity}:${rel.relationship_type}`;
-			if (!relationshipSet.has(key)) {
-				relationshipSet.add(key);
-				mergedRelationships.push(rel);
+			const existing = relationshipMap.get(key);
+			if (existing) {
+				relationshipMap.set(key, {
+					...existing,
+					confidence: Math.max(existing.confidence, rel.confidence),
+					attributes: { ...(existing.attributes ?? {}), ...(rel.attributes ?? {}) },
+					sensitivity: mergeExtractedSensitivity([existing.sensitivity, rel.sensitivity], 'internal'),
+				});
+			} else {
+				relationshipMap.set(key, rel);
+			}
+		}
+
+		for (const assertion of response.assertions ?? []) {
+			const key = `${assertion.assertion_type}:${assertion.content}`;
+			const existing = assertionMap.get(key);
+			if (existing) {
+				assertionMap.set(key, {
+					...existing,
+					entity_names: [...new Set([...(existing.entity_names ?? []), ...(assertion.entity_names ?? [])])].sort(),
+					sensitivity: mergeExtractedSensitivity([existing.sensitivity, assertion.sensitivity], 'internal'),
+				});
+			} else {
+				assertionMap.set(key, assertion);
 			}
 		}
 	}
 
-	return {
+	const merged: ExtractionResponse = {
 		entities: [...entityMap.values()],
-		relationships: mergedRelationships,
+		relationships: [...relationshipMap.values()],
 	};
+	if (assertionMap.size > 0) {
+		merged.assertions = [...assertionMap.values()];
+	}
+	return merged;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -181,10 +295,11 @@ function mergeExtractionResponses(responses: ExtractionResponse[]): ExtractionRe
  * Deletes story_entities and entity_edges, resets story status to segmented.
  */
 async function forceCleanupStory(storyId: string, pool: pg.Pool, logger: Logger): Promise<void> {
+	const deletedAssertions = await deleteKnowledgeAssertionsForStory(pool, storyId);
 	const deletedLinks = await deleteStoryEntitiesByStoryId(pool, storyId);
 	const deletedEdges = await deleteEdgesByStoryId(pool, storyId);
 	await updateStoryStatus(pool, storyId, 'segmented');
-	logger.debug({ storyId, deletedLinks, deletedEdges }, 'Force cleanup complete for story');
+	logger.debug({ storyId, deletedAssertions, deletedLinks, deletedEdges }, 'Force cleanup complete for story');
 }
 
 /**
@@ -240,6 +355,20 @@ export async function execute(
 			context: { storyId: input.storyId },
 		});
 	}
+	const artifactProvenance = provenanceForSource(story.sourceId, input.extractionPipelineRun ?? null);
+	const assertionClassificationConfig = config.enrichment.assertion_classification;
+	const assertionClassificationEnabled = assertionClassificationConfig.enabled;
+	const sensitivityConfig = config.access_control.sensitivity;
+	const defaultSensitivityLevel = sensitivityConfig.default_level;
+	const sensitivityAutoDetectionEnabled = config.access_control.enabled && sensitivityConfig.auto_detection;
+	const defaultSensitivity = defaultSensitivityMetadata(defaultSensitivityLevel, {
+		assignedBy: 'policy_rule',
+		reason: 'default_policy',
+	});
+	const latestQualityAssessment = assertionClassificationEnabled
+		? await findLatestDocumentQualityAssessment(pool, story.sourceId)
+		: null;
+	const assertionQualityMetadata = buildAssertionQualityMetadata(latestQualityAssessment);
 
 	// 2. Validate status — must be at least "segmented"
 	const validStatuses = ['segmented', 'enriched', 'embedded', 'graphed', 'analyzed'];
@@ -304,8 +433,14 @@ export async function execute(
 
 	// 6. Generate JSON Schema from ontology
 	const ontology = config.ontology;
-	const jsonSchema = generateExtractionSchema(ontology);
-	const responseSchema = getExtractionResponseSchema(ontology);
+	const extractionSchemaOptions = {
+		assertionClassificationEnabled,
+		sensitivityAutoDetectionEnabled,
+		sensitivityLevels: sensitivityConfig.levels,
+		piiTypes: sensitivityConfig.pii_types,
+	};
+	const jsonSchema = generateExtractionSchema(ontology, extractionSchemaOptions);
+	const responseSchema = getExtractionResponseSchema(ontology, extractionSchemaOptions);
 
 	// 7. Build ontology description for the prompt
 	const ontologyDescription = JSON.stringify(
@@ -336,6 +471,10 @@ export async function execute(
 			locale,
 			ontology: ontologyDescription,
 			story_text: chunk,
+			sensitivity_auto_detection: sensitivityAutoDetectionEnabled ? 'true' : 'false',
+			sensitivity_levels: sensitivityConfig.levels.join(', '),
+			sensitivity_default_level: defaultSensitivityLevel,
+			sensitivity_pii_types: sensitivityConfig.pii_types.join(', '),
 		});
 
 		try {
@@ -387,6 +526,7 @@ export async function execute(
 		{
 			entities: extraction.entities.length,
 			relationships: extraction.relationships.length,
+			assertions: extraction.assertions?.length ?? 0,
 			chunksUsed: textChunks.length,
 			chunksSucceeded: chunkResponses.length,
 		},
@@ -411,6 +551,9 @@ export async function execute(
 
 	for (const extracted of sortedEntities) {
 		try {
+			const sensitivityMetadata = sensitivityAutoDetectionEnabled
+				? detectedSensitivityMetadata(extracted.sensitivity, defaultSensitivityLevel)
+				: defaultSensitivity;
 			// 11a. Taxonomy normalization (must run before upsert so the
 			// resulting entity row carries the canonical taxonomy_id from
 			// the start; cross-story queries can then group entities that
@@ -426,6 +569,9 @@ export async function execute(
 				type: extracted.type,
 				attributes: extracted.attributes,
 				taxonomyId: normResult.taxonomyEntry.id,
+				provenance: artifactProvenance,
+				sensitivityLevel: sensitivityMetadata.level,
+				sensitivityMetadata,
 			});
 			entityNameToId.set(extracted.name, entity.id);
 			if (entity.taxonomyId) {
@@ -440,6 +586,7 @@ export async function execute(
 					pool,
 					services,
 					config: config.entity_resolution,
+					provenance: artifactProvenance,
 				});
 
 				if (resolution.action === 'merged') {
@@ -452,7 +599,7 @@ export async function execute(
 
 			// Set canonical_id to self if not merged (self-canonical)
 			if (!wasMerged && entity.canonicalId === null) {
-				await updateEntity(pool, entity.id, { canonicalId: entity.id });
+				await updateEntity(pool, entity.id, { canonicalId: entity.id, provenance: artifactProvenance });
 			}
 
 			// 11d. Link entity to story
@@ -461,6 +608,9 @@ export async function execute(
 				entityId: entityNameToId.get(extracted.name) ?? entity.id,
 				confidence: extracted.confidence,
 				mentionCount: extracted.mentions.length,
+				provenance: artifactProvenance,
+				sensitivityLevel: sensitivityMetadata.level,
+				sensitivityMetadata,
 			});
 		} catch (cause: unknown) {
 			const message = cause instanceof Error ? cause.message : String(cause);
@@ -492,6 +642,9 @@ export async function execute(
 		}
 
 		try {
+			const sensitivityMetadata = sensitivityAutoDetectionEnabled
+				? detectedSensitivityMetadata(rel.sensitivity, defaultSensitivityLevel)
+				: defaultSensitivity;
 			await upsertEdge(pool, {
 				sourceEntityId,
 				targetEntityId,
@@ -500,6 +653,9 @@ export async function execute(
 				storyId: input.storyId,
 				edgeType: 'RELATIONSHIP',
 				attributes: rel.attributes ?? {},
+				provenance: artifactProvenance,
+				sensitivityLevel: sensitivityMetadata.level,
+				sensitivityMetadata,
 			});
 			relationshipsCreated++;
 		} catch (cause: unknown) {
@@ -520,7 +676,47 @@ export async function execute(
 		}
 	}
 
-	// 13. Determine overall status
+	// 13. Persist classified assertions after resolved entity IDs are known.
+	let assertionsPersisted = 0;
+
+	if (assertionClassificationEnabled) {
+		for (const assertion of extraction.assertions ?? []) {
+			const content = assertion.content.trim();
+			if (content.length === 0) {
+				continue;
+			}
+
+			try {
+				const sensitivityMetadata = sensitivityAutoDetectionEnabled
+					? detectedSensitivityMetadata(assertion.sensitivity, defaultSensitivityLevel)
+					: defaultSensitivity;
+				await upsertKnowledgeAssertion(pool, {
+					sourceId: story.sourceId,
+					storyId: input.storyId,
+					assertionType: assertion.assertion_type,
+					content,
+					confidenceMetadata: normalizeConfidenceMetadata(assertion.confidence_metadata),
+					classificationProvenance:
+						assertion.classification_provenance ?? assertionClassificationConfig.default_provenance,
+					extractedEntityIds: mapAssertionEntityIds(assertion.entity_names, entityNameToId),
+					provenance: artifactProvenance,
+					qualityMetadata: assertionQualityMetadata,
+					sensitivityLevel: sensitivityMetadata.level,
+					sensitivityMetadata,
+				});
+				assertionsPersisted++;
+			} catch (cause: unknown) {
+				const message = cause instanceof Error ? cause.message : String(cause);
+				errors.push({
+					code: ENRICH_ERROR_CODES.ENRICH_ENTITY_WRITE_FAILED,
+					message: `Failed to persist assertion "${content}": ${message}`,
+				});
+				log.warn({ assertionType: assertion.assertion_type, err: cause }, 'Failed to persist assertion');
+			}
+		}
+	}
+
+	// 14. Determine overall status
 	const entitiesExtracted = sortedEntities.length;
 	let status: 'success' | 'partial' | 'failed';
 	if (errors.length === 0) {
@@ -531,8 +727,12 @@ export async function execute(
 		status = 'failed';
 	}
 
-	// 14. Update story status + source step
+	// 15. Update story status + source step
 	if (status !== 'failed') {
+		if (sensitivityConfig.propagation === 'upward') {
+			await updateStorySensitivityFromArtifacts(pool, input.storyId);
+			await updateSourceSensitivityFromArtifacts(pool, story.sourceId);
+		}
 		await updateStoryStatus(pool, input.storyId, 'enriched');
 		await upsertSourceStep(pool, {
 			sourceId: story.sourceId,
@@ -549,7 +749,7 @@ export async function execute(
 		});
 	}
 
-	// 15. Firestore observability (fire-and-forget)
+	// 16. Firestore observability (fire-and-forget)
 	services.firestore
 		.setDocument('stories', input.storyId, {
 			status: status !== 'failed' ? 'enriched' : 'failed',
@@ -557,6 +757,7 @@ export async function execute(
 			entitiesExtracted,
 			entitiesResolved,
 			relationshipsCreated,
+			assertionsPersisted,
 		})
 		.catch(() => {
 			// Silently swallow — Firestore is best-effort observability
@@ -568,6 +769,7 @@ export async function execute(
 		entitiesExtracted,
 		entitiesResolved,
 		relationshipsCreated,
+		assertionsPersisted,
 		taxonomyEntriesAdded,
 		taxonomyLinked,
 		chunksUsed: textChunks.length,
@@ -579,6 +781,7 @@ export async function execute(
 			entitiesExtracted,
 			entitiesResolved,
 			relationshipsCreated,
+			assertionsPersisted,
 			taxonomyEntriesAdded,
 			taxonomyLinked,
 			chunksUsed: textChunks.length,

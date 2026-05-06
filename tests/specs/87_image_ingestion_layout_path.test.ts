@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -8,7 +8,7 @@ import type { DocumentUploadFinalizeJobPayload, WorkerJobEnvelope, WorkerRuntime
 import type { Pool, PoolClient } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
-import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir } from '../lib/storage.js';
+import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir, testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CORE_DIR = resolve(ROOT, 'packages/core');
@@ -23,7 +23,8 @@ const API_APP_DIST = resolve(API_DIR, 'dist/app.js');
 const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 const FIXTURE_PDF = resolve(ROOT, 'fixtures/raw/native-text-sample.pdf');
-const STORAGE_DIR = resolve(ROOT, '.local/storage');
+const STORAGE_DIR = testStoragePath();
+const BLOBS_STORAGE_DIR = resolve(STORAGE_DIR, 'blobs');
 const RAW_STORAGE_DIR = resolve(STORAGE_DIR, 'raw');
 const EXTRACTED_STORAGE_DIR = resolve(STORAGE_DIR, 'extracted');
 
@@ -57,6 +58,7 @@ let workerContext: WorkerRuntimeContext;
 let app: ApiApp;
 let planPipelineSteps: PlanPipelineSteps;
 let pgAvailable = false;
+let blobsSnapshot: StorageSnapshot | null = null;
 let rawSnapshot: StorageSnapshot | null = null;
 let extractedSnapshot: StorageSnapshot | null = null;
 
@@ -109,6 +111,7 @@ function cleanState(): void {
 			'DELETE FROM entities',
 			'DELETE FROM stories',
 			'DELETE FROM sources',
+			'DELETE FROM document_blobs',
 		].join('; '),
 	);
 }
@@ -122,9 +125,10 @@ function sourceIdForFilename(filename: string): string {
 }
 
 function resetStorage(): void {
-	if (!rawSnapshot || !extractedSnapshot) {
+	if (!blobsSnapshot || !rawSnapshot || !extractedSnapshot) {
 		return;
 	}
+	cleanStorageDirSince(blobsSnapshot);
 	cleanStorageDirSince(rawSnapshot);
 	cleanStorageDirSince(extractedSnapshot);
 }
@@ -180,6 +184,11 @@ function writeUploadedObject(storagePath: string, content: Buffer): void {
 	const fullPath = resolve(STORAGE_DIR, storagePath);
 	mkdirSync(dirname(fullPath), { recursive: true });
 	writeFileSync(fullPath, content);
+}
+
+function expectedBlobPath(content: Buffer, extension: string): string {
+	const contentHash = createHash('sha256').update(content).digest('hex');
+	return coreModule.buildContentAddressedBlobPath(contentHash, extension);
 }
 
 async function processOneJob() {
@@ -264,6 +273,7 @@ describe('Spec 87 — Image Ingestion on the Layout Extraction Path', () => {
 		writeFileSync(pngFile, PNG_BYTES);
 		writeFileSync(jpegFile, JPEG_BYTES);
 		writeFileSync(tiffFile, TIFF_BYTES);
+		blobsSnapshot = snapshotStorageDir(BLOBS_STORAGE_DIR);
 		rawSnapshot = snapshotStorageDir(RAW_STORAGE_DIR);
 		extractedSnapshot = snapshotStorageDir(EXTRACTED_STORAGE_DIR);
 
@@ -337,11 +347,12 @@ describe('Spec 87 — Image Ingestion on the Layout Extraction Path', () => {
 		expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
 
 		const sourceId = sourceIdForFilename(basename(pngFile));
+		const storagePath = expectedBlobPath(PNG_BYTES, 'png');
 		const row = db.runSql(
 			`SELECT source_type::text, page_count, has_native_text, native_text_ratio, storage_path, format_metadata->>'media_type' FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
 		);
-		expect(row).toBe(`image|1|f|0|raw/${sourceId}/original.png|image/png`);
-		expect(existsSync(resolve(STORAGE_DIR, `raw/${sourceId}/original.png`))).toBe(true);
+		expect(row).toBe(`image|1|f|0|${storagePath}|image/png`);
+		expect(existsSync(resolve(STORAGE_DIR, storagePath))).toBe(true);
 	});
 
 	it('QA-03: directory ingest discovers PDFs and images', () => {
@@ -445,9 +456,14 @@ describe('Spec 87 — Image Ingestion on the Layout Extraction Path', () => {
 		expect(sourceRow).toBe('image|1|f|0|image/png');
 		expect(
 			db.runSql(
-				`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
+				`SELECT COUNT(*) FROM jobs WHERE type = 'quality' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
 			),
 		).toBe('1');
+		expect(
+			db.runSql(
+				`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
+			),
+		).toBe('0');
 	});
 
 	it('QA-07b: upload finalization canonicalizes storage paths from detected bytes', async () => {
@@ -475,11 +491,12 @@ describe('Spec 87 — Image Ingestion on the Layout Extraction Path', () => {
 
 		const processed = await processOneJob();
 		expect(processed.state).toBe('completed');
+		const storagePath = expectedBlobPath(PNG_BYTES, 'png');
 		const sourceRow = db.runSql(
 			`SELECT source_type::text, storage_path, format_metadata->>'media_type' FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
 		);
-		expect(sourceRow).toBe(`image|raw/${sourceId}/original.png|image/png`);
-		expect(existsSync(resolve(STORAGE_DIR, `raw/${sourceId}/original.png`))).toBe(true);
+		expect(sourceRow).toBe(`image|${storagePath}|image/png`);
+		expect(existsSync(resolve(STORAGE_DIR, storagePath))).toBe(true);
 		expect(existsSync(resolve(STORAGE_DIR, declaredStoragePath))).toBe(false);
 	});
 
@@ -501,7 +518,8 @@ describe('Spec 87 — Image Ingestion on the Layout Extraction Path', () => {
 		);
 		expect(db.runSql(`SELECT COUNT(*) FROM sources WHERE id = ${sqlLiteral(sourceId)};`)).toBe('0');
 		expect(existsSync(resolve(STORAGE_DIR, declaredStoragePath))).toBe(true);
-		expect(existsSync(resolve(STORAGE_DIR, `raw/${sourceId}/original.png`))).toBe(true);
+		const storagePath = expectedBlobPath(PNG_BYTES, 'png');
+		expect(existsSync(resolve(STORAGE_DIR, storagePath))).toBe(true);
 
 		const retryResult = await dispatchFinalizeJob(payload);
 		expect(retryResult).toMatchObject({
@@ -511,8 +529,8 @@ describe('Spec 87 — Image Ingestion on the Layout Extraction Path', () => {
 		const sourceRow = db.runSql(
 			`SELECT source_type::text, storage_path, format_metadata->>'media_type' FROM sources WHERE id = ${sqlLiteral(sourceId)};`,
 		);
-		expect(sourceRow).toBe(`image|raw/${sourceId}/original.png|image/png`);
-		expect(existsSync(resolve(STORAGE_DIR, `raw/${sourceId}/original.png`))).toBe(true);
+		expect(sourceRow).toBe(`image|${storagePath}|image/png`);
+		expect(existsSync(resolve(STORAGE_DIR, storagePath))).toBe(true);
 	});
 
 	it('QA-08: unsupported formats still fail before persistence', () => {

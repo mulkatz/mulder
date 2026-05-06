@@ -220,6 +220,187 @@ export interface EntityEvalResult {
 }
 
 // ────────────────────────────────────────────────────────────
+// Quality-routing golden annotations
+// ────────────────────────────────────────────────────────────
+
+export type DocumentOverallQuality = 'high' | 'medium' | 'low' | 'unusable';
+
+export type ExtractionPath =
+	| 'standard'
+	| 'enhanced_ocr'
+	| 'visual_extraction'
+	| 'handwriting_recognition'
+	| 'manual_transcription_required'
+	| 'skip';
+
+export type ExtractionGateOutcome = 'allow' | 'skip';
+
+export interface ExpectedQualityMetadata {
+	source_document_quality: 'high' | 'medium' | 'low';
+	extraction_path: ExtractionPath;
+	extraction_confidence: number;
+}
+
+export interface QualityRoutingGolden {
+	caseId: string;
+	sourceSlug: string;
+	difficulty: DifficultyLevel;
+	expected: {
+		overallQuality: DocumentOverallQuality;
+		processable: boolean;
+		recommendedPath: ExtractionPath;
+		extractionGateOutcome: ExtractionGateOutcome;
+		qualityMetadata: ExpectedQualityMetadata;
+		signals: Record<string, unknown>;
+	};
+	annotation: {
+		author: string;
+		date: string;
+		notes?: string;
+	};
+}
+
+export interface ActualQualityRoutingCase {
+	caseId: string;
+	sourceSlug: string;
+	assessment: {
+		overallQuality: DocumentOverallQuality;
+		processable: boolean;
+		recommendedPath: ExtractionPath;
+		signals: Record<string, unknown>;
+	};
+	extractionGate: {
+		outcome: ExtractionGateOutcome;
+	};
+	qualityMetadata: ExpectedQualityMetadata;
+}
+
+export interface EvalMismatch {
+	field: string;
+	expected: unknown;
+	actual: unknown;
+}
+
+export interface QualityRoutingCaseResult {
+	caseId: string;
+	sourceSlug: string;
+	difficulty: DifficultyLevel;
+	overallQuality: DocumentOverallQuality;
+	recommendedPath: ExtractionPath;
+	processable: boolean;
+	passed: boolean;
+	checks: {
+		overallQuality: boolean;
+		processable: boolean;
+		recommendedPath: boolean;
+		extractionGateOutcome: boolean;
+		qualityMetadata: boolean;
+		signals: boolean;
+	};
+	mismatches: EvalMismatch[];
+}
+
+export interface QualityRoutingEvalResult {
+	timestamp: string;
+	cases: QualityRoutingCaseResult[];
+	summary: {
+		totalCases: number;
+		passedCases: number;
+		failedCases: number;
+		passRate: number;
+		coverage: {
+			byQuality: Record<DocumentOverallQuality, number>;
+			byRoute: Partial<Record<ExtractionPath, number>>;
+		};
+	};
+}
+
+// ────────────────────────────────────────────────────────────
+// Assertion-classification golden annotations
+// ────────────────────────────────────────────────────────────
+
+export type AssertionType = 'observation' | 'interpretation' | 'hypothesis';
+
+export type ClassificationProvenance = 'llm_auto' | 'human_reviewed' | 'author_explicit';
+
+export interface AssertionConfidenceMetadata {
+	witness_count: number | null;
+	measurement_based: boolean;
+	contemporaneous: boolean;
+	corroborated: boolean;
+	peer_reviewed: boolean;
+	author_is_interpreter: boolean;
+}
+
+export interface AssertionClassificationGolden {
+	caseId: string;
+	segmentId: string;
+	sourceSlug: string;
+	difficulty: DifficultyLevel;
+	expected: {
+		content: string;
+		assertionType: AssertionType;
+		classificationProvenance: ClassificationProvenance;
+		confidenceMetadata: AssertionConfidenceMetadata;
+		entityNames?: string[];
+		qualityMetadata?: Record<string, unknown>;
+	};
+	annotation: {
+		author: string;
+		date: string;
+		notes?: string;
+	};
+}
+
+export interface ActualAssertionCase {
+	caseId: string;
+	segmentId: string;
+	sourceSlug: string;
+	assertion: {
+		content: string;
+		assertion_type: AssertionType;
+		classification_provenance: ClassificationProvenance;
+		confidence_metadata: AssertionConfidenceMetadata;
+		entity_names?: string[];
+		quality_metadata?: Record<string, unknown>;
+	};
+}
+
+export interface AssertionClassificationCaseResult {
+	caseId: string;
+	segmentId: string;
+	sourceSlug: string;
+	difficulty: DifficultyLevel;
+	assertionType: AssertionType;
+	classificationProvenance: ClassificationProvenance;
+	passed: boolean;
+	checks: {
+		content: boolean;
+		assertionType: boolean;
+		classificationProvenance: boolean;
+		confidenceMetadata: boolean;
+		entityNames: boolean;
+		qualityMetadata: boolean;
+	};
+	mismatches: EvalMismatch[];
+}
+
+export interface AssertionClassificationEvalResult {
+	timestamp: string;
+	cases: AssertionClassificationCaseResult[];
+	summary: {
+		totalCases: number;
+		passedCases: number;
+		failedCases: number;
+		passRate: number;
+		coverage: {
+			byAssertionType: Record<AssertionType, number>;
+			byProvenance: Partial<Record<ClassificationProvenance, number>>;
+		};
+	};
+}
+
+// ────────────────────────────────────────────────────────────
 // Retrieval golden annotations (Phase 3, D5)
 // ────────────────────────────────────────────────────────────
 

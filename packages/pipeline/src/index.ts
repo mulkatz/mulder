@@ -44,9 +44,11 @@ export type {
 	EnrichInput,
 	EnrichmentData,
 	EnrichResult,
+	ExtractedAssertion,
 	ExtractedEntity,
 	ExtractedRelationship,
 	ExtractionResponse,
+	ExtractionSchemaOptions,
 	ResolutionCandidate,
 	ResolutionResult,
 	ResolutionTier,
@@ -115,6 +117,7 @@ export type {
 	ImageDimensions,
 	IngestFileResult,
 	IngestInput,
+	IngestProvenanceInput,
 	IngestResult,
 	SourceDetectionConfidence,
 	SourceDetectionResult,
@@ -147,6 +150,7 @@ export {
 	getCrossFormatDedupKey,
 	getOriginalExtension,
 	getStorageExtensionForDetection,
+	ingestProvenanceInputSchema,
 	isOfficeOpenXmlDocx,
 	isOfficeOpenXmlSpreadsheet,
 	isPreStructuredType,
@@ -167,6 +171,7 @@ export {
 	MSG_MEDIA_TYPE,
 	normalizeCrossFormatText,
 	normalizeUrlInput,
+	parseIngestProvenanceInput,
 	readImageDimensions,
 	resolveIngestFiles,
 	resolvePdfFiles,
@@ -194,6 +199,12 @@ export {
 	STEP_ORDER,
 	shouldRun,
 } from './pipeline/index.js';
+export type { QualityData, QualityInput, QualityResult } from './quality/index.js';
+export {
+	buildCompactDocumentQualitySummary,
+	execute as executeQuality,
+	isAutomaticExtractionAllowed,
+} from './quality/index.js';
 export type {
 	ReprocessInput,
 	ReprocessPlan,

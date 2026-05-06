@@ -17,43 +17,115 @@ describe('Spec 16 — Ingest duplicate race regression', () => {
 		]);
 
 		const existingSourceId = randomUUID();
-		const existingStoragePath = `raw/${existingSourceId}/original.pdf`;
+		let canonicalBlobPath = '';
 		const now = new Date();
 		const queries: string[] = [];
 		const uploads: string[] = [];
 		const deletes: string[] = [];
 		const firestoreWrites: string[] = [];
+		const provenanceWrites: string[] = [];
 
+		const query = async (sql: string, values: unknown[] = []) => {
+			queries.push(sql);
+			if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') {
+				return { rows: [], rowCount: 0 };
+			}
+			if (sql.includes('SELECT * FROM sources WHERE file_hash')) {
+				return { rows: [], rowCount: 0 };
+			}
+			if (sql.includes('SELECT * FROM document_blobs WHERE content_hash')) {
+				return { rows: [], rowCount: 0 };
+			}
+			if (sql.includes('INSERT INTO document_blobs')) {
+				canonicalBlobPath = String(values[1]);
+				return {
+					rows: [
+						{
+							content_hash: String(values[0]),
+							mulder_blob_id: randomUUID(),
+							storage_path: canonicalBlobPath,
+							storage_uri: String(values[2]),
+							mime_type: String(values[3]),
+							file_size_bytes: String(values[4]),
+							storage_class: 'standard',
+							storage_status: 'active',
+							original_filenames: ['native-text-sample.pdf'],
+							first_ingested_at: now,
+							last_accessed_at: now,
+							integrity_verified_at: null,
+							integrity_status: 'unverified',
+							created_at: now,
+							updated_at: now,
+						},
+					],
+					rowCount: 1,
+				};
+			}
+			if (sql.includes('INSERT INTO sources')) {
+				return {
+					rows: [
+						{
+							id: existingSourceId,
+							filename: 'native-text-sample.pdf',
+							storage_path: canonicalBlobPath,
+							file_hash: String(values[3]),
+							parent_source_id: null,
+							source_type: 'pdf',
+							format_metadata: {},
+							page_count: 1,
+							has_native_text: true,
+							native_text_ratio: 1,
+							status: 'ingested',
+							reliability_score: null,
+							tags: [],
+							metadata: {},
+							created_at: now,
+							updated_at: now,
+						},
+					],
+					rowCount: 1,
+				};
+			}
+			if (sql.includes('INSERT INTO acquisition_contexts')) {
+				provenanceWrites.push('acquisition_contexts');
+				return {
+					rows: [
+						{
+							context_id: randomUUID(),
+							blob_content_hash: String(values[0]),
+							source_id: String(values[1]),
+							channel: String(values[2]),
+							submitted_by_user_id: String(values[3]),
+							submitted_by_type: String(values[4]),
+							submitted_by_role: values[5] === null ? null : String(values[5]),
+							submitted_at: now,
+							collection_id: null,
+							submission_notes: null,
+							submission_metadata: {},
+							authenticity_status: String(values[10]),
+							authenticity_notes: null,
+							status: 'active',
+							deleted_at: null,
+							restored_at: null,
+							created_at: now,
+							updated_at: now,
+						},
+					],
+					rowCount: 1,
+				};
+			}
+			if (sql.includes('DELETE FROM custody_steps WHERE context_id')) {
+				provenanceWrites.push('custody_steps');
+				return { rows: [], rowCount: 0 };
+			}
+			throw new Error(`Unexpected query after duplicate race: ${sql}`);
+		};
 		const pool = {
-			query: async (sql: string) => {
-				queries.push(sql);
-				if (sql.includes('SELECT * FROM sources WHERE file_hash')) {
-					return { rows: [], rowCount: 0 };
-				}
-				if (sql.includes('INSERT INTO sources')) {
-					return {
-						rows: [
-							{
-								id: existingSourceId,
-								filename: 'native-text-sample.pdf',
-								storage_path: existingStoragePath,
-								file_hash: 'race-hash',
-								page_count: 1,
-								has_native_text: true,
-								native_text_ratio: 1,
-								status: 'ingested',
-								reliability_score: null,
-								tags: [],
-								metadata: {},
-								created_at: now,
-								updated_at: now,
-							},
-						],
-						rowCount: 1,
-					};
-				}
-				throw new Error(`Unexpected query after duplicate race: ${sql}`);
-			},
+			query,
+			connect: async () => ({
+				query,
+				release: () => undefined,
+			}),
 		};
 
 		const services = {
@@ -61,6 +133,8 @@ describe('Spec 16 — Ingest duplicate race regression', () => {
 				upload: async (path: string) => {
 					uploads.push(path);
 				},
+				buildUri: (path: string) => `gs://test-bucket/${path}`,
+				exists: async () => false,
 				delete: async (path: string) => {
 					deletes.push(path);
 				},
@@ -84,13 +158,14 @@ describe('Spec 16 — Ingest duplicate race regression', () => {
 		expect(result.data).toHaveLength(1);
 		expect(result.data[0]).toMatchObject({
 			sourceId: existingSourceId,
-			storagePath: existingStoragePath,
+			storagePath: canonicalBlobPath,
 			duplicate: true,
 		});
 		expect(result.metadata.items_skipped).toBe(1);
 		expect(uploads).toHaveLength(1);
-		expect(deletes).toEqual(uploads);
+		expect(deletes).toEqual([]);
 		expect(firestoreWrites).toEqual([]);
+		expect(provenanceWrites).toEqual(['acquisition_contexts', 'custody_steps']);
 		expect(queries.some((sql) => sql.includes('source_steps'))).toBe(false);
 	});
 });

@@ -369,5 +369,179 @@
 				}
 			}
 		}
+	},
+	"qualityRouting": {
+		"timestamp": "1970-01-01T00:00:00.000Z",
+		"cases": [
+			{
+				"caseId": "quality-high-standard",
+				"sourceSlug": "typed-clean-report",
+				"difficulty": "simple",
+				"overallQuality": "high",
+				"recommendedPath": "standard",
+				"processable": true,
+				"passed": true,
+				"checks": {
+					"overallQuality": true,
+					"processable": true,
+					"recommendedPath": true,
+					"extractionGateOutcome": true,
+					"qualityMetadata": true,
+					"signals": true
+				},
+				"mismatches": []
+			},
+			{
+				"caseId": "quality-low-visual-extraction",
+				"sourceSlug": "photo-of-table",
+				"difficulty": "complex",
+				"overallQuality": "low",
+				"recommendedPath": "visual_extraction",
+				"processable": true,
+				"passed": true,
+				"checks": {
+					"overallQuality": true,
+					"processable": true,
+					"recommendedPath": true,
+					"extractionGateOutcome": true,
+					"qualityMetadata": true,
+					"signals": true
+				},
+				"mismatches": []
+			},
+			{
+				"caseId": "quality-medium-enhanced-ocr",
+				"sourceSlug": "faded-scan-report",
+				"difficulty": "moderate",
+				"overallQuality": "medium",
+				"recommendedPath": "enhanced_ocr",
+				"processable": true,
+				"passed": true,
+				"checks": {
+					"overallQuality": true,
+					"processable": true,
+					"recommendedPath": true,
+					"extractionGateOutcome": true,
+					"qualityMetadata": true,
+					"signals": true
+				},
+				"mismatches": []
+			},
+			{
+				"caseId": "quality-unusable-skip",
+				"sourceSlug": "truncated-illegible-page",
+				"difficulty": "complex",
+				"overallQuality": "unusable",
+				"recommendedPath": "skip",
+				"processable": false,
+				"passed": true,
+				"checks": {
+					"overallQuality": true,
+					"processable": true,
+					"recommendedPath": true,
+					"extractionGateOutcome": true,
+					"qualityMetadata": true,
+					"signals": true
+				},
+				"mismatches": []
+			}
+		],
+		"summary": {
+			"totalCases": 4,
+			"passedCases": 4,
+			"failedCases": 0,
+			"passRate": 1,
+			"coverage": {
+				"byQuality": {
+					"high": 1,
+					"medium": 1,
+					"low": 1,
+					"unusable": 1
+				},
+				"byRoute": {
+					"standard": 1,
+					"visual_extraction": 1,
+					"enhanced_ocr": 1,
+					"skip": 1
+				}
+			}
+		}
+	},
+	"assertions": {
+		"timestamp": "1970-01-01T00:00:00.000Z",
+		"cases": [
+			{
+				"caseId": "assertion-hypothesis-testable-pattern",
+				"segmentId": "assertion-seg-003",
+				"sourceSlug": "analysis-note",
+				"difficulty": "complex",
+				"assertionType": "hypothesis",
+				"classificationProvenance": "author_explicit",
+				"passed": true,
+				"checks": {
+					"content": true,
+					"assertionType": true,
+					"classificationProvenance": true,
+					"confidenceMetadata": true,
+					"entityNames": true,
+					"qualityMetadata": true
+				},
+				"mismatches": []
+			},
+			{
+				"caseId": "assertion-interpretation-correlation",
+				"segmentId": "assertion-seg-002",
+				"sourceSlug": "summary-memo",
+				"difficulty": "moderate",
+				"assertionType": "interpretation",
+				"classificationProvenance": "llm_auto",
+				"passed": true,
+				"checks": {
+					"content": true,
+					"assertionType": true,
+					"classificationProvenance": true,
+					"confidenceMetadata": true,
+					"entityNames": true,
+					"qualityMetadata": true
+				},
+				"mismatches": []
+			},
+			{
+				"caseId": "assertion-observation-measured-count",
+				"segmentId": "assertion-seg-001",
+				"sourceSlug": "inspection-log",
+				"difficulty": "simple",
+				"assertionType": "observation",
+				"classificationProvenance": "human_reviewed",
+				"passed": true,
+				"checks": {
+					"content": true,
+					"assertionType": true,
+					"classificationProvenance": true,
+					"confidenceMetadata": true,
+					"entityNames": true,
+					"qualityMetadata": true
+				},
+				"mismatches": []
+			}
+		],
+		"summary": {
+			"totalCases": 3,
+			"passedCases": 3,
+			"failedCases": 0,
+			"passRate": 1,
+			"coverage": {
+				"byAssertionType": {
+					"observation": 1,
+					"interpretation": 1,
+					"hypothesis": 1
+				},
+				"byProvenance": {
+					"author_explicit": 1,
+					"llm_auto": 1,
+					"human_reviewed": 1
+				}
+			}
+		}
 	}
 }

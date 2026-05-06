@@ -55,6 +55,27 @@ export const CONFIG_DEFAULTS = {
 		max_pages: 2000,
 	},
 
+	ingest_provenance: {
+		required_metadata: {
+			channel: true,
+			submitted_by: true,
+			collection_id: false,
+			original_source: false,
+			custody_chain: false,
+		},
+		archives: {
+			auto_register: true,
+		},
+		collections: {
+			auto_create_from_archive: true,
+			auto_tag_from_path_segments: true,
+			default_collection: null,
+			default_sensitivity_level: 'internal' as const,
+			default_language: 'und',
+			default_credibility_profile_id: null,
+		},
+	},
+
 	extraction: {
 		native_text_threshold: 0.9,
 		max_vision_pages: 20,
@@ -63,9 +84,81 @@ export const CONFIG_DEFAULTS = {
 		},
 	},
 
+	document_quality: {
+		enabled: true,
+		assessment: {
+			method: 'ocr_confidence' as const,
+			engine: null,
+			ocr_confidence_threshold: 0.7,
+			native_text_ratio_threshold: 0.5,
+		},
+		routing: {
+			high: { path: 'standard' as const },
+			medium: { path: 'enhanced_ocr' as const, fallback: 'visual_extraction' as const },
+			low: { path: 'visual_extraction' as const, fallback: 'manual_transcription_required' as const },
+			unusable: { path: 'skip' as const, create_manual_task: false },
+		},
+		quality_propagation: {
+			enabled: true,
+			low_quality_embedding_weight: 0.5,
+			low_quality_assertion_penalty: 0.3,
+		},
+		manual_queue: {
+			enabled: false,
+			notify_reviewers: false,
+			priority: 'normal' as const,
+		},
+	},
+
+	access_control: {
+		enabled: true,
+		sensitivity: {
+			levels: ['public', 'internal', 'restricted', 'confidential'],
+			default_level: 'internal' as const,
+			auto_detection: true,
+			propagation: 'upward' as const,
+			pii_types: [
+				'person_name',
+				'contact_info',
+				'medical_data',
+				'location_private',
+				'location_sighting',
+				'financial',
+				'unpublished_research',
+				'legal',
+			],
+		},
+		rbac: {
+			roles_source: 'config/roles.yaml',
+			default_role: 'analyst',
+		},
+		external_query_gate: {
+			enabled: false,
+		},
+	},
+
+	source_rollback: {
+		undo_window_hours: 72,
+		auto_purge_after_undo_window: true,
+		require_reason: true,
+		require_confirmation: true,
+		orphan_handling: 'mark' as const,
+		journal_annotation: true,
+		notify_on_purge: true,
+	},
+
 	enrichment: {
 		model: 'gemini-2.5-flash',
 		max_story_tokens: 15000,
+		assertion_classification: {
+			enabled: true,
+			conservative_labeling: true,
+			require_confidence_metadata: true,
+			default_provenance: 'llm_auto' as const,
+			reviewable: true,
+			review_depth: 'spot_check' as const,
+			spot_check_percentage: 20,
+		},
 	},
 
 	taxonomy: {

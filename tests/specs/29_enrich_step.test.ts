@@ -3,12 +3,13 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
+import { testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const FIXTURE_DIR = resolve(ROOT, 'fixtures/raw');
-const EXTRACTED_DIR = resolve(ROOT, '.local/storage/extracted');
-const SEGMENTS_DIR = resolve(ROOT, '.local/storage/segments');
+const EXTRACTED_DIR = testStoragePath('extracted');
+const SEGMENTS_DIR = testStoragePath('segments');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');

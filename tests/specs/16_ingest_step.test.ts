@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
-import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir } from '../lib/storage.js';
+import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir, testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
@@ -14,7 +14,7 @@ const SCANNED_PDF = resolve(FIXTURE_DIR, 'scanned-sample.pdf');
 
 let tmpDir: string;
 let storageRawSnapshot: StorageSnapshot;
-const STORAGE_RAW_DIR = resolve(resolve(import.meta.dirname, '../..'), '.local/storage/raw');
+const STORAGE_RAW_DIR = testStoragePath('raw');
 
 /**
  * Black-box QA tests for Spec 16: Ingest Step
@@ -53,7 +53,7 @@ function runCli(
 }
 
 function cleanSourceData(): void {
-	db.runSql('DELETE FROM source_steps; DELETE FROM sources;');
+	db.runSql('DELETE FROM source_steps; DELETE FROM sources; DELETE FROM document_blobs;');
 }
 
 /**
@@ -489,7 +489,7 @@ describe('Spec 16 — Ingest Step', () => {
 
 	// ─── QA-10: Storage path convention ───
 
-	it('QA-10: storage_path follows pattern raw/{uuid}/original.pdf', () => {
+	it('QA-10: storage_path follows the content-addressed blob pattern', () => {
 		if (!pgAvailable) return;
 
 		cleanSourceData();
@@ -497,14 +497,15 @@ describe('Spec 16 — Ingest Step', () => {
 		const { exitCode } = runCli(['ingest', NATIVE_TEXT_PDF]);
 		expect(exitCode).toBe(0);
 
-		const row = db.runSql("SELECT id, storage_path FROM sources WHERE filename = 'native-text-sample.pdf';");
-		const [sourceId, storagePath] = row.split('|');
+		const row = db.runSql("SELECT id, storage_path, file_hash FROM sources WHERE filename = 'native-text-sample.pdf';");
+		const [sourceId, storagePath, fileHash] = row.split('|');
 		expect(sourceId).not.toBe('');
 		expect(storagePath).not.toBe('');
+		expect(fileHash).not.toBe('');
 
-		// Verify pattern: raw/{uuid}/original.pdf
-		const pattern = /^raw\/[a-f0-9-]{36}\/original\.pdf$/;
+		// Verify pattern: blobs/sha256/{first2}/{next2}/{hash}.pdf
+		const pattern = /^blobs\/sha256\/([a-f0-9]{2})\/([a-f0-9]{2})\/([a-f0-9]{64})\.pdf$/;
 		expect(storagePath).toMatch(pattern);
-		expect(storagePath).toBe(`raw/${sourceId}/original.pdf`);
+		expect(storagePath).toBe(`blobs/sha256/${fileHash.slice(0, 2)}/${fileHash.slice(2, 4)}/${fileHash}.pdf`);
 	});
 });

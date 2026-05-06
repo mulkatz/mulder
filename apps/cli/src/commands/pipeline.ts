@@ -89,7 +89,7 @@ function computePlannedStepsForEstimate(
 function registerRunSubcommand(parent: Command): void {
 	parent
 		.command('run')
-		.description('Run the full pipeline (ingest → extract → segment → enrich → embed → graph → [analyze])')
+		.description('Run the full pipeline (ingest → quality → extract → segment → enrich → embed → graph → [analyze])')
 		.argument('[path]', 'Path to a PDF file or directory')
 		.option('--up-to <step>', `Stop after this step (one of: ${RUN_FLAG_STEPS.join('|')})`)
 		.option('--from <step>', `Resume from this step (one of: ${RUN_FLAG_STEPS.join('|')})`)

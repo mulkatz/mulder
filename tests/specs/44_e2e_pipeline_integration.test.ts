@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
 import { ensureSchema } from '../lib/schema.js';
+import { testStoragePath } from '../lib/storage.js';
 
 /**
  * Black-box end-to-end integration test for the full M1–M4 MVP pipeline.
@@ -40,8 +41,8 @@ import { ensureSchema } from '../lib/schema.js';
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const FIXTURE_DIR = resolve(ROOT, 'fixtures/raw');
-const EXTRACTED_DIR = resolve(ROOT, '.local/storage/extracted');
-const SEGMENTS_DIR = resolve(ROOT, '.local/storage/segments');
+const EXTRACTED_DIR = testStoragePath('extracted');
+const SEGMENTS_DIR = testStoragePath('segments');
 const NATIVE_TEXT_PDF = resolve(FIXTURE_DIR, 'native-text-sample.pdf');
 
 // ---------------------------------------------------------------------------

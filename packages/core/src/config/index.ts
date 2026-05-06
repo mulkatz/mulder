@@ -11,6 +11,8 @@ export type { ReprocessHashStepName } from './reprocess-hash.js';
 export { computeReprocessConfigHash, getReprocessConfigSubset } from './reprocess-hash.js';
 export { mulderConfigSchema } from './schema.js';
 export type {
+	AccessControlConfig,
+	AccessControlSensitivityConfig,
 	AnalysisConfig,
 	ApiAuthConfig,
 	ApiAuthKeyConfig,
@@ -20,6 +22,7 @@ export type {
 	CloudSqlConfig,
 	DeduplicationConfig,
 	DocumentAiConfig,
+	DocumentQualityConfig,
 	EmbeddingConfig,
 	EnrichmentConfig,
 	EntityResolutionConfig,
@@ -28,6 +31,7 @@ export type {
 	GcpConfig,
 	GroundingConfig,
 	IngestionConfig,
+	IngestProvenanceConfig,
 	MulderConfig,
 	OntologyConfig,
 	PatternDiscoveryConfig,
@@ -36,6 +40,7 @@ export type {
 	RelationshipConfig,
 	RetrievalConfig,
 	SafetyConfig,
+	SourceRollbackConfig,
 	StorageConfig,
 	TaxonomyConfig,
 	ThresholdsConfig,

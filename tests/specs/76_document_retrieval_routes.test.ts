@@ -87,6 +87,7 @@ function buildMockServices(state: StorageState) {
 			upload: async (path: string, content: Buffer | string) => {
 				putStorageObject(state, path, content);
 			},
+			buildUri: (path: string) => `gs://test-bucket/${path}`,
 			createUploadSession: async (path: string) => ({
 				url: `/api/uploads/documents/dev-upload?storage_path=${encodeURIComponent(path)}`,
 				method: 'PUT',

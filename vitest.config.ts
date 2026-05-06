@@ -10,12 +10,12 @@ export default defineConfig({
 		hookTimeout: 120_000,
 		env: {
 			NODE_ENV: 'test',
-			PGHOST: 'localhost',
-			PGPORT: '5432',
-			PGUSER: 'mulder',
-			PGPASSWORD: 'mulder',
-			PGDATABASE: 'mulder',
-			FIRESTORE_EMULATOR_HOST: 'localhost:8080',
+			PGHOST: process.env.PGHOST ?? 'localhost',
+			PGPORT: process.env.PGPORT ?? '5432',
+			PGUSER: process.env.PGUSER ?? 'mulder',
+			PGPASSWORD: process.env.PGPASSWORD ?? 'mulder',
+			PGDATABASE: process.env.PGDATABASE ?? 'mulder',
+			FIRESTORE_EMULATOR_HOST: process.env.FIRESTORE_EMULATOR_HOST ?? 'localhost:8080',
 		},
 	},
 });

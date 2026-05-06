@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import type { Source } from '@mulder/core';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as db from '../lib/db.js';
-import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir } from '../lib/storage.js';
+import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir, testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CORE_DIR = resolve(ROOT, 'packages/core');
@@ -15,7 +15,7 @@ const PIPELINE_DIR = resolve(ROOT, 'packages/pipeline');
 const CLI_DIR = resolve(ROOT, 'apps/cli');
 const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
-const STORAGE_DIR = resolve(ROOT, '.local/storage');
+const STORAGE_DIR = testStoragePath();
 const RAW_STORAGE_DIR = resolve(STORAGE_DIR, 'raw');
 const EXTRACTED_STORAGE_DIR = resolve(STORAGE_DIR, 'extracted');
 const SEGMENTS_STORAGE_DIR = resolve(STORAGE_DIR, 'segments');

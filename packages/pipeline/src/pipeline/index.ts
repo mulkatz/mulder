@@ -61,6 +61,7 @@ import { execute as executeEnrich } from '../enrich/index.js';
 import { execute as executeExtract } from '../extract/index.js';
 import { execute as executeGraph } from '../graph/index.js';
 import { execute as executeIngest, type IngestFileResult, isUrlLikeInput, resolvePdfFiles } from '../ingest/index.js';
+import { execute as executeQuality } from '../quality/index.js';
 import { execute as executeSegment } from '../segment/index.js';
 import type {
 	PipelineGlobalAnalysisOutcome,
@@ -137,6 +138,8 @@ function targetSourceStatusForStep(step: PipelineStepName): SourceStatus {
 	switch (step) {
 		case 'ingest':
 			return 'ingested';
+		case 'quality':
+			return 'ingested';
 		case 'extract':
 			return 'extracted';
 		case 'segment':
@@ -190,6 +193,10 @@ export function shouldRun(
 		// Ingest is handled outside the per-source loop. Should never be
 		// asked of `shouldRun`, but defensively return false.
 		return false;
+	}
+
+	if (step === 'quality') {
+		return sourceStatus === 'ingested' || options.force === true;
 	}
 
 	// Pre-structured types never have a segment step — skip unconditionally,
@@ -337,6 +344,15 @@ function sourceFromDryRunIngestResult(result: IngestFileResult): Source {
 		reliabilityScore: null,
 		tags: [],
 		metadata: result.formatMetadata,
+		sensitivityLevel: 'internal',
+		sensitivityMetadata: {
+			level: 'internal',
+			reason: 'default_policy',
+			assignedBy: 'policy_rule',
+			assignedAt: now.toISOString(),
+			piiTypes: [],
+			declassifyDate: null,
+		},
 		createdAt: now,
 		updatedAt: now,
 	};
@@ -348,6 +364,8 @@ function getSourcePlan(source: Source, ctx: ProcessSourceContext): StepPlan {
 
 function eligibleStatusesForFirstStep(firstStep: PipelineStepName): SourceStatus[] {
 	switch (firstStep) {
+		case 'quality':
+			return ['ingested'];
 		case 'extract':
 			return ['ingested'];
 		case 'segment':
@@ -534,7 +552,7 @@ async function processSource(source: Source, ctx: ProcessSourceContext): Promise
 		sourceLog.info({ step }, 'pipeline.source.start');
 
 		try {
-			await runStepForSource(step, currentSource, stories, ctx);
+			const stepOutcome = await runStepForSource(step, currentSource, stories, ctx);
 			finalStep = step;
 			const durationMs = Math.round(performance.now() - stepStart);
 			sourceLog.info({ step, duration_ms: durationMs }, 'pipeline.source.step.ok');
@@ -544,6 +562,10 @@ async function processSource(source: Source, ctx: ProcessSourceContext): Promise
 				currentStep: step,
 				status: 'processing',
 			});
+			if (stepOutcome === 'skipped-terminal') {
+				sourceLog.info({ step }, 'pipeline.source.step.skipped_terminal');
+				break;
+			}
 		} catch (cause: unknown) {
 			const message = cause instanceof Error ? cause.message : String(cause);
 			const code = hasStringCode(cause) ? cause.code : PIPELINE_ERROR_CODES.PIPELINE_STEP_FAILED;
@@ -579,16 +601,20 @@ async function runStepForSource(
 	source: Source,
 	stories: Story[],
 	ctx: ProcessSourceContext,
-): Promise<void> {
+): Promise<'completed' | 'skipped-terminal'> {
 	const force = ctx.options.force ?? false;
 
+	if (step === 'quality') {
+		await executeQuality({ sourceId: source.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
+		return 'completed';
+	}
 	if (step === 'extract') {
-		await executeExtract({ sourceId: source.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
-		return;
+		const result = await executeExtract({ sourceId: source.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
+		return result.status === 'skipped' ? 'skipped-terminal' : 'completed';
 	}
 	if (step === 'segment') {
 		await executeSegment({ sourceId: source.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
-		return;
+		return 'completed';
 	}
 
 	// Fanout steps — iterate stories. Re-fetch to pick up newly created stories from a prior step.
@@ -600,9 +626,15 @@ async function runStepForSource(
 			if (storyStatusIndex(story.status) >= target && !force) {
 				continue;
 			}
-			await executeEnrich({ storyId: story.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
+			await executeEnrich(
+				{ storyId: story.id, force, extractionPipelineRun: ctx.runId },
+				ctx.config,
+				ctx.services,
+				ctx.pool,
+				ctx.logger,
+			);
 		}
-		return;
+		return 'completed';
 	}
 	if (step === 'embed') {
 		const target = storyStatusIndex('embedded');
@@ -610,9 +642,15 @@ async function runStepForSource(
 			if (storyStatusIndex(story.status) >= target && !force) {
 				continue;
 			}
-			await executeEmbed({ storyId: story.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
+			await executeEmbed(
+				{ storyId: story.id, force, extractionPipelineRun: ctx.runId },
+				ctx.config,
+				ctx.services,
+				ctx.pool,
+				ctx.logger,
+			);
 		}
-		return;
+		return 'completed';
 	}
 	if (step === 'graph') {
 		const target = storyStatusIndex('graphed');
@@ -620,10 +658,20 @@ async function runStepForSource(
 			if (storyStatusIndex(story.status) >= target && !force) {
 				continue;
 			}
-			await executeGraph({ storyId: story.id, force }, ctx.config, ctx.services, ctx.pool, ctx.logger);
+			await executeGraph(
+				{ storyId: story.id, force, extractionPipelineRun: ctx.runId },
+				ctx.config,
+				ctx.services,
+				ctx.pool,
+				ctx.logger,
+			);
 		}
-		return;
+		return 'completed';
 	}
+
+	throw new PipelineError(`Unsupported pipeline step: ${step}`, PIPELINE_ERROR_CODES.PIPELINE_INVALID_STEP_RANGE, {
+		context: { step },
+	});
 }
 
 // ────────────────────────────────────────────────────────────
@@ -797,6 +845,7 @@ export async function execute(
 		const sourceOutcomes: PipelineRunSourceOutcome[] = [];
 		let completedCount = 0;
 		let failedCount = 0;
+		let graphCompletedCount = 0;
 
 		const ctx: ProcessSourceContext = {
 			runId: run.id,
@@ -824,6 +873,9 @@ export async function execute(
 			});
 			if (result.status === 'completed') {
 				completedCount++;
+				if (result.finalStep === 'graph') {
+					graphCompletedCount++;
+				}
 			} else {
 				failedCount++;
 				errors.push({
@@ -840,7 +892,7 @@ export async function execute(
 			globalAnalysis = createSkippedGlobalAnalysis('planned steps stop before graph');
 		} else if (!config.analysis.enabled) {
 			globalAnalysis = createSkippedGlobalAnalysis('analysis disabled by config');
-		} else if (completedCount === 0) {
+		} else if (graphCompletedCount === 0) {
 			globalAnalysis = createSkippedGlobalAnalysis('no sources reached graph successfully');
 		} else {
 			const analyzeResult = await executeAnalyze({ full: true }, config, services, pool, runLog);

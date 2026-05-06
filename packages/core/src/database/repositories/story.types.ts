@@ -8,6 +8,8 @@
  * @see docs/functional-spec.md §4.3
  */
 
+import type { SensitivityLevel, SensitivityMetadata } from '../../shared/sensitivity.js';
+
 // ────────────────────────────────────────────────────────────
 // Status enum
 // ────────────────────────────────────────────────────────────
@@ -35,6 +37,8 @@ export interface Story {
 	extractionConfidence: number | null;
 	status: StoryStatus;
 	metadata: Record<string, unknown>;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -54,6 +58,8 @@ export interface CreateStoryInput {
 	gcsMetadataUri: string;
 	extractionConfidence?: number;
 	metadata?: Record<string, unknown>;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 }
 
 /** Input for updating a story. Partial — only provided fields are updated. */
@@ -70,6 +76,8 @@ export interface UpdateStoryInput {
 	extractionConfidence?: number;
 	status?: StoryStatus;
 	metadata?: Record<string, unknown>;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 }
 
 /** Filters for querying stories. */
@@ -80,4 +88,5 @@ export interface StoryFilter {
 	language?: string;
 	limit?: number;
 	offset?: number;
+	includeDeleted?: boolean;
 }
