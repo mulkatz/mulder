@@ -173,7 +173,6 @@ export async function upsertArchiveMirrorCollection(pool: Queryable, input: Coll
 		ON CONFLICT (archive_id) WHERE type = 'archive_mirror' AND archive_id IS NOT NULL DO UPDATE SET
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
-			visibility = EXCLUDED.visibility,
 			tags = (
 				SELECT COALESCE(array_agg(tag ORDER BY tag), '{}'::text[])
 				FROM (
@@ -182,9 +181,6 @@ export async function upsertArchiveMirrorCollection(pool: Queryable, input: Coll
 					WHERE tag <> ''
 				) deduplicated
 			),
-			default_sensitivity_level = EXCLUDED.default_sensitivity_level,
-			default_language = EXCLUDED.default_language,
-			default_credibility_profile_id = EXCLUDED.default_credibility_profile_id,
 			updated_at = now()
 		RETURNING *
 	`;

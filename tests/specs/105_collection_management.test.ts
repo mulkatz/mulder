@@ -335,9 +335,21 @@ describe('Spec 105: Collection management', () => {
 				tags: ['region:region-a', 'time_period:1989-1990'],
 			});
 
+			const credibilityProfileId = randomUUID();
+			await coreModule.updateCollection(pool, archiveBundle.collection?.collectionId ?? '', {
+				visibility: 'public',
+				defaults: {
+					sensitivityLevel: 'confidential',
+					defaultLanguage: 'fr',
+					credibilityProfileId,
+				},
+			});
+			await coreModule.addCollectionTags(pool, archiveBundle.collection?.collectionId ?? '', ['operator:managed']);
+
+			const archiveReuseBlob = await createBlobAndSource('archive-reuse');
 			const reusedBundle = await coreModule.recordIngestProvenance(pool, {
-				blobContentHash: archiveBlob.contentHash,
-				sourceId: archiveBlob.sourceId,
+				blobContentHash: archiveReuseBlob.contentHash,
+				sourceId: archiveReuseBlob.sourceId,
 				context: {
 					channel: 'archive_import',
 					submittedBy: { userId: 'archivist', type: 'human' },
@@ -348,8 +360,23 @@ describe('Spec 105: Collection management', () => {
 					description: 'Archive mirror source',
 					type: 'institutional',
 				},
+				archiveLocation: {
+					archiveId: archiveBundle.archive?.archiveId,
+					originalPath: '/Research Set',
+					originalFilename: 'archive-reuse.txt',
+					pathSegments: [{ depth: 0, name: 'Research Set', segmentType: 'topic' }],
+				},
 			});
 			expect(reusedBundle.collection?.collectionId).toBe(archiveBundle.collection?.collectionId);
+			expect(reusedBundle.collection).toMatchObject({
+				visibility: 'public',
+				defaults: {
+					sensitivityLevel: 'confidential',
+					defaultLanguage: 'fr',
+					credibilityProfileId,
+				},
+				tags: ['operator:managed', 'region:region-a', 'time_period:1989-1990', 'topic:research-set'],
+			});
 
 			const registeredArchive = await coreModule.createArchive(pool, {
 				name: 'Registered Archive Only',
