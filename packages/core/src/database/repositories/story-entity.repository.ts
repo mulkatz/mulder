@@ -21,7 +21,7 @@ import {
 } from './artifact-provenance.js';
 import { type EntityRow, entityActiveSourceClause, mapEntityRow } from './entity.repository.js';
 import type { LinkStoryEntityInput, StoryEntityWithEntity, StoryEntityWithStory } from './entity.types.js';
-import { queryWithSensitivityColumnFallback } from './schema-compat.js';
+import { queryWithSensitivityAndSourceDeletionFallback, queryWithSensitivityColumnFallback } from './schema-compat.js';
 import { mapStoryRow, type StoryRow } from './story.repository.js';
 
 const logger = createLogger();
@@ -188,6 +188,9 @@ export async function findEntitiesByStoryId(
 	storyId: string,
 	options?: { includeDeleted?: boolean },
 ): Promise<StoryEntityWithEntity[]> {
+	const activeVisibilityClause = options?.includeDeleted
+		? ''
+		: `AND ${activeSourceClause('src')} AND ${storyEntityActiveSourceClause('se')} AND ${entityActiveSourceClause('e')}`;
 	const sql = `
     SELECT
       e.*,
@@ -201,7 +204,7 @@ export async function findEntitiesByStoryId(
     JOIN stories s ON s.id = se.story_id
     JOIN sources src ON src.id = s.source_id
     WHERE se.story_id = $1
-      ${options?.includeDeleted ? '' : `AND ${activeSourceClause('src')} AND ${storyEntityActiveSourceClause('se')} AND ${entityActiveSourceClause('e')}`}
+      ${activeVisibilityClause}
     ORDER BY e.name
   `;
 	const legacySql = `
@@ -217,15 +220,49 @@ export async function findEntitiesByStoryId(
     JOIN stories s ON s.id = se.story_id
     JOIN sources src ON src.id = s.source_id
     WHERE se.story_id = $1
-      ${options?.includeDeleted ? '' : `AND ${activeSourceClause('src')} AND ${storyEntityActiveSourceClause('se')} AND ${entityActiveSourceClause('e')}`}
+    ORDER BY e.name
+  `;
+	const withoutSourceDeletionSql = `
+    SELECT
+      e.*,
+      se.confidence,
+      se.mention_count,
+      se.provenance AS junction_provenance,
+      se.sensitivity_level AS junction_sensitivity_level,
+      se.sensitivity_metadata AS junction_sensitivity_metadata
+    FROM entities e
+    JOIN story_entities se ON se.entity_id = e.id
+    JOIN stories s ON s.id = se.story_id
+    JOIN sources src ON src.id = s.source_id
+    WHERE se.story_id = $1
+    ORDER BY e.name
+  `;
+	const withoutSensitivitySql = `
+    SELECT
+      e.*,
+      se.confidence,
+      se.mention_count,
+      se.provenance AS junction_provenance,
+      NULL::text AS junction_sensitivity_level,
+      NULL::jsonb AS junction_sensitivity_metadata
+    FROM entities e
+    JOIN story_entities se ON se.entity_id = e.id
+    JOIN stories s ON s.id = se.story_id
+    JOIN sources src ON src.id = s.source_id
+    WHERE se.story_id = $1
+      ${activeVisibilityClause}
     ORDER BY e.name
   `;
 	const params = [storyId];
 
 	try {
-		const result = await queryWithSensitivityColumnFallback<EntityWithJunctionRow>(
+		const result = await queryWithSensitivityAndSourceDeletionFallback<EntityWithJunctionRow>(
 			pool,
 			sql,
+			params,
+			withoutSensitivitySql,
+			params,
+			withoutSourceDeletionSql,
 			params,
 			legacySql,
 			params,
@@ -249,6 +286,9 @@ export async function findStoriesByEntityId(
 	entityId: string,
 	options?: { includeDeleted?: boolean },
 ): Promise<StoryEntityWithStory[]> {
+	const activeVisibilityClause = options?.includeDeleted
+		? ''
+		: `AND ${activeSourceClause('src')} AND ${storyEntityActiveSourceClause('se')}`;
 	const sql = `
     SELECT
       s.*,
@@ -261,7 +301,7 @@ export async function findStoriesByEntityId(
     JOIN story_entities se ON se.story_id = s.id
     JOIN sources src ON src.id = s.source_id
     WHERE se.entity_id = $1
-      ${options?.includeDeleted ? '' : `AND ${activeSourceClause('src')} AND ${storyEntityActiveSourceClause('se')}`}
+      ${activeVisibilityClause}
     ORDER BY s.created_at DESC
   `;
 	const legacySql = `
@@ -276,13 +316,51 @@ export async function findStoriesByEntityId(
     JOIN story_entities se ON se.story_id = s.id
     JOIN sources src ON src.id = s.source_id
     WHERE se.entity_id = $1
-      ${options?.includeDeleted ? '' : `AND ${activeSourceClause('src')} AND ${storyEntityActiveSourceClause('se')}`}
+    ORDER BY s.created_at DESC
+  `;
+	const withoutSourceDeletionSql = `
+    SELECT
+      s.*,
+      se.confidence,
+      se.mention_count,
+      se.provenance AS junction_provenance,
+      se.sensitivity_level AS junction_sensitivity_level,
+      se.sensitivity_metadata AS junction_sensitivity_metadata
+    FROM stories s
+    JOIN story_entities se ON se.story_id = s.id
+    JOIN sources src ON src.id = s.source_id
+    WHERE se.entity_id = $1
+    ORDER BY s.created_at DESC
+  `;
+	const withoutSensitivitySql = `
+    SELECT
+      s.*,
+      se.confidence,
+      se.mention_count,
+      se.provenance AS junction_provenance,
+      NULL::text AS junction_sensitivity_level,
+      NULL::jsonb AS junction_sensitivity_metadata
+    FROM stories s
+    JOIN story_entities se ON se.story_id = s.id
+    JOIN sources src ON src.id = s.source_id
+    WHERE se.entity_id = $1
+      ${activeVisibilityClause}
     ORDER BY s.created_at DESC
   `;
 	const params = [entityId];
 
 	try {
-		const result = await queryWithSensitivityColumnFallback<StoryWithJunctionRow>(pool, sql, params, legacySql, params);
+		const result = await queryWithSensitivityAndSourceDeletionFallback<StoryWithJunctionRow>(
+			pool,
+			sql,
+			params,
+			withoutSensitivitySql,
+			params,
+			withoutSourceDeletionSql,
+			params,
+			legacySql,
+			params,
+		);
 		return result.rows.map(mapStoryWithJunctionRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find stories by entity ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {

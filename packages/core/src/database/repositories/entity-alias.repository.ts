@@ -21,7 +21,7 @@ import {
 } from './artifact-provenance.js';
 import { type EntityRow, entityActiveSourceClause, mapEntityRow } from './entity.repository.js';
 import type { CreateEntityAliasInput, Entity, EntityAlias } from './entity.types.js';
-import { queryWithSensitivityColumnFallback } from './schema-compat.js';
+import { queryWithSensitivityColumnFallback, queryWithSourceDeletionStatusFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'entity-alias-repository' });
@@ -141,9 +141,18 @@ export async function findAliasesByEntityId(
       ${options?.includeDeleted ? '' : `AND ${aliasActiveSourceClause('ea')} AND ${entityActiveSourceClause('e')}`}
     ORDER BY ea.alias
   `;
+	const legacySql = `
+    SELECT ea.*
+    FROM entity_aliases ea
+    JOIN entities e ON e.id = ea.entity_id
+    WHERE ea.entity_id = $1
+    ORDER BY ea.alias
+  `;
 
 	try {
-		const result = await pool.query<EntityAliasRow>(sql, [entityId]);
+		const result = await queryWithSourceDeletionStatusFallback<EntityAliasRow>(pool, sql, [entityId], legacySql, [
+			entityId,
+		]);
 		return result.rows.map(mapEntityAliasRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find aliases by entity ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {

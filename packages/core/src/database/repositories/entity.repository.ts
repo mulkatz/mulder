@@ -27,7 +27,7 @@ import type {
 	TaxonomyStatus,
 	UpdateEntityInput,
 } from './entity.types.js';
-import { queryWithSensitivityColumnFallback } from './schema-compat.js';
+import { queryWithSensitivityColumnFallback, queryWithSourceDeletionStatusFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'entity-repository' });
@@ -325,9 +325,14 @@ export async function findEntityById(
     WHERE e.id = $1
       ${options?.includeDeleted ? '' : `AND ${entityActiveSourceClause('e')}`}
   `;
+	const legacySql = `
+    SELECT e.*
+    FROM entities e
+    WHERE e.id = $1
+  `;
 
 	try {
-		const result = await pool.query<EntityRow>(sql, [id]);
+		const result = await queryWithSourceDeletionStatusFallback<EntityRow>(pool, sql, [id], legacySql, [id]);
 		if (result.rows.length === 0) {
 			return null;
 		}

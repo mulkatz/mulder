@@ -61,3 +61,41 @@ export async function queryWithSourceDeletionStatusFallback<Row extends pg.Query
 		return await pool.query<Row>(legacySql, legacyParams);
 	}
 }
+
+export async function queryWithSensitivityAndSourceDeletionFallback<Row extends pg.QueryResultRow>(
+	pool: Queryable,
+	sql: string,
+	params: unknown[],
+	withoutSensitivitySql: string,
+	withoutSensitivityParams: unknown[],
+	withoutSourceDeletionSql: string,
+	withoutSourceDeletionParams: unknown[],
+	legacySql: string,
+	legacyParams: unknown[],
+): Promise<pg.QueryResult<Row>> {
+	try {
+		return await pool.query<Row>(sql, params);
+	} catch (error: unknown) {
+		if (isMissingSensitivityColumnError(error)) {
+			try {
+				return await pool.query<Row>(withoutSensitivitySql, withoutSensitivityParams);
+			} catch (fallbackError: unknown) {
+				if (!isMissingSourceDeletionStatusError(fallbackError)) {
+					throw fallbackError;
+				}
+				return await pool.query<Row>(legacySql, legacyParams);
+			}
+		}
+		if (isMissingSourceDeletionStatusError(error)) {
+			try {
+				return await pool.query<Row>(withoutSourceDeletionSql, withoutSourceDeletionParams);
+			} catch (fallbackError: unknown) {
+				if (!isMissingSensitivityColumnError(fallbackError)) {
+					throw fallbackError;
+				}
+				return await pool.query<Row>(legacySql, legacyParams);
+			}
+		}
+		throw error;
+	}
+}

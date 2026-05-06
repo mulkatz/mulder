@@ -21,7 +21,7 @@ import {
 	stringifyArtifactProvenance,
 } from './artifact-provenance.js';
 import type { CreateEdgeInput, EdgeFilter, EdgeType, EntityEdge, UpdateEdgeInput } from './edge.types.js';
-import { queryWithSensitivityColumnFallback } from './schema-compat.js';
+import { queryWithSensitivityColumnFallback, queryWithSourceDeletionStatusFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'edge-repository' });
@@ -252,9 +252,14 @@ export async function findEdgeById(
     WHERE ee.id = $1
       ${options?.includeDeleted ? '' : `AND ${edgeActiveSourceClause('ee')}`}
   `;
+	const legacySql = `
+    SELECT ee.*
+    FROM entity_edges ee
+    WHERE ee.id = $1
+  `;
 
 	try {
-		const result = await pool.query<EdgeRow>(sql, [id]);
+		const result = await queryWithSourceDeletionStatusFallback<EdgeRow>(pool, sql, [id], legacySql, [id]);
 		if (result.rows.length === 0) {
 			return null;
 		}
