@@ -407,18 +407,30 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 			sourceId,
 			`
 				SELECT COUNT(*) AS count
-				FROM chunks c
-				JOIN stories s ON s.id = c.story_id
-				WHERE s.source_id = $1
-					OR (c.provenance->'source_document_ids' ? $1::text AND jsonb_array_length(c.provenance->'source_document_ids') = 1)
+				FROM (
+					SELECT
+						s.source_id = $1::uuid AS source_owned,
+						c.provenance->'source_document_ids' ? $1::text AS has_rollback_source,
+						jsonb_array_length(COALESCE(c.provenance->'source_document_ids', '[]'::jsonb)) AS provenance_source_count
+					FROM chunks c
+					JOIN stories s ON s.id = c.story_id
+				) affected
+				WHERE (affected.provenance_source_count = 0 AND affected.source_owned)
+					OR (affected.has_rollback_source AND affected.provenance_source_count = 1)
 			`,
 			`
 				SELECT COUNT(*) AS count
-				FROM chunks c
-				JOIN stories s ON s.id = c.story_id
-				WHERE s.source_id <> $1::uuid
-					AND c.provenance->'source_document_ids' ? $1::text
-					AND jsonb_array_length(c.provenance->'source_document_ids') > 1
+				FROM (
+					SELECT
+						s.source_id = $1::uuid AS source_owned,
+						c.provenance->'source_document_ids' ? $1::text AS has_rollback_source,
+						jsonb_array_length(COALESCE(c.provenance->'source_document_ids', '[]'::jsonb)) AS provenance_source_count
+					FROM chunks c
+					JOIN stories s ON s.id = c.story_id
+				) affected
+				WHERE affected.provenance_source_count > 0
+					AND (affected.source_owned OR affected.has_rollback_source)
+					AND NOT (affected.has_rollback_source AND affected.provenance_source_count = 1)
 			`,
 		),
 		await countExclusiveAndShared(
@@ -427,18 +439,30 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 			sourceId,
 			`
 				SELECT COUNT(*) AS count
-				FROM story_entities se
-				JOIN stories s ON s.id = se.story_id
-				WHERE s.source_id = $1
-					OR (se.provenance->'source_document_ids' ? $1::text AND jsonb_array_length(se.provenance->'source_document_ids') = 1)
+				FROM (
+					SELECT
+						s.source_id = $1::uuid AS source_owned,
+						se.provenance->'source_document_ids' ? $1::text AS has_rollback_source,
+						jsonb_array_length(COALESCE(se.provenance->'source_document_ids', '[]'::jsonb)) AS provenance_source_count
+					FROM story_entities se
+					JOIN stories s ON s.id = se.story_id
+				) affected
+				WHERE (affected.provenance_source_count = 0 AND affected.source_owned)
+					OR (affected.has_rollback_source AND affected.provenance_source_count = 1)
 			`,
 			`
 				SELECT COUNT(*) AS count
-				FROM story_entities se
-				JOIN stories s ON s.id = se.story_id
-				WHERE s.source_id <> $1::uuid
-					AND se.provenance->'source_document_ids' ? $1::text
-					AND jsonb_array_length(se.provenance->'source_document_ids') > 1
+				FROM (
+					SELECT
+						s.source_id = $1::uuid AS source_owned,
+						se.provenance->'source_document_ids' ? $1::text AS has_rollback_source,
+						jsonb_array_length(COALESCE(se.provenance->'source_document_ids', '[]'::jsonb)) AS provenance_source_count
+					FROM story_entities se
+					JOIN stories s ON s.id = se.story_id
+				) affected
+				WHERE affected.provenance_source_count > 0
+					AND (affected.source_owned OR affected.has_rollback_source)
+					AND NOT (affected.has_rollback_source AND affected.provenance_source_count = 1)
 			`,
 		),
 		await countExclusiveAndShared(
@@ -447,18 +471,30 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 			sourceId,
 			`
 				SELECT COUNT(*) AS count
-				FROM entity_edges ee
-				LEFT JOIN stories s ON s.id = ee.story_id
-				WHERE s.source_id = $1
-					OR (ee.provenance->'source_document_ids' ? $1::text AND jsonb_array_length(ee.provenance->'source_document_ids') = 1)
+				FROM (
+					SELECT
+						s.source_id = $1::uuid AS source_owned,
+						ee.provenance->'source_document_ids' ? $1::text AS has_rollback_source,
+						jsonb_array_length(COALESCE(ee.provenance->'source_document_ids', '[]'::jsonb)) AS provenance_source_count
+					FROM entity_edges ee
+					LEFT JOIN stories s ON s.id = ee.story_id
+				) affected
+				WHERE (affected.provenance_source_count = 0 AND affected.source_owned)
+					OR (affected.has_rollback_source AND affected.provenance_source_count = 1)
 			`,
 			`
 				SELECT COUNT(*) AS count
-				FROM entity_edges ee
-				LEFT JOIN stories s ON s.id = ee.story_id
-				WHERE (s.source_id IS NULL OR s.source_id <> $1)
-					AND ee.provenance->'source_document_ids' ? $1::text
-					AND jsonb_array_length(ee.provenance->'source_document_ids') > 1
+				FROM (
+					SELECT
+						s.source_id = $1::uuid AS source_owned,
+						ee.provenance->'source_document_ids' ? $1::text AS has_rollback_source,
+						jsonb_array_length(COALESCE(ee.provenance->'source_document_ids', '[]'::jsonb)) AS provenance_source_count
+					FROM entity_edges ee
+					LEFT JOIN stories s ON s.id = ee.story_id
+				) affected
+				WHERE affected.provenance_source_count > 0
+					AND (affected.source_owned OR affected.has_rollback_source)
+					AND NOT (affected.has_rollback_source AND affected.provenance_source_count = 1)
 			`,
 		),
 		await countExclusiveAndShared(
@@ -467,24 +503,32 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 			sourceId,
 			`
 				SELECT COUNT(*) AS count
-				FROM knowledge_assertions ka
-				LEFT JOIN stories s ON s.id = ka.story_id
-				WHERE ka.deleted_at IS NULL
-					AND (
-						ka.source_id = $1
-						OR s.source_id = $1
-						OR (ka.provenance->'source_document_ids' ? $1::text AND jsonb_array_length(ka.provenance->'source_document_ids') = 1)
-					)
+				FROM (
+					SELECT
+						(ka.source_id = $1::uuid OR s.source_id = $1::uuid) AS source_owned,
+						ka.provenance->'source_document_ids' ? $1::text AS has_rollback_source,
+						jsonb_array_length(COALESCE(ka.provenance->'source_document_ids', '[]'::jsonb)) AS provenance_source_count
+					FROM knowledge_assertions ka
+					LEFT JOIN stories s ON s.id = ka.story_id
+					WHERE ka.deleted_at IS NULL
+				) affected
+				WHERE (affected.provenance_source_count = 0 AND affected.source_owned)
+					OR (affected.has_rollback_source AND affected.provenance_source_count = 1)
 			`,
 			`
 				SELECT COUNT(*) AS count
-				FROM knowledge_assertions ka
-				LEFT JOIN stories s ON s.id = ka.story_id
-				WHERE ka.deleted_at IS NULL
-					AND ka.source_id <> $1::uuid
-					AND (s.source_id IS NULL OR s.source_id <> $1)
-					AND ka.provenance->'source_document_ids' ? $1::text
-					AND jsonb_array_length(ka.provenance->'source_document_ids') > 1
+				FROM (
+					SELECT
+						(ka.source_id = $1::uuid OR s.source_id = $1::uuid) AS source_owned,
+						ka.provenance->'source_document_ids' ? $1::text AS has_rollback_source,
+						jsonb_array_length(COALESCE(ka.provenance->'source_document_ids', '[]'::jsonb)) AS provenance_source_count
+					FROM knowledge_assertions ka
+					LEFT JOIN stories s ON s.id = ka.story_id
+					WHERE ka.deleted_at IS NULL
+				) affected
+				WHERE affected.provenance_source_count > 0
+					AND (affected.source_owned OR affected.has_rollback_source)
+					AND NOT (affected.has_rollback_source AND affected.provenance_source_count = 1)
 			`,
 		),
 		await countExclusiveAndShared(

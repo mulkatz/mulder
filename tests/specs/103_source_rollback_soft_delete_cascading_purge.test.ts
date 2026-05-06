@@ -547,6 +547,74 @@ describe('Spec 103: Source rollback soft delete and cascading purge', () => {
 		expect(assertions).toHaveLength(1);
 	});
 
+	it.skipIf(!pgAvailable)(
+		'QA-05b: purge dry-run classifies shared artifacts on rollback-owned stories by provenance',
+		async () => {
+			const sourceA = await createSourceFixture('qa05b-a');
+			const sourceB = await createSourceFixture('qa05b-b');
+			const storyA = await createStoryFixture(sourceA.id, 'qa05b-a');
+			const sharedProvenance = { sourceDocumentIds: [sourceA.id, sourceB.id] };
+			const entityA = await coreModule.createEntity(pool, {
+				name: `QA05B Shared Person ${randomUUID()}`,
+				type: 'person',
+				provenance: sharedProvenance,
+			});
+			const entityB = await coreModule.createEntity(pool, {
+				name: `QA05B Shared Event ${randomUUID()}`,
+				type: 'event',
+				provenance: sharedProvenance,
+			});
+			await coreModule.linkStoryEntity(pool, {
+				storyId: storyA.id,
+				entityId: entityA.id,
+				confidence: 0.9,
+				mentionCount: 2,
+				provenance: sharedProvenance,
+			});
+			await coreModule.createEdge(pool, {
+				sourceEntityId: entityA.id,
+				targetEntityId: entityB.id,
+				relationship: 'PARTICIPATED_IN',
+				storyId: storyA.id,
+				confidence: 0.8,
+				provenance: sharedProvenance,
+			});
+			await coreModule.createChunk(pool, {
+				storyId: storyA.id,
+				content: `Shared rollback-owned story chunk ${randomUUID()}`,
+				chunkIndex: 0,
+				provenance: sharedProvenance,
+			});
+			await coreModule.upsertKnowledgeAssertion(pool, {
+				sourceId: sourceA.id,
+				storyId: storyA.id,
+				assertionType: 'observation',
+				content: `Shared rollback-owned story assertion ${randomUUID()}`,
+				confidenceMetadata: {
+					witnessCount: 2,
+					measurementBased: false,
+					contemporaneous: true,
+					corroborated: true,
+					peerReviewed: false,
+					authorIsInterpreter: false,
+				},
+				provenance: sharedProvenance,
+			});
+			await softDeleteFixture(sourceA.id);
+
+			const plan = await coreModule.planSourcePurge(pool, sourceA.id);
+			const countsBySubsystem = new Map(plan.counts.map((count) => [count.subsystem, count]));
+
+			for (const subsystem of ['chunks', 'story_entities', 'entity_edges', 'knowledge_assertions']) {
+				expect(countsBySubsystem.get(subsystem)).toMatchObject({
+					exclusive: 0,
+					shared: 1,
+					total: 1,
+				});
+			}
+		},
+	);
+
 	it.skipIf(!pgAvailable)('QA-06: purge deletes exclusive artifacts and keeps audit', async () => {
 		const { source } = await createSourceWithCascadeArtifacts('qa06');
 		await softDeleteFixture(source.id);
