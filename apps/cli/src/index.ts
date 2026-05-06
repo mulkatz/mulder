@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { registerAnalyzeCommands } from './commands/analyze.js';
 import { registerCacheCommands } from './commands/cache.js';
+import { registerCollectionCommands } from './commands/collection.js';
 import { registerConfigCommands } from './commands/config.js';
 import { registerDbCommands } from './commands/db.js';
 import { registerEmbedCommands } from './commands/embed.js';
@@ -67,6 +68,7 @@ const program = new Command()
 
 registerCacheCommands(program);
 registerAnalyzeCommands(program);
+registerCollectionCommands(program);
 registerConfigCommands(program);
 registerDbCommands(program);
 registerEvalCommands(program);

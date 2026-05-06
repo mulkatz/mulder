@@ -66,6 +66,14 @@ export const CONFIG_DEFAULTS = {
 		archives: {
 			auto_register: true,
 		},
+		collections: {
+			auto_create_from_archive: true,
+			auto_tag_from_path_segments: true,
+			default_collection: null,
+			default_sensitivity_level: 'internal' as const,
+			default_language: 'und',
+			default_credibility_profile_id: null,
+		},
 	},
 
 	extraction: {
