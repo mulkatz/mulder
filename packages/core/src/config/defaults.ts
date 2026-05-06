@@ -296,6 +296,16 @@ export const CONFIG_DEFAULTS = {
 		exclude_domains: [],
 	},
 
+	translation: {
+		enabled: true,
+		default_target_language: 'en',
+		supported_languages: ['de', 'en', 'fr', 'es', 'pt', 'ru', 'zh', 'ja', 'pl', 'cs'],
+		engine: 'gemini-2.5-flash',
+		output_format: 'markdown' as const,
+		cache_enabled: true,
+		max_document_length_tokens: 500000,
+	},
+
 	analysis: {
 		enabled: false,
 		contradictions: true,

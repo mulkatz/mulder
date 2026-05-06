@@ -239,6 +239,16 @@ grounding:
   min_confidence: 0.7                 # Reject weakly supported grounding results
   exclude_domains: []                 # Optional low-quality domains to exclude from grounding
 
+# --- Translation ---
+translation:
+  enabled: true
+  default_target_language: "en"
+  supported_languages: ["de", "en", "fr", "es", "pt", "ru", "zh", "ja", "pl", "cs"]
+  engine: "gemini-2.5-flash"
+  output_format: "markdown"           # markdown | html
+  cache_enabled: true
+  max_document_length_tokens: 500000
+
 # --- Analysis (v2.0) ---
 analysis:
   enabled: false                      # Enable for v2.0

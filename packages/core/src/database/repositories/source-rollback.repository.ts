@@ -20,6 +20,7 @@ import type {
 	SourcePurgeReport,
 	SourcePurgeSubsystemCount,
 } from './source-rollback.types.js';
+import { deleteTranslatedDocumentsForSource } from './translated-document.repository.js';
 
 type Queryable = pg.Pool | pg.PoolClient;
 
@@ -407,6 +408,12 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 			'url_lifecycle',
 			sourceId,
 			'SELECT COUNT(*) AS count FROM url_lifecycle WHERE source_id = $1',
+		),
+		await countExclusiveAndShared(
+			pool,
+			'translated_documents',
+			sourceId,
+			'SELECT COUNT(*) AS count FROM translated_documents WHERE source_document_id = $1',
 		),
 		await countExclusiveAndShared(
 			pool,
@@ -846,6 +853,7 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 			pipelineRunLinksDeleted: 0,
 			documentQualityAssessmentsDeleted: 0,
 			urlLifecycleRowsDeleted: 0,
+			translatedDocumentsDeleted: 0,
 			reviewArtifactsDeleted: 0,
 			storiesDeleted: 0,
 			chunksDeleted: 0,
@@ -1017,6 +1025,7 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 		effects.documentQualityAssessmentsDeleted = quality.rowCount ?? 0;
 		const urlLifecycle = await client.query('DELETE FROM url_lifecycle WHERE source_id = $1', [input.sourceId]);
 		effects.urlLifecycleRowsDeleted = urlLifecycle.rowCount ?? 0;
+		effects.translatedDocumentsDeleted = await deleteTranslatedDocumentsForSource(client, input.sourceId);
 		effects.reviewArtifactsDeleted = await purgeReviewArtifactsForSource(client, input.sourceId);
 		const stories = await client.query(
 			`

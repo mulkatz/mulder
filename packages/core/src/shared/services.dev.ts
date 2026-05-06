@@ -571,7 +571,14 @@ class DevLlmService implements LlmService {
 		return result;
 	}
 
-	async generateText(_options: TextGenerateOptions): Promise<string> {
+	async generateText(options: TextGenerateOptions): Promise<string> {
+		if (options.prompt.includes('You are translating a Mulder source document for reading access.')) {
+			this.logger.debug('DevLlmService: generateText — returning translation fixture');
+			const targetMatch = options.prompt.match(/Target language:\s*([^\n]+)/i);
+			const targetLanguage = targetMatch?.[1]?.trim() ?? 'en';
+			return `# Dev Translation (${targetLanguage})\n\nTranslated fixture content.`;
+		}
+
 		this.logger.debug('DevLlmService: generateText called (returning empty string)');
 		return '';
 	}

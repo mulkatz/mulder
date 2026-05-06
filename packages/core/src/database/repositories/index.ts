@@ -516,6 +516,21 @@ export type {
 	TaxonomySimilarityMatch,
 	UpdateTaxonomyEntryInput,
 } from './taxonomy.types.js';
+export {
+	createCurrentTranslatedDocument,
+	deleteTranslatedDocumentsForSource,
+	findCurrentTranslatedDocument,
+	listTranslatedDocumentsForSource,
+	markTranslatedDocumentsStaleForSource,
+} from './translated-document.repository.js';
+export type {
+	CreateCurrentTranslatedDocumentInput,
+	ListTranslatedDocumentsOptions,
+	TranslatedDocument,
+	TranslationOutputFormat,
+	TranslationPipelinePath,
+	TranslationStatus,
+} from './translated-document.types.js';
 export type {
 	RecordUrlHostLifecycleInput,
 	RecordUrlLifecycleFetchInput,
