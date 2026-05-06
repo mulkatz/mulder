@@ -20,6 +20,29 @@ import type {
 
 type Queryable = pg.Pool | pg.PoolClient;
 
+const PATH_SEGMENT_TYPES = new Set<string>([
+	'collection',
+	'topic',
+	'region',
+	'time_period',
+	'person',
+	'case',
+	'administrative',
+	'unknown',
+]);
+
+const CUSTODY_ACTIONS = new Set<string>([
+	'received',
+	'copied',
+	'digitized',
+	'annotated',
+	'translated',
+	'redacted',
+	'restored',
+	'transferred',
+	'archived',
+]);
+
 interface ArchiveRow {
 	archive_id: string;
 	name: string;
@@ -135,31 +158,51 @@ function normalizeStringArray(value: string[] | string): string[] {
 
 function normalizeRecord(value: unknown): Record<string, unknown> {
 	if (value && typeof value === 'object' && !Array.isArray(value)) {
-		return value as Record<string, unknown>;
+		return Object.fromEntries(Object.entries(value));
 	}
 	return {};
+}
+
+function isPathSegmentType(value: unknown): value is PathSegment['segmentType'] {
+	return typeof value === 'string' && PATH_SEGMENT_TYPES.has(value);
+}
+
+function isCustodyAction(value: string): value is CustodyAction {
+	return CUSTODY_ACTIONS.has(value);
 }
 
 function normalizePathSegments(value: unknown): PathSegment[] {
 	if (!Array.isArray(value)) {
 		return [];
 	}
-	return value
-		.map((segment) => normalizeRecord(segment))
-		.filter((segment) => typeof segment.depth === 'number' && typeof segment.name === 'string')
-		.map((segment) => ({
-			depth: segment.depth as number,
-			name: segment.name as string,
-			segmentType:
-				typeof segment.segmentType === 'string' ? (segment.segmentType as PathSegment['segmentType']) : 'unknown',
-		}));
+	const segments: PathSegment[] = [];
+	for (const rawSegment of value) {
+		const segment = normalizeRecord(rawSegment);
+		if (typeof segment.depth !== 'number' || typeof segment.name !== 'string') {
+			continue;
+		}
+		segments.push({
+			depth: segment.depth,
+			name: segment.name,
+			segmentType: isPathSegmentType(segment.segmentType) ? segment.segmentType : 'unknown',
+		});
+	}
+	return segments;
 }
 
 function normalizePhysicalLocation(value: unknown): PhysicalLocation | null {
 	if (value === null || value === undefined) {
 		return null;
 	}
-	return normalizeRecord(value);
+	const record = normalizeRecord(value);
+	return {
+		building: typeof record.building === 'string' || record.building === null ? record.building : null,
+		room: typeof record.room === 'string' || record.room === null ? record.room : null,
+		shelf: typeof record.shelf === 'string' || record.shelf === null ? record.shelf : null,
+		container: typeof record.container === 'string' || record.container === null ? record.container : null,
+		position: typeof record.position === 'string' || record.position === null ? record.position : null,
+		notes: typeof record.notes === 'string' || record.notes === null ? record.notes : null,
+	};
 }
 
 function mapArchiveRow(row: ArchiveRow): Archive {
@@ -245,7 +288,7 @@ function mapCustodyStepRow(row: CustodyStepRow): CustodyStep {
 		receivedFrom: row.received_from,
 		heldFrom: nullableDate(row.held_from),
 		heldUntil: nullableDate(row.held_until),
-		actions: normalizeStringArray(row.actions) as CustodyAction[],
+		actions: normalizeStringArray(row.actions).filter(isCustodyAction),
 		location: row.location,
 		notes: row.notes,
 		createdAt: toDate(row.created_at),

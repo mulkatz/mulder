@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS archives (
 
 CREATE TABLE IF NOT EXISTS acquisition_contexts (
   context_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  blob_content_hash TEXT NOT NULL REFERENCES document_blobs(content_hash),
+  blob_content_hash TEXT NOT NULL REFERENCES document_blobs(content_hash) ON DELETE CASCADE,
   source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
   channel TEXT NOT NULL,
   submitted_by_user_id TEXT NOT NULL,
@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS custody_steps (
 
 CREATE TABLE IF NOT EXISTS archive_locations (
   location_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  blob_content_hash TEXT NOT NULL REFERENCES document_blobs(content_hash),
+  blob_content_hash TEXT NOT NULL REFERENCES document_blobs(content_hash) ON DELETE CASCADE,
   archive_id UUID NOT NULL REFERENCES archives(archive_id),
   original_path TEXT NOT NULL,
   original_filename TEXT NOT NULL,
@@ -177,6 +177,18 @@ CREATE INDEX IF NOT EXISTS idx_archive_locations_path_segments ON archive_locati
 
 DO $$
 BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'acquisition_contexts'::regclass
+      AND contype = 'f'
+      AND confrelid = 'document_blobs'::regclass
+      AND confdeltype <> 'c'
+  ) THEN
+    ALTER TABLE acquisition_contexts
+      DROP CONSTRAINT acquisition_contexts_blob_content_hash_fkey;
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1
     FROM pg_constraint
@@ -186,7 +198,7 @@ BEGIN
   ) THEN
     ALTER TABLE acquisition_contexts
       ADD CONSTRAINT acquisition_contexts_blob_content_hash_fkey
-      FOREIGN KEY (blob_content_hash) REFERENCES document_blobs(content_hash);
+      FOREIGN KEY (blob_content_hash) REFERENCES document_blobs(content_hash) ON DELETE CASCADE;
   END IF;
 
   IF NOT EXISTS (
@@ -225,6 +237,18 @@ BEGIN
       FOREIGN KEY (context_id) REFERENCES acquisition_contexts(context_id) ON DELETE CASCADE;
   END IF;
 
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'archive_locations'::regclass
+      AND contype = 'f'
+      AND confrelid = 'document_blobs'::regclass
+      AND confdeltype <> 'c'
+  ) THEN
+    ALTER TABLE archive_locations
+      DROP CONSTRAINT archive_locations_blob_content_hash_fkey;
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1
     FROM pg_constraint
@@ -234,7 +258,7 @@ BEGIN
   ) THEN
     ALTER TABLE archive_locations
       ADD CONSTRAINT archive_locations_blob_content_hash_fkey
-      FOREIGN KEY (blob_content_hash) REFERENCES document_blobs(content_hash);
+      FOREIGN KEY (blob_content_hash) REFERENCES document_blobs(content_hash) ON DELETE CASCADE;
   END IF;
 
   IF NOT EXISTS (

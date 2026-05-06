@@ -18,6 +18,181 @@ import type {
 	StepError,
 	SubmittedBy,
 } from '@mulder/core';
+import { z } from 'zod';
+
+const acquisitionChannelSchema = z.enum([
+	'archive_import',
+	'manual_upload',
+	'email_submission',
+	'web_research',
+	'api_import',
+	'bulk_import',
+	're_scan',
+	'partner_exchange',
+]);
+const submittedByTypeSchema = z.enum(['human', 'system']);
+const authenticityStatusSchema = z.enum(['unverified', 'verified', 'disputed']);
+const originalSourceTypeSchema = z.enum([
+	'witness_report',
+	'government_document',
+	'academic_paper',
+	'news_article',
+	'correspondence',
+	'field_notes',
+	'measurement_data',
+	'photograph',
+	'audio_recording',
+	'video_recording',
+	'other',
+]);
+const custodyHolderTypeSchema = z.enum(['person', 'institution', 'archive', 'unknown']);
+const custodyActionSchema = z.enum([
+	'received',
+	'copied',
+	'digitized',
+	'annotated',
+	'translated',
+	'redacted',
+	'restored',
+	'transferred',
+	'archived',
+]);
+const archiveTypeSchema = z.enum(['personal', 'institutional', 'digital', 'governmental', 'partner', 'other']);
+const archiveStatusSchema = z.enum(['active', 'closed', 'destroyed', 'transferred', 'unknown']);
+const archiveCompletenessSchema = z.enum(['unknown', 'partial', 'complete']);
+const archiveSourceStatusSchema = z.enum([
+	'current',
+	'moved',
+	'deleted_from_source',
+	'archive_destroyed',
+	'digitized_only',
+	'unknown',
+]);
+const pathSegmentTypeSchema = z.enum([
+	'collection',
+	'topic',
+	'region',
+	'time_period',
+	'person',
+	'case',
+	'administrative',
+	'unknown',
+]);
+const dateInputSchema = z.union([z.string(), z.date()]);
+const nullableDateInputSchema = dateInputSchema.nullable();
+
+const submittedBySchema = z.object({
+	userId: z.string().min(1).optional(),
+	type: submittedByTypeSchema.optional(),
+	role: z.string().nullable().optional(),
+});
+
+const pathSegmentSchema = z.object({
+	depth: z.number().int().nonnegative(),
+	name: z.string().min(1),
+	segmentType: pathSegmentTypeSchema,
+});
+
+const physicalLocationSchema = z.object({
+	building: z.string().nullable().optional(),
+	room: z.string().nullable().optional(),
+	shelf: z.string().nullable().optional(),
+	container: z.string().nullable().optional(),
+	position: z.string().nullable().optional(),
+	notes: z.string().nullable().optional(),
+});
+
+const provenanceContextSchema = z.object({
+	channel: acquisitionChannelSchema.optional(),
+	submittedBy: submittedBySchema.optional(),
+	submittedAt: dateInputSchema.optional(),
+	collectionId: z.string().uuid().nullable().optional(),
+	submissionNotes: z.string().nullable().optional(),
+	submissionMetadata: z.record(z.string(), z.unknown()).optional(),
+	authenticityStatus: authenticityStatusSchema.optional(),
+	authenticityNotes: z.string().nullable().optional(),
+});
+
+const originalSourceSchema = z.object({
+	contextId: z.string().uuid().optional(),
+	sourceType: originalSourceTypeSchema,
+	sourceDescription: z.string().min(1),
+	sourceDate: nullableDateInputSchema.optional(),
+	sourceAuthor: z.string().nullable().optional(),
+	sourceLanguage: z.string().optional(),
+	sourceInstitution: z.string().nullable().optional(),
+	foiaReference: z.string().nullable().optional(),
+});
+
+const custodyStepSchema = z.object({
+	contextId: z.string().uuid().optional(),
+	stepOrder: z.number().int().positive(),
+	holder: z.string().min(1),
+	holderType: custodyHolderTypeSchema.optional(),
+	receivedFrom: z.string().nullable().optional(),
+	heldFrom: nullableDateInputSchema.optional(),
+	heldUntil: nullableDateInputSchema.optional(),
+	actions: z.array(custodyActionSchema).optional(),
+	location: z.string().nullable().optional(),
+	notes: z.string().nullable().optional(),
+});
+
+const archiveSchema = z.object({
+	archiveId: z.string().uuid().optional(),
+	name: z.string().min(1),
+	description: z.string().optional(),
+	type: archiveTypeSchema.optional(),
+	institution: z.string().nullable().optional(),
+	custodian: z.string().nullable().optional(),
+	physicalAddress: z.string().nullable().optional(),
+	status: archiveStatusSchema.optional(),
+	structureDescription: z.string().nullable().optional(),
+	estimatedDocumentCount: z.number().int().nonnegative().nullable().optional(),
+	languages: z.array(z.string()).optional(),
+	dateRange: z
+		.object({
+			earliest: nullableDateInputSchema.optional(),
+			latest: nullableDateInputSchema.optional(),
+		})
+		.optional(),
+	ingestStatus: z
+		.object({
+			totalDocumentsKnown: z.number().int().nonnegative().nullable().optional(),
+			totalDocumentsIngested: z.number().int().nonnegative().optional(),
+			lastIngestDate: nullableDateInputSchema.optional(),
+			completeness: archiveCompletenessSchema.optional(),
+			notes: z.string().nullable().optional(),
+		})
+		.optional(),
+	accessRestrictions: z.string().nullable().optional(),
+	registeredAt: dateInputSchema.optional(),
+	lastVerifiedAt: nullableDateInputSchema.optional(),
+});
+
+const archiveLocationSchema = z.object({
+	archiveId: z.string().uuid().optional(),
+	originalPath: z.string().min(1),
+	originalFilename: z.string().min(1),
+	pathSegments: z.array(pathSegmentSchema).optional(),
+	physicalLocation: physicalLocationSchema.nullable().optional(),
+	sourceStatus: archiveSourceStatusSchema.optional(),
+	sourceStatusUpdatedAt: dateInputSchema.optional(),
+	recordedAt: dateInputSchema.optional(),
+	validFrom: nullableDateInputSchema.optional(),
+	validUntil: nullableDateInputSchema.optional(),
+});
+
+export const ingestProvenanceInputSchema = z.object({
+	context: provenanceContextSchema.optional(),
+	originalSource: originalSourceSchema.nullable().optional(),
+	custodyChain: z.array(custodyStepSchema).optional(),
+	archive: archiveSchema.nullable().optional(),
+	archiveLocation: archiveLocationSchema.optional(),
+});
+
+export function parseIngestProvenanceInput(value: unknown): IngestProvenanceInput {
+	return ingestProvenanceInputSchema.parse(value);
+}
 
 export interface IngestProvenanceContextInput {
 	channel?: AcquisitionChannel;

@@ -144,6 +144,7 @@ export {
 	XLSX_MEDIA_TYPE,
 } from './source-type.js';
 export type { IngestFileResult, IngestInput, IngestProvenanceInput, IngestResult } from './types.js';
+export { ingestProvenanceInputSchema, parseIngestProvenanceInput } from './types.js';
 
 const STEP_NAME = 'ingest';
 

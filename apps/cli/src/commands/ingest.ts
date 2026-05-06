@@ -12,7 +12,7 @@
 import { readFile } from 'node:fs/promises';
 import { closeAllPools, createLogger, createServiceRegistry, getWorkerPool, loadConfig } from '@mulder/core';
 import type { IngestProvenanceInput } from '@mulder/pipeline';
-import { executeIngest, isSupportedUrlInput } from '@mulder/pipeline';
+import { executeIngest, isSupportedUrlInput, parseIngestProvenanceInput } from '@mulder/pipeline';
 import type { Command } from 'commander';
 import {
 	collectIngestSourceProfiles,
@@ -37,7 +37,7 @@ async function loadProvenanceInput(path: string | undefined): Promise<IngestProv
 		return undefined;
 	}
 	const raw = await readFile(path, 'utf-8');
-	return JSON.parse(raw) as IngestProvenanceInput;
+	return parseIngestProvenanceInput(JSON.parse(raw));
 }
 
 /**
