@@ -23,6 +23,7 @@ import type {
 	gcpSchema,
 	groundingSchema,
 	ingestionSchema,
+	ingestProvenanceSchema,
 	mulderConfigSchema,
 	ontologySchema,
 	patternDiscoverySchema,
@@ -63,6 +64,7 @@ export type DocumentQualityConfig = z.infer<typeof documentQualitySchema>;
 export type EmbeddingConfig = z.infer<typeof embeddingSchema>;
 export type RetrievalConfig = z.infer<typeof retrievalSchema>;
 export type GroundingConfig = z.infer<typeof groundingSchema>;
+export type IngestProvenanceConfig = z.infer<typeof ingestProvenanceSchema>;
 export type AnalysisConfig = z.infer<typeof analysisSchema>;
 export type TaxonomyConfig = z.infer<typeof taxonomySchema>;
 export type ThresholdsConfig = z.infer<typeof thresholdsSchema>;

@@ -31,6 +31,7 @@ export type {
 	GcpConfig,
 	GroundingConfig,
 	IngestionConfig,
+	IngestProvenanceConfig,
 	MulderConfig,
 	OntologyConfig,
 	PatternDiscoveryConfig,

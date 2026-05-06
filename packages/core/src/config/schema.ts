@@ -138,6 +138,26 @@ const ingestionObj = z.object({
 });
 const ingestionSchema = ingestionObj.default(defaults(ingestionObj));
 
+// --- Ingest Provenance ---
+
+const ingestProvenanceRequiredMetadataSchema = z.object({
+	channel: z.boolean().default(true),
+	submitted_by: z.boolean().default(true),
+	collection_id: z.boolean().default(false),
+	original_source: z.boolean().default(false),
+	custody_chain: z.boolean().default(false),
+});
+
+const ingestProvenanceArchivesSchema = z.object({
+	auto_register: z.boolean().default(true),
+});
+
+const ingestProvenanceObj = z.object({
+	required_metadata: ingestProvenanceRequiredMetadataSchema.default(defaults(ingestProvenanceRequiredMetadataSchema)),
+	archives: ingestProvenanceArchivesSchema.default(defaults(ingestProvenanceArchivesSchema)),
+});
+const ingestProvenanceSchema = ingestProvenanceObj.default(defaults(ingestProvenanceObj));
+
 // --- Extraction ---
 
 const segmentationConfigSchema = z.object({
@@ -521,6 +541,7 @@ const baseMulderConfigSchema = z.object({
 	dev_mode: z.boolean().default(false),
 	ontology: ontologySchema,
 	ingestion: ingestionSchema,
+	ingest_provenance: ingestProvenanceSchema,
 	extraction: extractionSchema,
 	document_quality: documentQualitySchema,
 	access_control: accessControlSchema,
@@ -604,6 +625,7 @@ export {
 	graphSchema,
 	groundingSchema,
 	ingestionSchema,
+	ingestProvenanceSchema,
 	ontologySchema,
 	patternDiscoverySchema,
 	pipelineSchema,

@@ -55,6 +55,19 @@ export const CONFIG_DEFAULTS = {
 		max_pages: 2000,
 	},
 
+	ingest_provenance: {
+		required_metadata: {
+			channel: true,
+			submitted_by: true,
+			collection_id: false,
+			original_source: false,
+			custody_chain: false,
+		},
+		archives: {
+			auto_register: true,
+		},
+	},
+
 	extraction: {
 		native_text_threshold: 0.9,
 		max_vision_pages: 20,

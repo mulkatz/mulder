@@ -1,5 +1,9 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
+import {
+	markAcquisitionContextsForSourceDeleted,
+	restoreAcquisitionContextsForSource,
+} from './ingest-provenance.repository.js';
 import type {
 	AuditLogEvent,
 	PurgeSourceInput,
@@ -202,6 +206,7 @@ export async function softDeleteSource(pool: pg.Pool, input: SoftDeleteSourceInp
 			`,
 			[input.sourceId, deletedAt],
 		);
+		await markAcquisitionContextsForSourceDeleted(client, input.sourceId, deletedAt);
 
 		const deletionResult = await client.query<SourceDeletionRow>(
 			`
@@ -279,6 +284,7 @@ export async function restoreSource(pool: pg.Pool, input: RestoreSourceInput): P
 			`,
 			[input.sourceId],
 		);
+		await restoreAcquisitionContextsForSource(client, input.sourceId, restoredAt);
 		const deletion = mapSourceDeletionRow(deletionRow);
 		await insertAuditEvent(client, {
 			eventType: 'source.rollback.restored',
@@ -394,6 +400,43 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 			'url_lifecycle',
 			sourceId,
 			'SELECT COUNT(*) AS count FROM url_lifecycle WHERE source_id = $1',
+		),
+		await countExclusiveAndShared(
+			pool,
+			'acquisition_contexts',
+			sourceId,
+			'SELECT COUNT(*) AS count FROM acquisition_contexts WHERE source_id = $1',
+		),
+		await countExclusiveAndShared(
+			pool,
+			'archive_locations',
+			sourceId,
+			`
+				SELECT COUNT(*) AS count
+				FROM sources s
+				JOIN archive_locations al ON al.blob_content_hash = s.file_hash
+				WHERE s.id = $1
+					AND NOT EXISTS (
+						SELECT 1
+						FROM acquisition_contexts other_context
+						WHERE other_context.blob_content_hash = s.file_hash
+							AND other_context.source_id IS DISTINCT FROM s.id
+							AND other_context.status IN ('active', 'restored')
+					)
+			`,
+			`
+				SELECT COUNT(*) AS count
+				FROM sources s
+				JOIN archive_locations al ON al.blob_content_hash = s.file_hash
+				WHERE s.id = $1
+					AND EXISTS (
+						SELECT 1
+						FROM acquisition_contexts other_context
+						WHERE other_context.blob_content_hash = s.file_hash
+							AND other_context.source_id IS DISTINCT FROM s.id
+							AND other_context.status IN ('active', 'restored')
+					)
+			`,
 		),
 		await countExclusiveAndShared(
 			pool,
