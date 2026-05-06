@@ -92,7 +92,7 @@ interface AssertionContextRow {
 }
 
 function isPool(value: Queryable): value is pg.Pool {
-	return 'connect' in value;
+	return !('release' in value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -153,6 +153,14 @@ function resolveLocale(config: MulderConfig): string {
 	return config.project.supported_locales[0] ?? 'en';
 }
 
+function isEnabledConflictType(value: ConflictType, config: ContradictionManagementConfig): boolean {
+	return config.conflict_types.includes(value);
+}
+
+function isEnabledSeverity(value: ConflictSeverity, config: ContradictionManagementConfig): boolean {
+	return config.severity_levels.includes(value);
+}
+
 export async function detectAssertionConflicts(input: {
 	storyId: string;
 	assertions: readonly KnowledgeAssertion[];
@@ -223,11 +231,24 @@ export async function detectAssertionConflicts(input: {
 					result.skipped++;
 					continue;
 				}
+				if (!isEnabledConflictType(response.conflict_type, config) || !isEnabledSeverity(response.severity, config)) {
+					result.skipped++;
+					log.warn(
+						{
+							assertionId: assertion.id,
+							candidateId: candidate.id,
+							conflictType: response.conflict_type,
+							severity: response.severity,
+						},
+						'Conflict detection returned a disabled type or severity',
+					);
+					continue;
+				}
 				await createConflictNode(input.pool, {
-					conflictType: response.conflict_type as ConflictType,
+					conflictType: response.conflict_type,
 					detectionMethod: 'llm_auto',
 					detectedBy: `enrich:${input.storyId}`,
-					severity: response.severity as ConflictSeverity,
+					severity: response.severity,
 					severityRationale: response.severity_rationale,
 					confidence: response.confidence,
 					assertions: [

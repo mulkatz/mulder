@@ -421,7 +421,7 @@ function buildPrompt(context: HydratedContradictionContext, locale: string): str
 }
 
 async function findLegacyAssertionParticipants(
-	pool: pg.Pool,
+	pool: pg.Pool | pg.PoolClient,
 	context: HydratedContradictionContext,
 ): Promise<[LegacyAssertionParticipant, LegacyAssertionParticipant] | null> {
 	const result = await pool.query<LegacyAssertionParticipant>(
@@ -479,7 +479,7 @@ function severityForResponse(response: ContradictionResolutionResponse): Conflic
 }
 
 async function promoteLegacyContradictionToConflictNode(
-	pool: pg.Pool,
+	pool: pg.Pool | pg.PoolClient,
 	context: HydratedContradictionContext,
 	response: ContradictionResolutionResponse,
 ): Promise<ConflictNode | null> {
@@ -551,8 +551,12 @@ async function resolveEdge(
 	}
 
 	const nextEdgeType = resolution.verdict === 'confirmed' ? 'CONFIRMED_CONTRADICTION' : 'DISMISSED_CONTRADICTION';
+	let conflictNode: ConflictNode | null = null;
+	const client = await pool.connect();
+	let transactionAction = `persist contradiction verdict for edge ${context.edge.id}`;
 	try {
-		await updateEdge(pool, context.edge.id, {
+		await client.query('BEGIN');
+		await updateEdge(client, context.edge.id, {
 			edgeType: nextEdgeType,
 			confidence: resolution.confidence,
 			analysis: {
@@ -570,29 +574,17 @@ async function resolveEdge(
 				resolvedAt: new Date().toISOString(),
 			},
 		});
+		transactionAction = `promote contradiction edge ${context.edge.id} to conflict node`;
+		conflictNode = await promoteLegacyContradictionToConflictNode(client, context, resolution);
+		await client.query('COMMIT');
 	} catch (cause: unknown) {
-		throw new AnalyzeError(
-			`Failed to persist contradiction verdict for edge ${context.edge.id}`,
-			ANALYZE_ERROR_CODES.ANALYZE_WRITE_FAILED,
-			{
-				cause,
-				context: { edgeId: context.edge.id },
-			},
-		);
-	}
-
-	let conflictNode: ConflictNode | null = null;
-	try {
-		conflictNode = await promoteLegacyContradictionToConflictNode(pool, context, resolution);
-	} catch (cause: unknown) {
-		throw new AnalyzeError(
-			`Failed to promote contradiction edge ${context.edge.id} to conflict node`,
-			ANALYZE_ERROR_CODES.ANALYZE_WRITE_FAILED,
-			{
-				cause,
-				context: { edgeId: context.edge.id },
-			},
-		);
+		await client.query('ROLLBACK').catch(() => {});
+		throw new AnalyzeError(`Failed to ${transactionAction}`, ANALYZE_ERROR_CODES.ANALYZE_WRITE_FAILED, {
+			cause,
+			context: { edgeId: context.edge.id },
+		});
+	} finally {
+		client.release();
 	}
 
 	return {
@@ -603,7 +595,7 @@ async function resolveEdge(
 		winningClaim: resolution.winning_claim,
 		confidence: resolution.confidence,
 		conflictNodeId: conflictNode?.id ?? null,
-		conflictResolutionWritten: conflictNode?.latestResolution !== null,
+		conflictResolutionWritten: conflictNode?.latestResolution != null,
 	};
 }
 
