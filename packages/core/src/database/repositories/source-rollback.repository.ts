@@ -581,6 +581,67 @@ async function updateSharedProvenance(
 	return result.rowCount ?? 0;
 }
 
+async function rehomeRetainedSourceStories(client: pg.PoolClient, sourceId: string): Promise<number> {
+	const sql = `
+		WITH retained_story_owners AS (
+			SELECT c.story_id, retained_source.source_id
+			FROM chunks c
+			JOIN stories s ON s.id = c.story_id
+			CROSS JOIN LATERAL jsonb_array_elements_text(
+				COALESCE(c.provenance->'source_document_ids', '[]'::jsonb)
+			) AS retained_source(source_id)
+			WHERE s.source_id = $1
+				AND NOT (c.provenance->'source_document_ids' ? $1::text)
+			UNION ALL
+			SELECT se.story_id, retained_source.source_id
+			FROM story_entities se
+			JOIN stories s ON s.id = se.story_id
+			CROSS JOIN LATERAL jsonb_array_elements_text(
+				COALESCE(se.provenance->'source_document_ids', '[]'::jsonb)
+			) AS retained_source(source_id)
+			WHERE s.source_id = $1
+				AND NOT (se.provenance->'source_document_ids' ? $1::text)
+			UNION ALL
+			SELECT ee.story_id, retained_source.source_id
+			FROM entity_edges ee
+			JOIN stories s ON s.id = ee.story_id
+			CROSS JOIN LATERAL jsonb_array_elements_text(
+				COALESCE(ee.provenance->'source_document_ids', '[]'::jsonb)
+			) AS retained_source(source_id)
+			WHERE ee.story_id IS NOT NULL
+				AND s.source_id = $1
+				AND NOT (ee.provenance->'source_document_ids' ? $1::text)
+			UNION ALL
+			SELECT ka.story_id, retained_source.source_id
+			FROM knowledge_assertions ka
+			JOIN stories s ON s.id = ka.story_id
+			CROSS JOIN LATERAL jsonb_array_elements_text(
+				COALESCE(ka.provenance->'source_document_ids', '[]'::jsonb)
+			) AS retained_source(source_id)
+			WHERE ka.deleted_at IS NULL
+				AND s.source_id = $1
+				AND NOT (ka.provenance->'source_document_ids' ? $1::text)
+		),
+		active_story_owners AS (
+			SELECT DISTINCT ON (retained.story_id)
+				retained.story_id,
+				retained.source_id::uuid AS source_id
+			FROM retained_story_owners retained
+			JOIN sources owner_source ON owner_source.id = retained.source_id::uuid
+			WHERE owner_source.active_source
+			ORDER BY retained.story_id, retained.source_id
+		)
+		UPDATE stories s
+		SET source_id = active_story_owners.source_id,
+			updated_at = now()
+		FROM active_story_owners
+		WHERE s.id = active_story_owners.story_id
+			AND s.source_id = $1
+	`;
+	const result = await client.query(sql, [sourceId]);
+	return result.rowCount ?? 0;
+}
+
 export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promise<SourcePurgeReport> {
 	const actor = assertActor(input.actor);
 	const reason = assertReason(input.reason, 'Source purge');
@@ -728,6 +789,8 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 			`,
 			[input.sourceId],
 		);
+
+		await rehomeRetainedSourceStories(client, input.sourceId);
 
 		const softDeleteAssertions = await client.query(
 			`

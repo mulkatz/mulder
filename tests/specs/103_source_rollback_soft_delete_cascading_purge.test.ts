@@ -502,6 +502,37 @@ describe('Spec 103: Source rollback soft delete and cascading purge', () => {
 		const sourceA = await createSourceFixture('qa07-a');
 		const sourceB = await createSourceFixture('qa07-b');
 		const storyA = await createStoryFixture(sourceA.id, 'qa07-a');
+		const entityA = await coreModule.createEntity(pool, {
+			name: `QA07 Shared Person ${randomUUID()}`,
+			type: 'person',
+			provenance: { sourceDocumentIds: [sourceA.id, sourceB.id] },
+		});
+		const entityB = await coreModule.createEntity(pool, {
+			name: `QA07 Shared Event ${randomUUID()}`,
+			type: 'event',
+			provenance: { sourceDocumentIds: [sourceA.id, sourceB.id] },
+		});
+		await coreModule.linkStoryEntity(pool, {
+			storyId: storyA.id,
+			entityId: entityA.id,
+			confidence: 0.9,
+			mentionCount: 2,
+			provenance: { sourceDocumentIds: [sourceA.id, sourceB.id] },
+		});
+		const edge = await coreModule.createEdge(pool, {
+			sourceEntityId: entityA.id,
+			targetEntityId: entityB.id,
+			relationship: 'PARTICIPATED_IN',
+			storyId: storyA.id,
+			confidence: 0.8,
+			provenance: { sourceDocumentIds: [sourceA.id, sourceB.id] },
+		});
+		const chunk = await coreModule.createChunk(pool, {
+			storyId: storyA.id,
+			content: `Shared provenance chunk ${randomUUID()}`,
+			chunkIndex: 0,
+			provenance: { sourceDocumentIds: [sourceA.id, sourceB.id] },
+		});
 		const assertion = await coreModule.upsertKnowledgeAssertion(pool, {
 			sourceId: sourceA.id,
 			storyId: storyA.id,
@@ -533,6 +564,36 @@ describe('Spec 103: Source rollback soft delete and cascading purge', () => {
 		expect(rows).toHaveLength(1);
 		expect(rows[0].deleted_at).toBeNull();
 		expect(rows[0].provenance.source_document_ids).toEqual([sourceB.id]);
+
+		const { rows: storyRows } = await pool.query<{ source_id: string }>('SELECT source_id FROM stories WHERE id = $1', [
+			storyA.id,
+		]);
+		expect(storyRows).toEqual([{ source_id: sourceB.id }]);
+		await expect(coreModule.findStoryById(pool, storyA.id)).resolves.toMatchObject({
+			id: storyA.id,
+			sourceId: sourceB.id,
+		});
+
+		const { rows: chunkRows } = await pool.query<{ provenance: { source_document_ids?: string[] } }>(
+			'SELECT provenance FROM chunks WHERE id = $1',
+			[chunk.id],
+		);
+		expect(chunkRows).toHaveLength(1);
+		expect(chunkRows[0].provenance.source_document_ids).toEqual([sourceB.id]);
+
+		const { rows: storyEntityRows } = await pool.query<{ provenance: { source_document_ids?: string[] } }>(
+			'SELECT provenance FROM story_entities WHERE story_id = $1 AND entity_id = $2',
+			[storyA.id, entityA.id],
+		);
+		expect(storyEntityRows).toHaveLength(1);
+		expect(storyEntityRows[0].provenance.source_document_ids).toEqual([sourceB.id]);
+
+		const { rows: edgeRows } = await pool.query<{ provenance: { source_document_ids?: string[] } }>(
+			'SELECT provenance FROM entity_edges WHERE id = $1',
+			[edge.id],
+		);
+		expect(edgeRows).toHaveLength(1);
+		expect(edgeRows[0].provenance.source_document_ids).toEqual([sourceB.id]);
 	});
 
 	it.skipIf(!pgAvailable)('QA-08: CLI safety gates enforce reason and confirmation', async () => {
