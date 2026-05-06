@@ -301,18 +301,36 @@ const credibilityDimensionSchema = z.object({
 	label: z.string().min(1),
 });
 
+const credibilityDimensionsSchema = z
+	.array(credibilityDimensionSchema)
+	.min(1)
+	.superRefine((dimensions, ctx) => {
+		const seen = new Map<string, number>();
+		for (let i = 0; i < dimensions.length; i++) {
+			const trimmedId = dimensions[i].id.trim();
+			const firstIndex = seen.get(trimmedId);
+			if (firstIndex !== undefined) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: [i, 'id'],
+					message: `Duplicate credibility dimension id "${trimmedId}" also appears at index ${firstIndex}`,
+					params: { customCode: 'duplicate_credibility_dimension_id' },
+				});
+				continue;
+			}
+			seen.set(trimmedId, i);
+		}
+	});
+
 const credibilityObj = z.object({
 	enabled: z.boolean().default(true),
-	dimensions: z
-		.array(credibilityDimensionSchema)
-		.min(1)
-		.default([
-			{ id: 'institutional_authority', label: 'Institutional authority' },
-			{ id: 'domain_track_record', label: 'Domain track record' },
-			{ id: 'conflict_of_interest', label: 'Conflict of interest' },
-			{ id: 'transparency', label: 'Transparency / verifiability' },
-			{ id: 'consistency', label: 'Internal consistency over time' },
-		]),
+	dimensions: credibilityDimensionsSchema.default([
+		{ id: 'institutional_authority', label: 'Institutional authority' },
+		{ id: 'domain_track_record', label: 'Domain track record' },
+		{ id: 'conflict_of_interest', label: 'Conflict of interest' },
+		{ id: 'transparency', label: 'Transparency / verifiability' },
+		{ id: 'consistency', label: 'Internal consistency over time' },
+	]),
 	auto_profile_on_ingest: z.boolean().default(true),
 	require_human_review: z.boolean().default(true),
 	display_in_reports: z.boolean().default(true),

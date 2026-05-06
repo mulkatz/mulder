@@ -95,6 +95,45 @@ function writeMinimalConfigWithoutCredibility(): string {
 	return configPath;
 }
 
+function writeMinimalConfigWithDuplicateCredibilityDimensionIds(): string {
+	if (!tempDir) {
+		tempDir = mkdtempSync(join(tmpdir(), 'mulder-spec107-'));
+	}
+	const configPath = join(tempDir, `duplicate-credibility-${randomUUID()}.yaml`);
+	writeFileSync(
+		configPath,
+		[
+			'project:',
+			'  name: "spec107"',
+			'  supported_locales: ["en"]',
+			'gcp:',
+			'  project_id: "test-project"',
+			'  region: "europe-west1"',
+			'  cloud_sql:',
+			'    instance_name: "mulder-db"',
+			'    database: "mulder"',
+			'  storage:',
+			'    bucket: "mulder-test"',
+			'  document_ai:',
+			'    processor_id: "processor"',
+			'ontology:',
+			'  entity_types:',
+			'    - name: "person"',
+			'      description: "Person"',
+			'  relationships: []',
+			'credibility:',
+			'  dimensions:',
+			'    - id: "transparency"',
+			'      label: "Transparency"',
+			'    - id: " transparency "',
+			'      label: "Duplicate transparency"',
+			'',
+		].join('\n'),
+		'utf-8',
+	);
+	return configPath;
+}
+
 function cleanTables(): void {
 	truncateExistingTables(['credibility_dimensions', 'source_credibility_profiles', ...MULDER_TEST_TABLES]);
 }
@@ -408,6 +447,12 @@ describe('Spec 107: credibility profile drafts', () => {
 		expect(minimalConfig.credibility.agent_instruction).toBe('weight_but_never_exclude');
 	});
 
+	it('QA-02b: config rejects duplicate trimmed credibility dimension IDs', () => {
+		expect(() => coreModule.loadConfig(writeMinimalConfigWithDuplicateCredibilityDimensionIds())).toThrow(
+			/Duplicate credibility dimension id "transparency"/,
+		);
+	});
+
 	it.skipIf(!pgAvailable)('QA-03: repository upserts a full dimension snapshot', async () => {
 		const source = await createTextSource('spec107-qa03');
 		const first = await coreModule.upsertSourceCredibilityProfile(pool, {
@@ -504,5 +549,29 @@ describe('Spec 107: credibility profile drafts', () => {
 		expect(result.data?.credibilityProfileStatus).toBe('created');
 		expect(profile?.reviewStatus).toBe('draft');
 		expect(profile?.dimensions).toHaveLength(config.credibility.dimensions.length);
+	});
+
+	it.skipIf(!pgAvailable)('QA-06b: Enrich records draft-generation failures in source_steps', async () => {
+		const { source, story } = await createSegmentedStory('spec107-qa06b');
+		const result = await pipelineModule.executeEnrich(
+			{ storyId: story.id, force: false },
+			enrichConfig(),
+			fakeServices(story.gcsMarkdownUri, [extractionResponse()]),
+			pool,
+			logger,
+		);
+		const step = await pool.query<{ status: string; error_message: string | null }>(
+			"SELECT status, error_message FROM source_steps WHERE source_id = $1 AND step_name = 'enrich'",
+			[source.id],
+		);
+
+		expect(result.status).toBe('success');
+		expect(result.data?.credibilityProfileCreated).toBe(false);
+		expect(result.data?.credibilityProfileStatus).toBe('failed');
+		expect(result.errors.map((error) => error.message).join('\n')).toContain(
+			'Source credibility draft generation failed',
+		);
+		expect(step.rows[0]).toMatchObject({ status: 'partial' });
+		expect(step.rows[0].error_message).toContain('Source credibility draft generation failed');
 	});
 });

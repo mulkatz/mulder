@@ -740,12 +740,6 @@ export async function execute(
 			await updateSourceSensitivityFromArtifacts(pool, story.sourceId);
 		}
 		await updateStoryStatus(pool, input.storyId, 'enriched');
-		await upsertSourceStep(pool, {
-			sourceId: story.sourceId,
-			stepName: STEP_NAME,
-			status: 'completed',
-			configHash: stepConfigHash,
-		});
 
 		const credibilityResult = await generateSourceCredibilityProfileDraft({
 			sourceId: story.sourceId,
@@ -757,16 +751,28 @@ export async function execute(
 		credibilityProfileCreated = credibilityResult.created;
 		credibilityProfileStatus = credibilityResult.status;
 
+		let credibilityErrorMessage: string | undefined;
 		if (credibilityResult.status === 'failed') {
+			credibilityErrorMessage = `Source credibility draft generation failed: ${
+				credibilityResult.reason ?? 'unknown error'
+			}`;
 			errors.push({
 				code: ENRICH_ERROR_CODES.ENRICH_LLM_FAILED,
-				message: `Source credibility draft generation failed: ${credibilityResult.reason ?? 'unknown error'}`,
+				message: credibilityErrorMessage,
 			});
 			log.warn(
 				{ sourceId: story.sourceId, reason: credibilityResult.reason },
 				'Source credibility draft generation failed non-fatally',
 			);
 		}
+
+		await upsertSourceStep(pool, {
+			sourceId: story.sourceId,
+			stepName: STEP_NAME,
+			status: credibilityResult.status === 'failed' ? 'partial' : 'completed',
+			configHash: stepConfigHash,
+			errorMessage: credibilityErrorMessage,
+		});
 	} else {
 		await upsertSourceStep(pool, {
 			sourceId: story.sourceId,
