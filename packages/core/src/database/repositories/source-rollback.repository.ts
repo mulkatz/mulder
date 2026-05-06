@@ -101,7 +101,7 @@ function removeSourceFromProvenanceSql(tableAlias: string): string {
 			(
 				SELECT COALESCE(jsonb_agg(source_id ORDER BY source_id), '[]'::jsonb)
 				FROM jsonb_array_elements_text(COALESCE(${tableAlias}.provenance->'source_document_ids', '[]'::jsonb)) AS provenance_ids(source_id)
-				WHERE provenance_ids.source_id <> $1
+				WHERE provenance_ids.source_id <> $1::text
 			),
 			true
 		)
@@ -161,10 +161,10 @@ async function countExclusiveAndShared(
 	subsystem: string,
 	sourceId: string,
 	exclusiveSql: string,
-	sharedSql = 'SELECT 0::text AS count',
+	sharedSql?: string,
 ): Promise<SourcePurgeSubsystemCount> {
 	const exclusive = await countRows(pool, exclusiveSql, [sourceId]);
-	const shared = await countRows(pool, sharedSql, [sourceId]);
+	const shared = sharedSql ? await countRows(pool, sharedSql, [sourceId]) : 0;
 	return { subsystem, exclusive, shared, total: exclusive + shared };
 }
 
@@ -410,14 +410,14 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 				FROM chunks c
 				JOIN stories s ON s.id = c.story_id
 				WHERE s.source_id = $1
-					OR (c.provenance->'source_document_ids' ? $1 AND jsonb_array_length(c.provenance->'source_document_ids') = 1)
+					OR (c.provenance->'source_document_ids' ? $1::text AND jsonb_array_length(c.provenance->'source_document_ids') = 1)
 			`,
 			`
 				SELECT COUNT(*) AS count
 				FROM chunks c
 				JOIN stories s ON s.id = c.story_id
-				WHERE s.source_id <> $1
-					AND c.provenance->'source_document_ids' ? $1
+				WHERE s.source_id <> $1::uuid
+					AND c.provenance->'source_document_ids' ? $1::text
 					AND jsonb_array_length(c.provenance->'source_document_ids') > 1
 			`,
 		),
@@ -430,14 +430,14 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 				FROM story_entities se
 				JOIN stories s ON s.id = se.story_id
 				WHERE s.source_id = $1
-					OR (se.provenance->'source_document_ids' ? $1 AND jsonb_array_length(se.provenance->'source_document_ids') = 1)
+					OR (se.provenance->'source_document_ids' ? $1::text AND jsonb_array_length(se.provenance->'source_document_ids') = 1)
 			`,
 			`
 				SELECT COUNT(*) AS count
 				FROM story_entities se
 				JOIN stories s ON s.id = se.story_id
-				WHERE s.source_id <> $1
-					AND se.provenance->'source_document_ids' ? $1
+				WHERE s.source_id <> $1::uuid
+					AND se.provenance->'source_document_ids' ? $1::text
 					AND jsonb_array_length(se.provenance->'source_document_ids') > 1
 			`,
 		),
@@ -450,14 +450,14 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 				FROM entity_edges ee
 				LEFT JOIN stories s ON s.id = ee.story_id
 				WHERE s.source_id = $1
-					OR (ee.provenance->'source_document_ids' ? $1 AND jsonb_array_length(ee.provenance->'source_document_ids') = 1)
+					OR (ee.provenance->'source_document_ids' ? $1::text AND jsonb_array_length(ee.provenance->'source_document_ids') = 1)
 			`,
 			`
 				SELECT COUNT(*) AS count
 				FROM entity_edges ee
 				LEFT JOIN stories s ON s.id = ee.story_id
 				WHERE (s.source_id IS NULL OR s.source_id <> $1)
-					AND ee.provenance->'source_document_ids' ? $1
+					AND ee.provenance->'source_document_ids' ? $1::text
 					AND jsonb_array_length(ee.provenance->'source_document_ids') > 1
 			`,
 		),
@@ -473,7 +473,7 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 					AND (
 						ka.source_id = $1
 						OR s.source_id = $1
-						OR (ka.provenance->'source_document_ids' ? $1 AND jsonb_array_length(ka.provenance->'source_document_ids') = 1)
+						OR (ka.provenance->'source_document_ids' ? $1::text AND jsonb_array_length(ka.provenance->'source_document_ids') = 1)
 					)
 			`,
 			`
@@ -481,9 +481,9 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 				FROM knowledge_assertions ka
 				LEFT JOIN stories s ON s.id = ka.story_id
 				WHERE ka.deleted_at IS NULL
-					AND ka.source_id <> $1
+					AND ka.source_id <> $1::uuid
 					AND (s.source_id IS NULL OR s.source_id <> $1)
-					AND ka.provenance->'source_document_ids' ? $1
+					AND ka.provenance->'source_document_ids' ? $1::text
 					AND jsonb_array_length(ka.provenance->'source_document_ids') > 1
 			`,
 		),
@@ -494,13 +494,13 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 			`
 				SELECT COUNT(*) AS count
 				FROM entities
-				WHERE provenance->'source_document_ids' ? $1
+				WHERE provenance->'source_document_ids' ? $1::text
 					AND jsonb_array_length(provenance->'source_document_ids') = 1
 			`,
 			`
 				SELECT COUNT(*) AS count
 				FROM entities
-				WHERE provenance->'source_document_ids' ? $1
+				WHERE provenance->'source_document_ids' ? $1::text
 					AND jsonb_array_length(provenance->'source_document_ids') > 1
 			`,
 		),
@@ -511,13 +511,13 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 			`
 				SELECT COUNT(*) AS count
 				FROM entity_aliases
-				WHERE provenance->'source_document_ids' ? $1
+				WHERE provenance->'source_document_ids' ? $1::text
 					AND jsonb_array_length(provenance->'source_document_ids') = 1
 			`,
 			`
 				SELECT COUNT(*) AS count
 				FROM entity_aliases
-				WHERE provenance->'source_document_ids' ? $1
+				WHERE provenance->'source_document_ids' ? $1::text
 					AND jsonb_array_length(provenance->'source_document_ids') > 1
 			`,
 		),
@@ -574,7 +574,7 @@ async function updateSharedProvenance(
 	const sql = `
 		UPDATE ${tableName} ${alias}
 		SET provenance = ${removeSourceFromProvenanceSql(alias)}
-		WHERE ${alias}.provenance->'source_document_ids' ? $1
+		WHERE ${alias}.provenance->'source_document_ids' ? $1::text
 			AND jsonb_array_length(${alias}.provenance->'source_document_ids') > 1
 	`;
 	const result = await client.query(sql, [sourceId]);
@@ -678,21 +678,21 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 					SELECT se.entity_id
 					FROM story_entities se
 					JOIN stories s ON s.id = se.story_id
-					WHERE s.source_id = $1 OR se.provenance->'source_document_ids' ? $1
+					WHERE s.source_id = $1 OR se.provenance->'source_document_ids' ? $1::text
 					UNION
 					SELECT ee.source_entity_id
 					FROM entity_edges ee
 					LEFT JOIN stories s ON s.id = ee.story_id
-					WHERE s.source_id = $1 OR ee.provenance->'source_document_ids' ? $1
+					WHERE s.source_id = $1 OR ee.provenance->'source_document_ids' ? $1::text
 					UNION
 					SELECT ee.target_entity_id
 					FROM entity_edges ee
 					LEFT JOIN stories s ON s.id = ee.story_id
-					WHERE s.source_id = $1 OR ee.provenance->'source_document_ids' ? $1
+					WHERE s.source_id = $1 OR ee.provenance->'source_document_ids' ? $1::text
 					UNION
 					SELECT e.id
 					FROM entities e
-					WHERE e.provenance->'source_document_ids' ? $1
+					WHERE e.provenance->'source_document_ids' ? $1::text
 				) affected
 				ON CONFLICT (entity_id) DO NOTHING
 			`,
@@ -711,12 +711,30 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 		effects.entityAliasesUpdated = await updateSharedProvenance(client, input.sourceId, 'entity_aliases', 'ea');
 		effects.entitiesUpdated = await updateSharedProvenance(client, input.sourceId, 'entities', 'e');
 
+		await client.query(
+			`
+				UPDATE knowledge_assertions ka
+				SET source_id = (
+						SELECT remaining_source_id::uuid
+						FROM jsonb_array_elements_text(ka.provenance->'source_document_ids') AS remaining(remaining_source_id)
+						ORDER BY remaining_source_id
+						LIMIT 1
+					),
+					updated_at = now()
+				WHERE ka.deleted_at IS NULL
+					AND ka.source_id = $1
+					AND NOT (ka.provenance->'source_document_ids' ? $1::text)
+					AND jsonb_array_length(COALESCE(ka.provenance->'source_document_ids', '[]'::jsonb)) > 0
+			`,
+			[input.sourceId],
+		);
+
 		const softDeleteAssertions = await client.query(
 			`
 				UPDATE knowledge_assertions ka
 				SET deleted_at = COALESCE(deleted_at, $2), updated_at = now()
 				WHERE deleted_at IS NULL
-					AND ka.provenance->'source_document_ids' ? $1
+					AND ka.provenance->'source_document_ids' ? $1::text
 					AND jsonb_array_length(COALESCE(ka.provenance->'source_document_ids', '[]'::jsonb)) <= 1
 			`,
 			[input.sourceId, purgedAt],
@@ -726,7 +744,7 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 		const deleteChunks = await client.query(
 			`
 				DELETE FROM chunks c
-				WHERE c.provenance->'source_document_ids' ? $1
+				WHERE c.provenance->'source_document_ids' ? $1::text
 					AND jsonb_array_length(COALESCE(c.provenance->'source_document_ids', '[]'::jsonb)) <= 1
 			`,
 			[input.sourceId],
@@ -736,7 +754,7 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 		const deleteStoryEntities = await client.query(
 			`
 				DELETE FROM story_entities se
-				WHERE se.provenance->'source_document_ids' ? $1
+				WHERE se.provenance->'source_document_ids' ? $1::text
 					AND jsonb_array_length(COALESCE(se.provenance->'source_document_ids', '[]'::jsonb)) <= 1
 			`,
 			[input.sourceId],
@@ -746,7 +764,7 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 		const deleteEdges = await client.query(
 			`
 				DELETE FROM entity_edges ee
-				WHERE ee.provenance->'source_document_ids' ? $1
+				WHERE ee.provenance->'source_document_ids' ? $1::text
 					AND jsonb_array_length(COALESCE(ee.provenance->'source_document_ids', '[]'::jsonb)) <= 1
 			`,
 			[input.sourceId],
@@ -756,7 +774,7 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 		const deleteAliases = await client.query(
 			`
 				DELETE FROM entity_aliases ea
-				WHERE ea.provenance->'source_document_ids' ? $1
+				WHERE ea.provenance->'source_document_ids' ? $1::text
 					AND jsonb_array_length(COALESCE(ea.provenance->'source_document_ids', '[]'::jsonb)) <= 1
 			`,
 			[input.sourceId],
@@ -781,7 +799,7 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 		const deleteEntities = await client.query(
 			`
 				DELETE FROM entities e
-				WHERE e.provenance->'source_document_ids' ? $1
+				WHERE e.provenance->'source_document_ids' ? $1::text
 					AND jsonb_array_length(COALESCE(e.provenance->'source_document_ids', '[]'::jsonb)) <= 1
 					AND NOT EXISTS (SELECT 1 FROM story_entities se WHERE se.entity_id = e.id)
 					AND NOT EXISTS (

@@ -1,18 +1,29 @@
 ALTER TABLE sources
-  ADD COLUMN deleted_at TIMESTAMPTZ,
-  ADD COLUMN deletion_status TEXT NOT NULL DEFAULT 'active';
+  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS deletion_status TEXT NOT NULL DEFAULT 'active';
 
 ALTER TABLE sources
-  ADD COLUMN active_source BOOLEAN GENERATED ALWAYS AS (
+  ADD COLUMN IF NOT EXISTS active_source BOOLEAN GENERATED ALWAYS AS (
     deletion_status IN ('active', 'restored')
   ) STORED;
 
-ALTER TABLE sources
-  ADD CONSTRAINT sources_deletion_status_check CHECK (
-    deletion_status IN ('active', 'soft_deleted', 'purging', 'purged', 'restored')
-  );
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'sources_deletion_status_check'
+      AND conrelid = 'sources'::regclass
+  ) THEN
+    ALTER TABLE sources
+      ADD CONSTRAINT sources_deletion_status_check CHECK (
+        deletion_status IN ('active', 'soft_deleted', 'purging', 'purged', 'restored')
+      );
+  END IF;
+END;
+$$;
 
-CREATE TABLE source_deletions (
+CREATE TABLE IF NOT EXISTS source_deletions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   source_id UUID NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
   deleted_by TEXT NOT NULL,
@@ -30,11 +41,11 @@ CREATE TABLE source_deletions (
   CONSTRAINT source_deletions_reason_required_check CHECK (length(trim(reason)) > 0)
 );
 
-CREATE UNIQUE INDEX idx_source_deletions_current
+CREATE UNIQUE INDEX IF NOT EXISTS idx_source_deletions_current
   ON source_deletions(source_id)
   WHERE status IN ('soft_deleted', 'purging');
 
-CREATE TABLE audit_log (
+CREATE TABLE IF NOT EXISTS audit_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   event_type TEXT NOT NULL,
   artifact_type TEXT NOT NULL,
@@ -47,10 +58,42 @@ CREATE TABLE audit_log (
   CONSTRAINT audit_log_metadata_object_check CHECK (jsonb_typeof(metadata) = 'object')
 );
 
-CREATE INDEX idx_sources_active_source ON sources(active_source);
-CREATE INDEX idx_sources_deletion_status ON sources(deletion_status);
-CREATE INDEX idx_source_deletions_status_undo_deadline
+ALTER TABLE knowledge_assertions
+  DROP CONSTRAINT IF EXISTS knowledge_assertions_source_id_fkey,
+  DROP CONSTRAINT IF EXISTS knowledge_assertions_story_id_fkey,
+  ALTER COLUMN source_id DROP NOT NULL,
+  ALTER COLUMN story_id DROP NOT NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'knowledge_assertions_source_id_fkey'
+      AND conrelid = 'knowledge_assertions'::regclass
+  ) THEN
+    ALTER TABLE knowledge_assertions
+      ADD CONSTRAINT knowledge_assertions_source_id_fkey
+      FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE SET NULL;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'knowledge_assertions_story_id_fkey'
+      AND conrelid = 'knowledge_assertions'::regclass
+  ) THEN
+    ALTER TABLE knowledge_assertions
+      ADD CONSTRAINT knowledge_assertions_story_id_fkey
+      FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE SET NULL;
+  END IF;
+END;
+$$;
+
+CREATE INDEX IF NOT EXISTS idx_sources_active_source ON sources(active_source);
+CREATE INDEX IF NOT EXISTS idx_sources_deletion_status ON sources(deletion_status);
+CREATE INDEX IF NOT EXISTS idx_source_deletions_status_undo_deadline
   ON source_deletions(status, undo_deadline);
-CREATE INDEX idx_source_deletions_source_id ON source_deletions(source_id);
-CREATE INDEX idx_audit_log_source_created_at ON audit_log(source_id, created_at DESC);
-CREATE INDEX idx_audit_log_event_type_created_at ON audit_log(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_source_deletions_source_id ON source_deletions(source_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_source_created_at ON audit_log(source_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_event_type_created_at ON audit_log(event_type, created_at DESC);
