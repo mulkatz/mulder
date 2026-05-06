@@ -116,6 +116,16 @@ export const CONFIG_DEFAULTS = {
 		},
 	},
 
+	source_rollback: {
+		undo_window_hours: 72,
+		auto_purge_after_undo_window: true,
+		require_reason: true,
+		require_confirmation: true,
+		orphan_handling: 'mark' as const,
+		journal_annotation: true,
+		notify_on_purge: true,
+	},
+
 	enrichment: {
 		model: 'gemini-2.5-flash',
 		max_story_tokens: 15000,

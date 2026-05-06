@@ -241,6 +241,19 @@ const accessControlObj = z.object({
 });
 const accessControlSchema = accessControlObj.default(defaults(accessControlObj));
 
+// --- Source Rollback ---
+
+const sourceRollbackObj = z.object({
+	undo_window_hours: z.number().positive().int().default(72),
+	auto_purge_after_undo_window: z.boolean().default(true),
+	require_reason: z.boolean().default(true),
+	require_confirmation: z.boolean().default(true),
+	orphan_handling: z.enum(['mark', 'delete']).default('mark'),
+	journal_annotation: z.boolean().default(true),
+	notify_on_purge: z.boolean().default(true),
+});
+const sourceRollbackSchema = sourceRollbackObj.default(defaults(sourceRollbackObj));
+
 // --- Enrichment ---
 
 const assertionClassificationSchema = z.object({
@@ -511,6 +524,7 @@ const baseMulderConfigSchema = z.object({
 	extraction: extractionSchema,
 	document_quality: documentQualitySchema,
 	access_control: accessControlSchema,
+	source_rollback: sourceRollbackSchema,
 	enrichment: enrichmentSchema,
 	taxonomy: taxonomySchema,
 	entity_resolution: entityResolutionSchema,
@@ -597,6 +611,7 @@ export {
 	relationshipSchema,
 	retrievalSchema,
 	safetySchema,
+	sourceRollbackSchema,
 	storageSchema,
 	taxonomySchema,
 	thresholdsSchema,

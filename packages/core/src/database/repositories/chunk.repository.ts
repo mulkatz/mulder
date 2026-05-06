@@ -262,8 +262,19 @@ export async function createChunks(pool: pg.Pool, inputs: CreateChunkInput[]): P
  *
  * @returns The chunk, or `null` if not found.
  */
-export async function findChunkById(pool: pg.Pool, id: string): Promise<Chunk | null> {
-	const sql = 'SELECT *, embedding::text FROM chunks WHERE id = $1';
+export async function findChunkById(
+	pool: pg.Pool,
+	id: string,
+	options?: { includeDeleted?: boolean },
+): Promise<Chunk | null> {
+	const sql = `
+    SELECT c.*, c.embedding::text
+    FROM chunks c
+    JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
+    WHERE c.id = $1
+      ${options?.includeDeleted ? '' : "AND src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"}
+  `;
 
 	try {
 		const result = await pool.query<ChunkRow>(sql, [id]);
@@ -287,19 +298,29 @@ export async function findChunkById(pool: pg.Pool, id: string): Promise<Chunk | 
 export async function findChunksByStoryId(
 	pool: pg.Pool,
 	storyId: string,
-	filter?: { isQuestion?: boolean },
+	filter?: { isQuestion?: boolean; includeDeleted?: boolean },
 ): Promise<Chunk[]> {
-	const conditions = ['story_id = $1'];
+	const conditions = ['c.story_id = $1'];
 	const params: unknown[] = [storyId];
 	let paramIndex = 2;
 
 	if (filter?.isQuestion !== undefined) {
-		conditions.push(`is_question = $${paramIndex}`);
+		conditions.push(`c.is_question = $${paramIndex}`);
 		params.push(filter.isQuestion);
 		paramIndex++;
 	}
+	if (!filter?.includeDeleted) {
+		conditions.push("src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
+	}
 
-	const sql = `SELECT *, embedding::text FROM chunks WHERE ${conditions.join(' AND ')} ORDER BY chunk_index ASC`;
+	const sql = `
+    SELECT c.*, c.embedding::text
+    FROM chunks c
+    JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY c.chunk_index ASC
+  `;
 
 	try {
 		const result = await pool.query<ChunkRow>(sql, params);
@@ -315,12 +336,18 @@ export async function findChunksByStoryId(
 /**
  * Finds all chunks belonging to a source (via stories JOIN).
  */
-export async function findChunksBySourceId(pool: pg.Pool, sourceId: string): Promise<Chunk[]> {
+export async function findChunksBySourceId(
+	pool: pg.Pool,
+	sourceId: string,
+	options?: { includeDeleted?: boolean },
+): Promise<Chunk[]> {
 	const sql = `
     SELECT c.*, c.embedding::text
     FROM chunks c
     JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
     WHERE s.source_id = $1
+      ${options?.includeDeleted ? '' : "AND src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"}
     ORDER BY c.chunk_index ASC
   `;
 
@@ -344,19 +371,28 @@ export async function countChunks(pool: pg.Pool, filter?: ChunkFilter): Promise<
 	let paramIndex = 1;
 
 	if (filter?.storyId) {
-		conditions.push(`story_id = $${paramIndex}`);
+		conditions.push(`c.story_id = $${paramIndex}`);
 		params.push(filter.storyId);
 		paramIndex++;
 	}
 
 	if (filter?.isQuestion !== undefined) {
-		conditions.push(`is_question = $${paramIndex}`);
+		conditions.push(`c.is_question = $${paramIndex}`);
 		params.push(filter.isQuestion);
 		paramIndex++;
 	}
+	if (!filter?.includeDeleted) {
+		conditions.push("src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
+	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-	const sql = `SELECT COUNT(*) FROM chunks ${whereClause}`;
+	const sql = `
+    SELECT COUNT(*)
+    FROM chunks c
+    JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
+    ${whereClause}
+  `;
 
 	try {
 		const result = await pool.query<{ count: string }>(sql, params);
@@ -467,22 +503,25 @@ export async function searchByVector(
 	filter?: { storyIds?: string[] },
 ): Promise<VectorSearchResult[]> {
 	const embeddingLiteral = formatEmbedding(queryEmbedding);
-	const conditions = ['embedding IS NOT NULL'];
+	const conditions = ['chunks.embedding IS NOT NULL'];
 	const params: unknown[] = [embeddingLiteral, limit];
 	let paramIndex = 3;
 
 	if (filter?.storyIds && filter.storyIds.length > 0) {
-		conditions.push(`story_id = ANY($${paramIndex}::uuid[])`);
+		conditions.push(`chunks.story_id = ANY($${paramIndex}::uuid[])`);
 		params.push(filter.storyIds);
 		paramIndex++;
 	}
 
 	const whereClause = conditions.join(' AND ');
 	const sql = `
-    SELECT *, embedding::text, (embedding <=> $1::vector) AS distance
+    SELECT chunks.*, chunks.embedding::text, (chunks.embedding <=> $1::vector) AS distance
     FROM chunks
+    JOIN stories ON stories.id = chunks.story_id
+    JOIN sources ON sources.id = stories.source_id
     WHERE ${whereClause}
-    ORDER BY embedding <=> $1::vector
+      AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+    ORDER BY chunks.embedding <=> $1::vector
     LIMIT $2
   `;
 
@@ -540,22 +579,25 @@ export async function searchByVectorWithEfSearch(
 	}
 
 	const embeddingLiteral = formatEmbedding(queryEmbedding);
-	const conditions = ['embedding IS NOT NULL'];
+	const conditions = ['chunks.embedding IS NOT NULL'];
 	const params: unknown[] = [embeddingLiteral, limit];
 	let paramIndex = 3;
 
 	if (filter?.storyIds && filter.storyIds.length > 0) {
-		conditions.push(`story_id = ANY($${paramIndex}::uuid[])`);
+		conditions.push(`chunks.story_id = ANY($${paramIndex}::uuid[])`);
 		params.push(filter.storyIds);
 		paramIndex++;
 	}
 
 	const whereClause = conditions.join(' AND ');
 	const sql = `
-    SELECT *, embedding::text, (embedding <=> $1::vector) AS distance
+    SELECT chunks.*, chunks.embedding::text, (chunks.embedding <=> $1::vector) AS distance
     FROM chunks
+    JOIN stories ON stories.id = chunks.story_id
+    JOIN sources ON sources.id = stories.source_id
     WHERE ${whereClause}
-    ORDER BY embedding <=> $1::vector
+      AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+    ORDER BY chunks.embedding <=> $1::vector
     LIMIT $2
   `;
 
@@ -615,12 +657,12 @@ export async function searchByFts(
 	limit: number,
 	filter?: { storyIds?: string[]; excludeQuestions?: boolean },
 ): Promise<FtsSearchResult[]> {
-	const conditions = ["fts_vector @@ plainto_tsquery('simple', $1)"];
+	const conditions = ["chunks.fts_vector @@ plainto_tsquery('simple', $1)"];
 	const params: unknown[] = [query, limit];
 	let paramIndex = 3;
 
 	if (filter?.storyIds && filter.storyIds.length > 0) {
-		conditions.push(`story_id = ANY($${paramIndex}::uuid[])`);
+		conditions.push(`chunks.story_id = ANY($${paramIndex}::uuid[])`);
 		params.push(filter.storyIds);
 		paramIndex++;
 	}
@@ -628,16 +670,19 @@ export async function searchByFts(
 	if (filter?.excludeQuestions === true) {
 		// Literal boolean predicate — no bind parameter needed and no SQL
 		// injection risk because the value is not user-controlled.
-		conditions.push('is_question = false');
+		conditions.push('chunks.is_question = false');
 	}
 
 	const whereClause = conditions.join(' AND ');
 	const sql = `
-    SELECT *, embedding::text,
-      ts_rank(fts_vector, plainto_tsquery('simple', $1)) AS rank
+    SELECT chunks.*, chunks.embedding::text,
+      ts_rank(chunks.fts_vector, plainto_tsquery('simple', $1)) AS rank
     FROM chunks
+    JOIN stories ON stories.id = chunks.story_id
+    JOIN sources ON sources.id = stories.source_id
     WHERE ${whereClause}
-    ORDER BY ts_rank(fts_vector, plainto_tsquery('simple', $1)) DESC
+      AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+    ORDER BY ts_rank(chunks.fts_vector, plainto_tsquery('simple', $1)) DESC
     LIMIT $2
   `;
 

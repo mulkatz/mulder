@@ -55,6 +55,9 @@ interface SourceRow {
 	reliability_score: number | null;
 	tags: string[] | null;
 	metadata: Record<string, unknown>;
+	deleted_at?: Date | null;
+	deletion_status?: PersistedSource['deletionStatus'];
+	active_source?: boolean;
 	sensitivity_level: PersistedSource['sensitivityLevel'];
 	sensitivity_metadata: unknown;
 	created_at: Date;
@@ -94,6 +97,9 @@ function mapSourceRow(row: SourceRow): PersistedSource {
 		reliabilityScore: row.reliability_score,
 		tags: row.tags ?? [],
 		metadata: row.metadata ?? {},
+		deletedAt: row.deleted_at ?? null,
+		deletionStatus: row.deletion_status ?? 'active',
+		activeSource: row.active_source ?? true,
 		sensitivityLevel: row.sensitivity_level ?? 'internal',
 		sensitivityMetadata: normalizeSensitivityMetadata(row.sensitivity_metadata, row.sensitivity_level ?? 'internal'),
 		createdAt: row.created_at,
@@ -135,7 +141,9 @@ function escapeLikePattern(value: string): string {
 }
 
 function buildSourceFilterClause(filter?: SourceFilter): { conditions: string[]; params: unknown[] } {
-	const conditions: string[] = [];
+	const conditions: string[] = filter?.includeDeleted
+		? []
+		: ["deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"];
 	const params: unknown[] = [];
 	let paramIndex = 1;
 
@@ -278,8 +286,14 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
  *
  * @returns The source, or `null` if not found.
  */
-export async function findSourceById(pool: Queryable, id: string): Promise<PersistedSource | null> {
-	const sql = 'SELECT * FROM sources WHERE id = $1';
+export async function findSourceById(
+	pool: Queryable,
+	id: string,
+	options?: { includeDeleted?: boolean },
+): Promise<PersistedSource | null> {
+	const sql = `SELECT * FROM sources WHERE id = $1 ${
+		options?.includeDeleted ? '' : "AND deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"
+	}`;
 
 	try {
 		const result = await pool.query<SourceRow>(sql, [id]);
@@ -300,8 +314,14 @@ export async function findSourceById(pool: Queryable, id: string): Promise<Persi
  *
  * @returns The source, or `null` if not found.
  */
-export async function findSourceByHash(pool: Queryable, hash: string): Promise<PersistedSource | null> {
-	const sql = 'SELECT * FROM sources WHERE file_hash = $1';
+export async function findSourceByHash(
+	pool: Queryable,
+	hash: string,
+	options?: { includeDeleted?: boolean },
+): Promise<PersistedSource | null> {
+	const sql = `SELECT * FROM sources WHERE file_hash = $1 ${
+		options?.includeDeleted ? '' : "AND deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"
+	}`;
 
 	try {
 		const result = await pool.query<SourceRow>(sql, [hash]);
@@ -330,6 +350,7 @@ export async function findSourceByCrossFormatDedupKey(
     SELECT *
     FROM sources
     WHERE format_metadata->>'cross_format_dedup_key' = $1
+      AND deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
     ORDER BY created_at ASC, id ASC
     LIMIT 1
   `;
@@ -391,6 +412,7 @@ export async function findScoredSources(pool: pg.Pool, filter?: SourceReliabilit
     SELECT *
     FROM sources
     WHERE reliability_score IS NOT NULL
+      AND deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
     ORDER BY created_at DESC
     LIMIT $1 OFFSET $2
   `;
@@ -410,7 +432,12 @@ export async function findScoredSources(pool: pg.Pool, filter?: SourceReliabilit
  * Counts sources with a persisted reliability score.
  */
 export async function countScoredSources(pool: pg.Pool): Promise<number> {
-	const sql = 'SELECT COUNT(*) FROM sources WHERE reliability_score IS NOT NULL';
+	const sql = `
+    SELECT COUNT(*)
+    FROM sources
+    WHERE reliability_score IS NOT NULL
+      AND deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+  `;
 
 	try {
 		const result = await pool.query<{ count: string }>(sql);
@@ -464,6 +491,8 @@ export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourc
 		['status', 'status'],
 		['reliabilityScore', 'reliability_score'],
 		['tags', 'tags'],
+		['deletedAt', 'deleted_at'],
+		['deletionStatus', 'deletion_status'],
 	];
 
 	for (const [tsKey, dbKey] of fieldMap) {
@@ -736,6 +765,9 @@ export async function findSourcesWithSteps(pool: pg.Pool, filter?: SourceWithSte
 		params.push(filter.minimumStatus);
 		paramIndex++;
 	}
+	if (!filter?.includeDeleted) {
+		conditions.push("s.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
+	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 	const sql = `
@@ -754,6 +786,9 @@ export async function findSourcesWithSteps(pool: pg.Pool, filter?: SourceWithSte
       s.reliability_score,
       s.tags,
       s.metadata,
+      s.deleted_at,
+      s.deletion_status,
+      s.active_source,
       s.created_at,
       s.updated_at,
       ss.step_name,
@@ -853,7 +888,12 @@ export async function findSourceStep(pool: Queryable, sourceId: string, stepName
  * Returns a record like `{ ingested: 3, extracted: 5, ... }`.
  */
 export async function countSourcesByStatus(pool: pg.Pool): Promise<Record<string, number>> {
-	const sql = 'SELECT status, COUNT(*)::int AS count FROM sources GROUP BY status';
+	const sql = `
+    SELECT status, COUNT(*)::int AS count
+    FROM sources
+    WHERE deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+    GROUP BY status
+  `;
 
 	try {
 		const result = await pool.query<{ status: string; count: number }>(sql);
@@ -880,6 +920,7 @@ export async function findSourcesWithFailedSteps(pool: pg.Pool): Promise<FailedS
     FROM sources s
     JOIN source_steps ss ON ss.source_id = s.id
     WHERE ss.status = 'failed'
+      AND s.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
     ORDER BY s.updated_at DESC
     LIMIT 100
   `;

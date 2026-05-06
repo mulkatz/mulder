@@ -149,8 +149,18 @@ export async function createStory(pool: pg.Pool, input: CreateStoryInput): Promi
  *
  * @returns The story, or `null` if not found.
  */
-export async function findStoryById(pool: pg.Pool, id: string): Promise<Story | null> {
-	const sql = 'SELECT * FROM stories WHERE id = $1';
+export async function findStoryById(
+	pool: pg.Pool,
+	id: string,
+	options?: { includeDeleted?: boolean },
+): Promise<Story | null> {
+	const sql = `
+    SELECT stories.*
+    FROM stories
+    JOIN sources ON sources.id = stories.source_id
+    WHERE stories.id = $1
+      ${options?.includeDeleted ? '' : "AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"}
+  `;
 
 	try {
 		const result = await pool.query<StoryRow>(sql, [id]);
@@ -172,8 +182,19 @@ export async function findStoryById(pool: pg.Pool, id: string): Promise<Story | 
  * Stories from the same source appear in page order (page_start ASC),
  * with nulls last. Ties broken by created_at ASC.
  */
-export async function findStoriesBySourceId(pool: pg.Pool, sourceId: string): Promise<Story[]> {
-	const sql = 'SELECT * FROM stories WHERE source_id = $1 ORDER BY page_start ASC NULLS LAST, created_at ASC';
+export async function findStoriesBySourceId(
+	pool: pg.Pool,
+	sourceId: string,
+	options?: { includeDeleted?: boolean },
+): Promise<Story[]> {
+	const sql = `
+    SELECT stories.*
+    FROM stories
+    JOIN sources ON sources.id = stories.source_id
+    WHERE stories.source_id = $1
+      ${options?.includeDeleted ? '' : "AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"}
+    ORDER BY page_start ASC NULLS LAST, created_at ASC
+  `;
 
 	try {
 		const result = await pool.query<StoryRow>(sql, [sourceId]);
@@ -198,27 +219,30 @@ export async function findAllStories(pool: pg.Pool, filter?: StoryFilter): Promi
 	let paramIndex = 1;
 
 	if (filter?.sourceId) {
-		conditions.push(`source_id = $${paramIndex}`);
+		conditions.push(`stories.source_id = $${paramIndex}`);
 		params.push(filter.sourceId);
 		paramIndex++;
 	}
 
 	if (filter?.status) {
-		conditions.push(`status = $${paramIndex}`);
+		conditions.push(`stories.status = $${paramIndex}`);
 		params.push(filter.status);
 		paramIndex++;
 	}
 
 	if (filter?.category) {
-		conditions.push(`category = $${paramIndex}`);
+		conditions.push(`stories.category = $${paramIndex}`);
 		params.push(filter.category);
 		paramIndex++;
 	}
 
 	if (filter?.language) {
-		conditions.push(`language = $${paramIndex}`);
+		conditions.push(`stories.language = $${paramIndex}`);
 		params.push(filter.language);
 		paramIndex++;
+	}
+	if (!filter?.includeDeleted) {
+		conditions.push("sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
 	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -226,7 +250,14 @@ export async function findAllStories(pool: pg.Pool, filter?: StoryFilter): Promi
 	const limit = filter?.limit ?? 100;
 	const offset = filter?.offset ?? 0;
 
-	const sql = `SELECT * FROM stories ${whereClause} ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+	const sql = `
+    SELECT stories.*
+    FROM stories
+    JOIN sources ON sources.id = stories.source_id
+    ${whereClause}
+    ORDER BY stories.created_at DESC
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+  `;
 	params.push(limit, offset);
 
 	try {
@@ -249,31 +280,39 @@ export async function countStories(pool: pg.Pool, filter?: StoryFilter): Promise
 	let paramIndex = 1;
 
 	if (filter?.sourceId) {
-		conditions.push(`source_id = $${paramIndex}`);
+		conditions.push(`stories.source_id = $${paramIndex}`);
 		params.push(filter.sourceId);
 		paramIndex++;
 	}
 
 	if (filter?.status) {
-		conditions.push(`status = $${paramIndex}`);
+		conditions.push(`stories.status = $${paramIndex}`);
 		params.push(filter.status);
 		paramIndex++;
 	}
 
 	if (filter?.category) {
-		conditions.push(`category = $${paramIndex}`);
+		conditions.push(`stories.category = $${paramIndex}`);
 		params.push(filter.category);
 		paramIndex++;
 	}
 
 	if (filter?.language) {
-		conditions.push(`language = $${paramIndex}`);
+		conditions.push(`stories.language = $${paramIndex}`);
 		params.push(filter.language);
 		paramIndex++;
 	}
+	if (!filter?.includeDeleted) {
+		conditions.push("sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
+	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-	const sql = `SELECT COUNT(*) FROM stories ${whereClause}`;
+	const sql = `
+    SELECT COUNT(*)
+    FROM stories
+    JOIN sources ON sources.id = stories.source_id
+    ${whereClause}
+  `;
 
 	try {
 		const result = await pool.query<{ count: string }>(sql, params);
@@ -524,7 +563,13 @@ export async function deleteStoriesBySourceId(pool: pg.Pool, sourceId: string): 
  * Returns a record like `{ segmented: 20, enriched: 50, ... }`.
  */
 export async function countStoriesByStatus(pool: pg.Pool): Promise<Record<string, number>> {
-	const sql = 'SELECT status, COUNT(*)::int AS count FROM stories GROUP BY status';
+	const sql = `
+    SELECT stories.status, COUNT(*)::int AS count
+    FROM stories
+    JOIN sources ON sources.id = stories.source_id
+    WHERE sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+    GROUP BY stories.status
+  `;
 
 	try {
 		const result = await pool.query<{ status: string; count: number }>(sql);

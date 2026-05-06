@@ -81,6 +81,7 @@ export type CreateChunkInput = {
 export type ChunkFilter = {
 	storyId?: string;
 	isQuestion?: boolean;
+	includeDeleted?: boolean;
 };
 
 // ────────────────────────────────────────────────────────────

@@ -239,11 +239,14 @@ export async function listKnowledgeAssertionsForStory(
 ): Promise<KnowledgeAssertion[]> {
 	const suffix = listSuffix(options, 2);
 	const sql = `
-		SELECT *
+		SELECT knowledge_assertions.*
 		FROM knowledge_assertions
-		WHERE story_id = $1
-			${options?.includeDeleted ? '' : 'AND deleted_at IS NULL'}
-		ORDER BY created_at, id
+		JOIN stories ON stories.id = knowledge_assertions.story_id
+		JOIN sources ON sources.id = stories.source_id
+		WHERE knowledge_assertions.story_id = $1
+			${options?.includeDeleted ? '' : 'AND knowledge_assertions.deleted_at IS NULL'}
+			${options?.includeDeleted ? '' : "AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"}
+		ORDER BY knowledge_assertions.created_at, knowledge_assertions.id
 		${suffix.sql}
 	`;
 
@@ -265,11 +268,13 @@ export async function listKnowledgeAssertionsForSource(
 ): Promise<KnowledgeAssertion[]> {
 	const suffix = listSuffix(options, 2);
 	const sql = `
-		SELECT *
+		SELECT knowledge_assertions.*
 		FROM knowledge_assertions
-		WHERE source_id = $1
-			${options?.includeDeleted ? '' : 'AND deleted_at IS NULL'}
-		ORDER BY created_at, id
+		JOIN sources ON sources.id = knowledge_assertions.source_id
+		WHERE knowledge_assertions.source_id = $1
+			${options?.includeDeleted ? '' : 'AND knowledge_assertions.deleted_at IS NULL'}
+			${options?.includeDeleted ? '' : "AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"}
+		ORDER BY knowledge_assertions.created_at, knowledge_assertions.id
 		${suffix.sql}
 	`;
 
