@@ -14,6 +14,8 @@ const SERIAL_VITEST_ARGS = ['--no-file-parallelism', '--maxWorkers=1'];
 const PARALLEL_VITEST_ARGS = ['--fileParallelism=true'];
 const LANE_ORDER = ['unit', 'schema', 'db', 'heavy', 'external'];
 const HEALTH_SMOKE_TEST = 'tests/specs/44_e2e_pipeline_integration.test.ts';
+const HEAD_DOCS_ONLY_OPTIMIZATION_ENV = 'MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY';
+const HEAD_CHANGED_FILES_OVERRIDE_ENV = 'MULDER_TEST_AFFECTED_HEAD_CHANGED_FILES';
 const SPEC_DOC_TEST_OVERRIDES = new Map([
 	['77_document_observability_aggregation', ['tests/specs/77_document_observability_route.test.ts']],
 ]);
@@ -327,6 +329,66 @@ function gitChangedFiles(baseRef) {
 		.split('\n')
 		.map((line) => line.trim())
 		.filter(Boolean);
+}
+
+function splitChangedFiles(value) {
+	return value
+		.split(/\r?\n|,/)
+		.map((line) => line.trim())
+		.filter(Boolean);
+}
+
+function gitHeadChangedFiles() {
+	const override = process.env[HEAD_CHANGED_FILES_OVERRIDE_ENV];
+	if (override) {
+		return splitChangedFiles(override);
+	}
+
+	const status = spawnSync('git', ['status', '--porcelain'], {
+		cwd: ROOT,
+		encoding: 'utf8',
+		stdio: ['ignore', 'pipe', 'pipe'],
+	});
+	if (status.status !== 0 || status.stdout.trim().length > 0) {
+		return [];
+	}
+
+	const result = spawnSync('git', ['diff', '--name-only', 'HEAD~1..HEAD'], {
+		cwd: ROOT,
+		encoding: 'utf8',
+		stdio: ['ignore', 'pipe', 'pipe'],
+	});
+	if (result.status !== 0) {
+		return [];
+	}
+	return splitChangedFiles(result.stdout);
+}
+
+function isDocsOnlyHeadFile(file) {
+	if (file === 'README.md' || file === 'CLAUDE.md') {
+		return true;
+	}
+	if (/^[^/]+\.md$/.test(file)) {
+		return true;
+	}
+	return (file.startsWith('docs/') || file.startsWith('.codex/')) && file.endsWith('.md');
+}
+
+function affectedChangedFiles(baseRef) {
+	if (baseRef && process.env[HEAD_DOCS_ONLY_OPTIMIZATION_ENV] === 'true') {
+		const headChangedFiles = gitHeadChangedFiles();
+		if (headChangedFiles.length > 0 && headChangedFiles.every(isDocsOnlyHeadFile)) {
+			return {
+				changeScope: 'head-docs-only',
+				changedFiles: headChangedFiles,
+			};
+		}
+	}
+
+	return {
+		changeScope: 'base',
+		changedFiles: gitChangedFiles(baseRef),
+	};
 }
 
 function testsForSpecNumber(specNumber, discoveredByPath) {
@@ -770,7 +832,10 @@ function buildAffectedPlan(baseRef, explicitChangedFiles = null) {
 	const weightedByPath = new Map(
 		Object.values(lanes).flatMap((lane) => lane.files.map((file) => [file.relativePath, file])),
 	);
-	const changed = explicitChangedFiles ?? gitChangedFiles(baseRef);
+	const changeSelection = explicitChangedFiles
+		? { changeScope: 'explicit', changedFiles: explicitChangedFiles }
+		: affectedChangedFiles(baseRef);
+	const changed = changeSelection.changedFiles;
 	const selected = new Set();
 	const rules = [];
 
@@ -812,6 +877,7 @@ function buildAffectedPlan(baseRef, explicitChangedFiles = null) {
 
 	return {
 		baseRef: baseRef ?? null,
+		changeScope: changeSelection.changeScope,
 		changedFiles: changed,
 		totalFiles: files.length,
 		totalWeight,
@@ -845,6 +911,7 @@ function rewriteJUnitOutputArgs(extraArgs, suffix) {
 function formatAffectedPlan(plan) {
 	const lines = [
 		`Affected tests${plan.baseRef ? ` against ${plan.baseRef}` : ''}`,
+		`Change scope: ${plan.changeScope}`,
 		`Changed files: ${plan.changedFiles.length}`,
 		...plan.changedFiles.map((file) => ` - ${file}`),
 		'Rules:',
