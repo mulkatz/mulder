@@ -26,6 +26,7 @@ import type {
 	ResolutionType,
 	ResolveConflictNodeInput,
 } from './conflict-node.types.js';
+import type { AssertionType } from './knowledge-assertion.types.js';
 
 type Queryable = pg.Pool | pg.PoolClient;
 
@@ -56,6 +57,7 @@ const RESOLUTION_TYPES: readonly ResolutionType[] = [
 	'duplicate_misidentification',
 	'other',
 ] as const;
+const ASSERTION_TYPES: readonly AssertionType[] = ['observation', 'interpretation', 'hypothesis'] as const;
 
 interface ConflictNodeRow {
 	id: string;
@@ -109,6 +111,18 @@ function assertEnum<T extends string>(value: T, allowed: readonly T[], field: st
 	}
 }
 
+function enumValue<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+	if (typeof value !== 'string') {
+		return fallback;
+	}
+	for (const item of allowed) {
+		if (item === value) {
+			return item;
+		}
+	}
+	return fallback;
+}
+
 function requiredText(value: string, field: string): string {
 	const trimmed = value.trim();
 	if (trimmed.length === 0) {
@@ -147,10 +161,10 @@ function mapAssertion(value: unknown): ConflictAssertion | null {
 		conflictId: String(value.conflict_id),
 		assertionId: String(value.assertion_id),
 		sourceDocumentId: String(value.source_document_id),
-		assertionType: String(value.assertion_type) as ConflictAssertion['assertionType'],
+		assertionType: enumValue(value.assertion_type, ASSERTION_TYPES, 'observation'),
 		claim: String(value.claim),
 		credibilityProfileId: typeof value.credibility_profile_id === 'string' ? value.credibility_profile_id : null,
-		participantRole: String(value.participant_role) as ConflictParticipantRole,
+		participantRole: enumValue(value.participant_role, ROLES, 'context'),
 		createdAt: new Date(String(value.created_at)),
 	};
 }
@@ -160,7 +174,7 @@ function mapResolution(value: unknown): ConflictResolution | null {
 	return {
 		id: String(value.id),
 		conflictId: String(value.conflict_id),
-		resolutionType: String(value.resolution_type) as ResolutionType,
+		resolutionType: enumValue(value.resolution_type, RESOLUTION_TYPES, 'other'),
 		explanation: String(value.explanation),
 		resolvedBy: String(value.resolved_by),
 		resolvedAt: new Date(String(value.resolved_at)),

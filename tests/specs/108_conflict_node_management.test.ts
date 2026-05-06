@@ -573,6 +573,52 @@ describe('Spec 108: conflict node management', () => {
 		expect(lowResult.data?.conflictCandidatesExamined).toBe(1);
 		expect(lowResult.data?.conflictsCreated).toBe(0);
 		expect(Number(db.runSql('SELECT COUNT(*) FROM conflict_nodes;'))).toBe(0);
+
+		cleanTables();
+		const typeEntity = await createSharedEntity(entityName);
+		await createAssertionFixture('qa06-existing-type', 'A witness observed a silent object.', typeEntity.id);
+		const disabledType = await createSegmentedStory('qa06-disabled-type');
+		const disabledTypeResult = await pipelineModule.executeEnrich(
+			{ storyId: disabledType.story.id },
+			enrichConfig({
+				contradiction_management: {
+					...config.contradiction_management,
+					conflict_types: ['temporal'],
+				},
+			}),
+			fakeServices(disabledType.story.gcsMarkdownUri, [
+				extractionResponse(entityName, 'A witness observed a loud object.'),
+				conflictResponse(0.91),
+			]),
+			pool,
+			logger,
+		);
+		expect(disabledTypeResult.data?.conflictCandidatesExamined).toBe(1);
+		expect(disabledTypeResult.data?.conflictsCreated).toBe(0);
+		expect(Number(db.runSql('SELECT COUNT(*) FROM conflict_nodes;'))).toBe(0);
+
+		cleanTables();
+		const severityEntity = await createSharedEntity(entityName);
+		await createAssertionFixture('qa06-existing-severity', 'A witness observed a silent object.', severityEntity.id);
+		const disabledSeverity = await createSegmentedStory('qa06-disabled-severity');
+		const disabledSeverityResult = await pipelineModule.executeEnrich(
+			{ storyId: disabledSeverity.story.id },
+			enrichConfig({
+				contradiction_management: {
+					...config.contradiction_management,
+					severity_levels: ['fundamental'],
+				},
+			}),
+			fakeServices(disabledSeverity.story.gcsMarkdownUri, [
+				extractionResponse(entityName, 'A witness observed a loud object.'),
+				conflictResponse(0.91),
+			]),
+			pool,
+			logger,
+		);
+		expect(disabledSeverityResult.data?.conflictCandidatesExamined).toBe(1);
+		expect(disabledSeverityResult.data?.conflictsCreated).toBe(0);
+		expect(Number(db.runSql('SELECT COUNT(*) FROM conflict_nodes;'))).toBe(0);
 	});
 
 	it.skipIf(!pgAvailable)('QA-07: Analyze promotes legacy contradiction resolutions', async () => {
@@ -614,6 +660,24 @@ describe('Spec 108: conflict node management', () => {
 		expect(updatedEdge?.analysis?.explanation).toContain('incompatible sound');
 		expect(promoted?.resolutionStatus).toBe('confirmed_contradictory');
 		expect(promoted?.latestResolution?.resolutionType).toBe('genuinely_contradictory');
+
+		const secondResult = await pipelineModule.executeAnalyze(
+			{ contradictions: true },
+			{ ...config, analysis: { ...config.analysis, enabled: true, contradictions: true } },
+			fakeServices('', []),
+			pool,
+			logger,
+		);
+		const conflictNodeCount = Number(db.runSql('SELECT COUNT(*) FROM conflict_nodes;'));
+		const conflictResolutionCount = Number(db.runSql('SELECT COUNT(*) FROM conflict_resolutions;'));
+
+		expect(secondResult.status).toBe('success');
+		if (secondResult.data.mode === 'contradictions') {
+			expect(secondResult.data.conflictNodesLinked).toBe(0);
+			expect(secondResult.data.conflictResolutionsWritten).toBe(0);
+		}
+		expect(conflictNodeCount).toBe(1);
+		expect(conflictResolutionCount).toBe(1);
 	});
 
 	it.skipIf(!pgAvailable)('QA-08: conflict involvement is observable for credibility consumers', async () => {
