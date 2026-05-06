@@ -293,7 +293,7 @@ Must complete before first real archive data ingest. Without these foundations, 
 | 🟢 | K4 | Assertion classification in Enrich step | §A3 |
 | 🟢 | K5 | Sensitivity level tagging + auto-detection | §A5 |
 | 🟢 | K6 | Source rollback — soft-delete + cascading purge | §A6 |
-| ⚪ | K7 | Ingest provenance data model — AcquisitionContext, ArchiveLocation, Archive, CustodyChain | §A2.3 |
+| 🟡 | K7 | Ingest provenance data model — AcquisitionContext, ArchiveLocation, Archive, CustodyChain | §A2.3 |
 | ⚪ | K8 | Collection management — create, tag, defaults | §A2.3 |
 | ⚪ | K9 | Golden tests — quality routing + assertion classification | §A3, §A4 |
 
