@@ -79,6 +79,7 @@ export interface EdgeFilter {
 	edgeType?: EdgeType;
 	storyId?: string;
 	relationship?: string;
+	includeDeleted?: boolean;
 	limit?: number;
 	offset?: number;
 }

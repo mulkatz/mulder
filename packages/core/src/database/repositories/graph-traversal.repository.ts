@@ -44,6 +44,11 @@ export interface GraphTraversalResult {
 	pathConfidence: number;
 }
 
+interface GraphTraversalFilter {
+	storyIds?: string[];
+	includeDeleted?: boolean;
+}
+
 // ────────────────────────────────────────────────────────────
 // Row type (snake_case from DB)
 // ────────────────────────────────────────────────────────────
@@ -108,7 +113,7 @@ export async function traverseGraph(
 	maxHops: number,
 	limit: number,
 	supernodeThreshold: number,
-	filter?: { storyIds?: string[] },
+	filter?: GraphTraversalFilter,
 ): Promise<GraphTraversalResult[]> {
 	// Build the storyIds filter clause and parameters dynamically.
 	const hasStoryFilter = Array.isArray(filter?.storyIds) && filter.storyIds.length > 0;
@@ -120,6 +125,51 @@ export async function traverseGraph(
 	// $4 = supernodeThreshold
 	// $5 = storyIds (text[], only if filter is present)
 	const storyFilterClause = hasStoryFilter ? 'AND c.story_id = ANY($5)' : '';
+	const activeSourceClause = filter?.includeDeleted
+		? ''
+		: "AND src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')";
+	const activeStoryEntityClause = filter?.includeDeleted
+		? ''
+		: `
+        AND (
+          NOT EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(COALESCE(se.provenance->'source_document_ids', '[]'::jsonb)) AS link_sources(source_id)
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(COALESCE(se.provenance->'source_document_ids', '[]'::jsonb)) AS link_sources(source_id)
+            JOIN sources link_src ON link_src.id::text = link_sources.source_id
+            WHERE link_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+          )
+        )
+      `;
+	const activeEdgeClause = filter?.includeDeleted
+		? ''
+		: `
+        AND (
+          EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(COALESCE(ee.provenance->'source_document_ids', '[]'::jsonb)) AS edge_sources(source_id)
+            JOIN sources edge_src ON edge_src.id::text = edge_sources.source_id
+            WHERE edge_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM stories edge_story
+            JOIN sources edge_story_src ON edge_story_src.id = edge_story.source_id
+            WHERE edge_story.id = ee.story_id
+              AND edge_story_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+          )
+          OR (
+            ee.story_id IS NULL
+            AND NOT EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements_text(COALESCE(ee.provenance->'source_document_ids', '[]'::jsonb)) AS edge_sources(source_id)
+            )
+          )
+        )
+      `;
 
 	const sql = `
     WITH RECURSIVE traversal AS (
@@ -151,6 +201,7 @@ export async function traverseGraph(
         AND NOT e2.id = ANY(t.path)
         AND ee.edge_type = 'RELATIONSHIP'
         AND e2.source_count < $4
+        ${activeEdgeClause}
     ),
     -- Deduplicate traversal: keep best path_confidence per entity
     best_entities AS (
@@ -175,8 +226,12 @@ export async function traverseGraph(
       FROM best_entities be
       JOIN story_entities se ON se.entity_id = be.id
       JOIN chunks c ON c.story_id = se.story_id
+      JOIN stories s ON s.id = c.story_id
+      JOIN sources src ON src.id = s.source_id
       WHERE c.is_question = false
         ${storyFilterClause}
+        ${activeSourceClause}
+        ${activeStoryEntityClause}
       ORDER BY c.id, be.path_confidence DESC
     ) deduped
     ORDER BY deduped.path_confidence DESC, deduped.chunk_id

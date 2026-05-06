@@ -19,13 +19,34 @@ import {
 	mergeArtifactProvenanceSql,
 	stringifyArtifactProvenance,
 } from './artifact-provenance.js';
-import { type EntityRow, mapEntityRow } from './entity.repository.js';
+import { type EntityRow, entityActiveSourceClause, mapEntityRow } from './entity.repository.js';
 import type { LinkStoryEntityInput, StoryEntityWithEntity, StoryEntityWithStory } from './entity.types.js';
 import { queryWithSensitivityColumnFallback } from './schema-compat.js';
 import { mapStoryRow, type StoryRow } from './story.repository.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'story-entity-repository' });
+
+function activeSourceClause(sourceAlias: string): string {
+	return `${sourceAlias}.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')`;
+}
+
+function storyEntityActiveSourceClause(storyEntityAlias: string): string {
+	return `
+    (
+      NOT EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(COALESCE(${storyEntityAlias}.provenance->'source_document_ids', '[]'::jsonb)) AS link_sources(source_id)
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(COALESCE(${storyEntityAlias}.provenance->'source_document_ids', '[]'::jsonb)) AS link_sources(source_id)
+        JOIN sources link_src ON link_src.id::text = link_sources.source_id
+        WHERE link_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+      )
+    )
+  `;
+}
 
 // ────────────────────────────────────────────────────────────
 // Extended row types (entity/story + junction fields)
@@ -162,7 +183,11 @@ export async function linkStoryEntity(pool: pg.Pool, input: LinkStoryEntityInput
  *
  * Returns entities with their confidence and mention_count from the junction.
  */
-export async function findEntitiesByStoryId(pool: pg.Pool, storyId: string): Promise<StoryEntityWithEntity[]> {
+export async function findEntitiesByStoryId(
+	pool: pg.Pool,
+	storyId: string,
+	options?: { includeDeleted?: boolean },
+): Promise<StoryEntityWithEntity[]> {
 	const sql = `
     SELECT
       e.*,
@@ -173,7 +198,10 @@ export async function findEntitiesByStoryId(pool: pg.Pool, storyId: string): Pro
       se.sensitivity_metadata AS junction_sensitivity_metadata
     FROM entities e
     JOIN story_entities se ON se.entity_id = e.id
+    JOIN stories s ON s.id = se.story_id
+    JOIN sources src ON src.id = s.source_id
     WHERE se.story_id = $1
+      ${options?.includeDeleted ? '' : `AND ${activeSourceClause('src')} AND ${storyEntityActiveSourceClause('se')} AND ${entityActiveSourceClause('e')}`}
     ORDER BY e.name
   `;
 	const legacySql = `
@@ -186,7 +214,10 @@ export async function findEntitiesByStoryId(pool: pg.Pool, storyId: string): Pro
       NULL::jsonb AS junction_sensitivity_metadata
     FROM entities e
     JOIN story_entities se ON se.entity_id = e.id
+    JOIN stories s ON s.id = se.story_id
+    JOIN sources src ON src.id = s.source_id
     WHERE se.story_id = $1
+      ${options?.includeDeleted ? '' : `AND ${activeSourceClause('src')} AND ${storyEntityActiveSourceClause('se')} AND ${entityActiveSourceClause('e')}`}
     ORDER BY e.name
   `;
 	const params = [storyId];
@@ -213,7 +244,11 @@ export async function findEntitiesByStoryId(pool: pg.Pool, storyId: string): Pro
  *
  * Returns stories with their confidence and mention_count from the junction.
  */
-export async function findStoriesByEntityId(pool: pg.Pool, entityId: string): Promise<StoryEntityWithStory[]> {
+export async function findStoriesByEntityId(
+	pool: pg.Pool,
+	entityId: string,
+	options?: { includeDeleted?: boolean },
+): Promise<StoryEntityWithStory[]> {
 	const sql = `
     SELECT
       s.*,
@@ -224,7 +259,9 @@ export async function findStoriesByEntityId(pool: pg.Pool, entityId: string): Pr
       se.sensitivity_metadata AS junction_sensitivity_metadata
     FROM stories s
     JOIN story_entities se ON se.story_id = s.id
+    JOIN sources src ON src.id = s.source_id
     WHERE se.entity_id = $1
+      ${options?.includeDeleted ? '' : `AND ${activeSourceClause('src')} AND ${storyEntityActiveSourceClause('se')}`}
     ORDER BY s.created_at DESC
   `;
 	const legacySql = `
@@ -237,7 +274,9 @@ export async function findStoriesByEntityId(pool: pg.Pool, entityId: string): Pr
       NULL::jsonb AS junction_sensitivity_metadata
     FROM stories s
     JOIN story_entities se ON se.story_id = s.id
+    JOIN sources src ON src.id = s.source_id
     WHERE se.entity_id = $1
+      ${options?.includeDeleted ? '' : `AND ${activeSourceClause('src')} AND ${storyEntityActiveSourceClause('se')}`}
     ORDER BY s.created_at DESC
   `;
 	const params = [entityId];

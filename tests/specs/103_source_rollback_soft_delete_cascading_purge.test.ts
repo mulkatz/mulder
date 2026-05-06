@@ -11,8 +11,10 @@ import { ensureSchema, truncateExistingTables } from '../lib/schema.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CORE_DIR = resolve(ROOT, 'packages/core');
+const RETRIEVAL_DIR = resolve(ROOT, 'packages/retrieval');
 const CLI_DIR = resolve(ROOT, 'apps/cli');
 const CORE_DIST = resolve(CORE_DIR, 'dist/index.js');
+const RETRIEVAL_DIST = resolve(RETRIEVAL_DIR, 'dist/index.js');
 const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
@@ -47,6 +49,7 @@ const ROLLBACK_TABLES = [
 const pgAvailable = db.isPgAvailable();
 let pool: pg.Pool;
 let coreModule: typeof import('@mulder/core');
+let retrievalModule: typeof import('@mulder/retrieval');
 let tempDir: string | null = null;
 
 type SourceRecord = Awaited<ReturnType<typeof coreModule.createSource>>;
@@ -206,6 +209,10 @@ async function createStoryFixture(sourceId: string, label = 'spec103'): Promise<
 async function createSourceWithCascadeArtifacts(label = 'spec103'): Promise<{
 	source: SourceRecord;
 	story: StoryRecord;
+	entityA: Awaited<ReturnType<typeof coreModule.createEntity>>;
+	entityB: Awaited<ReturnType<typeof coreModule.createEntity>>;
+	edge: Awaited<ReturnType<typeof coreModule.createEdge>>;
+	chunk: Awaited<ReturnType<typeof coreModule.createChunk>>;
 	assertionId: string;
 }> {
 	const source = await createSourceFixture(label);
@@ -235,7 +242,7 @@ async function createSourceWithCascadeArtifacts(label = 'spec103'): Promise<{
 		mentionCount: 1,
 		provenance: { sourceDocumentIds: [source.id] },
 	});
-	await coreModule.createEdge(pool, {
+	const edge = await coreModule.createEdge(pool, {
 		sourceEntityId: entityA.id,
 		targetEntityId: entityB.id,
 		relationship: 'PARTICIPATED_IN',
@@ -243,7 +250,7 @@ async function createSourceWithCascadeArtifacts(label = 'spec103'): Promise<{
 		confidence: 0.8,
 		provenance: { sourceDocumentIds: [source.id] },
 	});
-	await coreModule.createChunk(pool, {
+	const chunk = await coreModule.createChunk(pool, {
 		storyId: story.id,
 		content: 'Spec 103 rollback chunk',
 		chunkIndex: 0,
@@ -299,7 +306,7 @@ async function createSourceWithCascadeArtifacts(label = 'spec103'): Promise<{
 		lastSnapshotStoragePath: `snapshots/${source.id}.html`,
 		changeKind: 'initial',
 	});
-	return { source, story, assertionId: assertion.id };
+	return { source, story, entityA, entityB, edge, chunk, assertionId: assertion.id };
 }
 
 async function softDeleteFixture(sourceId: string): Promise<void> {
@@ -312,8 +319,10 @@ async function softDeleteFixture(sourceId: string): Promise<void> {
 
 beforeAll(async () => {
 	buildPackage(CORE_DIR);
+	buildPackage(RETRIEVAL_DIR);
 	buildPackage(CLI_DIR);
 	coreModule = await import(pathToFileURL(CORE_DIST).href);
+	retrievalModule = await import(pathToFileURL(RETRIEVAL_DIST).href);
 
 	if (!pgAvailable) {
 		console.warn('SKIP: PostgreSQL not reachable at PGHOST/PGPORT.');
@@ -435,6 +444,66 @@ describe('Spec 103: Source rollback soft delete and cascading purge', () => {
 			reason: 'duplicate ingest',
 		});
 		expectAuditEvent(await coreModule.listAuditEventsForSource(pool, source.id), /rollback|delete/i);
+	});
+
+	it.skipIf(!pgAvailable)('QA-03b: soft-delete hides graph traversal and graph search chunks', async () => {
+		const { source, story, entityA, chunk } = await createSourceWithCascadeArtifacts('qa03b');
+		await softDeleteFixture(source.id);
+
+		await expect(coreModule.traverseGraph(pool, [entityA.id], 1, 10, 100)).resolves.toEqual([]);
+
+		const config = coreModule.loadConfig(EXAMPLE_CONFIG);
+		await expect(
+			retrievalModule.graphSearch(pool, config, {
+				entityIds: [entityA.id],
+				maxHops: 1,
+				limit: 10,
+			}),
+		).resolves.toEqual([]);
+
+		await expect(coreModule.traverseGraph(pool, [entityA.id], 1, 10, 100, { includeDeleted: true })).resolves.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					chunk: expect.objectContaining({ id: chunk.id, storyId: story.id }),
+				}),
+			]),
+		);
+	});
+
+	it.skipIf(!pgAvailable)('QA-03c: soft-delete hides entity, alias, story-entity, and edge reads', async () => {
+		const { source, story, entityA, edge } = await createSourceWithCascadeArtifacts('qa03c');
+		await softDeleteFixture(source.id);
+
+		await expect(coreModule.findEntityById(pool, entityA.id)).resolves.toBeNull();
+		await expect(coreModule.findEntityById(pool, entityA.id, { includeDeleted: true })).resolves.toMatchObject({
+			id: entityA.id,
+		});
+		await expect(coreModule.findAllEntities(pool)).resolves.not.toEqual(
+			expect.arrayContaining([expect.objectContaining({ id: entityA.id })]),
+		);
+		await expect(coreModule.findAllEntities(pool, { includeDeleted: true })).resolves.toEqual(
+			expect.arrayContaining([expect.objectContaining({ id: entityA.id })]),
+		);
+		await expect(coreModule.findAliasesByEntityId(pool, entityA.id)).resolves.toEqual([]);
+		await expect(coreModule.findAliasesByEntityId(pool, entityA.id, { includeDeleted: true })).resolves.toEqual(
+			expect.arrayContaining([expect.objectContaining({ entityId: entityA.id })]),
+		);
+		await expect(coreModule.findEntitiesByStoryId(pool, story.id)).resolves.toEqual([]);
+		await expect(coreModule.findEntitiesByStoryId(pool, story.id, { includeDeleted: true })).resolves.toEqual(
+			expect.arrayContaining([expect.objectContaining({ id: entityA.id })]),
+		);
+		await expect(coreModule.findStoriesByEntityId(pool, entityA.id)).resolves.toEqual([]);
+		await expect(coreModule.findStoriesByEntityId(pool, entityA.id, { includeDeleted: true })).resolves.toEqual(
+			expect.arrayContaining([expect.objectContaining({ id: story.id })]),
+		);
+		await expect(coreModule.findEdgesByStoryId(pool, story.id)).resolves.toEqual([]);
+		await expect(coreModule.findEdgesByStoryId(pool, story.id, { includeDeleted: true })).resolves.toEqual(
+			expect.arrayContaining([expect.objectContaining({ id: edge.id })]),
+		);
+		await expect(coreModule.findAllEdges(pool, { storyId: story.id })).resolves.toEqual([]);
+		await expect(coreModule.findAllEdges(pool, { storyId: story.id, includeDeleted: true })).resolves.toEqual(
+			expect.arrayContaining([expect.objectContaining({ id: edge.id })]),
+		);
 	});
 
 	it.skipIf(!pgAvailable)('QA-04: restore reactivates a soft-deleted source', async () => {
