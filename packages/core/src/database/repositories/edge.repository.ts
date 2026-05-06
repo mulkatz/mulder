@@ -14,12 +14,14 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
 import {
 	mapArtifactProvenanceFromDb,
 	mergeArtifactProvenanceSql,
 	stringifyArtifactProvenance,
 } from './artifact-provenance.js';
 import type { CreateEdgeInput, EdgeFilter, EdgeType, EntityEdge, UpdateEdgeInput } from './edge.types.js';
+import { queryWithSensitivityColumnFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'edge-repository' });
@@ -39,6 +41,8 @@ interface EdgeRow {
 	edge_type: EdgeType;
 	analysis: Record<string, unknown> | null;
 	provenance: unknown;
+	sensitivity_level: EntityEdge['sensitivityLevel'];
+	sensitivity_metadata: unknown;
 	created_at: Date;
 }
 
@@ -54,6 +58,8 @@ function mapEdgeRow(row: EdgeRow): EntityEdge {
 		edgeType: row.edge_type,
 		analysis: row.analysis,
 		provenance: mapArtifactProvenanceFromDb(row.provenance),
+		sensitivityLevel: row.sensitivity_level ?? 'internal',
+		sensitivityMetadata: normalizeSensitivityMetadata(row.sensitivity_metadata, row.sensitivity_level ?? 'internal'),
 		createdAt: row.created_at,
 	};
 }
@@ -67,7 +73,19 @@ function mapEdgeRow(row: EdgeRow): EntityEdge {
  */
 export async function createEdge(pool: pg.Pool, input: CreateEdgeInput): Promise<EntityEdge> {
 	const hasExplicitId = input.id !== undefined;
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 	const sql = hasExplicitId
+		? `
+    INSERT INTO entity_edges (id, source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12::jsonb)
+    RETURNING *
+  `
+		: `
+    INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb)
+    RETURNING *
+  `;
+	const legacySql = hasExplicitId
 		? `
     INSERT INTO entity_edges (id, source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
@@ -89,11 +107,15 @@ export async function createEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
 		input.edgeType ?? 'RELATIONSHIP',
 		input.analysis ? JSON.stringify(input.analysis) : null,
 		stringifyArtifactProvenance(input.provenance),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
 	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
+	const legacyBaseParams = baseParams.slice(0, -2);
+	const legacyParams = hasExplicitId ? [input.id, ...legacyBaseParams] : legacyBaseParams;
 
 	try {
-		const result = await pool.query<EdgeRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EdgeRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ edgeId: row.id, relationship: input.relationship, edgeType: row.edge_type }, 'Edge created');
 		return mapEdgeRow(row);
@@ -126,7 +148,22 @@ export async function upsertEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
 		return createEdge(pool, input);
 	}
 
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 	const sql = `
+    INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb)
+    ON CONFLICT (source_entity_id, target_entity_id, relationship, edge_type, story_id)
+    WHERE story_id IS NOT NULL
+    DO UPDATE SET
+      attributes = EXCLUDED.attributes,
+      confidence = EXCLUDED.confidence,
+      analysis = EXCLUDED.analysis,
+      provenance = ${mergeArtifactProvenanceSql('entity_edges.provenance', 'EXCLUDED.provenance')},
+      sensitivity_level = EXCLUDED.sensitivity_level,
+      sensitivity_metadata = EXCLUDED.sensitivity_metadata
+    RETURNING *
+  `;
+	const legacySql = `
     INSERT INTO entity_edges (source_entity_id, target_entity_id, relationship, attributes, confidence, story_id, edge_type, analysis, provenance)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
     ON CONFLICT (source_entity_id, target_entity_id, relationship, edge_type, story_id)
@@ -149,10 +186,13 @@ export async function upsertEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
 		input.edgeType ?? 'RELATIONSHIP',
 		input.analysis ? JSON.stringify(input.analysis) : null,
 		stringifyArtifactProvenance(input.provenance),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
+	const legacyParams = params.slice(0, -2);
 
 	try {
-		const result = await pool.query<EdgeRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EdgeRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ edgeId: row.id, relationship: input.relationship, edgeType: row.edge_type }, 'Edge upserted');
 		return mapEdgeRow(row);
@@ -502,6 +542,16 @@ export async function updateEdge(pool: pg.Pool, id: string, input: UpdateEdgeInp
 	if (input.analysis !== undefined) {
 		setClauses.push(`analysis = $${paramIndex}`);
 		params.push(input.analysis ? JSON.stringify(input.analysis) : null);
+		paramIndex++;
+	}
+
+	if (input.sensitivityLevel !== undefined || input.sensitivityMetadata !== undefined) {
+		const sensitivityLevel = input.sensitivityLevel ?? 'internal';
+		setClauses.push(`sensitivity_level = $${paramIndex}`);
+		params.push(sensitivityLevel);
+		paramIndex++;
+		setClauses.push(`sensitivity_metadata = $${paramIndex}::jsonb`);
+		params.push(stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel));
 		paramIndex++;
 	}
 

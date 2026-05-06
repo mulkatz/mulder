@@ -13,10 +13,12 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
+import { queryWithSensitivityColumnFallback } from './schema-compat.js';
 import type {
 	CreateSourceInput,
 	FailedSourceInfo,
-	Source,
+	PersistedSource,
 	SourceFilter,
 	SourceFormatMetadata,
 	SourceStatus,
@@ -53,6 +55,8 @@ interface SourceRow {
 	reliability_score: number | null;
 	tags: string[] | null;
 	metadata: Record<string, unknown>;
+	sensitivity_level: PersistedSource['sensitivityLevel'];
+	sensitivity_metadata: unknown;
 	created_at: Date;
 	updated_at: Date;
 }
@@ -74,7 +78,7 @@ interface SourceWithStepsRow extends SourceRow {
 	step_error_message: string | null;
 }
 
-function mapSourceRow(row: SourceRow): Source {
+function mapSourceRow(row: SourceRow): PersistedSource {
 	return {
 		id: row.id,
 		filename: row.filename,
@@ -90,6 +94,8 @@ function mapSourceRow(row: SourceRow): Source {
 		reliabilityScore: row.reliability_score,
 		tags: row.tags ?? [],
 		metadata: row.metadata ?? {},
+		sensitivityLevel: row.sensitivity_level ?? 'internal',
+		sensitivityMetadata: normalizeSensitivityMetadata(row.sensitivity_metadata, row.sensitivity_level ?? 'internal'),
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -170,7 +176,7 @@ function buildSourceFilterClause(filter?: SourceFilter): { conditions: string[];
  * On conflict (duplicate hash), returns the existing record with an updated
  * `updated_at` timestamp.
  */
-export async function createSource(pool: Queryable, input: CreateSourceInput): Promise<Source> {
+export async function createSource(pool: Queryable, input: CreateSourceInput): Promise<PersistedSource> {
 	const columns = input.id
 		? [
 				'id',
@@ -185,6 +191,8 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				'native_text_ratio',
 				'tags',
 				'metadata',
+				'sensitivity_level',
+				'sensitivity_metadata',
 			]
 		: [
 				'filename',
@@ -198,7 +206,10 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				'native_text_ratio',
 				'tags',
 				'metadata',
+				'sensitivity_level',
+				'sensitivity_metadata',
 			];
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 	const values = input.id
 		? [
 				input.id,
@@ -213,6 +224,8 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				input.nativeTextRatio ?? 0,
 				input.tags ?? [],
 				JSON.stringify(input.metadata ?? {}),
+				sensitivityLevel,
+				stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 			]
 		: [
 				input.filename,
@@ -226,6 +239,8 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 				input.nativeTextRatio ?? 0,
 				input.tags ?? [],
 				JSON.stringify(input.metadata ?? {}),
+				sensitivityLevel,
+				stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 			];
 	const placeholders = values.map((_, index) => `$${index + 1}`).join(', ');
 	const sql = `
@@ -234,9 +249,19 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
     ON CONFLICT (file_hash) DO UPDATE SET updated_at = now()
     RETURNING *
   `;
+	const legacyColumnCount = columns.length - 2;
+	const legacyColumns = columns.slice(0, legacyColumnCount);
+	const legacyValues = values.slice(0, legacyColumnCount);
+	const legacyPlaceholders = legacyValues.map((_, index) => `$${index + 1}`).join(', ');
+	const legacySql = `
+    INSERT INTO sources (${legacyColumns.join(', ')})
+    VALUES (${legacyPlaceholders})
+    ON CONFLICT (file_hash) DO UPDATE SET updated_at = now()
+    RETURNING *
+  `;
 
 	try {
-		const result = await pool.query<SourceRow>(sql, values);
+		const result = await queryWithSensitivityColumnFallback<SourceRow>(pool, sql, values, legacySql, legacyValues);
 		const row = result.rows[0];
 		repoLogger.debug({ sourceId: row.id, fileHash: input.fileHash }, 'Source created or found');
 		return mapSourceRow(row);
@@ -253,7 +278,7 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
  *
  * @returns The source, or `null` if not found.
  */
-export async function findSourceById(pool: Queryable, id: string): Promise<Source | null> {
+export async function findSourceById(pool: Queryable, id: string): Promise<PersistedSource | null> {
 	const sql = 'SELECT * FROM sources WHERE id = $1';
 
 	try {
@@ -275,7 +300,7 @@ export async function findSourceById(pool: Queryable, id: string): Promise<Sourc
  *
  * @returns The source, or `null` if not found.
  */
-export async function findSourceByHash(pool: Queryable, hash: string): Promise<Source | null> {
+export async function findSourceByHash(pool: Queryable, hash: string): Promise<PersistedSource | null> {
 	const sql = 'SELECT * FROM sources WHERE file_hash = $1';
 
 	try {
@@ -297,7 +322,10 @@ export async function findSourceByHash(pool: Queryable, hash: string): Promise<S
  *
  * The key lives in format_metadata so this remains migration-free for M9-J12.
  */
-export async function findSourceByCrossFormatDedupKey(pool: Queryable, dedupKey: string): Promise<Source | null> {
+export async function findSourceByCrossFormatDedupKey(
+	pool: Queryable,
+	dedupKey: string,
+): Promise<PersistedSource | null> {
 	const sql = `
     SELECT *
     FROM sources
@@ -326,7 +354,7 @@ export async function findSourceByCrossFormatDedupKey(pool: Queryable, dedupKey:
  * Supports filtering by status and tags, with pagination via limit/offset.
  * Results are ordered by `created_at DESC`.
  */
-export async function findAllSources(pool: pg.Pool, filter?: SourceFilter): Promise<Source[]> {
+export async function findAllSources(pool: pg.Pool, filter?: SourceFilter): Promise<PersistedSource[]> {
 	const { conditions, params } = buildSourceFilterClause(filter);
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -356,7 +384,7 @@ export interface SourceReliabilityFilter {
 /**
  * Finds all sources with a persisted reliability score.
  */
-export async function findScoredSources(pool: pg.Pool, filter?: SourceReliabilityFilter): Promise<Source[]> {
+export async function findScoredSources(pool: pg.Pool, filter?: SourceReliabilityFilter): Promise<PersistedSource[]> {
 	const limit = filter?.limit ?? 100;
 	const offset = filter?.offset ?? 0;
 	const sql = `
@@ -419,7 +447,7 @@ export async function countSources(pool: pg.Pool, filter?: SourceFilter): Promis
  *
  * @throws {DatabaseError} with `DB_NOT_FOUND` if the source does not exist.
  */
-export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourceInput): Promise<Source> {
+export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourceInput): Promise<PersistedSource> {
 	const setClauses: string[] = [];
 	const params: unknown[] = [];
 	let paramIndex = 1;
@@ -459,6 +487,16 @@ export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourc
 		paramIndex++;
 	}
 
+	if (input.sensitivityLevel !== undefined || input.sensitivityMetadata !== undefined) {
+		const sensitivityLevel = input.sensitivityLevel ?? 'internal';
+		setClauses.push(`sensitivity_level = $${paramIndex}`);
+		params.push(sensitivityLevel);
+		paramIndex++;
+		setClauses.push(`sensitivity_metadata = $${paramIndex}::jsonb`);
+		params.push(stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel));
+		paramIndex++;
+	}
+
 	if (setClauses.length === 0) {
 		// Nothing to update — just refresh timestamp and return
 		setClauses.push('updated_at = now()');
@@ -495,7 +533,7 @@ export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourc
  *
  * @throws {DatabaseError} with `DB_NOT_FOUND` if the source does not exist.
  */
-export async function updateSourceStatus(pool: pg.Pool, id: string, status: SourceStatus): Promise<Source> {
+export async function updateSourceStatus(pool: pg.Pool, id: string, status: SourceStatus): Promise<PersistedSource> {
 	const sql = 'UPDATE sources SET status = $1, updated_at = now() WHERE id = $2 RETURNING *';
 
 	try {
@@ -514,6 +552,85 @@ export async function updateSourceStatus(pool: pg.Pool, id: string, status: Sour
 		throw new DatabaseError('Failed to update source status', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause: error,
 			context: { id, status },
+		});
+	}
+}
+
+export async function updateSourceSensitivityFromArtifacts(pool: pg.Pool, sourceId: string): Promise<PersistedSource> {
+	const sql = `
+    WITH artifact_sensitivity AS (
+      SELECT sensitivity_level, sensitivity_metadata
+      FROM stories
+      WHERE source_id = $1
+      UNION ALL
+      SELECT se.sensitivity_level, se.sensitivity_metadata
+      FROM story_entities se
+      JOIN stories s ON s.id = se.story_id
+      WHERE s.source_id = $1
+      UNION ALL
+      SELECT c.sensitivity_level, c.sensitivity_metadata
+      FROM chunks c
+      JOIN stories s ON s.id = c.story_id
+      WHERE s.source_id = $1
+      UNION ALL
+      SELECT ee.sensitivity_level, ee.sensitivity_metadata
+      FROM entity_edges ee
+      JOIN stories s ON s.id = ee.story_id
+      WHERE s.source_id = $1
+      UNION ALL
+      SELECT ka.sensitivity_level, ka.sensitivity_metadata
+      FROM knowledge_assertions ka
+      WHERE ka.source_id = $1 AND ka.deleted_at IS NULL
+    ),
+    ranked AS (
+      SELECT
+        COALESCE(
+          (ARRAY_AGG(sensitivity_level ORDER BY
+            CASE sensitivity_level
+              WHEN 'confidential' THEN 4
+              WHEN 'restricted' THEN 3
+              WHEN 'internal' THEN 2
+              ELSE 1
+            END DESC
+          ))[1],
+          'internal'
+        ) AS propagated_level,
+        COALESCE(jsonb_agg(DISTINCT pii.value) FILTER (WHERE pii.value IS NOT NULL), '[]'::jsonb) AS pii_types
+      FROM artifact_sensitivity
+      LEFT JOIN LATERAL jsonb_array_elements_text(sensitivity_metadata->'pii_types') AS pii(value) ON true
+    )
+    UPDATE sources
+    SET
+      sensitivity_level = ranked.propagated_level,
+      sensitivity_metadata = jsonb_build_object(
+        'level', ranked.propagated_level,
+        'reason', 'upward_propagation',
+        'assigned_by', 'policy_rule',
+        'assigned_at', to_jsonb(now()),
+        'pii_types', ranked.pii_types,
+        'declassify_date', 'null'::jsonb
+      ),
+      updated_at = now()
+    FROM ranked
+    WHERE sources.id = $1
+    RETURNING sources.*
+  `;
+
+	try {
+		const result = await pool.query<SourceRow>(sql, [sourceId]);
+		if (result.rows.length === 0) {
+			throw new DatabaseError(`Source not found: ${sourceId}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+				context: { sourceId },
+			});
+		}
+		return mapSourceRow(result.rows[0]);
+	} catch (error: unknown) {
+		if (error instanceof DatabaseError) {
+			throw error;
+		}
+		throw new DatabaseError('Failed to update source sensitivity', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { sourceId },
 		});
 	}
 }

@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
+import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
 import {
 	mapArtifactProvenanceFromDb,
 	mergeArtifactProvenanceSql,
@@ -34,6 +35,8 @@ interface KnowledgeAssertionRow {
 	extracted_entity_ids: string[];
 	provenance: unknown;
 	quality_metadata: unknown;
+	sensitivity_level: KnowledgeAssertion['sensitivityLevel'];
+	sensitivity_metadata: unknown;
 	created_at: Date;
 	updated_at: Date;
 	deleted_at: Date | null;
@@ -127,6 +130,8 @@ function mapKnowledgeAssertionRow(row: KnowledgeAssertionRow): KnowledgeAssertio
 		extractedEntityIds: normalizeUuidArray(row.extracted_entity_ids),
 		provenance: mapArtifactProvenanceFromDb(row.provenance),
 		qualityMetadata: normalizeQualityMetadata(row.quality_metadata),
+		sensitivityLevel: row.sensitivity_level ?? 'internal',
+		sensitivityMetadata: normalizeSensitivityMetadata(row.sensitivity_metadata, row.sensitivity_level ?? 'internal'),
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		deletedAt: row.deleted_at,
@@ -160,6 +165,7 @@ export async function upsertKnowledgeAssertion(
 	assertKnownEnum(input.assertionType, ASSERTION_TYPES, 'assertionType');
 	const classificationProvenance = input.classificationProvenance ?? 'llm_auto';
 	assertKnownEnum(classificationProvenance, CLASSIFICATION_PROVENANCE_VALUES, 'classificationProvenance');
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 
 	const sql = `
 		INSERT INTO knowledge_assertions (
@@ -171,9 +177,11 @@ export async function upsertKnowledgeAssertion(
 			classification_provenance,
 			extracted_entity_ids,
 			provenance,
-			quality_metadata
+			quality_metadata,
+			sensitivity_level,
+			sensitivity_metadata
 		)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::uuid[], $8::jsonb, $9::jsonb)
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::uuid[], $8::jsonb, $9::jsonb, $10, $11::jsonb)
 		ON CONFLICT (source_id, story_id, content, assertion_type)
 		WHERE deleted_at IS NULL
 		DO UPDATE SET
@@ -188,6 +196,8 @@ export async function upsertKnowledgeAssertion(
 			extracted_entity_ids = EXCLUDED.extracted_entity_ids,
 			provenance = ${mergeArtifactProvenanceSql('knowledge_assertions.provenance', 'EXCLUDED.provenance')},
 			quality_metadata = COALESCE(EXCLUDED.quality_metadata, knowledge_assertions.quality_metadata),
+			sensitivity_level = EXCLUDED.sensitivity_level,
+			sensitivity_metadata = EXCLUDED.sensitivity_metadata,
 			updated_at = now()
 		RETURNING *
 	`;
@@ -203,6 +213,8 @@ export async function upsertKnowledgeAssertion(
 			normalizeUuidArray(input.extractedEntityIds),
 			stringifyArtifactProvenance(input.provenance),
 			input.qualityMetadata ? JSON.stringify(input.qualityMetadata) : null,
+			sensitivityLevel,
+			stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 		]);
 		return mapKnowledgeAssertionRow(result.rows[0]);
 	} catch (error: unknown) {

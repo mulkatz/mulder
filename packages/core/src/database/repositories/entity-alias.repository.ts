@@ -13,6 +13,7 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
 import {
 	mapArtifactProvenanceFromDb,
 	mergeArtifactProvenanceSql,
@@ -20,6 +21,7 @@ import {
 } from './artifact-provenance.js';
 import { type EntityRow, mapEntityRow } from './entity.repository.js';
 import type { CreateEntityAliasInput, Entity, EntityAlias } from './entity.types.js';
+import { queryWithSensitivityColumnFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'entity-alias-repository' });
@@ -34,6 +36,8 @@ interface EntityAliasRow {
 	alias: string;
 	source: string | null;
 	provenance: unknown;
+	sensitivity_level: EntityAlias['sensitivityLevel'];
+	sensitivity_metadata: unknown;
 }
 
 function mapEntityAliasRow(row: EntityAliasRow): EntityAlias {
@@ -43,6 +47,8 @@ function mapEntityAliasRow(row: EntityAliasRow): EntityAlias {
 		alias: row.alias,
 		source: row.source,
 		provenance: mapArtifactProvenanceFromDb(row.provenance),
+		sensitivityLevel: row.sensitivity_level ?? 'internal',
+		sensitivityMetadata: normalizeSensitivityMetadata(row.sensitivity_metadata, row.sensitivity_level ?? 'internal'),
 	};
 }
 
@@ -57,7 +63,18 @@ function mapEntityAliasRow(row: EntityAliasRow): EntityAlias {
  * Uses a CTE to handle the DO NOTHING case by selecting back.
  */
 export async function createEntityAlias(pool: pg.Pool, input: CreateEntityAliasInput): Promise<EntityAlias> {
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 	const sql = `
+    INSERT INTO entity_aliases (entity_id, alias, source, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4::jsonb, $5, $6::jsonb)
+    ON CONFLICT (entity_id, alias) DO UPDATE SET
+      source = COALESCE(entity_aliases.source, EXCLUDED.source),
+      provenance = ${mergeArtifactProvenanceSql('entity_aliases.provenance', 'EXCLUDED.provenance')},
+      sensitivity_level = EXCLUDED.sensitivity_level,
+      sensitivity_metadata = EXCLUDED.sensitivity_metadata
+    RETURNING *
+  `;
+	const legacySql = `
     INSERT INTO entity_aliases (entity_id, alias, source, provenance)
     VALUES ($1, $2, $3, $4::jsonb)
     ON CONFLICT (entity_id, alias) DO UPDATE SET
@@ -65,10 +82,18 @@ export async function createEntityAlias(pool: pg.Pool, input: CreateEntityAliasI
       provenance = ${mergeArtifactProvenanceSql('entity_aliases.provenance', 'EXCLUDED.provenance')}
     RETURNING *
   `;
-	const params = [input.entityId, input.alias, input.source ?? null, stringifyArtifactProvenance(input.provenance)];
+	const params = [
+		input.entityId,
+		input.alias,
+		input.source ?? null,
+		stringifyArtifactProvenance(input.provenance),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
+	];
+	const legacyParams = params.slice(0, -2);
 
 	try {
-		const result = await pool.query<EntityAliasRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EntityAliasRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug(
 			{ aliasId: row.id, entityId: input.entityId, alias: input.alias },

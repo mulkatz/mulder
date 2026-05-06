@@ -8,6 +8,8 @@
  * @see docs/functional-spec.md §4.3
  */
 
+import type { SensitivityLevel, SensitivityTagged } from '../../shared/sensitivity.js';
+
 // ────────────────────────────────────────────────────────────
 // Status enums
 // ────────────────────────────────────────────────────────────
@@ -28,7 +30,13 @@ export type SourceFormatMetadata = Record<string, unknown>;
 // Source types
 // ────────────────────────────────────────────────────────────
 
-/** A source record from the database. */
+/**
+ * A source-like record.
+ *
+ * Repository reads always populate sensitivity fields, while legacy callers
+ * that construct source-shaped fixtures can omit them and rely on database
+ * defaults or downstream normalization.
+ */
 export interface Source {
 	id: string;
 	filename: string;
@@ -44,9 +52,14 @@ export interface Source {
 	reliabilityScore: number | null;
 	tags: string[];
 	metadata: Record<string, unknown>;
+	sensitivityLevel?: SensitivityTagged['sensitivityLevel'];
+	sensitivityMetadata?: SensitivityTagged['sensitivityMetadata'];
 	createdAt: Date;
 	updatedAt: Date;
 }
+
+/** A source record returned from the database with normalized sensitivity fields populated. */
+export type PersistedSource = Source & SensitivityTagged;
 
 /** Input for creating a new source. */
 export interface CreateSourceInput {
@@ -62,6 +75,8 @@ export interface CreateSourceInput {
 	nativeTextRatio?: number;
 	tags?: string[];
 	metadata?: Record<string, unknown>;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 }
 
 /** Input for updating a source. Partial -- only provided fields are updated. */
@@ -79,6 +94,8 @@ export interface UpdateSourceInput {
 	reliabilityScore?: number | null;
 	tags?: string[];
 	metadata?: Record<string, unknown>;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 }
 
 /** Filters for querying sources. */
@@ -108,7 +125,7 @@ export interface SourceStep {
 
 /** A source record bundled with its source_steps rows for planning. */
 export interface SourceWithSteps {
-	source: Source;
+	source: PersistedSource;
 	steps: SourceStep[];
 }
 

@@ -9,7 +9,15 @@
  * @see docs/functional-spec.md §2.4
  */
 
-import type { AssertionType, ClassificationProvenance, ConfidenceMetadata, StepError } from '@mulder/core';
+import type {
+	AssertionType,
+	ClassificationProvenance,
+	ConfidenceMetadata,
+	PIIType,
+	SensitivityAssignmentSource,
+	SensitivityLevel,
+	StepError,
+} from '@mulder/core';
 
 // ────────────────────────────────────────────────────────────
 // Step input / output
@@ -54,6 +62,15 @@ export interface EnrichmentData {
 	chunksUsed: number;
 }
 
+export interface ExtractedSensitivityMetadata {
+	level: SensitivityLevel;
+	reason: string;
+	assigned_by?: SensitivityAssignmentSource;
+	assigned_at?: string;
+	pii_types: PIIType[];
+	declassify_date: string | null;
+}
+
 // ────────────────────────────────────────────────────────────
 // Extraction response types (from Gemini structured output)
 // ────────────────────────────────────────────────────────────
@@ -65,6 +82,7 @@ export interface ExtractedEntity {
 	confidence: number;
 	attributes: Record<string, unknown>;
 	mentions: string[];
+	sensitivity?: ExtractedSensitivityMetadata;
 }
 
 /** A relationship extracted from a story by Gemini. */
@@ -74,6 +92,7 @@ export interface ExtractedRelationship {
 	relationship_type: string;
 	confidence: number;
 	attributes?: Record<string, unknown>;
+	sensitivity?: ExtractedSensitivityMetadata;
 }
 
 /** A classified assertion extracted from a story by Gemini. */
@@ -90,6 +109,7 @@ export interface ExtractedAssertion {
 	};
 	classification_provenance?: ClassificationProvenance;
 	entity_names?: string[];
+	sensitivity?: ExtractedSensitivityMetadata;
 }
 
 /** The full extraction response from Gemini. */

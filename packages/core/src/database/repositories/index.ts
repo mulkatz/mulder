@@ -254,12 +254,14 @@ export {
 	findSourcesWithFailedSteps,
 	findSourcesWithSteps,
 	updateSource,
+	updateSourceSensitivityFromArtifacts,
 	updateSourceStatus,
 	upsertSourceStep,
 } from './source.repository.js';
 export type {
 	CreateSourceInput,
 	FailedSourceInfo,
+	PersistedSource,
 	Source,
 	SourceFilter,
 	SourceFormatMetadata,
@@ -299,6 +301,7 @@ export {
 	findStoriesBySourceId,
 	findStoryById,
 	updateStory,
+	updateStorySensitivityFromArtifacts,
 	updateStoryStatus,
 } from './story.repository.js';
 export type {

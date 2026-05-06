@@ -15,6 +15,7 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
 import {
 	mapArtifactProvenanceFromDb,
 	mergeArtifactProvenanceSql,
@@ -28,6 +29,7 @@ import type {
 	FtsSearchResult,
 	VectorSearchResult,
 } from './chunk.types.js';
+import { queryWithSensitivityColumnFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'chunk-repository' });
@@ -69,6 +71,8 @@ export function mapChunkRow(row: ChunkRow): Chunk {
 		parentChunkId: row.parent_chunk_id,
 		metadata: row.metadata ?? {},
 		provenance: mapArtifactProvenanceFromDb(row.provenance),
+		sensitivityLevel: row.sensitivity_level ?? 'internal',
+		sensitivityMetadata: normalizeSensitivityMetadata(row.sensitivity_metadata, row.sensitivity_level ?? 'internal'),
 		createdAt: row.created_at,
 	};
 }
@@ -98,7 +102,26 @@ function formatEmbedding(embedding: number[] | null | undefined): string | null 
 export async function createChunk(pool: pg.Pool, input: CreateChunkInput): Promise<Chunk> {
 	const embeddingLiteral = formatEmbedding(input.embedding);
 	const hasExplicitId = input.id !== undefined;
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 	const sql = hasExplicitId
+		? `
+    INSERT INTO chunks (id, story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, $9, $10, $11::jsonb, $12, $13::jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+      content = EXCLUDED.content,
+      embedding = EXCLUDED.embedding,
+      metadata = EXCLUDED.metadata,
+      provenance = ${mergeArtifactProvenanceSql('chunks.provenance', 'EXCLUDED.provenance')},
+      sensitivity_level = EXCLUDED.sensitivity_level,
+      sensitivity_metadata = EXCLUDED.sensitivity_metadata
+    RETURNING *, embedding::text
+  `
+		: `
+    INSERT INTO chunks (story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10::jsonb, $11, $12::jsonb)
+    RETURNING *, embedding::text
+  `;
+	const legacySql = hasExplicitId
 		? `
     INSERT INTO chunks (id, story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance)
     VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, $9, $10, $11::jsonb)
@@ -125,11 +148,15 @@ export async function createChunk(pool: pg.Pool, input: CreateChunkInput): Promi
 		input.parentChunkId ?? null,
 		JSON.stringify(input.metadata ?? {}),
 		stringifyArtifactProvenance(input.provenance),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
 	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
+	const legacyBaseParams = baseParams.slice(0, -2);
+	const legacyParams = hasExplicitId ? [input.id, ...legacyBaseParams] : legacyBaseParams;
 
 	try {
-		const result = await pool.query<ChunkRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<ChunkRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ chunkId: row.id, storyId: input.storyId }, 'Chunk created');
 		return mapChunkRow(row);
@@ -164,6 +191,8 @@ export async function createChunks(pool: pg.Pool, inputs: CreateChunkInput[]): P
 	const parentChunkIds: (string | null)[] = [];
 	const metadatas: string[] = [];
 	const provenances: string[] = [];
+	const sensitivityLevels: string[] = [];
+	const sensitivityMetadatas: string[] = [];
 
 	for (const input of inputs) {
 		storyIds.push(input.storyId);
@@ -176,10 +205,13 @@ export async function createChunks(pool: pg.Pool, inputs: CreateChunkInput[]): P
 		parentChunkIds.push(input.parentChunkId ?? null);
 		metadatas.push(JSON.stringify(input.metadata ?? {}));
 		provenances.push(stringifyArtifactProvenance(input.provenance));
+		const sensitivityLevel = input.sensitivityLevel ?? 'internal';
+		sensitivityLevels.push(sensitivityLevel);
+		sensitivityMetadatas.push(stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel));
 	}
 
 	const sql = `
-    INSERT INTO chunks (story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance)
+    INSERT INTO chunks (story_id, content, chunk_index, page_start, page_end, embedding, is_question, parent_chunk_id, metadata, provenance, sensitivity_level, sensitivity_metadata)
     SELECT
       unnest($1::uuid[]),
       unnest($2::text[]),
@@ -190,7 +222,9 @@ export async function createChunks(pool: pg.Pool, inputs: CreateChunkInput[]): P
       unnest($7::boolean[]),
       unnest($8::uuid[]),
       unnest($9::jsonb[]),
-      unnest($10::jsonb[])
+      unnest($10::jsonb[]),
+      unnest($11::text[]),
+      unnest($12::jsonb[])
     RETURNING *, embedding::text
   `;
 
@@ -206,6 +240,8 @@ export async function createChunks(pool: pg.Pool, inputs: CreateChunkInput[]): P
 			parentChunkIds,
 			metadatas,
 			provenances,
+			sensitivityLevels,
+			sensitivityMetadatas,
 		]);
 		repoLogger.debug({ count: result.rows.length, storyId: inputs[0].storyId }, 'Batch chunks created');
 		return result.rows.map(mapChunkRow);

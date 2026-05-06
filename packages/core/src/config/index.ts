@@ -11,6 +11,8 @@ export type { ReprocessHashStepName } from './reprocess-hash.js';
 export { computeReprocessConfigHash, getReprocessConfigSubset } from './reprocess-hash.js';
 export { mulderConfigSchema } from './schema.js';
 export type {
+	AccessControlConfig,
+	AccessControlSensitivityConfig,
 	AnalysisConfig,
 	ApiAuthConfig,
 	ApiAuthKeyConfig,

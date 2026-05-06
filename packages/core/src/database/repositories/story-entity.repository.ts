@@ -13,6 +13,7 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
 import {
 	mapArtifactProvenanceFromDb,
 	mergeArtifactProvenanceSql,
@@ -20,6 +21,7 @@ import {
 } from './artifact-provenance.js';
 import { type EntityRow, mapEntityRow } from './entity.repository.js';
 import type { LinkStoryEntityInput, StoryEntityWithEntity, StoryEntityWithStory } from './entity.types.js';
+import { queryWithSensitivityColumnFallback } from './schema-compat.js';
 import { mapStoryRow, type StoryRow } from './story.repository.js';
 
 const logger = createLogger();
@@ -33,12 +35,16 @@ type EntityWithJunctionRow = EntityRow & {
 	confidence: number | null;
 	mention_count: number;
 	junction_provenance: unknown;
+	junction_sensitivity_level: StoryEntityWithEntity['sensitivityLevel'];
+	junction_sensitivity_metadata: unknown;
 };
 
 type StoryWithJunctionRow = StoryRow & {
 	confidence: number | null;
 	mention_count: number;
 	junction_provenance: unknown;
+	junction_sensitivity_level: StoryEntityWithStory['sensitivityLevel'];
+	junction_sensitivity_metadata: unknown;
 };
 
 function mapEntityWithJunctionRow(row: EntityWithJunctionRow): StoryEntityWithEntity {
@@ -46,6 +52,11 @@ function mapEntityWithJunctionRow(row: EntityWithJunctionRow): StoryEntityWithEn
 		...mapEntityRow({ ...row, provenance: row.junction_provenance }),
 		confidence: row.confidence,
 		mentionCount: row.mention_count,
+		sensitivityLevel: row.junction_sensitivity_level ?? 'internal',
+		sensitivityMetadata: normalizeSensitivityMetadata(
+			row.junction_sensitivity_metadata,
+			row.junction_sensitivity_level ?? 'internal',
+		),
 	};
 }
 
@@ -55,6 +66,11 @@ function mapStoryWithJunctionRow(row: StoryWithJunctionRow): StoryEntityWithStor
 		confidence: row.confidence,
 		mentionCount: row.mention_count,
 		provenance: mapArtifactProvenanceFromDb(row.junction_provenance),
+		sensitivityLevel: row.junction_sensitivity_level ?? 'internal',
+		sensitivityMetadata: normalizeSensitivityMetadata(
+			row.junction_sensitivity_metadata,
+			row.junction_sensitivity_level ?? 'internal',
+		),
 	};
 }
 
@@ -68,7 +84,30 @@ function mapStoryWithJunctionRow(row: StoryWithJunctionRow): StoryEntityWithStor
  * On conflict, updates confidence and mention_count to the new values.
  */
 export async function linkStoryEntity(pool: pg.Pool, input: LinkStoryEntityInput): Promise<StoryEntityWithEntity> {
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 	const sql = `
+    WITH upserted AS (
+      INSERT INTO story_entities (story_id, entity_id, confidence, mention_count, provenance, sensitivity_level, sensitivity_metadata)
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb)
+      ON CONFLICT (story_id, entity_id) DO UPDATE SET
+        confidence = EXCLUDED.confidence,
+        mention_count = EXCLUDED.mention_count,
+        provenance = ${mergeArtifactProvenanceSql('story_entities.provenance', 'EXCLUDED.provenance')},
+        sensitivity_level = EXCLUDED.sensitivity_level,
+        sensitivity_metadata = EXCLUDED.sensitivity_metadata
+      RETURNING *
+    )
+    SELECT
+      e.*,
+      u.confidence,
+      u.mention_count,
+      u.provenance AS junction_provenance,
+      u.sensitivity_level AS junction_sensitivity_level,
+      u.sensitivity_metadata AS junction_sensitivity_metadata
+    FROM upserted u
+    JOIN entities e ON e.id = u.entity_id
+  `;
+	const legacySql = `
     WITH upserted AS (
       INSERT INTO story_entities (story_id, entity_id, confidence, mention_count, provenance)
       VALUES ($1, $2, $3, $4, $5::jsonb)
@@ -78,7 +117,13 @@ export async function linkStoryEntity(pool: pg.Pool, input: LinkStoryEntityInput
         provenance = ${mergeArtifactProvenanceSql('story_entities.provenance', 'EXCLUDED.provenance')}
       RETURNING *
     )
-    SELECT e.*, u.confidence, u.mention_count, u.provenance AS junction_provenance
+    SELECT
+      e.*,
+      u.confidence,
+      u.mention_count,
+      u.provenance AS junction_provenance,
+      NULL::text AS junction_sensitivity_level,
+      NULL::jsonb AS junction_sensitivity_metadata
     FROM upserted u
     JOIN entities e ON e.id = u.entity_id
   `;
@@ -88,10 +133,19 @@ export async function linkStoryEntity(pool: pg.Pool, input: LinkStoryEntityInput
 		input.confidence ?? null,
 		input.mentionCount ?? 1,
 		stringifyArtifactProvenance(input.provenance),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
+	const legacyParams = params.slice(0, -2);
 
 	try {
-		const result = await pool.query<EntityWithJunctionRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EntityWithJunctionRow>(
+			pool,
+			sql,
+			params,
+			legacySql,
+			legacyParams,
+		);
 		const row = result.rows[0];
 		repoLogger.debug({ storyId: input.storyId, entityId: input.entityId }, 'Story-entity link created or updated');
 		return mapEntityWithJunctionRow(row);
@@ -110,15 +164,41 @@ export async function linkStoryEntity(pool: pg.Pool, input: LinkStoryEntityInput
  */
 export async function findEntitiesByStoryId(pool: pg.Pool, storyId: string): Promise<StoryEntityWithEntity[]> {
 	const sql = `
-    SELECT e.*, se.confidence, se.mention_count, se.provenance AS junction_provenance
+    SELECT
+      e.*,
+      se.confidence,
+      se.mention_count,
+      se.provenance AS junction_provenance,
+      se.sensitivity_level AS junction_sensitivity_level,
+      se.sensitivity_metadata AS junction_sensitivity_metadata
     FROM entities e
     JOIN story_entities se ON se.entity_id = e.id
     WHERE se.story_id = $1
     ORDER BY e.name
   `;
+	const legacySql = `
+    SELECT
+      e.*,
+      se.confidence,
+      se.mention_count,
+      se.provenance AS junction_provenance,
+      NULL::text AS junction_sensitivity_level,
+      NULL::jsonb AS junction_sensitivity_metadata
+    FROM entities e
+    JOIN story_entities se ON se.entity_id = e.id
+    WHERE se.story_id = $1
+    ORDER BY e.name
+  `;
+	const params = [storyId];
 
 	try {
-		const result = await pool.query<EntityWithJunctionRow>(sql, [storyId]);
+		const result = await queryWithSensitivityColumnFallback<EntityWithJunctionRow>(
+			pool,
+			sql,
+			params,
+			legacySql,
+			params,
+		);
 		return result.rows.map(mapEntityWithJunctionRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find entities by story ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
@@ -135,15 +215,35 @@ export async function findEntitiesByStoryId(pool: pg.Pool, storyId: string): Pro
  */
 export async function findStoriesByEntityId(pool: pg.Pool, entityId: string): Promise<StoryEntityWithStory[]> {
 	const sql = `
-    SELECT s.*, se.confidence, se.mention_count, se.provenance AS junction_provenance
+    SELECT
+      s.*,
+      se.confidence,
+      se.mention_count,
+      se.provenance AS junction_provenance,
+      se.sensitivity_level AS junction_sensitivity_level,
+      se.sensitivity_metadata AS junction_sensitivity_metadata
     FROM stories s
     JOIN story_entities se ON se.story_id = s.id
     WHERE se.entity_id = $1
     ORDER BY s.created_at DESC
   `;
+	const legacySql = `
+    SELECT
+      s.*,
+      se.confidence,
+      se.mention_count,
+      se.provenance AS junction_provenance,
+      NULL::text AS junction_sensitivity_level,
+      NULL::jsonb AS junction_sensitivity_metadata
+    FROM stories s
+    JOIN story_entities se ON se.story_id = s.id
+    WHERE se.entity_id = $1
+    ORDER BY s.created_at DESC
+  `;
+	const params = [entityId];
 
 	try {
-		const result = await pool.query<StoryWithJunctionRow>(sql, [entityId]);
+		const result = await queryWithSensitivityColumnFallback<StoryWithJunctionRow>(pool, sql, params, legacySql, params);
 		return result.rows.map(mapStoryWithJunctionRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find stories by entity ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {

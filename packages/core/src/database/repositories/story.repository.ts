@@ -13,6 +13,8 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
+import { queryWithSensitivityColumnFallback } from './schema-compat.js';
 import type { CreateStoryInput, Story, StoryFilter, StoryStatus, UpdateStoryInput } from './story.types.js';
 
 const logger = createLogger();
@@ -38,6 +40,8 @@ export interface StoryRow {
 	extraction_confidence: number | null;
 	status: StoryStatus;
 	metadata: Record<string, unknown>;
+	sensitivity_level: Story['sensitivityLevel'];
+	sensitivity_metadata: unknown;
 	created_at: Date;
 	updated_at: Date;
 }
@@ -59,6 +63,8 @@ export function mapStoryRow(row: StoryRow): Story {
 		extractionConfidence: row.extraction_confidence,
 		status: row.status,
 		metadata: row.metadata ?? {},
+		sensitivityLevel: row.sensitivity_level ?? 'internal',
+		sensitivityMetadata: normalizeSensitivityMetadata(row.sensitivity_metadata, row.sensitivity_level ?? 'internal'),
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -79,7 +85,21 @@ export async function createStory(pool: pg.Pool, input: CreateStoryInput): Promi
 	// When an explicit ID is provided (e.g. from the segment step), include it
 	// in the INSERT so the DB record matches GCS paths and metadata JSON.
 	const hasExplicitId = input.id !== undefined;
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 	const sql = hasExplicitId
+		? `
+    INSERT INTO stories (id, source_id, title, subtitle, language, category, page_start, page_end, gcs_markdown_uri, gcs_metadata_uri, extraction_confidence, metadata, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
+    ON CONFLICT (id) DO UPDATE SET updated_at = now()
+    RETURNING *
+  `
+		: `
+    INSERT INTO stories (source_id, title, subtitle, language, category, page_start, page_end, gcs_markdown_uri, gcs_metadata_uri, extraction_confidence, metadata, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+    ON CONFLICT (id) DO UPDATE SET updated_at = now()
+    RETURNING *
+  `;
+	const legacySql = hasExplicitId
 		? `
     INSERT INTO stories (id, source_id, title, subtitle, language, category, page_start, page_end, gcs_markdown_uri, gcs_metadata_uri, extraction_confidence, metadata)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -104,11 +124,15 @@ export async function createStory(pool: pg.Pool, input: CreateStoryInput): Promi
 		input.gcsMetadataUri,
 		input.extractionConfidence ?? null,
 		JSON.stringify(input.metadata ?? {}),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
 	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
+	const legacyBaseParams = baseParams.slice(0, -2);
+	const legacyParams = hasExplicitId ? [input.id, ...legacyBaseParams] : legacyBaseParams;
 
 	try {
-		const result = await pool.query<StoryRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<StoryRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ storyId: row.id, sourceId: input.sourceId }, 'Story created or found');
 		return mapStoryRow(row);
@@ -302,6 +326,16 @@ export async function updateStory(pool: pg.Pool, id: string, input: UpdateStoryI
 		paramIndex++;
 	}
 
+	if (input.sensitivityLevel !== undefined || input.sensitivityMetadata !== undefined) {
+		const sensitivityLevel = input.sensitivityLevel ?? 'internal';
+		setClauses.push(`sensitivity_level = $${paramIndex}`);
+		params.push(sensitivityLevel);
+		paramIndex++;
+		setClauses.push(`sensitivity_metadata = $${paramIndex}::jsonb`);
+		params.push(stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel));
+		paramIndex++;
+	}
+
 	// Always update the timestamp
 	setClauses.push('updated_at = now()');
 
@@ -353,6 +387,83 @@ export async function updateStoryStatus(pool: pg.Pool, id: string, status: Story
 		throw new DatabaseError('Failed to update story status', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause: error,
 			context: { id, status },
+		});
+	}
+}
+
+export async function updateStorySensitivityFromArtifacts(pool: pg.Pool, storyId: string): Promise<Story> {
+	const sql = `
+    WITH artifact_sensitivity AS (
+      SELECT e.sensitivity_level, e.sensitivity_metadata
+      FROM entities e
+      JOIN story_entities se ON se.entity_id = e.id
+      WHERE se.story_id = $1
+      UNION ALL
+      SELECT sensitivity_level, sensitivity_metadata
+      FROM story_entities
+      WHERE story_id = $1
+      UNION ALL
+      SELECT sensitivity_level, sensitivity_metadata
+      FROM chunks
+      WHERE story_id = $1
+      UNION ALL
+      SELECT sensitivity_level, sensitivity_metadata
+      FROM entity_edges
+      WHERE story_id = $1
+      UNION ALL
+      SELECT sensitivity_level, sensitivity_metadata
+      FROM knowledge_assertions
+      WHERE story_id = $1 AND deleted_at IS NULL
+    ),
+    ranked AS (
+      SELECT
+        COALESCE(
+          (ARRAY_AGG(sensitivity_level ORDER BY
+            CASE sensitivity_level
+              WHEN 'confidential' THEN 4
+              WHEN 'restricted' THEN 3
+              WHEN 'internal' THEN 2
+              ELSE 1
+            END DESC
+          ))[1],
+          'internal'
+        ) AS propagated_level,
+        COALESCE(jsonb_agg(DISTINCT pii.value) FILTER (WHERE pii.value IS NOT NULL), '[]'::jsonb) AS pii_types
+      FROM artifact_sensitivity
+      LEFT JOIN LATERAL jsonb_array_elements_text(sensitivity_metadata->'pii_types') AS pii(value) ON true
+    )
+    UPDATE stories
+    SET
+      sensitivity_level = ranked.propagated_level,
+      sensitivity_metadata = jsonb_build_object(
+        'level', ranked.propagated_level,
+        'reason', 'upward_propagation',
+        'assigned_by', 'policy_rule',
+        'assigned_at', to_jsonb(now()),
+        'pii_types', ranked.pii_types,
+        'declassify_date', 'null'::jsonb
+      ),
+      updated_at = now()
+    FROM ranked
+    WHERE stories.id = $1
+    RETURNING stories.*
+  `;
+
+	try {
+		const result = await pool.query<StoryRow>(sql, [storyId]);
+		if (result.rows.length === 0) {
+			throw new DatabaseError(`Story not found: ${storyId}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+				context: { storyId },
+			});
+		}
+		return mapStoryRow(result.rows[0]);
+	} catch (error: unknown) {
+		if (error instanceof DatabaseError) {
+			throw error;
+		}
+		throw new DatabaseError('Failed to update story sensitivity', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { storyId },
 		});
 	}
 }

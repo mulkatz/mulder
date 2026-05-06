@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod';
+import { PII_TYPES, SENSITIVITY_LEVELS } from '../shared/sensitivity.js';
 
 /**
  * Zod 4 helper: `.default({})` no longer works because the default must match
@@ -209,6 +210,36 @@ const documentQualityObj = z.object({
 	manual_queue: documentQualityManualQueueSchema.default(defaults(documentQualityManualQueueSchema)),
 });
 const documentQualitySchema = documentQualityObj.default(defaults(documentQualityObj));
+
+// --- Access Control ---
+
+const sensitivityLevelSchema = z.enum(SENSITIVITY_LEVELS);
+const piiTypeSchema = z.enum(PII_TYPES);
+
+const accessControlSensitivitySchema = z.object({
+	levels: z.array(sensitivityLevelSchema).default([...SENSITIVITY_LEVELS]),
+	default_level: sensitivityLevelSchema.default('internal'),
+	auto_detection: z.boolean().default(true),
+	propagation: z.enum(['upward']).default('upward'),
+	pii_types: z.array(piiTypeSchema).default([...PII_TYPES]),
+});
+
+const accessControlRbacSchema = z.object({
+	roles_source: z.string().min(1).default('config/roles.yaml'),
+	default_role: z.string().min(1).default('analyst'),
+});
+
+const accessControlExternalQueryGateSchema = z.object({
+	enabled: z.boolean().default(false),
+});
+
+const accessControlObj = z.object({
+	enabled: z.boolean().default(true),
+	sensitivity: accessControlSensitivitySchema.default(defaults(accessControlSensitivitySchema)),
+	rbac: accessControlRbacSchema.default(defaults(accessControlRbacSchema)),
+	external_query_gate: accessControlExternalQueryGateSchema.default(defaults(accessControlExternalQueryGateSchema)),
+});
+const accessControlSchema = accessControlObj.default(defaults(accessControlObj));
 
 // --- Enrichment ---
 
@@ -479,6 +510,7 @@ const baseMulderConfigSchema = z.object({
 	ingestion: ingestionSchema,
 	extraction: extractionSchema,
 	document_quality: documentQualitySchema,
+	access_control: accessControlSchema,
 	enrichment: enrichmentSchema,
 	taxonomy: taxonomySchema,
 	entity_resolution: entityResolutionSchema,
@@ -539,6 +571,8 @@ export const mulderConfigSchema = baseMulderConfigSchema.superRefine((data, ctx)
 
 // Export section schemas for reuse
 export {
+	accessControlSchema,
+	accessControlSensitivitySchema,
 	analysisSchema,
 	apiBudgetSchema,
 	apiSchema,

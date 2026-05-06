@@ -13,6 +13,7 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
 import {
 	mapArtifactProvenanceFromDb,
 	mergeArtifactProvenanceSql,
@@ -26,6 +27,7 @@ import type {
 	TaxonomyStatus,
 	UpdateEntityInput,
 } from './entity.types.js';
+import { queryWithSensitivityColumnFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'entity-repository' });
@@ -52,6 +54,8 @@ export interface EntityRow {
 	taxonomy_status: TaxonomyStatus;
 	taxonomy_id: string | null;
 	provenance: unknown;
+	sensitivity_level: Entity['sensitivityLevel'];
+	sensitivity_metadata: unknown;
 	created_at: Date;
 	updated_at: Date;
 }
@@ -70,6 +74,8 @@ export function mapEntityRow(row: EntityRow): Entity {
 		taxonomyStatus: row.taxonomy_status,
 		taxonomyId: row.taxonomy_id,
 		provenance: mapArtifactProvenanceFromDb(row.provenance),
+		sensitivityLevel: row.sensitivity_level ?? 'internal',
+		sensitivityMetadata: normalizeSensitivityMetadata(row.sensitivity_metadata, row.sensitivity_level ?? 'internal'),
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -88,7 +94,29 @@ export function mapEntityRow(row: EntityRow): Entity {
  */
 export async function createEntity(pool: pg.Pool, input: CreateEntityInput): Promise<Entity> {
 	const hasExplicitId = input.id !== undefined;
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 	const sql = hasExplicitId
+		? `
+    INSERT INTO entities (id, name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10::jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+      provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+      sensitivity_level = EXCLUDED.sensitivity_level,
+      sensitivity_metadata = EXCLUDED.sensitivity_metadata,
+      updated_at = now()
+    RETURNING *
+  `
+		: `
+    INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance, sensitivity_level, sensitivity_metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+      provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+      sensitivity_level = EXCLUDED.sensitivity_level,
+      sensitivity_metadata = EXCLUDED.sensitivity_metadata,
+      updated_at = now()
+    RETURNING *
+  `;
+	const legacySql = hasExplicitId
 		? `
     INSERT INTO entities (id, name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
@@ -113,11 +141,15 @@ export async function createEntity(pool: pg.Pool, input: CreateEntityInput): Pro
 		input.taxonomyStatus ?? 'auto',
 		input.taxonomyId ?? null,
 		stringifyArtifactProvenance(input.provenance),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
 	const params = hasExplicitId ? [input.id, ...baseParams] : baseParams;
+	const legacyBaseParams = baseParams.slice(0, -2);
+	const legacyParams = hasExplicitId ? [input.id, ...legacyBaseParams] : legacyBaseParams;
 
 	try {
-		const result = await pool.query<EntityRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EntityRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ entityId: row.id, name: input.name, type: input.type }, 'Entity created or found');
 		return mapEntityRow(row);
@@ -138,7 +170,50 @@ export async function createEntity(pool: pg.Pool, input: CreateEntityInput): Pro
  * and bumps `updated_at`.
  */
 export async function upsertEntityByNameType(pool: pg.Pool, input: CreateEntityInput): Promise<Entity> {
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
 	const sql = `
+    WITH existing AS (
+      UPDATE entities
+      SET
+        attributes = COALESCE(NULLIF($4::jsonb, '{}'::jsonb), entities.attributes),
+        taxonomy_status = COALESCE($5, entities.taxonomy_status),
+        taxonomy_id = COALESCE($6, entities.taxonomy_id),
+        provenance = ${mergeArtifactProvenanceSql('entities.provenance', '$7::jsonb')},
+        sensitivity_level = $8,
+        sensitivity_metadata = $9::jsonb,
+        updated_at = now()
+      WHERE id = (
+        SELECT id
+        FROM entities
+        WHERE name = $1
+          AND type = $2
+          AND $3::uuid IS NULL
+          AND (canonical_id IS NULL OR canonical_id = id)
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+      )
+      RETURNING *
+    ),
+    inserted AS (
+      INSERT INTO entities (name, type, canonical_id, attributes, taxonomy_status, taxonomy_id, provenance, sensitivity_level, sensitivity_metadata)
+      SELECT $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb
+      WHERE NOT EXISTS (SELECT 1 FROM existing)
+      ON CONFLICT (name, type) WHERE canonical_id IS NULL DO UPDATE SET
+        attributes = COALESCE(NULLIF($4::jsonb, '{}'::jsonb), entities.attributes),
+        taxonomy_status = COALESCE($5, entities.taxonomy_status),
+        taxonomy_id = COALESCE($6, entities.taxonomy_id),
+        provenance = ${mergeArtifactProvenanceSql('entities.provenance', 'EXCLUDED.provenance')},
+        sensitivity_level = EXCLUDED.sensitivity_level,
+        sensitivity_metadata = EXCLUDED.sensitivity_metadata,
+        updated_at = now()
+      RETURNING *
+    )
+    SELECT * FROM existing
+    UNION ALL
+    SELECT * FROM inserted
+    LIMIT 1
+  `;
+	const legacySql = `
     WITH existing AS (
       UPDATE entities
       SET
@@ -184,10 +259,13 @@ export async function upsertEntityByNameType(pool: pg.Pool, input: CreateEntityI
 		input.taxonomyStatus ?? 'auto',
 		input.taxonomyId ?? null,
 		stringifyArtifactProvenance(input.provenance),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 	];
+	const legacyParams = params.slice(0, -2);
 
 	try {
-		const result = await pool.query<EntityRow>(sql, params);
+		const result = await queryWithSensitivityColumnFallback<EntityRow>(pool, sql, params, legacySql, legacyParams);
 		const row = result.rows[0];
 		repoLogger.debug({ entityId: row.id, name: input.name, type: input.type }, 'Entity upserted by name+type');
 		return mapEntityRow(row);
@@ -432,6 +510,16 @@ export async function updateEntity(pool: pg.Pool, id: string, input: UpdateEntit
 		const incomingRef = `$${paramIndex}::jsonb`;
 		setClauses.push(`provenance = ${mergeArtifactProvenanceSql('entities.provenance', incomingRef)}`);
 		params.push(stringifyArtifactProvenance(input.provenance));
+		paramIndex++;
+	}
+
+	if (input.sensitivityLevel !== undefined || input.sensitivityMetadata !== undefined) {
+		const sensitivityLevel = input.sensitivityLevel ?? 'internal';
+		setClauses.push(`sensitivity_level = $${paramIndex}`);
+		params.push(sensitivityLevel);
+		paramIndex++;
+		setClauses.push(`sensitivity_metadata = $${paramIndex}::jsonb`);
+		params.push(stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel));
 		paramIndex++;
 	}
 
