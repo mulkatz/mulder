@@ -35,7 +35,9 @@ const STEP_TO_SUITE = {
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../../..');
 const GOLDEN_ROOT = resolve(REPO_ROOT, 'eval/golden');
-const BASELINE_PATH = resolve(REPO_ROOT, 'eval/metrics/baseline.json');
+const BASELINE_PATH = process.env.MULDER_EVAL_BASELINE_PATH
+	? resolve(process.env.MULDER_EVAL_BASELINE_PATH)
+	: resolve(REPO_ROOT, 'eval/metrics/baseline.json');
 
 type EvalStep = (typeof VALID_EVAL_STEPS)[number];
 type EvalSuite = (typeof STEP_TO_SUITE)[EvalStep];

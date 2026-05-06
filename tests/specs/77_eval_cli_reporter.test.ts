@@ -1,11 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
-const BASELINE_PATH = resolve(ROOT, 'eval/metrics/baseline.json');
+const CHECKED_IN_BASELINE_PATH = resolve(ROOT, 'eval/metrics/baseline.json');
 const GOLDEN_DIRS = [
 	resolve(ROOT, 'eval/golden/extraction'),
 	resolve(ROOT, 'eval/golden/segmentation'),
@@ -30,15 +31,18 @@ const FIXTURE_DIRS = [
 
 const infraReady =
 	existsSync(CLI) &&
-	existsSync(BASELINE_PATH) &&
+	existsSync(CHECKED_IN_BASELINE_PATH) &&
 	GOLDEN_DIRS.every((dir) => existsSync(dir)) &&
 	FIXTURE_DIRS.every((dir) => existsSync(dir));
+
+let isolatedBaselinePath = '';
 
 function buildEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = {
 		...process.env,
 		NODE_ENV: 'test',
 		MULDER_LOG_LEVEL: 'silent',
+		...(isolatedBaselinePath ? { MULDER_EVAL_BASELINE_PATH: isolatedBaselinePath } : {}),
 		...extra,
 	};
 
@@ -118,12 +122,15 @@ describe('Spec 77: Eval CLI + Reporter', () => {
 	let tempDir = '';
 
 	beforeAll(() => {
-		expect(infraReady, `Missing required infra for spec 77: CLI=${CLI}, baseline=${BASELINE_PATH}`).toBe(true);
+		expect(infraReady, `Missing required infra for spec 77: CLI=${CLI}, baseline=${CHECKED_IN_BASELINE_PATH}`).toBe(
+			true,
+		);
 		if (!infraReady) {
 			return;
 		}
-		tempDir = resolve(ROOT, '.tmp-spec-77');
-		mkdirSync(tempDir, { recursive: true });
+		tempDir = mkdtempSync(join(tmpdir(), 'mulder-spec-77-'));
+		isolatedBaselinePath = join(tempDir, 'baseline.json');
+		copyFileSync(CHECKED_IN_BASELINE_PATH, isolatedBaselinePath);
 	});
 
 	afterAll(() => {
@@ -196,8 +203,8 @@ describe('Spec 77: Eval CLI + Reporter', () => {
 		});
 
 		it('QA-07: missing baseline is rejected for compare mode', () => {
-			const backupPath = backupFile(BASELINE_PATH, tempDir);
-			rmSync(BASELINE_PATH);
+			const backupPath = backupFile(isolatedBaselinePath, tempDir);
+			rmSync(isolatedBaselinePath);
 			try {
 				const { exitCode, stderr, stdout } = runCli(['eval', '--compare', 'baseline']);
 
@@ -205,26 +212,26 @@ describe('Spec 77: Eval CLI + Reporter', () => {
 				expect((stdout + stderr).toLowerCase()).toMatch(/baseline/);
 				expect((stdout + stderr).toLowerCase()).toMatch(/missing|not found|absent|no such/);
 			} finally {
-				copyFileSync(backupPath, BASELINE_PATH);
+				copyFileSync(backupPath, isolatedBaselinePath);
 			}
 		});
 
 		it('QA-08: invalid baseline JSON is rejected', () => {
-			const backupPath = backupFile(BASELINE_PATH, tempDir);
-			writeFileSync(BASELINE_PATH, '{ invalid json', 'utf-8');
+			const backupPath = backupFile(isolatedBaselinePath, tempDir);
+			writeFileSync(isolatedBaselinePath, '{ invalid json', 'utf-8');
 			try {
 				const { exitCode, stderr, stdout } = runCli(['eval', '--compare', 'baseline']);
 
 				expect(exitCode).not.toBe(0);
 				expect((stdout + stderr).toLowerCase()).toMatch(/json|parse|unexpected/i);
 			} finally {
-				copyFileSync(backupPath, BASELINE_PATH);
+				copyFileSync(backupPath, isolatedBaselinePath);
 			}
 		});
 
 		it('QA-09: baseline update rewrites only selected suites', () => {
-			const backupPath = backupFile(BASELINE_PATH, tempDir);
-			const original = JSON.parse(readFileSync(BASELINE_PATH, 'utf-8')) as Record<string, unknown>;
+			const backupPath = backupFile(isolatedBaselinePath, tempDir);
+			const original = JSON.parse(readFileSync(isolatedBaselinePath, 'utf-8')) as Record<string, unknown>;
 
 			try {
 				const { exitCode, stdout } = runCli(['eval', '--step', 'extract', '--update-baseline', '--json']);
@@ -237,7 +244,7 @@ describe('Spec 77: Eval CLI + Reporter', () => {
 				expect(parsed.baselineUpdated).toBe(true);
 				expectOnlyResultsKeys(parsed, ['extraction']);
 
-				const updated = JSON.parse(readFileSync(BASELINE_PATH, 'utf-8')) as Record<string, unknown>;
+				const updated = JSON.parse(readFileSync(isolatedBaselinePath, 'utf-8')) as Record<string, unknown>;
 				expect(updated.extraction).toBeDefined();
 				expect(updated.extraction).not.toEqual(original.extraction);
 
@@ -246,7 +253,7 @@ describe('Spec 77: Eval CLI + Reporter', () => {
 					expect(updated[key]).toEqual(original[key]);
 				}
 			} finally {
-				copyFileSync(backupPath, BASELINE_PATH);
+				copyFileSync(backupPath, isolatedBaselinePath);
 			}
 		});
 
@@ -327,16 +334,16 @@ describe('Spec 77: Eval CLI + Reporter', () => {
 		});
 
 		it('CLI-07: mulder eval --update-baseline --step extract --json', () => {
-			const backupPath = backupFile(BASELINE_PATH, tempDir);
+			const backupPath = backupFile(isolatedBaselinePath, tempDir);
 			try {
 				const { exitCode, stdout } = runCli(['eval', '--update-baseline', '--step', 'extract', '--json']);
 
 				expect(exitCode).toBe(0);
 				const parsed = parseJsonOutput(stdout) as { baselineUpdated?: boolean };
 				expect(parsed.baselineUpdated).toBe(true);
-				expect(JSON.parse(readFileSync(BASELINE_PATH, 'utf-8'))).toBeDefined();
+				expect(JSON.parse(readFileSync(isolatedBaselinePath, 'utf-8'))).toBeDefined();
 			} finally {
-				copyFileSync(backupPath, BASELINE_PATH);
+				copyFileSync(backupPath, isolatedBaselinePath);
 			}
 		});
 
@@ -355,8 +362,8 @@ describe('Spec 77: Eval CLI + Reporter', () => {
 		});
 
 		it('CLI-10: mulder eval --compare baseline with missing baseline file', () => {
-			const backupPath = backupFile(BASELINE_PATH, tempDir);
-			rmSync(BASELINE_PATH);
+			const backupPath = backupFile(isolatedBaselinePath, tempDir);
+			rmSync(isolatedBaselinePath);
 			try {
 				const { exitCode, stderr, stdout } = runCli(['eval', '--compare', 'baseline']);
 
@@ -364,7 +371,7 @@ describe('Spec 77: Eval CLI + Reporter', () => {
 				expect((stdout + stderr).toLowerCase()).toMatch(/baseline/);
 				expect((stdout + stderr).toLowerCase()).toMatch(/missing|not found|absent|no such/);
 			} finally {
-				copyFileSync(backupPath, BASELINE_PATH);
+				copyFileSync(backupPath, isolatedBaselinePath);
 			}
 		});
 	});
