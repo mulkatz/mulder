@@ -50,6 +50,10 @@ export interface EnrichmentData {
 	entitiesResolved: number;
 	relationshipsCreated: number;
 	assertionsPersisted: number;
+	conflictCandidatesExamined: number;
+	conflictsCreated: number;
+	conflictDetectionsSkipped: number;
+	conflictDetectionFailures: number;
 	taxonomyEntriesAdded: number;
 	/**
 	 * Number of entity rows in this story whose `taxonomy_id` was set

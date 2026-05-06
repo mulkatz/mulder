@@ -80,6 +80,7 @@ export interface SourcePurgeEffects {
 	storyEntitiesUpdated: number;
 	entityEdgesDeleted: number;
 	entityEdgesUpdated: number;
+	conflictNodesDeleted: number;
 	knowledgeAssertionsSoftDeleted: number;
 	knowledgeAssertionsUpdated: number;
 	entitiesDeleted: number;

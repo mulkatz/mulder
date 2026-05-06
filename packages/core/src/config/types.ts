@@ -12,6 +12,7 @@ import type {
 	apiSchema,
 	assertionClassificationSchema,
 	cloudSqlSchema,
+	contradictionManagementSchema,
 	credibilityDimensionSchema,
 	credibilitySchema,
 	deduplicationSchema,
@@ -75,6 +76,7 @@ export type SafetyConfig = z.infer<typeof safetySchema>;
 export type SourceRollbackConfig = z.infer<typeof sourceRollbackSchema>;
 export type CredibilityConfig = z.infer<typeof credibilitySchema>;
 export type CredibilityDimensionConfig = z.infer<typeof credibilityDimensionSchema>;
+export type ContradictionManagementConfig = z.infer<typeof contradictionManagementSchema>;
 export type VertexConfig = z.infer<typeof vertexSchema>;
 export type VisualIntelligenceConfig = z.infer<typeof visualIntelligenceSchema>;
 export type PatternDiscoveryConfig = z.infer<typeof patternDiscoverySchema>;

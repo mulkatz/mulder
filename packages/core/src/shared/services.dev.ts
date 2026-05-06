@@ -525,6 +525,19 @@ class DevLlmService implements LlmService {
 		else if (hasProperty('rankings')) {
 			this.logger.debug('DevLlmService: generateStructured — returning rerank fixture (empty rankings)');
 			result = JSON.parse(JSON.stringify({ rankings: [] }));
+		} else if (hasProperty('is_conflict')) {
+			this.logger.debug('DevLlmService: generateStructured — returning assertion conflict fixture');
+			result = JSON.parse(
+				JSON.stringify({
+					is_conflict: true,
+					conflict_type: 'factual',
+					severity: 'significant',
+					severity_rationale: 'Dev mode fixture treats the two assertion claims as meaningfully contradictory.',
+					confidence: 0.84,
+					claim_a: 'Dev mode fixture claim A.',
+					claim_b: 'Dev mode fixture claim B.',
+				}),
+			);
 		} else {
 			if (hasProperty('verdict')) {
 				this.logger.debug('DevLlmService: generateStructured — returning contradiction resolution fixture');
@@ -535,6 +548,11 @@ class DevLlmService implements LlmService {
 						confidence: 0.84,
 						explanation:
 							'Dev mode fixture selected claim A based on stronger source context and a more specific attribute statement.',
+						conflict_type: 'factual',
+						severity: 'significant',
+						severity_rationale: 'Dev mode fixture keeps contradiction severity significant.',
+						resolution_type: 'genuinely_contradictory',
+						evidence_refs: ['dev_mode_fixture'],
 					}),
 				);
 			} else {

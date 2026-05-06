@@ -338,6 +338,54 @@ const credibilityObj = z.object({
 });
 const credibilitySchema = credibilityObj.default(defaults(credibilityObj));
 
+// --- Contradiction Management ---
+
+const conflictTypeSchema = z.enum(['factual', 'interpretive', 'taxonomic', 'temporal', 'spatial', 'attributive']);
+const conflictSeveritySchema = z.enum(['minor', 'significant', 'fundamental']);
+const contradictionReviewDepthSchema = z.enum(['single_review']);
+
+const contradictionManagementDetectionObj = z.object({
+	pipeline: z.boolean().default(true),
+	agent: z.boolean().default(false),
+	human_reported: z.boolean().default(false),
+	embedding_similarity_band: z
+		.tuple([z.number().min(0).max(1), z.number().min(0).max(1)])
+		.default([0.3, 0.8])
+		.refine(([lower, upper]) => lower < upper, {
+			message: 'embedding_similarity_band lower bound must be less than upper bound',
+		}),
+	require_shared_entity: z.boolean().default(true),
+	llm_confirmation: z.boolean().default(true),
+	llm_engine: z.string().min(1).default('gemini-2.5-pro'),
+	min_confidence: z.number().min(0).max(1).default(0.7),
+	max_candidates_per_story: z.number().int().nonnegative().default(25),
+});
+
+const contradictionManagementReviewObj = z.object({
+	conflict_detection: contradictionReviewDepthSchema.default('single_review'),
+	resolution: contradictionReviewDepthSchema.default('single_review'),
+});
+
+const contradictionManagementMetricsObj = z.object({
+	track_contradiction_density: z.boolean().default(true),
+	track_resolution_rate: z.boolean().default(true),
+	feed_credibility_profiles: z.boolean().default(true),
+});
+
+const contradictionManagementObj = z.object({
+	enabled: z.boolean().default(true),
+	conflict_types: z
+		.array(conflictTypeSchema)
+		.min(1)
+		.default(['factual', 'interpretive', 'taxonomic', 'temporal', 'spatial', 'attributive']),
+	severity_levels: z.array(conflictSeveritySchema).min(1).default(['minor', 'significant', 'fundamental']),
+	detection: contradictionManagementDetectionObj.default(defaults(contradictionManagementDetectionObj)),
+	auto_severity_assessment: z.boolean().default(true),
+	review: contradictionManagementReviewObj.default(defaults(contradictionManagementReviewObj)),
+	metrics: contradictionManagementMetricsObj.default(defaults(contradictionManagementMetricsObj)),
+});
+const contradictionManagementSchema = contradictionManagementObj.default(defaults(contradictionManagementObj));
+
 // --- Enrichment ---
 
 const assertionClassificationSchema = z.object({
@@ -611,6 +659,7 @@ const baseMulderConfigSchema = z.object({
 	access_control: accessControlSchema,
 	source_rollback: sourceRollbackSchema,
 	credibility: credibilitySchema,
+	contradiction_management: contradictionManagementSchema,
 	enrichment: enrichmentSchema,
 	taxonomy: taxonomySchema,
 	entity_resolution: entityResolutionSchema,
@@ -678,6 +727,10 @@ export {
 	apiSchema,
 	assertionClassificationSchema,
 	cloudSqlSchema,
+	contradictionManagementDetectionObj,
+	contradictionManagementMetricsObj,
+	contradictionManagementReviewObj,
+	contradictionManagementSchema,
 	credibilityDimensionSchema,
 	credibilitySchema,
 	deduplicationSchema,

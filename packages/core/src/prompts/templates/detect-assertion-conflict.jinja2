@@ -1,0 +1,28 @@
+{{ i18n.contradiction.system_role }}
+
+## Assertion A
+- ID: {{ assertion_a.id }}
+- Type: {{ assertion_a.assertion_type }}
+- Claim: {{ assertion_a.claim }}
+- Source: {{ assertion_a.source_id }}
+- Shared entities: {{ shared_entities }}
+
+## Assertion B
+- ID: {{ assertion_b.id }}
+- Type: {{ assertion_b.assertion_type }}
+- Claim: {{ assertion_b.claim }}
+- Source: {{ assertion_b.source_id }}
+
+## Task
+Decide whether these two assertions are meaningfully contradictory rather than duplicates, compatible claims, or unrelated statements.
+
+Return a JSON object with:
+- `is_conflict`: boolean
+- `conflict_type`: one of `factual`, `interpretive`, `taxonomic`, `temporal`, `spatial`, `attributive`
+- `severity`: one of `minor`, `significant`, `fundamental`
+- `severity_rationale`: concise reason for the severity
+- `confidence`: number between 0 and 1
+- `claim_a`: concise summary of Assertion A
+- `claim_b`: concise summary of Assertion B
+
+{{ i18n.common.json_instruction }}

@@ -41,6 +41,7 @@ export {
 	generateQuestions,
 } from './embed/index.js';
 export type {
+	AssertionConflictDetectionResult,
 	CredibilityProfileGenerationResult,
 	CredibilityProfileGenerationStatus,
 	EnrichInput,
@@ -57,6 +58,7 @@ export type {
 	ResolveEntityOptions,
 } from './enrich/index.js';
 export {
+	detectAssertionConflicts,
 	execute as executeEnrich,
 	forceCleanupSource as forceCleanupEnrichSource,
 	generateExtractionSchema,
