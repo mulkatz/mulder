@@ -141,17 +141,26 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		const gcpWorkflow = readFileSync(GCP_WORKFLOW, 'utf-8');
 
 		expect(ciWorkflow).toContain("if: github.event_name == 'pull_request'");
+		expect(ciWorkflow).toContain("startsWith(github.ref, 'refs/heads/milestone/')");
 		expect(ciWorkflow).toContain('pr-affected-plan');
 		expect(ciWorkflow).toContain('pr-affected-schema');
 		expect(ciWorkflow).toContain('pr-affected-db');
 		expect(ciWorkflow).toContain('pr-affected-heavy');
 		expect(ciWorkflow).toContain('pr-affected-tests');
 		expect(ciWorkflow).toContain('Check affected lane results');
+		expect(ciWorkflow).toContain('needs: build');
+		expect(ciWorkflow).toContain('needs: [build, pr-affected-plan]');
+		expect(ciWorkflow).toContain(
+			'needs: [pr-affected-plan, health, pr-affected-schema, pr-affected-db, pr-affected-heavy]',
+		);
+		expect(ciWorkflow).toContain(['echo "health: $', '{{ needs.health.result }}"'].join(''));
+		expect(ciWorkflow).not.toContain('needs: [build, health]');
 		expect(ciWorkflow).toContain('full-schema-tests');
 		expect(ciWorkflow).toContain('full-db-tests');
 		expect(ciWorkflow).toContain('full-heavy-tests');
 		expect(ciWorkflow).toContain('full-external-tests');
-		expect(ciWorkflow).toContain('affected-plan origin/');
+		expect(ciWorkflow).toContain(['BASE_REF="$', '{{ github.event.before }}"'].join(''));
+		expect(ciWorkflow).toContain(['BASE_REF="origin/$', '{{ github.base_ref }}"'].join(''));
 		expect(ciWorkflow).toContain('--json > .test-results/affected-plan.json');
 		expect(ciWorkflow).toContain('pnpm test:affected:lane -- schema');
 		expect(ciWorkflow).toContain('pnpm test:affected:lane -- db');
@@ -159,9 +168,13 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		expect(ciWorkflow).toContain('pnpm test:lane -- schema');
 		expect(ciWorkflow).toContain('pnpm test:lane -- db');
 		expect(ciWorkflow).toContain('pnpm test:lane -- heavy');
+		expect(ciWorkflow).toContain(
+			"if: github.event_name != 'pull_request' && (github.event_name != 'push' || !startsWith(github.ref, 'refs/heads/milestone/'))",
+		);
 		expect(ciWorkflow).toContain('Run E2E health check (Spec 44)');
 		expect(ciWorkflow).toContain('pnpm test:health');
 		expect(ciWorkflow).toContain('MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"');
+		expect(ciWorkflow).toContain('MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"');
 		expect(gcpWorkflow).toContain('workflow_dispatch');
 		expect(gcpWorkflow).toContain('schedule:');
 	});

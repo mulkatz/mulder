@@ -38,7 +38,7 @@ Close the remaining test-infrastructure gaps tracked by Issue `#143` after the e
 5. **`tests/specs/20_fixture_generator.test.ts`** — split deterministic fixture-generator checks from real-GCP checks and gate the credential-dependent cases behind `MULDER_TEST_GCP=true`
 6. **`tests/specs/47_document_ai_extraction.test.ts`** — normalize the real-GCP gate to `MULDER_TEST_GCP=true` while preserving compatibility with the legacy env name during transition
 7. **`package.json`** — add dedicated test scripts for the Spec 44 health lane and the opt-in GCP lane
-8. **`.github/workflows/ci.yml`** — run the Spec 44 health check as an explicit CI step before the broader test suite
+8. **`.github/workflows/ci.yml`** — run the Spec 44 health check as an explicit CI step before affected DB/schema/heavy lanes, keep milestone-branch pushes on affected testing, and reserve full schema/db/heavy suites for default-branch or manual full gates
 9. **`.github/workflows/gcp-tests.yml`** — add a separate manual/scheduled workflow for credentialed GCP black-box tests
 
 ### 4.2 Database Changes
@@ -55,7 +55,8 @@ None in repository config files. CI/workflow env changes only:
 ### 4.4 Integration Points
 
 - DB-backed suites share one defensive cleanup path from `tests/lib/schema.ts`
-- Spec 44 becomes a named, first-class CI health indicator via a dedicated script and workflow step
+- Spec 44 becomes a named, first-class CI health indicator via a dedicated script and workflow step when affected testing selects data-backed lanes
+- Milestone-branch pushes use affected planning against the pushed range, including docs-only short-circuiting, so integration commits do not run unrelated full DB/heavy suites
 - Credentialed test workflows run separately from the default CI lane and enable the GCP-gated suites with one env variable
 
 ### 4.5 Implementation Phases
@@ -71,7 +72,8 @@ None in repository config files. CI/workflow env changes only:
 
 **Phase 3: CI health and opt-in workflow wiring**
 - add package scripts for the Spec 44 health lane and GCP lane
-- update `ci.yml` to run Spec 44 explicitly
+- update `ci.yml` to run Spec 44 explicitly before affected data-backed lanes
+- keep milestone-branch push CI on affected lanes while full schema/db/heavy suites remain default-branch/manual gates
 - add a separate manual/scheduled workflow for the real-GCP suites
 
 ## 5. QA Contract
@@ -96,10 +98,10 @@ None in repository config files. CI/workflow env changes only:
    - When: the GCP black-box lane runs
    - Then: the credential-dependent cases in the fixture-generator and Document AI suites execute under the same env gate
 
-5. **QA-05: Spec 44 is a named CI health signal**
-   - Given: the default GitHub Actions CI workflow for pull requests
+5. **QA-05: CI separates affected integration feedback from full gates**
+   - Given: the default GitHub Actions CI workflow for pull requests and milestone-branch pushes
    - When: the test job reaches the verification phase
-   - Then: Spec 44 runs as an explicit health-check step before the broader suite, and a separate workflow exists for manual/scheduled GCP tests
+   - Then: affected planning runs before DB-backed checks, Spec 44 runs only when affected lanes select schema/db/heavy tests, milestone pushes do not trigger full schema/db/heavy suites, and a separate workflow exists for manual/scheduled GCP tests
 
 ## 5b. CLI Test Matrix
 

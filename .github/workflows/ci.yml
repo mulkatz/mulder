@@ -50,10 +50,10 @@ jobs:
         run: pnpm typecheck
 
   health:
-    if: github.event_name == 'pull_request'
+    if: (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/milestone/'))) && (needs.pr-affected-plan.outputs.has_schema == 'true' || needs.pr-affected-plan.outputs.has_db == 'true' || needs.pr-affected-plan.outputs.has_heavy == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: build
+    needs: [build, pr-affected-plan]
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -159,11 +159,11 @@ jobs:
           if-no-files-found: ignore
 
   pr-affected-plan:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/milestone/'))
     name: affected plan
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [build, health]
+    needs: build
     outputs:
       has_schema: ${{ steps.plan.outputs.has_schema }}
       has_db: ${{ steps.plan.outputs.has_db }}
@@ -189,8 +189,15 @@ jobs:
       - name: Build affected plan
         id: plan
         run: |
-          node scripts/test-lanes.mjs affected-plan origin/${{ github.base_ref }} --json > .test-results/affected-plan.json
-          node scripts/test-lanes.mjs affected-plan origin/${{ github.base_ref }} | tee .test-results/affected-plan.txt
+          BASE_REF="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="origin/${{ github.base_ref }}"
+          fi
+          if [ -z "$BASE_REF" ] || printf '%s' "$BASE_REF" | grep -Eq '^0+$'; then
+            BASE_REF="HEAD~1"
+          fi
+          node scripts/test-lanes.mjs affected-plan "$BASE_REF" --json > .test-results/affected-plan.json
+          node scripts/test-lanes.mjs affected-plan "$BASE_REF" | tee .test-results/affected-plan.txt
           node <<'NODE'
           const fs = require('node:fs');
           const plan = JSON.parse(fs.readFileSync('.test-results/affected-plan.json', 'utf8'));
@@ -212,7 +219,7 @@ jobs:
           if-no-files-found: ignore
 
   pr-affected-schema:
-    if: github.event_name == 'pull_request' && needs.pr-affected-plan.outputs.has_schema == 'true'
+    if: (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/milestone/'))) && needs.pr-affected-plan.outputs.has_schema == 'true'
     name: affected schema
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -267,13 +274,29 @@ jobs:
         run: mkdir -p .test-results
 
       - name: Show affected schema plan
-        run: node scripts/test-lanes.mjs affected-plan origin/${{ github.base_ref }} | tee .test-results/affected-schema-plan.txt
+        run: |
+          BASE_REF="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="origin/${{ github.base_ref }}"
+          fi
+          if [ -z "$BASE_REF" ] || printf '%s' "$BASE_REF" | grep -Eq '^0+$'; then
+            BASE_REF="HEAD~1"
+          fi
+          node scripts/test-lanes.mjs affected-plan "$BASE_REF" | tee .test-results/affected-schema-plan.txt
         env:
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
           MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
 
       - name: Run affected schema tests
-        run: pnpm test:affected:lane -- schema origin/${{ github.base_ref }} -- --reporter=verbose --reporter=junit --outputFile.junit=.test-results/affected-schema-junit.xml
+        run: |
+          BASE_REF="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="origin/${{ github.base_ref }}"
+          fi
+          if [ -z "$BASE_REF" ] || printf '%s' "$BASE_REF" | grep -Eq '^0+$'; then
+            BASE_REF="HEAD~1"
+          fi
+          pnpm test:affected:lane -- schema "$BASE_REF" -- --reporter=verbose --reporter=junit --outputFile.junit=.test-results/affected-schema-junit.xml
         env:
           NODE_ENV: test
           PGHOST: localhost
@@ -294,7 +317,7 @@ jobs:
           if-no-files-found: ignore
 
   pr-affected-db:
-    if: github.event_name == 'pull_request' && needs.pr-affected-plan.outputs.has_db == 'true'
+    if: (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/milestone/'))) && needs.pr-affected-plan.outputs.has_db == 'true'
     name: affected db (${{ matrix.shard_index }}/${{ matrix.shard_total }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -354,13 +377,29 @@ jobs:
         run: mkdir -p .test-results
 
       - name: Show affected db plan
-        run: node scripts/test-lanes.mjs affected-plan origin/${{ github.base_ref }} | tee .test-results/affected-db-${{ matrix.shard_index }}-plan.txt
+        run: |
+          BASE_REF="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="origin/${{ github.base_ref }}"
+          fi
+          if [ -z "$BASE_REF" ] || printf '%s' "$BASE_REF" | grep -Eq '^0+$'; then
+            BASE_REF="HEAD~1"
+          fi
+          node scripts/test-lanes.mjs affected-plan "$BASE_REF" | tee .test-results/affected-db-${{ matrix.shard_index }}-plan.txt
         env:
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
           MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
 
       - name: Run affected db tests
-        run: pnpm test:affected:lane -- db ${{ matrix.shard_index }} ${{ matrix.shard_total }} origin/${{ github.base_ref }} -- --reporter=verbose --reporter=junit --outputFile.junit=.test-results/affected-db-${{ matrix.shard_index }}-junit.xml
+        run: |
+          BASE_REF="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="origin/${{ github.base_ref }}"
+          fi
+          if [ -z "$BASE_REF" ] || printf '%s' "$BASE_REF" | grep -Eq '^0+$'; then
+            BASE_REF="HEAD~1"
+          fi
+          pnpm test:affected:lane -- db ${{ matrix.shard_index }} ${{ matrix.shard_total }} "$BASE_REF" -- --reporter=verbose --reporter=junit --outputFile.junit=.test-results/affected-db-${{ matrix.shard_index }}-junit.xml
         env:
           NODE_ENV: test
           PGHOST: localhost
@@ -381,7 +420,7 @@ jobs:
           if-no-files-found: ignore
 
   pr-affected-heavy:
-    if: github.event_name == 'pull_request' && needs.pr-affected-plan.outputs.has_heavy == 'true'
+    if: (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/milestone/'))) && needs.pr-affected-plan.outputs.has_heavy == 'true'
     name: affected heavy (${{ matrix.shard_index }}/${{ matrix.shard_total }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -441,13 +480,29 @@ jobs:
         run: mkdir -p .test-results
 
       - name: Show affected heavy plan
-        run: node scripts/test-lanes.mjs affected-plan origin/${{ github.base_ref }} | tee .test-results/affected-heavy-${{ matrix.shard_index }}-plan.txt
+        run: |
+          BASE_REF="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="origin/${{ github.base_ref }}"
+          fi
+          if [ -z "$BASE_REF" ] || printf '%s' "$BASE_REF" | grep -Eq '^0+$'; then
+            BASE_REF="HEAD~1"
+          fi
+          node scripts/test-lanes.mjs affected-plan "$BASE_REF" | tee .test-results/affected-heavy-${{ matrix.shard_index }}-plan.txt
         env:
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
           MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
 
       - name: Run affected heavy tests
-        run: pnpm test:affected:lane -- heavy ${{ matrix.shard_index }} ${{ matrix.shard_total }} origin/${{ github.base_ref }} -- --reporter=verbose --reporter=junit --outputFile.junit=.test-results/affected-heavy-${{ matrix.shard_index }}-junit.xml
+        run: |
+          BASE_REF="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="origin/${{ github.base_ref }}"
+          fi
+          if [ -z "$BASE_REF" ] || printf '%s' "$BASE_REF" | grep -Eq '^0+$'; then
+            BASE_REF="HEAD~1"
+          fi
+          pnpm test:affected:lane -- heavy ${{ matrix.shard_index }} ${{ matrix.shard_total }} "$BASE_REF" -- --reporter=verbose --reporter=junit --outputFile.junit=.test-results/affected-heavy-${{ matrix.shard_index }}-junit.xml
         env:
           NODE_ENV: test
           PGHOST: localhost
@@ -468,15 +523,16 @@ jobs:
           if-no-files-found: ignore
 
   pr-affected-tests:
-    if: always() && github.event_name == 'pull_request'
+    if: always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/milestone/')))
     name: affected tests
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [pr-affected-plan, pr-affected-schema, pr-affected-db, pr-affected-heavy]
+    needs: [pr-affected-plan, health, pr-affected-schema, pr-affected-db, pr-affected-heavy]
     steps:
       - name: Check affected lane results
         run: |
           echo "plan: ${{ needs.pr-affected-plan.result }}"
+          echo "health: ${{ needs.health.result }}"
           echo "schema: ${{ needs.pr-affected-schema.result }}"
           echo "db: ${{ needs.pr-affected-db.result }}"
           echo "heavy: ${{ needs.pr-affected-heavy.result }}"
@@ -485,7 +541,7 @@ jobs:
             exit 1
           fi
 
-          for result in "${{ needs.pr-affected-schema.result }}" "${{ needs.pr-affected-db.result }}" "${{ needs.pr-affected-heavy.result }}"; do
+          for result in "${{ needs.health.result }}" "${{ needs.pr-affected-schema.result }}" "${{ needs.pr-affected-db.result }}" "${{ needs.pr-affected-heavy.result }}"; do
             case "$result" in
               success|skipped)
                 ;;
@@ -496,7 +552,7 @@ jobs:
           done
 
   full-schema-tests:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && (github.event_name != 'push' || !startsWith(github.ref, 'refs/heads/milestone/'))
     name: schema tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -571,7 +627,7 @@ jobs:
           if-no-files-found: ignore
 
   full-db-tests:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && (github.event_name != 'push' || !startsWith(github.ref, 'refs/heads/milestone/'))
     name: db tests (${{ matrix.shard_index }}/${{ matrix.shard_total }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -651,7 +707,7 @@ jobs:
           if-no-files-found: ignore
 
   full-heavy-tests:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && (github.event_name != 'push' || !startsWith(github.ref, 'refs/heads/milestone/'))
     name: heavy tests (${{ matrix.shard_index }}/${{ matrix.shard_total }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
