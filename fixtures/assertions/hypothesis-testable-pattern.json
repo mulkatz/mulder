@@ -1,0 +1,24 @@
+{
+	"caseId": "assertion-hypothesis-testable-pattern",
+	"segmentId": "assertion-seg-003",
+	"sourceSlug": "analysis-note",
+	"assertion": {
+		"content": "If the proposed review schedule is effective, error rates should decline after the next reporting cycle.",
+		"assertion_type": "hypothesis",
+		"classification_provenance": "author_explicit",
+		"confidence_metadata": {
+			"witness_count": null,
+			"measurement_based": false,
+			"contemporaneous": false,
+			"corroborated": false,
+			"peer_reviewed": false,
+			"author_is_interpreter": true
+		},
+		"entity_names": ["review schedule", "reporting cycle"],
+		"quality_metadata": {
+			"source_document_quality": "medium",
+			"extraction_path": "enhanced_ocr",
+			"extraction_confidence": 0.7
+		}
+	}
+}

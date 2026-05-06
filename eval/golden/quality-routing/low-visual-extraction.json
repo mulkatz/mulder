@@ -1,0 +1,26 @@
+{
+	"caseId": "quality-low-visual-extraction",
+	"sourceSlug": "photo-of-table",
+	"difficulty": "complex",
+	"expected": {
+		"overallQuality": "low",
+		"processable": true,
+		"recommendedPath": "visual_extraction",
+		"extractionGateOutcome": "allow",
+		"qualityMetadata": {
+			"source_document_quality": "low",
+			"extraction_path": "visual_extraction",
+			"extraction_confidence": 0.4
+		},
+		"signals": {
+			"text_readability": "visual_only",
+			"image_quality": "skewed",
+			"content_completeness": "partial"
+		}
+	},
+	"annotation": {
+		"author": "Mulder QA",
+		"date": "2026-05-06",
+		"notes": "Low quality but processable visual documents should not be skipped."
+	}
+}

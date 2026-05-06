@@ -1,0 +1,51 @@
+{
+	"caseId": "quality-high-standard",
+	"sourceSlug": "typed-clean-report",
+	"assessment": {
+		"assessmentMethod": "automated",
+		"overallQuality": "high",
+		"processable": true,
+		"recommendedPath": "standard",
+		"dimensions": {
+			"textReadability": {
+				"score": 0.96,
+				"method": "ocr_confidence",
+				"details": "Machine text is clear with stable line order."
+			},
+			"imageQuality": {
+				"score": 0.94,
+				"issues": []
+			},
+			"languageDetection": {
+				"primaryLanguage": "en",
+				"confidence": 0.99,
+				"mixedLanguages": false
+			},
+			"documentStructure": {
+				"type": "printed_text",
+				"hasAnnotations": false,
+				"hasMarginalia": false,
+				"multiColumn": false
+			},
+			"contentCompleteness": {
+				"pagesTotal": 2,
+				"pagesReadable": 2,
+				"missingPagesSuspected": false,
+				"truncated": false
+			}
+		},
+		"signals": {
+			"text_readability": "clear",
+			"image_quality": "clean",
+			"content_completeness": "complete"
+		}
+	},
+	"extractionGate": {
+		"outcome": "allow"
+	},
+	"qualityMetadata": {
+		"source_document_quality": "high",
+		"extraction_path": "standard",
+		"extraction_confidence": 0.95
+	}
+}

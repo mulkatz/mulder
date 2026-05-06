@@ -1,0 +1,24 @@
+{
+	"caseId": "assertion-interpretation-correlation",
+	"segmentId": "assertion-seg-002",
+	"sourceSlug": "summary-memo",
+	"assertion": {
+		"content": "The repeated delays suggest the review process depends on external approval.",
+		"assertion_type": "interpretation",
+		"classification_provenance": "llm_auto",
+		"confidence_metadata": {
+			"witness_count": null,
+			"measurement_based": false,
+			"contemporaneous": true,
+			"corroborated": false,
+			"peer_reviewed": false,
+			"author_is_interpreter": true
+		},
+		"entity_names": ["review process", "external approval"],
+		"quality_metadata": {
+			"source_document_quality": "high",
+			"extraction_path": "standard",
+			"extraction_confidence": 0.95
+		}
+	}
+}

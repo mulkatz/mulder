@@ -9,27 +9,35 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import {
+	type AssertionClassificationEvalResult,
 	type EntityEvalResult,
 	EVAL_ERROR_CODES,
 	type ExtractionEvalResult,
 	MulderEvalError,
+	type QualityRoutingEvalResult,
+	runAssertionClassificationEval,
 	runEntityEval,
 	runExtractionEval,
+	runQualityRoutingEval,
 	runSegmentationEval,
 	type SegmentationEvalResult,
 } from '@mulder/eval';
 
-export const VALID_EVAL_STEPS = ['extract', 'segment', 'enrich'] as const;
+export const VALID_EVAL_STEPS = ['extract', 'segment', 'enrich', 'quality', 'assertions'] as const;
 
 const STEP_TO_SUITE = {
 	extract: 'extraction',
 	segment: 'segmentation',
 	enrich: 'entities',
+	quality: 'qualityRouting',
+	assertions: 'assertions',
 } as const;
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../../..');
 const GOLDEN_ROOT = resolve(REPO_ROOT, 'eval/golden');
-const BASELINE_PATH = resolve(REPO_ROOT, 'eval/metrics/baseline.json');
+const BASELINE_PATH = process.env.MULDER_EVAL_BASELINE_PATH
+	? resolve(process.env.MULDER_EVAL_BASELINE_PATH)
+	: resolve(REPO_ROOT, 'eval/metrics/baseline.json');
 
 type EvalStep = (typeof VALID_EVAL_STEPS)[number];
 type EvalSuite = (typeof STEP_TO_SUITE)[EvalStep];
@@ -39,6 +47,8 @@ type EvalResults = Partial<{
 	extraction: ExtractionEvalResult;
 	segmentation: SegmentationEvalResult;
 	entities: EntityEvalResult;
+	qualityRouting: QualityRoutingEvalResult;
+	assertions: AssertionClassificationEvalResult;
 }>;
 
 interface EntityTypeComparisonMetrics {
@@ -81,6 +91,13 @@ type EntityComparison = {
 	};
 };
 
+type FixtureSuiteComparison = {
+	summary: {
+		passRate: EvalMetricComparison;
+		failedCases: EvalMetricComparison;
+	};
+};
+
 export interface EvalCommandOptions {
 	step?: string;
 	compare?: string;
@@ -101,6 +118,8 @@ export interface EvalComparisonResult {
 		extraction: ExtractionComparison;
 		segmentation: SegmentationComparison;
 		entities: EntityComparison;
+		qualityRouting: FixtureSuiteComparison;
+		assertions: FixtureSuiteComparison;
 	}>;
 }
 
@@ -137,7 +156,7 @@ function normalizeStep(step?: string): EvalRunSelection {
 	assertValidStep(step);
 
 	if (step === undefined) {
-		return { step: 'all', suites: ['extraction', 'segmentation', 'entities'] };
+		return { step: 'all', suites: ['extraction', 'segmentation', 'entities', 'qualityRouting', 'assertions'] };
 	}
 
 	return {
@@ -389,6 +408,50 @@ function buildComparison(
 				};
 				break;
 			}
+			case 'qualityRouting': {
+				const current = results.qualityRouting;
+				if (!current) {
+					continue;
+				}
+
+				comparison.suites.qualityRouting = {
+					summary: {
+						passRate: compareMetric(
+							current.summary.passRate,
+							readNumericPath(baselineSuite, ['summary', 'passRate']),
+							true,
+						),
+						failedCases: compareMetric(
+							current.summary.failedCases,
+							readNumericPath(baselineSuite, ['summary', 'failedCases']),
+							false,
+						),
+					},
+				};
+				break;
+			}
+			case 'assertions': {
+				const current = results.assertions;
+				if (!current) {
+					continue;
+				}
+
+				comparison.suites.assertions = {
+					summary: {
+						passRate: compareMetric(
+							current.summary.passRate,
+							readNumericPath(baselineSuite, ['summary', 'passRate']),
+							true,
+						),
+						failedCases: compareMetric(
+							current.summary.failedCases,
+							readNumericPath(baselineSuite, ['summary', 'failedCases']),
+							false,
+						),
+					},
+				};
+				break;
+			}
 		}
 	}
 
@@ -397,6 +460,11 @@ function buildComparison(
 
 function renderComparisonLine(label: string, metric: EvalMetricComparison): string {
 	return `  ${label.padEnd(24)} ${formatPercent(metric.current)} (baseline ${formatPercent(metric.baseline)}, delta ${formatDelta(metric.delta)}) ${metric.status}`;
+}
+
+function renderNumberComparisonLine(label: string, metric: EvalMetricComparison): string {
+	const sign = metric.delta > 0 ? '+' : '';
+	return `  ${label.padEnd(24)} ${metric.current} (baseline ${metric.baseline}, delta ${sign}${metric.delta}) ${metric.status}`;
 }
 
 function renderEntityCurrentRows(
@@ -499,6 +567,26 @@ function renderEntityReport(result: EntityEvalResult, comparison?: EntityCompari
 	return lines;
 }
 
+function renderFixtureSuiteReport(
+	title: string,
+	result: QualityRoutingEvalResult | AssertionClassificationEvalResult,
+	comparison?: FixtureSuiteComparison,
+): string[] {
+	const lines: string[] = [
+		title,
+		`  Cases: ${result.summary.totalCases}`,
+		`  Passed: ${result.summary.passedCases}  Failed: ${result.summary.failedCases}`,
+		`  Pass Rate: ${formatPercent(result.summary.passRate)}`,
+	];
+
+	if (comparison?.summary) {
+		lines.push(renderComparisonLine('Pass Rate', comparison.summary.passRate));
+		lines.push(renderNumberComparisonLine('Failed Cases', comparison.summary.failedCases));
+	}
+
+	return lines;
+}
+
 function updateBaselineSections(baselineRoot: Record<string, unknown>, results: EvalResults): string[] {
 	const updatedSuites: string[] = [];
 	if (results.extraction) {
@@ -512,6 +600,14 @@ function updateBaselineSections(baselineRoot: Record<string, unknown>, results: 
 	if (results.entities) {
 		baselineRoot.entities = results.entities;
 		updatedSuites.push('entities');
+	}
+	if (results.qualityRouting) {
+		baselineRoot.qualityRouting = results.qualityRouting;
+		updatedSuites.push('qualityRouting');
+	}
+	if (results.assertions) {
+		baselineRoot.assertions = results.assertions;
+		updatedSuites.push('assertions');
 	}
 	writeBaselineRoot(baselineRoot);
 	return updatedSuites;
@@ -555,6 +651,18 @@ export function runEvalCommand(options: EvalCommandOptions): EvalCommandResult {
 			case 'entities':
 				results.entities = runEntityEval(resolve(GOLDEN_ROOT, 'entities'), resolve(REPO_ROOT, 'fixtures/entities'));
 				break;
+			case 'qualityRouting':
+				results.qualityRouting = runQualityRoutingEval(
+					resolve(GOLDEN_ROOT, 'quality-routing'),
+					resolve(REPO_ROOT, 'fixtures/quality-routing'),
+				);
+				break;
+			case 'assertions':
+				results.assertions = runAssertionClassificationEval(
+					resolve(GOLDEN_ROOT, 'assertions'),
+					resolve(REPO_ROOT, 'fixtures/assertions'),
+				);
+				break;
 		}
 	}
 
@@ -597,6 +705,26 @@ export function renderEvalCommand(result: EvalCommandResult): string {
 
 	if (result.results.entities) {
 		appendSection(renderEntityReportSection(result.results.entities, result.comparison?.suites.entities));
+	}
+
+	if (result.results.qualityRouting) {
+		appendSection(
+			renderFixtureSuiteReport(
+				'Quality Routing',
+				result.results.qualityRouting,
+				result.comparison?.suites.qualityRouting,
+			),
+		);
+	}
+
+	if (result.results.assertions) {
+		appendSection(
+			renderFixtureSuiteReport(
+				'Assertion Classification',
+				result.results.assertions,
+				result.comparison?.suites.assertions,
+			),
+		);
 	}
 
 	if (result.baselineUpdated) {

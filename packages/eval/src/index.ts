@@ -1,3 +1,8 @@
+export {
+	loadActualAssertionCases,
+	loadAssertionGoldenSet,
+	runAssertionClassificationEval,
+} from './assertion-runner.js';
 export type { PerTypeMetrics } from './entity-metrics.js';
 export { computeEntityPrecisionRecallF1, normalizeEntityName } from './entity-metrics.js';
 export { loadActualEntities, loadEntityGoldenSet, runEntityEval } from './entity-runner.js';
@@ -10,6 +15,11 @@ export {
 	levenshteinDistance,
 	normalizeWhitespace,
 } from './extraction-metrics.js';
+export {
+	loadActualQualityRoutingCases,
+	loadQualityRoutingGoldenSet,
+	runQualityRoutingEval,
+} from './quality-routing-runner.js';
 export { computeRelationshipPrecisionRecallF1 } from './relationship-metrics.js';
 export {
 	computeMRR,
@@ -28,22 +38,38 @@ export {
 export { computeBoundaryAccuracy, loadActualSegments } from './segmentation-metrics.js';
 export { loadSegmentationGoldenSet, runSegmentationEval } from './segmentation-runner.js';
 export type {
+	ActualAssertionCase,
+	ActualQualityRoutingCase,
 	ActualRetrievalHit,
 	ActualRetrievalRun,
 	ActualSegment,
+	AssertionClassificationCaseResult,
+	AssertionClassificationEvalResult,
+	AssertionClassificationGolden,
+	AssertionConfidenceMetadata,
+	AssertionType,
+	ClassificationProvenance,
 	DifficultyLevel,
 	DifficultyStats,
+	DocumentOverallQuality,
 	EntityEvalResult,
 	EntityGolden,
 	EntityMetricResult,
+	EvalMismatch,
 	ExpectedEntity,
+	ExpectedQualityMetadata,
 	ExpectedRelationship,
 	ExpectedRetrievalHit,
 	ExpectedSegment,
 	ExtractionEvalResult,
+	ExtractionGateOutcome,
 	ExtractionGolden,
 	ExtractionMetricResult,
+	ExtractionPath,
 	PRF1,
+	QualityRoutingCaseResult,
+	QualityRoutingEvalResult,
+	QualityRoutingGolden,
 	RetrievalEvalResult,
 	RetrievalGolden,
 	RetrievalMetricAtK,

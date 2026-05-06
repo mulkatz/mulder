@@ -1,0 +1,26 @@
+{
+	"caseId": "quality-high-standard",
+	"sourceSlug": "typed-clean-report",
+	"difficulty": "simple",
+	"expected": {
+		"overallQuality": "high",
+		"processable": true,
+		"recommendedPath": "standard",
+		"extractionGateOutcome": "allow",
+		"qualityMetadata": {
+			"source_document_quality": "high",
+			"extraction_path": "standard",
+			"extraction_confidence": 0.95
+		},
+		"signals": {
+			"text_readability": "clear",
+			"image_quality": "clean",
+			"content_completeness": "complete"
+		}
+	},
+	"annotation": {
+		"author": "Mulder QA",
+		"date": "2026-05-06",
+		"notes": "Clean machine text should remain on the standard extraction path."
+	}
+}

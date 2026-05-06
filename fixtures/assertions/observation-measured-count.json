@@ -1,0 +1,24 @@
+{
+	"caseId": "assertion-observation-measured-count",
+	"segmentId": "assertion-seg-001",
+	"sourceSlug": "inspection-log",
+	"assertion": {
+		"content": "The inspection log recorded 42 sealed boxes at 09:30 on 2026-04-01.",
+		"assertion_type": "observation",
+		"classification_provenance": "human_reviewed",
+		"confidence_metadata": {
+			"witness_count": 2,
+			"measurement_based": true,
+			"contemporaneous": true,
+			"corroborated": true,
+			"peer_reviewed": false,
+			"author_is_interpreter": false
+		},
+		"entity_names": ["inspection log", "sealed boxes"],
+		"quality_metadata": {
+			"source_document_quality": "high",
+			"extraction_path": "standard",
+			"extraction_confidence": 0.95
+		}
+	}
+}

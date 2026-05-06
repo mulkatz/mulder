@@ -1,0 +1,26 @@
+{
+	"caseId": "quality-unusable-skip",
+	"sourceSlug": "truncated-illegible-page",
+	"difficulty": "complex",
+	"expected": {
+		"overallQuality": "unusable",
+		"processable": false,
+		"recommendedPath": "skip",
+		"extractionGateOutcome": "skip",
+		"qualityMetadata": {
+			"source_document_quality": "low",
+			"extraction_path": "skip",
+			"extraction_confidence": 0
+		},
+		"signals": {
+			"text_readability": "illegible",
+			"image_quality": "severely_degraded",
+			"content_completeness": "truncated"
+		}
+	},
+	"annotation": {
+		"author": "Mulder QA",
+		"date": "2026-05-06",
+		"notes": "Unusable documents should be recorded and skipped before extraction."
+	}
+}

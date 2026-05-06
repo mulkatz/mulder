@@ -1,0 +1,51 @@
+{
+	"caseId": "quality-medium-enhanced-ocr",
+	"sourceSlug": "faded-scan-report",
+	"assessment": {
+		"assessmentMethod": "automated",
+		"overallQuality": "medium",
+		"processable": true,
+		"recommendedPath": "enhanced_ocr",
+		"dimensions": {
+			"textReadability": {
+				"score": 0.72,
+				"method": "ocr_confidence",
+				"details": "Most text is readable but faded regions lower confidence."
+			},
+			"imageQuality": {
+				"score": 0.68,
+				"issues": ["faded", "low_contrast"]
+			},
+			"languageDetection": {
+				"primaryLanguage": "en",
+				"confidence": 0.94,
+				"mixedLanguages": false
+			},
+			"documentStructure": {
+				"type": "printed_text",
+				"hasAnnotations": true,
+				"hasMarginalia": false,
+				"multiColumn": false
+			},
+			"contentCompleteness": {
+				"pagesTotal": 3,
+				"pagesReadable": 3,
+				"missingPagesSuspected": false,
+				"truncated": false
+			}
+		},
+		"signals": {
+			"text_readability": "partially_degraded",
+			"image_quality": "faded",
+			"content_completeness": "complete"
+		}
+	},
+	"extractionGate": {
+		"outcome": "allow"
+	},
+	"qualityMetadata": {
+		"source_document_quality": "medium",
+		"extraction_path": "enhanced_ocr",
+		"extraction_confidence": 0.7
+	}
+}

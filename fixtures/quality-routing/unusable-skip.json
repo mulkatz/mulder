@@ -1,0 +1,51 @@
+{
+	"caseId": "quality-unusable-skip",
+	"sourceSlug": "truncated-illegible-page",
+	"assessment": {
+		"assessmentMethod": "automated",
+		"overallQuality": "unusable",
+		"processable": false,
+		"recommendedPath": "skip",
+		"dimensions": {
+			"textReadability": {
+				"score": 0.03,
+				"method": "llm_visual",
+				"details": "Text cannot be read reliably."
+			},
+			"imageQuality": {
+				"score": 0.08,
+				"issues": ["blurred", "low_contrast", "cropped"]
+			},
+			"languageDetection": {
+				"primaryLanguage": "und",
+				"confidence": 0.1,
+				"mixedLanguages": false
+			},
+			"documentStructure": {
+				"type": "photo_of_document",
+				"hasAnnotations": false,
+				"hasMarginalia": false,
+				"multiColumn": false
+			},
+			"contentCompleteness": {
+				"pagesTotal": 1,
+				"pagesReadable": 0,
+				"missingPagesSuspected": true,
+				"truncated": true
+			}
+		},
+		"signals": {
+			"text_readability": "illegible",
+			"image_quality": "severely_degraded",
+			"content_completeness": "truncated"
+		}
+	},
+	"extractionGate": {
+		"outcome": "skip"
+	},
+	"qualityMetadata": {
+		"source_document_quality": "low",
+		"extraction_path": "skip",
+		"extraction_confidence": 0
+	}
+}
