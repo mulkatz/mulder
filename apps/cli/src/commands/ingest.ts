@@ -9,7 +9,9 @@
  * @see docs/functional-spec.md §1 (ingest cmd), §2.1
  */
 
+import { readFile } from 'node:fs/promises';
 import { closeAllPools, createLogger, createServiceRegistry, getWorkerPool, loadConfig } from '@mulder/core';
+import type { IngestProvenanceInput } from '@mulder/pipeline';
 import { executeIngest, isSupportedUrlInput } from '@mulder/pipeline';
 import type { Command } from 'commander';
 import {
@@ -27,6 +29,15 @@ interface IngestOptions {
 	dryRun?: boolean;
 	tag?: string[];
 	costEstimate?: boolean;
+	provenance?: string;
+}
+
+async function loadProvenanceInput(path: string | undefined): Promise<IngestProvenanceInput | undefined> {
+	if (!path) {
+		return undefined;
+	}
+	const raw = await readFile(path, 'utf-8');
+	return JSON.parse(raw) as IngestProvenanceInput;
 }
 
 /**
@@ -48,6 +59,7 @@ export function registerIngestCommands(program: Command): void {
 		.option('--dry-run', 'validate without uploading or creating DB records')
 		.option('--tag <tag>', 'tag ingested sources (repeatable)', collect, [])
 		.option('--cost-estimate', 'show an estimated downstream pipeline cost before executing')
+		.option('--provenance <path>', 'load ingest provenance metadata from a JSON file')
 		.addHelpText(
 			'after',
 			`
@@ -55,6 +67,7 @@ Examples:
   $ mulder ingest ./incoming/                      # Ingest supported files in a directory
   $ mulder ingest paper.pdf --tag review --tag q1  # Tag a single ingest with two tags
   $ mulder ingest paper.pdf --dry-run              # Validate without writing to GCS or the DB
+  $ mulder ingest paper.pdf --provenance prov.json  # Attach provenance metadata
   $ mulder ingest https://example.com/article      # Fetch and snapshot one HTML page`,
 		)
 		.action(
@@ -101,6 +114,7 @@ Examples:
 
 				const logger = createLogger();
 				const services = createServiceRegistry(config, logger);
+				const provenance = await loadProvenanceInput(options.provenance);
 
 				if (!config.gcp && !config.dev_mode) {
 					printError('GCP configuration is required for ingest (or enable dev_mode)');
@@ -125,6 +139,7 @@ Examples:
 							path: inputPath,
 							tags: options.tag,
 							dryRun: options.dryRun,
+							provenance,
 						},
 						config,
 						services,

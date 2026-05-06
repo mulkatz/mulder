@@ -42,6 +42,11 @@ const ROLLBACK_TABLES = [
 	'source_steps',
 	'url_lifecycle',
 	'url_host_lifecycle',
+	'custody_steps',
+	'original_sources',
+	'archive_locations',
+	'acquisition_contexts',
+	'archives',
 	'document_blobs',
 	'sources',
 ] as const;

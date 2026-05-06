@@ -5,7 +5,38 @@
  * @see docs/functional-spec.md §2.1
  */
 
-import type { PdfMetadata, SourceFormatMetadata, SourceType, StepError } from '@mulder/core';
+import type {
+	AcquisitionChannel,
+	ArchiveInput,
+	AuthenticityStatus,
+	CustodyStepInput,
+	OriginalSourceInput,
+	PdfMetadata,
+	RecordIngestProvenanceInput,
+	SourceFormatMetadata,
+	SourceType,
+	StepError,
+	SubmittedBy,
+} from '@mulder/core';
+
+export interface IngestProvenanceContextInput {
+	channel?: AcquisitionChannel;
+	submittedBy?: Partial<SubmittedBy>;
+	submittedAt?: Date | string;
+	collectionId?: string | null;
+	submissionNotes?: string | null;
+	submissionMetadata?: Record<string, unknown>;
+	authenticityStatus?: AuthenticityStatus;
+	authenticityNotes?: string | null;
+}
+
+export interface IngestProvenanceInput {
+	context?: IngestProvenanceContextInput;
+	originalSource?: OriginalSourceInput | null;
+	custodyChain?: CustodyStepInput[];
+	archive?: ArchiveInput | null;
+	archiveLocation?: RecordIngestProvenanceInput['archiveLocation'];
+}
 
 // ────────────────────────────────────────────────────────────
 // Input
@@ -19,6 +50,8 @@ export interface IngestInput {
 	tags?: string[];
 	/** Validate without uploading or creating DB records. */
 	dryRun?: boolean;
+	/** Optional provenance metadata to attach to each successful ingest. */
+	provenance?: IngestProvenanceInput;
 }
 
 // ────────────────────────────────────────────────────────────

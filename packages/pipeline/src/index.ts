@@ -117,6 +117,7 @@ export type {
 	ImageDimensions,
 	IngestFileResult,
 	IngestInput,
+	IngestProvenanceInput,
 	IngestResult,
 	SourceDetectionConfidence,
 	SourceDetectionResult,
