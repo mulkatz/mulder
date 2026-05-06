@@ -58,6 +58,8 @@ export interface EnrichmentData {
 	 * grouping queries downstream.
 	 */
 	taxonomyLinked: number;
+	credibilityProfileCreated: boolean;
+	credibilityProfileStatus: 'created' | 'skipped' | 'failed';
 	/** 1 if no pre-chunking, N if pre-chunked. */
 	chunksUsed: number;
 }

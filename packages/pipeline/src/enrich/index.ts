@@ -51,6 +51,7 @@ import {
 } from '@mulder/core';
 import { normalizeTaxonomy } from '@mulder/taxonomy';
 import type pg from 'pg';
+import { generateSourceCredibilityProfileDraft } from './credibility.js';
 import { resolveEntity } from './resolution.js';
 import { generateExtractionSchema, getExtractionResponseSchema } from './schema.js';
 import type {
@@ -61,6 +62,8 @@ import type {
 	ExtractionResponse,
 } from './types.js';
 
+export type { CredibilityProfileGenerationResult, CredibilityProfileGenerationStatus } from './credibility.js';
+export { generateSourceCredibilityProfileDraft } from './credibility.js';
 export { resolveEntity } from './resolution.js';
 export type {
 	ResolutionCandidate,
@@ -728,6 +731,9 @@ export async function execute(
 	}
 
 	// 15. Update story status + source step
+	let credibilityProfileCreated = false;
+	let credibilityProfileStatus: EnrichmentData['credibilityProfileStatus'] = 'skipped';
+
 	if (status !== 'failed') {
 		if (sensitivityConfig.propagation === 'upward') {
 			await updateStorySensitivityFromArtifacts(pool, input.storyId);
@@ -740,6 +746,27 @@ export async function execute(
 			status: 'completed',
 			configHash: stepConfigHash,
 		});
+
+		const credibilityResult = await generateSourceCredibilityProfileDraft({
+			sourceId: story.sourceId,
+			config: config.credibility,
+			services,
+			pool,
+			logger: log,
+		});
+		credibilityProfileCreated = credibilityResult.created;
+		credibilityProfileStatus = credibilityResult.status;
+
+		if (credibilityResult.status === 'failed') {
+			errors.push({
+				code: ENRICH_ERROR_CODES.ENRICH_LLM_FAILED,
+				message: `Source credibility draft generation failed: ${credibilityResult.reason ?? 'unknown error'}`,
+			});
+			log.warn(
+				{ sourceId: story.sourceId, reason: credibilityResult.reason },
+				'Source credibility draft generation failed non-fatally',
+			);
+		}
 	} else {
 		await upsertSourceStep(pool, {
 			sourceId: story.sourceId,
@@ -758,6 +785,8 @@ export async function execute(
 			entitiesResolved,
 			relationshipsCreated,
 			assertionsPersisted,
+			credibilityProfileCreated,
+			credibilityProfileStatus,
 		})
 		.catch(() => {
 			// Silently swallow — Firestore is best-effort observability
@@ -772,6 +801,8 @@ export async function execute(
 		assertionsPersisted,
 		taxonomyEntriesAdded,
 		taxonomyLinked,
+		credibilityProfileCreated,
+		credibilityProfileStatus,
 		chunksUsed: textChunks.length,
 	};
 
@@ -784,6 +815,8 @@ export async function execute(
 			assertionsPersisted,
 			taxonomyEntriesAdded,
 			taxonomyLinked,
+			credibilityProfileCreated,
+			credibilityProfileStatus,
 			chunksUsed: textChunks.length,
 			errors: errors.length,
 			duration_ms: durationMs,

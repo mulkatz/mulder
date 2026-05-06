@@ -147,6 +147,21 @@ export const CONFIG_DEFAULTS = {
 		notify_on_purge: true,
 	},
 
+	credibility: {
+		enabled: true,
+		dimensions: [
+			{ id: 'institutional_authority', label: 'Institutional authority' },
+			{ id: 'domain_track_record', label: 'Domain track record' },
+			{ id: 'conflict_of_interest', label: 'Conflict of interest' },
+			{ id: 'transparency', label: 'Transparency / verifiability' },
+			{ id: 'consistency', label: 'Internal consistency over time' },
+		],
+		auto_profile_on_ingest: true,
+		require_human_review: true,
+		display_in_reports: true,
+		agent_instruction: 'weight_but_never_exclude' as const,
+	},
+
 	enrichment: {
 		model: 'gemini-2.5-flash',
 		max_story_tokens: 15000,

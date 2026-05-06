@@ -294,6 +294,32 @@ const sourceRollbackObj = z.object({
 });
 const sourceRollbackSchema = sourceRollbackObj.default(defaults(sourceRollbackObj));
 
+// --- Credibility ---
+
+const credibilityDimensionSchema = z.object({
+	id: z.string().min(1),
+	label: z.string().min(1),
+});
+
+const credibilityObj = z.object({
+	enabled: z.boolean().default(true),
+	dimensions: z
+		.array(credibilityDimensionSchema)
+		.min(1)
+		.default([
+			{ id: 'institutional_authority', label: 'Institutional authority' },
+			{ id: 'domain_track_record', label: 'Domain track record' },
+			{ id: 'conflict_of_interest', label: 'Conflict of interest' },
+			{ id: 'transparency', label: 'Transparency / verifiability' },
+			{ id: 'consistency', label: 'Internal consistency over time' },
+		]),
+	auto_profile_on_ingest: z.boolean().default(true),
+	require_human_review: z.boolean().default(true),
+	display_in_reports: z.boolean().default(true),
+	agent_instruction: z.enum(['weight_but_never_exclude']).default('weight_but_never_exclude'),
+});
+const credibilitySchema = credibilityObj.default(defaults(credibilityObj));
+
 // --- Enrichment ---
 
 const assertionClassificationSchema = z.object({
@@ -566,6 +592,7 @@ const baseMulderConfigSchema = z.object({
 	document_quality: documentQualitySchema,
 	access_control: accessControlSchema,
 	source_rollback: sourceRollbackSchema,
+	credibility: credibilitySchema,
 	enrichment: enrichmentSchema,
 	taxonomy: taxonomySchema,
 	entity_resolution: entityResolutionSchema,
@@ -633,6 +660,8 @@ export {
 	apiSchema,
 	assertionClassificationSchema,
 	cloudSqlSchema,
+	credibilityDimensionSchema,
+	credibilitySchema,
 	deduplicationSchema,
 	documentAiSchema,
 	documentQualitySchema,

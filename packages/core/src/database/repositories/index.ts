@@ -349,6 +349,21 @@ export type {
 	UpsertSourceStepInput,
 } from './source.types.js';
 export {
+	findSourceCredibilityProfileBySourceId,
+	listSourceCredibilityProfiles,
+	upsertSourceCredibilityProfile,
+} from './source-credibility.repository.js';
+export type {
+	CredibilityDimension,
+	CredibilityProfileAuthor,
+	CredibilityReviewStatus,
+	CredibilitySourceType,
+	SourceCredibilityProfile,
+	SourceCredibilityProfileListOptions,
+	UpsertCredibilityDimensionInput,
+	UpsertSourceCredibilityProfileInput,
+} from './source-credibility.types.js';
+export {
 	findSourceDeletionForSource,
 	listAuditEventsForSource,
 	listSourceDeletions,

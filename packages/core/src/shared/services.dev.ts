@@ -471,6 +471,23 @@ class DevLlmService implements LlmService {
 				),
 			);
 		}
+		// Detect source credibility profile schema by checking for source_type + dimensions.
+		else if (hasProperty('source_type') && hasProperty('dimensions')) {
+			this.logger.debug('DevLlmService: generateStructured — returning source credibility fixture');
+			const dimensionIds = extractEnumValues(options.schema, 'dimensions', 'id');
+			result = JSON.parse(
+				JSON.stringify({
+					source_type: 'other',
+					dimensions: dimensionIds.map((id, index) => ({
+						id,
+						score: Math.max(0, Math.min(1, 0.5 + index * 0.05)),
+						rationale: `Dev mode fixture rationale for ${id}.`,
+						evidence_refs: ['dev_mode_fixture'],
+						known_factors: [],
+					})),
+				}),
+			);
+		}
 		// Detect entity resolution schema by checking for 'same_entity' property
 		else if (hasProperty('same_entity')) {
 			this.logger.debug('DevLlmService: generateStructured — returning entity resolution fixture');

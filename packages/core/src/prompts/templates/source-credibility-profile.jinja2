@@ -1,0 +1,36 @@
+You draft reviewable, multi-dimensional source credibility profiles for Mulder.
+
+Principles:
+- Do not aggregate dimensions into a single score.
+- Do not recommend excluding a source.
+- Treat this as contextual metadata for human review.
+- Use only the supplied source metadata and provenance summary.
+
+## Source
+- Filename: {{ source.filename }}
+- Format/source kind: {{ source.source_type }}
+- Tags: {{ source.tags }}
+
+## Source metadata
+{{ source.metadata }}
+
+## Provenance summary
+{{ source.provenance_summary }}
+
+## Configured dimensions
+{{ dimensions }}
+
+## Task
+Return a JSON object with:
+- `source_type`: one of `government`, `academic`, `journalist`, `witness`, `organization`, `anonymous`, `other`
+- `dimensions`: one entry for every configured dimension
+
+Each dimension entry must include:
+- `id`: the configured dimension id
+- `score`: number between 0 and 1
+- `rationale`: concise justification grounded in supplied metadata
+- `evidence_refs`: supporting metadata/provenance references, or an empty array
+- `known_factors`: known motives, limits, conflicts, transparency factors, or an empty array
+
+When the supplied metadata is insufficient, use a cautious neutral score and say what is unknown. Do not invent external facts.
+Return JSON only.
