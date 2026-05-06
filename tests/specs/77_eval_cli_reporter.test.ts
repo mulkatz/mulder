@@ -10,11 +10,15 @@ const GOLDEN_DIRS = [
 	resolve(ROOT, 'eval/golden/extraction'),
 	resolve(ROOT, 'eval/golden/segmentation'),
 	resolve(ROOT, 'eval/golden/entities'),
+	resolve(ROOT, 'eval/golden/quality-routing'),
+	resolve(ROOT, 'eval/golden/assertions'),
 ];
 const FIXTURE_DIRS = [
 	resolve(ROOT, 'fixtures/extracted'),
 	resolve(ROOT, 'fixtures/segments'),
 	resolve(ROOT, 'fixtures/entities'),
+	resolve(ROOT, 'fixtures/quality-routing'),
+	resolve(ROOT, 'fixtures/assertions'),
 ];
 
 /**
@@ -133,7 +137,13 @@ describe('Spec 77: Eval CLI + Reporter', () => {
 			const { exitCode, stdout } = runCli(['eval']);
 
 			expect(exitCode).toBe(0);
-			expectReportSections(stdout, ['Extraction Quality', 'Segmentation Quality', 'Entity Extraction']);
+			expectReportSections(stdout, [
+				'Extraction Quality',
+				'Segmentation Quality',
+				'Entity Extraction',
+				'Quality Routing',
+				'Assertion Classification',
+			]);
 		});
 
 		it('QA-02: single-step extract run is scoped', () => {
@@ -261,7 +271,13 @@ describe('Spec 77: Eval CLI + Reporter', () => {
 			const { exitCode, stdout } = runCli(['eval']);
 
 			expect(exitCode).toBe(0);
-			expectReportSections(stdout, ['Extraction Quality', 'Segmentation Quality', 'Entity Extraction']);
+			expectReportSections(stdout, [
+				'Extraction Quality',
+				'Segmentation Quality',
+				'Entity Extraction',
+				'Quality Routing',
+				'Assertion Classification',
+			]);
 		});
 
 		it('CLI-02: mulder eval --step extract', () => {
@@ -369,7 +385,7 @@ describe('Spec 77: Eval CLI + Reporter', () => {
 
 			expect(exitCode).toBe(0);
 			const parsed = parseJsonOutput(stdout) as { results?: Record<string, unknown> };
-			expectOnlyResultsKeys(parsed, ['entities', 'extraction', 'segmentation']);
+			expectOnlyResultsKeys(parsed, ['assertions', 'entities', 'extraction', 'qualityRouting', 'segmentation']);
 		});
 
 		it('smoke: eval --step extract --compare baseline --json stays scoped to the selected suite', () => {

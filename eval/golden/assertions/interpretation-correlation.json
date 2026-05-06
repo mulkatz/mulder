@@ -1,0 +1,30 @@
+{
+	"caseId": "assertion-interpretation-correlation",
+	"segmentId": "assertion-seg-002",
+	"sourceSlug": "summary-memo",
+	"difficulty": "moderate",
+	"expected": {
+		"content": "The repeated delays suggest the review process depends on external approval.",
+		"assertionType": "interpretation",
+		"classificationProvenance": "llm_auto",
+		"confidenceMetadata": {
+			"witness_count": null,
+			"measurement_based": false,
+			"contemporaneous": true,
+			"corroborated": false,
+			"peer_reviewed": false,
+			"author_is_interpreter": true
+		},
+		"entityNames": ["review process", "external approval"],
+		"qualityMetadata": {
+			"source_document_quality": "high",
+			"extraction_path": "standard",
+			"extraction_confidence": 0.95
+		}
+	},
+	"annotation": {
+		"author": "Mulder QA",
+		"date": "2026-05-06",
+		"notes": "A causal reading of observations should not be promoted to observation."
+	}
+}

@@ -1,0 +1,30 @@
+{
+	"caseId": "assertion-hypothesis-testable-pattern",
+	"segmentId": "assertion-seg-003",
+	"sourceSlug": "analysis-note",
+	"difficulty": "complex",
+	"expected": {
+		"content": "If the proposed review schedule is effective, error rates should decline after the next reporting cycle.",
+		"assertionType": "hypothesis",
+		"classificationProvenance": "author_explicit",
+		"confidenceMetadata": {
+			"witness_count": null,
+			"measurement_based": false,
+			"contemporaneous": false,
+			"corroborated": false,
+			"peer_reviewed": false,
+			"author_is_interpreter": true
+		},
+		"entityNames": ["review schedule", "reporting cycle"],
+		"qualityMetadata": {
+			"source_document_quality": "medium",
+			"extraction_path": "enhanced_ocr",
+			"extraction_confidence": 0.7
+		}
+	},
+	"annotation": {
+		"author": "Mulder QA",
+		"date": "2026-05-06",
+		"notes": "Explicit testable prediction should be classified as a hypothesis."
+	}
+}

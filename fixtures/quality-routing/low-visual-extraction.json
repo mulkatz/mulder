@@ -1,0 +1,51 @@
+{
+	"caseId": "quality-low-visual-extraction",
+	"sourceSlug": "photo-of-table",
+	"assessment": {
+		"assessmentMethod": "automated",
+		"overallQuality": "low",
+		"processable": true,
+		"recommendedPath": "visual_extraction",
+		"dimensions": {
+			"textReadability": {
+				"score": 0.41,
+				"method": "llm_visual",
+				"details": "Text is hard for OCR but visible in the source image."
+			},
+			"imageQuality": {
+				"score": 0.46,
+				"issues": ["skewed", "shadowed"]
+			},
+			"languageDetection": {
+				"primaryLanguage": "en",
+				"confidence": 0.82,
+				"mixedLanguages": false
+			},
+			"documentStructure": {
+				"type": "table",
+				"hasAnnotations": false,
+				"hasMarginalia": false,
+				"multiColumn": true
+			},
+			"contentCompleteness": {
+				"pagesTotal": 1,
+				"pagesReadable": 1,
+				"missingPagesSuspected": false,
+				"truncated": true
+			}
+		},
+		"signals": {
+			"text_readability": "visual_only",
+			"image_quality": "skewed",
+			"content_completeness": "partial"
+		}
+	},
+	"extractionGate": {
+		"outcome": "allow"
+	},
+	"qualityMetadata": {
+		"source_document_quality": "low",
+		"extraction_path": "visual_extraction",
+		"extraction_confidence": 0.4
+	}
+}

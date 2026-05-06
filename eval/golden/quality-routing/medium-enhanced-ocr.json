@@ -1,0 +1,26 @@
+{
+	"caseId": "quality-medium-enhanced-ocr",
+	"sourceSlug": "faded-scan-report",
+	"difficulty": "moderate",
+	"expected": {
+		"overallQuality": "medium",
+		"processable": true,
+		"recommendedPath": "enhanced_ocr",
+		"extractionGateOutcome": "allow",
+		"qualityMetadata": {
+			"source_document_quality": "medium",
+			"extraction_path": "enhanced_ocr",
+			"extraction_confidence": 0.7
+		},
+		"signals": {
+			"text_readability": "partially_degraded",
+			"image_quality": "faded",
+			"content_completeness": "complete"
+		}
+	},
+	"annotation": {
+		"author": "Mulder QA",
+		"date": "2026-05-06",
+		"notes": "Readable degraded scans should route through enhanced OCR."
+	}
+}
