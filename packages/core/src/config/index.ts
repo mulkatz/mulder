@@ -39,6 +39,7 @@ export type {
 	RelationshipConfig,
 	RetrievalConfig,
 	SafetyConfig,
+	SourceRollbackConfig,
 	StorageConfig,
 	TaxonomyConfig,
 	ThresholdsConfig,

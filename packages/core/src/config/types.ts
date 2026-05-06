@@ -31,6 +31,7 @@ import type {
 	relationshipSchema,
 	retrievalSchema,
 	safetySchema,
+	sourceRollbackSchema,
 	storageSchema,
 	taxonomySchema,
 	thresholdsSchema,
@@ -67,6 +68,7 @@ export type TaxonomyConfig = z.infer<typeof taxonomySchema>;
 export type ThresholdsConfig = z.infer<typeof thresholdsSchema>;
 export type PipelineConfig = z.infer<typeof pipelineSchema>;
 export type SafetyConfig = z.infer<typeof safetySchema>;
+export type SourceRollbackConfig = z.infer<typeof sourceRollbackSchema>;
 export type VertexConfig = z.infer<typeof vertexSchema>;
 export type VisualIntelligenceConfig = z.infer<typeof visualIntelligenceSchema>;
 export type PatternDiscoveryConfig = z.infer<typeof patternDiscoverySchema>;

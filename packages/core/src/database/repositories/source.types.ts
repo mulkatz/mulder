@@ -9,6 +9,7 @@
  */
 
 import type { SensitivityLevel, SensitivityTagged } from '../../shared/sensitivity.js';
+import type { SourceDeletionState } from './source-rollback.types.js';
 
 // ────────────────────────────────────────────────────────────
 // Status enums
@@ -52,6 +53,9 @@ export interface Source {
 	reliabilityScore: number | null;
 	tags: string[];
 	metadata: Record<string, unknown>;
+	deletedAt?: Date | null;
+	deletionStatus?: SourceDeletionState;
+	activeSource?: boolean;
 	sensitivityLevel?: SensitivityTagged['sensitivityLevel'];
 	sensitivityMetadata?: SensitivityTagged['sensitivityMetadata'];
 	createdAt: Date;
@@ -96,6 +100,8 @@ export interface UpdateSourceInput {
 	metadata?: Record<string, unknown>;
 	sensitivityLevel?: SensitivityLevel;
 	sensitivityMetadata?: unknown;
+	deletedAt?: Date | null;
+	deletionStatus?: SourceDeletionState;
 }
 
 /** Filters for querying sources. */
@@ -107,6 +113,7 @@ export interface SourceFilter {
 	tags?: string[];
 	limit?: number;
 	offset?: number;
+	includeDeleted?: boolean;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -132,6 +139,7 @@ export interface SourceWithSteps {
 /** Filters for source+step bulk planning queries. */
 export interface SourceWithStepsFilter {
 	minimumStatus?: SourceStatus;
+	includeDeleted?: boolean;
 }
 
 /** Input for upserting a source step. */

@@ -274,6 +274,29 @@ export type {
 	UpdateSourceInput,
 	UpsertSourceStepInput,
 } from './source.types.js';
+export {
+	findSourceDeletionForSource,
+	listAuditEventsForSource,
+	listSourceDeletions,
+	planSourcePurge,
+	purgeSource,
+	restoreSource,
+	softDeleteSource,
+} from './source-rollback.repository.js';
+export type {
+	AuditLogEvent,
+	PurgeSourceInput,
+	RestoreSourceInput,
+	SoftDeleteSourceInput,
+	SourceDeletion,
+	SourceDeletionState,
+	SourceDeletionStatus,
+	SourcePurgeEffects,
+	SourcePurgePlan,
+	SourcePurgeReport,
+	SourcePurgeSubsystemCount,
+	SourceRollbackOrphanHandling,
+} from './source-rollback.types.js';
 export type {
 	ClusterableEntityEvent,
 	CreateSpatioTemporalClusterInput,

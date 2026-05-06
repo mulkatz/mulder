@@ -27,7 +27,7 @@ import type {
 	TaxonomyStatus,
 	UpdateEntityInput,
 } from './entity.types.js';
-import { queryWithSensitivityColumnFallback } from './schema-compat.js';
+import { queryWithSensitivityColumnFallback, queryWithSourceDeletionStatusFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'entity-repository' });
@@ -35,6 +35,38 @@ const repoLogger = createChildLogger(logger, { module: 'entity-repository' });
 /** Type guard for Record<string, unknown> — avoids `as` assertions. */
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function entityActiveSourceClause(entityAlias: string): string {
+	return `
+    (
+      EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(COALESCE(${entityAlias}.provenance->'source_document_ids', '[]'::jsonb)) AS entity_sources(source_id)
+        JOIN sources entity_src ON entity_src.id::text = entity_sources.source_id
+        WHERE entity_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM story_entities entity_story_links
+        JOIN stories entity_stories ON entity_stories.id = entity_story_links.story_id
+        JOIN sources entity_story_src ON entity_story_src.id = entity_stories.source_id
+        WHERE entity_story_links.entity_id = ${entityAlias}.id
+          AND entity_story_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+      )
+      OR (
+        NOT EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(COALESCE(${entityAlias}.provenance->'source_document_ids', '[]'::jsonb)) AS entity_sources(source_id)
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM story_entities entity_story_links
+          WHERE entity_story_links.entity_id = ${entityAlias}.id
+        )
+      )
+    )
+  `;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -282,11 +314,25 @@ export async function upsertEntityByNameType(pool: pg.Pool, input: CreateEntityI
  *
  * @returns The entity, or `null` if not found.
  */
-export async function findEntityById(pool: pg.Pool, id: string): Promise<Entity | null> {
-	const sql = 'SELECT * FROM entities WHERE id = $1';
+export async function findEntityById(
+	pool: pg.Pool,
+	id: string,
+	options?: { includeDeleted?: boolean },
+): Promise<Entity | null> {
+	const sql = `
+    SELECT e.*
+    FROM entities e
+    WHERE e.id = $1
+      ${options?.includeDeleted ? '' : `AND ${entityActiveSourceClause('e')}`}
+  `;
+	const legacySql = `
+    SELECT e.*
+    FROM entities e
+    WHERE e.id = $1
+  `;
 
 	try {
-		const result = await pool.query<EntityRow>(sql, [id]);
+		const result = await queryWithSourceDeletionStatusFallback<EntityRow>(pool, sql, [id], legacySql, [id]);
 		if (result.rows.length === 0) {
 			return null;
 		}
@@ -302,8 +348,18 @@ export async function findEntityById(pool: pg.Pool, id: string): Promise<Entity 
 /**
  * Finds all entities of a given type, ordered by name.
  */
-export async function findEntitiesByType(pool: pg.Pool, type: string): Promise<Entity[]> {
-	const sql = 'SELECT * FROM entities WHERE type = $1 ORDER BY name';
+export async function findEntitiesByType(
+	pool: pg.Pool,
+	type: string,
+	options?: { includeDeleted?: boolean },
+): Promise<Entity[]> {
+	const sql = `
+    SELECT e.*
+    FROM entities e
+    WHERE e.type = $1
+      ${options?.includeDeleted ? '' : `AND ${entityActiveSourceClause('e')}`}
+    ORDER BY e.name
+  `;
 
 	try {
 		const result = await pool.query<EntityRow>(sql, [type]);
@@ -319,8 +375,18 @@ export async function findEntitiesByType(pool: pg.Pool, type: string): Promise<E
 /**
  * Finds all entities pointing to a canonical entity (merged entities).
  */
-export async function findEntitiesByCanonicalId(pool: pg.Pool, canonicalId: string): Promise<Entity[]> {
-	const sql = 'SELECT * FROM entities WHERE canonical_id = $1 ORDER BY name';
+export async function findEntitiesByCanonicalId(
+	pool: pg.Pool,
+	canonicalId: string,
+	options?: { includeDeleted?: boolean },
+): Promise<Entity[]> {
+	const sql = `
+    SELECT e.*
+    FROM entities e
+    WHERE e.canonical_id = $1
+      ${options?.includeDeleted ? '' : `AND ${entityActiveSourceClause('e')}`}
+    ORDER BY e.name
+  `;
 
 	try {
 		const result = await pool.query<EntityRow>(sql, [canonicalId]);
@@ -345,27 +411,30 @@ export async function findAllEntities(pool: pg.Pool, filter?: EntityFilter): Pro
 	let paramIndex = 1;
 
 	if (filter?.type) {
-		conditions.push(`type = $${paramIndex}`);
+		conditions.push(`e.type = $${paramIndex}`);
 		params.push(filter.type);
 		paramIndex++;
 	}
 
 	if (filter?.canonicalId) {
-		conditions.push(`canonical_id = $${paramIndex}`);
+		conditions.push(`e.canonical_id = $${paramIndex}`);
 		params.push(filter.canonicalId);
 		paramIndex++;
 	}
 
 	if (filter?.taxonomyStatus) {
-		conditions.push(`taxonomy_status = $${paramIndex}`);
+		conditions.push(`e.taxonomy_status = $${paramIndex}`);
 		params.push(filter.taxonomyStatus);
 		paramIndex++;
 	}
 
 	if (filter?.search) {
-		conditions.push(`name ILIKE '%' || $${paramIndex} || '%'`);
+		conditions.push(`e.name ILIKE '%' || $${paramIndex} || '%'`);
 		params.push(filter.search);
 		paramIndex++;
+	}
+	if (!filter?.includeDeleted) {
+		conditions.push(entityActiveSourceClause('e'));
 	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -373,7 +442,7 @@ export async function findAllEntities(pool: pg.Pool, filter?: EntityFilter): Pro
 	const limit = filter?.limit ?? 100;
 	const offset = filter?.offset ?? 0;
 
-	const sql = `SELECT * FROM entities ${whereClause} ORDER BY name ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+	const sql = `SELECT e.* FROM entities e ${whereClause} ORDER BY e.name ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
 	params.push(limit, offset);
 
 	try {
@@ -396,31 +465,34 @@ export async function countEntities(pool: pg.Pool, filter?: EntityFilter): Promi
 	let paramIndex = 1;
 
 	if (filter?.type) {
-		conditions.push(`type = $${paramIndex}`);
+		conditions.push(`e.type = $${paramIndex}`);
 		params.push(filter.type);
 		paramIndex++;
 	}
 
 	if (filter?.canonicalId) {
-		conditions.push(`canonical_id = $${paramIndex}`);
+		conditions.push(`e.canonical_id = $${paramIndex}`);
 		params.push(filter.canonicalId);
 		paramIndex++;
 	}
 
 	if (filter?.taxonomyStatus) {
-		conditions.push(`taxonomy_status = $${paramIndex}`);
+		conditions.push(`e.taxonomy_status = $${paramIndex}`);
 		params.push(filter.taxonomyStatus);
 		paramIndex++;
 	}
 
 	if (filter?.search) {
-		conditions.push(`name ILIKE '%' || $${paramIndex} || '%'`);
+		conditions.push(`e.name ILIKE '%' || $${paramIndex} || '%'`);
 		params.push(filter.search);
 		paramIndex++;
 	}
+	if (!filter?.includeDeleted) {
+		conditions.push(entityActiveSourceClause('e'));
+	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-	const sql = `SELECT COUNT(*) FROM entities ${whereClause}`;
+	const sql = `SELECT COUNT(*) FROM entities e ${whereClause}`;
 
 	try {
 		const result = await pool.query<{ count: string }>(sql, params);
@@ -449,7 +521,8 @@ export async function getEntityCorroborationStats(pool: pg.Pool): Promise<Entity
     SELECT
       COUNT(*) FILTER (WHERE corroboration_score IS NOT NULL AND taxonomy_status <> 'merged') AS scored_count,
       COALESCE(AVG(corroboration_score) FILTER (WHERE corroboration_score IS NOT NULL AND taxonomy_status <> 'merged'), 0) AS avg_corroboration
-    FROM entities
+    FROM entities e
+    WHERE ${entityActiveSourceClause('e')}
   `;
 
 	try {

@@ -88,4 +88,5 @@ export interface StoryFilter {
 	language?: string;
 	limit?: number;
 	offset?: number;
+	includeDeleted?: boolean;
 }
