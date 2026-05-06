@@ -88,20 +88,24 @@ Baseline cost: ~30-40 EUR/mo for a small Cloud SQL instance. Scales with instanc
 
 ## Pipeline Stages
 
-### Full Pipeline — 8 steps
+### Current Pipeline — 7 implemented steps
 
 ```
-ingest → extract → segment → enrich → [ground] → embed → graph → [analyze]
+ingest → quality → extract → segment → enrich → embed → graph
 ```
 
-1. **Ingest** — PDF → Cloud Storage, pre-flight validation (size, page count, PDF bombs)
-2. **Extract** — Document AI Layout Parser → Structured JSON + page images → **GCS** (`extracted/`). NOT Markdown. Spatial data preserved for segmentation.
-3. **Segment** — Gemini receives page images + layout JSON → identifies stories → Markdown + metadata JSON per segment → **GCS** (`segments/`). Markdown is the *end format* per story.
-4. **Enrich** — Entity extraction from ontology config, taxonomy normalization, cross-lingual entity resolution (3-tier). Loads story Markdown from GCS.
-5. **Ground** (v2.0) — Web enrichment via Gemini `google_search_retrieval`
+1. **Ingest** — Supported documents → content-addressed raw blob storage, source row, provenance context, pre-flight validation (size, page count, PDF bombs)
+2. **Quality** — Deterministic document quality assessment and extraction-route gating (`standard`, `enhanced_ocr`, `visual_extraction`, `skip`, etc.)
+3. **Extract** — Document AI Layout Parser / format-aware extractors → Structured JSON + page images → **GCS** (`extracted/`). NOT Markdown. Spatial data preserved for segmentation.
+4. **Segment** — Gemini receives page images + layout JSON → identifies stories → Markdown + metadata JSON per segment → **GCS** (`segments/`). Markdown is the *end format* per story.
+5. **Enrich** — Entity extraction from ontology config, taxonomy normalization, assertion classification, sensitivity detection, cross-lingual entity resolution (3-tier). Loads story Markdown from GCS.
 6. **Embed** — `text-embedding-004` (768-dim), semantic chunking, question generation. Chunks stored inline in PostgreSQL (short, ~512 tokens).
 7. **Graph** — Deduplication (MinHash/SimHash) → entity edges → dedup-aware corroboration scoring → contradiction flagging (attribute diff, no LLM)
-8. **Analyze** (v2.0) — Contradiction resolution (Gemini), source reliability (PageRank), evidence chains, spatio-temporal clustering
+
+Future optional extensions remain planned around the implemented core:
+
+- **Ground** (v2.0) — Web enrichment via Gemini `google_search_retrieval`
+- **Analyze** (v2.0) — Contradiction resolution (Gemini), source reliability (PageRank), evidence chains, spatio-temporal clustering
 
 ## Storage Architecture
 
@@ -109,7 +113,9 @@ ingest → extract → segment → enrich → [ground] → embed → graph → [
 
 ```
 gs://mulder-{project}/
-├── raw/                    # Original PDFs (immutable)
+├── blobs/sha256/           # Canonical immutable raw blobs, partitioned by SHA-256 prefix
+│   └── {aa}/{bb}/{hash}[.ext]
+├── raw/                    # Provisional/legacy upload staging only, not the canonical raw copy
 ├── extracted/              # Document AI Structured JSON + page images
 │   └── {doc-id}/layout.json, pages/*.png
 ├── segments/               # Per story: Markdown + metadata JSON
@@ -117,6 +123,8 @@ gs://mulder-{project}/
 └── taxonomy/               # Auto-generated + curated taxonomy
 ```
 
+- `document_blobs.content_hash` is the canonical raw-document identity; `sources.file_hash` links source rows to the blob.
+- Exact byte duplicates reuse the same blob and append provenance/filename metadata instead of duplicating storage.
 - `chunks.content` inline (~512 tokens) — needed for vector + BM25 in one query
 - Full story Markdown in GCS — loaded on demand for RAG context
 - No long text in PostgreSQL columns
