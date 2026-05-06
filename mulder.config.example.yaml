@@ -119,6 +119,24 @@ ingestion:
   max_file_size_mb: 100              # Reject PDFs larger than this
   max_pages: 2000                    # Reject PDFs with more pages
 
+# --- Ingest Provenance ---
+ingest_provenance:
+  required_metadata:
+    channel: true
+    submitted_by: true
+    collection_id: false
+    original_source: false
+    custody_chain: false
+  archives:
+    auto_register: true
+  collections:
+    auto_create_from_archive: true
+    auto_tag_from_path_segments: true
+    default_collection: null
+    default_sensitivity_level: "internal"
+    default_language: "und"
+    default_credibility_profile_id: null
+
 # --- Extraction ---
 extraction:
   native_text_threshold: 0.9         # Skip Document AI if >= 90% pages have native text

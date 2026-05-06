@@ -1,3 +1,6 @@
+import type { IngestProvenanceConfig } from '../../config/types.js';
+import type { Collection } from './collection.types.js';
+
 export type AcquisitionChannel =
 	| 'archive_import'
 	| 'manual_upload'
@@ -261,12 +264,14 @@ export interface RecordIngestProvenanceInput {
 	custodyChain?: CustodyStepInput[];
 	archive?: ArchiveInput | null;
 	archiveLocation?: Omit<ArchiveLocationInput, 'blobContentHash' | 'archiveId'> & { archiveId?: string };
+	config?: Pick<IngestProvenanceConfig, 'collections'>;
 }
 
 export interface IngestProvenanceBundle {
 	context: AcquisitionContext;
 	archive: Archive | null;
 	archiveLocation: ArchiveLocation | null;
+	collection: Collection | null;
 	originalSource: OriginalSource | null;
 	custodyChain: CustodyStep[];
 }

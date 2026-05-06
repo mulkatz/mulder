@@ -49,6 +49,7 @@ export const MULDER_TEST_TABLES = [
 	'original_sources',
 	'archive_locations',
 	'acquisition_contexts',
+	'collections',
 	'archives',
 	'document_blobs',
 	'document_quality_assessments',

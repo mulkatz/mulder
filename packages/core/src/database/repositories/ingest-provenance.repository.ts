@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
+import { resolveCollectionForIngest } from './collection.repository.js';
 import type {
 	AcquisitionContext,
 	AcquisitionContextInput,
@@ -744,10 +745,29 @@ export async function recordIngestProvenance(
 	const client = await pool.connect();
 	try {
 		await client.query('BEGIN');
+		const archive = input.archive ? await upsertArchive(client, input.archive) : null;
+		const archiveId = archive?.archiveId ?? input.archiveLocation?.archiveId;
+		if (input.archiveLocation && !archiveId) {
+			throw new DatabaseError(
+				'Archive location requires an archive or archiveId',
+				DATABASE_ERROR_CODES.DB_QUERY_FAILED,
+			);
+		}
+		const collection = await resolveCollectionForIngest(
+			client,
+			{
+				explicitCollectionId: input.context.collectionId ?? null,
+				archive,
+				archiveLocation: input.archiveLocation ?? null,
+				submittedBy: input.context.submittedBy,
+			},
+			input.config?.collections,
+		);
 		const context = await recordAcquisitionContext(client, {
 			blobContentHash: input.blobContentHash,
 			sourceId: input.sourceId ?? null,
 			...input.context,
+			collectionId: collection?.collectionId ?? input.context.collectionId ?? null,
 		});
 		const originalSource = input.originalSource
 			? await recordOriginalSource(client, { ...input.originalSource, contextId: context.contextId })
@@ -757,8 +777,6 @@ export async function recordIngestProvenance(
 			context.contextId,
 			input.custodyChain?.map((step) => ({ ...step, contextId: context.contextId })) ?? [],
 		);
-		const archive = input.archive ? await upsertArchive(client, input.archive) : null;
-		const archiveId = archive?.archiveId ?? input.archiveLocation?.archiveId;
 		const archiveLocation =
 			input.archiveLocation && archiveId
 				? await recordArchiveLocation(client, {
@@ -767,14 +785,8 @@ export async function recordIngestProvenance(
 						archiveId,
 					})
 				: null;
-		if (input.archiveLocation && !archiveId) {
-			throw new DatabaseError(
-				'Archive location requires an archive or archiveId',
-				DATABASE_ERROR_CODES.DB_QUERY_FAILED,
-			);
-		}
 		await client.query('COMMIT');
-		return { context, archive, archiveLocation, originalSource, custodyChain };
+		return { context, archive, archiveLocation, collection, originalSource, custodyChain };
 	} catch (error: unknown) {
 		await client.query('ROLLBACK').catch(() => {});
 		if (error instanceof DatabaseError) {

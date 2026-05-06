@@ -16,6 +16,8 @@ function defaults<T extends z.ZodObject<z.ZodRawShape>>(schema: T): z.output<T> 
 	return schema.parse({});
 }
 
+const sensitivityLevelSchema = z.enum(SENSITIVITY_LEVELS);
+
 // --- Attribute Types ---
 
 const attributeTypeSchema = z.enum(['string', 'number', 'boolean', 'date', 'geo_point', 'string[]']);
@@ -152,9 +154,28 @@ const ingestProvenanceArchivesSchema = z.object({
 	auto_register: z.boolean().default(true),
 });
 
+const collectionDefaultPolicySchema = z.object({
+	name: z.string().min(1),
+	description: z.string().default(''),
+	type: z.enum(['archive_mirror', 'thematic', 'import_batch', 'curated', 'other']).default('import_batch'),
+	visibility: z.enum(['private', 'team', 'public']).default('private'),
+	created_by: z.string().min(1).default('system'),
+	tags: z.array(z.string().min(1)).default([]),
+});
+
+const ingestProvenanceCollectionsSchema = z.object({
+	auto_create_from_archive: z.boolean().default(true),
+	auto_tag_from_path_segments: z.boolean().default(true),
+	default_collection: collectionDefaultPolicySchema.nullable().default(null),
+	default_sensitivity_level: sensitivityLevelSchema.default('internal'),
+	default_language: z.string().min(1).default('und'),
+	default_credibility_profile_id: z.string().uuid().nullable().default(null),
+});
+
 const ingestProvenanceObj = z.object({
 	required_metadata: ingestProvenanceRequiredMetadataSchema.default(defaults(ingestProvenanceRequiredMetadataSchema)),
 	archives: ingestProvenanceArchivesSchema.default(defaults(ingestProvenanceArchivesSchema)),
+	collections: ingestProvenanceCollectionsSchema.default(defaults(ingestProvenanceCollectionsSchema)),
 });
 const ingestProvenanceSchema = ingestProvenanceObj.default(defaults(ingestProvenanceObj));
 
@@ -233,7 +254,6 @@ const documentQualitySchema = documentQualityObj.default(defaults(documentQualit
 
 // --- Access Control ---
 
-const sensitivityLevelSchema = z.enum(SENSITIVITY_LEVELS);
 const piiTypeSchema = z.enum(PII_TYPES);
 
 const accessControlSensitivitySchema = z.object({

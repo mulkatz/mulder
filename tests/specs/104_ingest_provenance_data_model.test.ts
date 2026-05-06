@@ -33,6 +33,7 @@ const PROVENANCE_TABLES = [
 	'original_sources',
 	'archive_locations',
 	'acquisition_contexts',
+	'collections',
 	'archives',
 	'audit_log',
 	'source_deletions',
@@ -400,6 +401,14 @@ describe('Spec 104: Ingest provenance data model', () => {
 				custody_chain: false,
 			},
 			archives: { auto_register: true },
+			collections: {
+				auto_create_from_archive: true,
+				auto_tag_from_path_segments: true,
+				default_collection: null,
+				default_sensitivity_level: 'internal',
+				default_language: 'und',
+				default_credibility_profile_id: null,
+			},
 		});
 	});
 });

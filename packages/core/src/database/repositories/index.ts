@@ -54,6 +54,31 @@ export type {
 	FtsSearchResult,
 	VectorSearchResult,
 } from './chunk.types.js';
+export {
+	addCollectionTags,
+	createCollection,
+	findCollectionById,
+	findCollectionByName,
+	listCollections,
+	normalizeCollectionTags,
+	removeCollectionTags,
+	resolveCollectionForIngest,
+	setCollectionTags,
+	summarizeCollection,
+	updateCollection,
+	upsertArchiveMirrorCollection,
+} from './collection.repository.js';
+export type {
+	Collection,
+	CollectionDefaults,
+	CollectionInput,
+	CollectionListOptions,
+	CollectionSummary,
+	CollectionType,
+	CollectionUpdateInput,
+	CollectionVisibility,
+	ResolveCollectionForIngestInput,
+} from './collection.types.js';
 export type {
 	DocumentBlob,
 	DocumentBlobIntegrityStatus,

@@ -298,6 +298,7 @@ async function recordSuccessfulIngestProvenance(input: {
 		custodyChain: input.ctx.provenance?.custodyChain ?? [],
 		archive: input.ctx.provenance?.archive ?? null,
 		archiveLocation: input.ctx.provenance?.archiveLocation,
+		config: input.ctx.config.ingest_provenance,
 	});
 }
 
