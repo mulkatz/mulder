@@ -175,6 +175,8 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		expect(ciWorkflow).toContain('pnpm test:health');
 		expect(ciWorkflow).toContain('MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"');
 		expect(ciWorkflow).toContain('MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"');
+		expect(ciWorkflow).toContain('MULDER_TEST_AFFECTED_HEAD_REF: ${{ github.event_name ==');
+		expect(readFileSync(TEST_LANES_SCRIPT, 'utf-8')).toContain("const HEAD_REF_ENV = 'MULDER_TEST_AFFECTED_HEAD_REF'");
 		expect(gcpWorkflow).toContain('workflow_dispatch');
 		expect(gcpWorkflow).toContain('schedule:');
 	});

@@ -79,6 +79,32 @@ export type {
 	CollectionVisibility,
 	ResolveCollectionForIngestInput,
 } from './collection.types.js';
+export {
+	createConflictNode,
+	deleteConflictNodesForStory,
+	findConflictNodeById,
+	findConflictNodeByLegacyEdgeId,
+	listConflictInvolvementBySource,
+	listConflictNodes,
+	listOpenConflictNodes,
+	resolveConflictNode,
+} from './conflict-node.repository.js';
+export type {
+	ConflictAssertion,
+	ConflictDetectionMethod,
+	ConflictInvolvementBySource,
+	ConflictNode,
+	ConflictNodeListOptions,
+	ConflictParticipantRole,
+	ConflictResolution,
+	ConflictResolutionStatus,
+	ConflictSeverity,
+	ConflictType,
+	CreateConflictAssertionInput,
+	CreateConflictNodeInput,
+	ResolutionType,
+	ResolveConflictNodeInput,
+} from './conflict-node.types.js';
 export type {
 	DocumentBlob,
 	DocumentBlobIntegrityStatus,

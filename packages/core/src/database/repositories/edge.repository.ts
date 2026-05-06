@@ -23,6 +23,8 @@ import {
 import type { CreateEdgeInput, EdgeFilter, EdgeType, EntityEdge, UpdateEdgeInput } from './edge.types.js';
 import { queryWithSensitivityColumnFallback, queryWithSourceDeletionStatusFallback } from './schema-compat.js';
 
+type Queryable = pg.Pool | pg.PoolClient;
+
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'edge-repository' });
 
@@ -242,7 +244,7 @@ export async function upsertEdge(pool: pg.Pool, input: CreateEdgeInput): Promise
  * @returns The edge, or `null` if not found.
  */
 export async function findEdgeById(
-	pool: pg.Pool,
+	pool: Queryable,
 	id: string,
 	options?: { includeDeleted?: boolean },
 ): Promise<EntityEdge | null> {
@@ -627,7 +629,7 @@ export async function countEdges(pool: pg.Pool, filter?: EdgeFilter): Promise<nu
  *
  * @throws {DatabaseError} with `DB_NOT_FOUND` if the edge does not exist.
  */
-export async function updateEdge(pool: pg.Pool, id: string, input: UpdateEdgeInput): Promise<EntityEdge> {
+export async function updateEdge(pool: Queryable, id: string, input: UpdateEdgeInput): Promise<EntityEdge> {
 	const setClauses: string[] = [];
 	const params: unknown[] = [];
 	let paramIndex = 1;

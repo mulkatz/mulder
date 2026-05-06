@@ -16,6 +16,7 @@ const LANE_ORDER = ['unit', 'schema', 'db', 'heavy', 'external'];
 const HEALTH_SMOKE_TEST = 'tests/specs/44_e2e_pipeline_integration.test.ts';
 const HEAD_DOCS_ONLY_OPTIMIZATION_ENV = 'MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY';
 const HEAD_CHANGED_FILES_OVERRIDE_ENV = 'MULDER_TEST_AFFECTED_HEAD_CHANGED_FILES';
+const HEAD_REF_ENV = 'MULDER_TEST_AFFECTED_HEAD_REF';
 const SPEC_DOC_TEST_OVERRIDES = new Map([
 	['77_document_observability_aggregation', ['tests/specs/77_document_observability_route.test.ts']],
 ]);
@@ -342,6 +343,18 @@ function gitHeadChangedFiles() {
 	const override = process.env[HEAD_CHANGED_FILES_OVERRIDE_ENV];
 	if (override) {
 		return splitChangedFiles(override);
+	}
+
+	const headRef = process.env[HEAD_REF_ENV]?.trim();
+	if (headRef) {
+		const result = spawnSync('git', ['diff', '--name-only', `${headRef}^`, headRef], {
+			cwd: ROOT,
+			encoding: 'utf8',
+			stdio: ['ignore', 'pipe', 'pipe'],
+		});
+		if (result.status === 0) {
+			return splitChangedFiles(result.stdout);
+		}
 	}
 
 	const status = spawnSync('git', ['status', '--porcelain'], {

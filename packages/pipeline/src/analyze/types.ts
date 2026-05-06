@@ -29,6 +29,19 @@ export interface ContradictionResolutionResponse {
 	winning_claim: WinningClaim;
 	confidence: number;
 	explanation: string;
+	conflict_type?: 'factual' | 'interpretive' | 'taxonomic' | 'temporal' | 'spatial' | 'attributive';
+	severity?: 'minor' | 'significant' | 'fundamental';
+	severity_rationale?: string;
+	resolution_type?:
+		| 'different_vantage_point'
+		| 'different_time'
+		| 'measurement_error'
+		| 'source_unreliable'
+		| 'scope_difference'
+		| 'genuinely_contradictory'
+		| 'duplicate_misidentification'
+		| 'other';
+	evidence_refs?: string[];
 }
 
 export interface ContradictionResolutionOutcome {
@@ -38,6 +51,8 @@ export interface ContradictionResolutionOutcome {
 	verdict: ContradictionVerdict;
 	winningClaim: WinningClaim;
 	confidence: number;
+	conflictNodeId: string | null;
+	conflictResolutionWritten: boolean;
 }
 
 export interface ContradictionAnalyzeData {
@@ -46,6 +61,8 @@ export interface ContradictionAnalyzeData {
 	processedCount: number;
 	confirmedCount: number;
 	dismissedCount: number;
+	conflictNodesLinked: number;
+	conflictResolutionsWritten: number;
 	failedCount: number;
 	outcomes: ContradictionResolutionOutcome[];
 }

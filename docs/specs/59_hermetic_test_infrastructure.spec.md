@@ -56,7 +56,7 @@ None in repository config files. CI/workflow env changes only:
 
 - DB-backed suites share one defensive cleanup path from `tests/lib/schema.ts`
 - Spec 44 becomes a named, first-class CI health indicator via a dedicated script and workflow step when affected testing selects data-backed lanes
-- Milestone-branch pushes use affected planning against the pushed range, including docs-only short-circuiting, so integration commits do not run unrelated full DB/heavy suites
+- Milestone-branch pushes and PR synchronizations use affected planning against the pushed range or explicit PR head SHA, including docs-only short-circuiting, so docs-only tail commits do not run unrelated DB/heavy suites
 - Credentialed test workflows run separately from the default CI lane and enable the GCP-gated suites with one env variable
 
 ### 4.5 Implementation Phases

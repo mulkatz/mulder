@@ -20,6 +20,7 @@ export type {
 	ApiConfig,
 	ApiRateLimitingConfig,
 	CloudSqlConfig,
+	ContradictionManagementConfig,
 	CredibilityConfig,
 	CredibilityDimensionConfig,
 	DeduplicationConfig,

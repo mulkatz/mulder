@@ -209,6 +209,7 @@ jobs:
         env:
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
           MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
+          MULDER_TEST_AFFECTED_HEAD_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Upload affected plan artifacts
         if: always()
@@ -286,6 +287,7 @@ jobs:
         env:
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
           MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
+          MULDER_TEST_AFFECTED_HEAD_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Run affected schema tests
         run: |
@@ -307,6 +309,7 @@ jobs:
           MULDER_TEST_ISOLATED_DB: "true"
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
           MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
+          MULDER_TEST_AFFECTED_HEAD_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Upload affected schema artifacts
         if: always()
@@ -389,6 +392,7 @@ jobs:
         env:
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
           MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
+          MULDER_TEST_AFFECTED_HEAD_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Run affected db tests
         run: |
@@ -410,6 +414,7 @@ jobs:
           MULDER_TEST_ISOLATED_DB: "true"
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
           MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
+          MULDER_TEST_AFFECTED_HEAD_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Upload affected DB artifacts
         if: always()
@@ -492,6 +497,7 @@ jobs:
         env:
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
           MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
+          MULDER_TEST_AFFECTED_HEAD_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Run affected heavy tests
         run: |
@@ -513,6 +519,7 @@ jobs:
           MULDER_TEST_ISOLATED_DB: "true"
           MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"
           MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"
+          MULDER_TEST_AFFECTED_HEAD_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Upload affected heavy artifacts
         if: always()

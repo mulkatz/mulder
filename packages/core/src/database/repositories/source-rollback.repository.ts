@@ -576,6 +576,45 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 		),
 		await countExclusiveAndShared(
 			pool,
+			'conflict_nodes',
+			sourceId,
+			`
+				SELECT COUNT(*) AS count
+				FROM conflict_nodes cn
+				WHERE cn.deleted_at IS NULL
+					AND EXISTS (
+						SELECT 1
+						FROM conflict_assertions ca
+						WHERE ca.conflict_id = cn.id
+							AND ca.source_document_id = $1
+					)
+					AND NOT EXISTS (
+						SELECT 1
+						FROM conflict_assertions ca
+						WHERE ca.conflict_id = cn.id
+							AND ca.source_document_id <> $1
+					)
+			`,
+			`
+				SELECT COUNT(*) AS count
+				FROM conflict_nodes cn
+				WHERE cn.deleted_at IS NULL
+					AND EXISTS (
+						SELECT 1
+						FROM conflict_assertions ca
+						WHERE ca.conflict_id = cn.id
+							AND ca.source_document_id = $1
+					)
+					AND EXISTS (
+						SELECT 1
+						FROM conflict_assertions ca
+						WHERE ca.conflict_id = cn.id
+							AND ca.source_document_id <> $1
+					)
+			`,
+		),
+		await countExclusiveAndShared(
+			pool,
 			'entities',
 			sourceId,
 			`
@@ -801,6 +840,7 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 			storyEntitiesUpdated: 0,
 			entityEdgesDeleted: 0,
 			entityEdgesUpdated: 0,
+			conflictNodesDeleted: 0,
 			knowledgeAssertionsSoftDeleted: 0,
 			knowledgeAssertionsUpdated: 0,
 			entitiesDeleted: 0,
@@ -890,6 +930,26 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 			[input.sourceId, purgedAt],
 		);
 		effects.knowledgeAssertionsSoftDeleted = softDeleteAssertions.rowCount ?? 0;
+
+		const deleteConflictNodes = await client.query(
+			`
+				DELETE FROM conflict_nodes cn
+				WHERE EXISTS (
+						SELECT 1
+						FROM conflict_assertions ca
+						WHERE ca.conflict_id = cn.id
+							AND ca.source_document_id = $1
+					)
+					AND NOT EXISTS (
+						SELECT 1
+						FROM conflict_assertions ca
+						WHERE ca.conflict_id = cn.id
+							AND ca.source_document_id <> $1
+					)
+			`,
+			[input.sourceId],
+		);
+		effects.conflictNodesDeleted = deleteConflictNodes.rowCount ?? 0;
 
 		const deleteChunks = await client.query(
 			`

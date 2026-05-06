@@ -162,6 +162,33 @@ export const CONFIG_DEFAULTS = {
 		agent_instruction: 'weight_but_never_exclude' as const,
 	},
 
+	contradiction_management: {
+		enabled: true,
+		conflict_types: ['factual', 'interpretive', 'taxonomic', 'temporal', 'spatial', 'attributive'],
+		severity_levels: ['minor', 'significant', 'fundamental'],
+		detection: {
+			pipeline: true,
+			agent: false,
+			human_reported: false,
+			embedding_similarity_band: [0.3, 0.8] as [number, number],
+			require_shared_entity: true,
+			llm_confirmation: true,
+			llm_engine: 'gemini-2.5-pro',
+			min_confidence: 0.7,
+			max_candidates_per_story: 25,
+		},
+		auto_severity_assessment: true,
+		review: {
+			conflict_detection: 'single_review' as const,
+			resolution: 'single_review' as const,
+		},
+		metrics: {
+			track_contradiction_density: true,
+			track_resolution_rate: true,
+			feed_credibility_profiles: true,
+		},
+	},
+
 	enrichment: {
 		model: 'gemini-2.5-flash',
 		max_story_tokens: 15000,
