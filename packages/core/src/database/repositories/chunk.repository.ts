@@ -29,7 +29,7 @@ import type {
 	FtsSearchResult,
 	VectorSearchResult,
 } from './chunk.types.js';
-import { queryWithSensitivityColumnFallback } from './schema-compat.js';
+import { queryWithSensitivityColumnFallback, queryWithSourceDeletionStatusFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'chunk-repository' });
@@ -275,9 +275,16 @@ export async function findChunkById(
     WHERE c.id = $1
       ${options?.includeDeleted ? '' : "AND src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"}
   `;
+	const legacySql = `
+    SELECT c.*, c.embedding::text
+    FROM chunks c
+    JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
+    WHERE c.id = $1
+  `;
 
 	try {
-		const result = await pool.query<ChunkRow>(sql, [id]);
+		const result = await queryWithSourceDeletionStatusFallback<ChunkRow>(pool, sql, [id], legacySql, [id]);
 		if (result.rows.length === 0) {
 			return null;
 		}
@@ -309,6 +316,7 @@ export async function findChunksByStoryId(
 		params.push(filter.isQuestion);
 		paramIndex++;
 	}
+	const legacyConditions = [...conditions];
 	if (!filter?.includeDeleted) {
 		conditions.push("src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
 	}
@@ -321,9 +329,17 @@ export async function findChunksByStoryId(
     WHERE ${conditions.join(' AND ')}
     ORDER BY c.chunk_index ASC
   `;
+	const legacySql = `
+    SELECT c.*, c.embedding::text
+    FROM chunks c
+    JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
+    WHERE ${legacyConditions.join(' AND ')}
+    ORDER BY c.chunk_index ASC
+  `;
 
 	try {
-		const result = await pool.query<ChunkRow>(sql, params);
+		const result = await queryWithSourceDeletionStatusFallback<ChunkRow>(pool, sql, params, legacySql, params);
 		return result.rows.map(mapChunkRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find chunks by story ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
@@ -350,9 +366,17 @@ export async function findChunksBySourceId(
       ${options?.includeDeleted ? '' : "AND src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"}
     ORDER BY c.chunk_index ASC
   `;
+	const legacySql = `
+    SELECT c.*, c.embedding::text
+    FROM chunks c
+    JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
+    WHERE s.source_id = $1
+    ORDER BY c.chunk_index ASC
+  `;
 
 	try {
-		const result = await pool.query<ChunkRow>(sql, [sourceId]);
+		const result = await queryWithSourceDeletionStatusFallback<ChunkRow>(pool, sql, [sourceId], legacySql, [sourceId]);
 		return result.rows.map(mapChunkRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find chunks by source ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
@@ -381,11 +405,13 @@ export async function countChunks(pool: pg.Pool, filter?: ChunkFilter): Promise<
 		params.push(filter.isQuestion);
 		paramIndex++;
 	}
+	const legacyConditions = [...conditions];
 	if (!filter?.includeDeleted) {
 		conditions.push("src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
 	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+	const legacyWhereClause = legacyConditions.length > 0 ? `WHERE ${legacyConditions.join(' AND ')}` : '';
 	const sql = `
     SELECT COUNT(*)
     FROM chunks c
@@ -393,9 +419,16 @@ export async function countChunks(pool: pg.Pool, filter?: ChunkFilter): Promise<
     JOIN sources src ON src.id = s.source_id
     ${whereClause}
   `;
+	const legacySql = `
+    SELECT COUNT(*)
+    FROM chunks c
+    JOIN stories s ON s.id = c.story_id
+    JOIN sources src ON src.id = s.source_id
+    ${legacyWhereClause}
+	`;
 
 	try {
-		const result = await pool.query<{ count: string }>(sql, params);
+		const result = await queryWithSourceDeletionStatusFallback<{ count: string }>(pool, sql, params, legacySql, params);
 		return Number.parseInt(result.rows[0].count, 10);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to count chunks', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {

@@ -793,7 +793,19 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 		effects.documentQualityAssessmentsDeleted = quality.rowCount ?? 0;
 		const urlLifecycle = await client.query('DELETE FROM url_lifecycle WHERE source_id = $1', [input.sourceId]);
 		effects.urlLifecycleRowsDeleted = urlLifecycle.rowCount ?? 0;
-		const stories = await client.query('DELETE FROM stories WHERE source_id = $1', [input.sourceId]);
+		const stories = await client.query(
+			`
+				DELETE FROM stories s
+				WHERE s.source_id = $1
+					AND NOT EXISTS (
+						SELECT 1
+						FROM knowledge_assertions ka
+						WHERE ka.story_id = s.id
+							AND ka.deleted_at IS NULL
+					)
+			`,
+			[input.sourceId],
+		);
 		effects.storiesDeleted = stories.rowCount ?? 0;
 
 		const deleteEntities = await client.query(
