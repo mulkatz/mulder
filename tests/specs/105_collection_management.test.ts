@@ -350,6 +350,34 @@ describe('Spec 105: Collection management', () => {
 				},
 			});
 			expect(reusedBundle.collection?.collectionId).toBe(archiveBundle.collection?.collectionId);
+
+			const registeredArchive = await coreModule.createArchive(pool, {
+				name: 'Registered Archive Only',
+				description: 'Archive supplied through archiveLocation.archiveId',
+				type: 'institutional',
+			});
+			const registeredBlob = await createBlobAndSource('registered-archive');
+			const registeredBundle = await coreModule.recordIngestProvenance(pool, {
+				blobContentHash: registeredBlob.contentHash,
+				sourceId: registeredBlob.sourceId,
+				context: {
+					channel: 'archive_import',
+					submittedBy: { userId: 'archivist', type: 'human' },
+				},
+				archiveLocation: {
+					archiveId: registeredArchive.archiveId,
+					originalPath: '/Existing Archive/Folder',
+					originalFilename: 'registered.txt',
+					pathSegments: [{ depth: 0, name: 'Existing Archive', segmentType: 'collection' }],
+				},
+			});
+			expect(registeredBundle.archive?.archiveId).toBe(registeredArchive.archiveId);
+			expect(registeredBundle.collection).toMatchObject({
+				type: 'archive_mirror',
+				archiveId: registeredArchive.archiveId,
+				tags: ['collection:existing-archive'],
+			});
+			expect(registeredBundle.context.collectionId).toBe(registeredBundle.collection?.collectionId);
 		},
 	);
 

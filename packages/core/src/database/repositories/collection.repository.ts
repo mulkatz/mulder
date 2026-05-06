@@ -449,9 +449,9 @@ export async function resolveCollectionForIngest(
 			: collection;
 	}
 
-	const archiveId = input.archive && 'archiveId' in input.archive ? input.archive.archiveId : null;
+	const archiveId = input.archive?.archiveId ?? input.archiveLocation?.archiveId ?? null;
 	if (archiveId && collectionConfig.auto_create_from_archive) {
-		const archiveName = input.archive && 'name' in input.archive ? input.archive.name : 'Archive';
+		const archiveName = input.archive?.name ?? 'Archive';
 		const collection = await upsertArchiveMirrorCollection(pool, {
 			name: archiveName,
 			description: `Mirror of archive ${archiveName}`,

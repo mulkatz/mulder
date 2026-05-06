@@ -745,13 +745,22 @@ export async function recordIngestProvenance(
 	const client = await pool.connect();
 	try {
 		await client.query('BEGIN');
-		const archive = input.archive ? await upsertArchive(client, input.archive) : null;
+		const archive = input.archive
+			? await upsertArchive(client, input.archive)
+			: input.archiveLocation?.archiveId
+				? await findArchiveById(client, input.archiveLocation.archiveId)
+				: null;
 		const archiveId = archive?.archiveId ?? input.archiveLocation?.archiveId;
 		if (input.archiveLocation && !archiveId) {
 			throw new DatabaseError(
 				'Archive location requires an archive or archiveId',
 				DATABASE_ERROR_CODES.DB_QUERY_FAILED,
 			);
+		}
+		if (input.archiveLocation?.archiveId && !archive) {
+			throw new DatabaseError('Archive not found for archive location', DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+				context: { archiveId: input.archiveLocation.archiveId },
+			});
 		}
 		const collection = await resolveCollectionForIngest(
 			client,

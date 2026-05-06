@@ -69,6 +69,7 @@ export interface ResolveCollectionForIngestInput {
 	explicitCollectionId?: string | null;
 	archive?: Archive | ArchiveInput | null;
 	archiveLocation?: {
+		archiveId?: string | null;
 		pathSegments?: PathSegment[];
 	} | null;
 	submittedBy?: {
