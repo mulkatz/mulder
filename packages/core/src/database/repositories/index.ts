@@ -336,6 +336,41 @@ export type {
 	PipelineRunStatus,
 	UpsertPipelineRunSourceInput,
 } from './pipeline-run.types.js';
+export {
+	autoApproveDueReviewArtifacts,
+	findReviewableArtifactById,
+	findReviewableArtifactBySubject,
+	listReviewableArtifacts,
+	listReviewEvents,
+	listReviewQueueArtifacts,
+	listReviewQueues,
+	purgeReviewArtifactsForSource,
+	recordReviewEvent,
+	restoreReviewArtifactsForSource,
+	softDeleteReviewArtifactsForSource,
+	upsertReviewableArtifact,
+	upsertReviewQueue,
+} from './review-workflow.repository.js';
+export type {
+	AutoApproveDueReviewArtifactsOptions,
+	AutoApproveDueReviewArtifactsResult,
+	RecordReviewEventInput,
+	ReviewAction,
+	ReviewArtifactType,
+	ReviewableArtifact,
+	ReviewableArtifactListOptions,
+	ReviewConfidence,
+	ReviewCreatedBy,
+	ReviewEvent,
+	ReviewEventListOptions,
+	ReviewJsonObject,
+	ReviewQueue,
+	ReviewQueueArtifactListOptions,
+	ReviewQueueListOptions,
+	ReviewStatus,
+	UpsertReviewableArtifactInput,
+	UpsertReviewQueueInput,
+} from './review-workflow.types.js';
 export type { SourceReliabilityFilter } from './source.repository.js';
 export {
 	countScoredSources,

@@ -34,6 +34,10 @@ import type {
 	projectSchema,
 	relationshipSchema,
 	retrievalSchema,
+	reviewWorkflowArtifactTypeSchema,
+	reviewWorkflowDepthSchema,
+	reviewWorkflowMetricsSchema,
+	reviewWorkflowSchema,
 	safetySchema,
 	sourceRollbackSchema,
 	storageSchema,
@@ -66,6 +70,10 @@ export type DeduplicationConfig = z.infer<typeof deduplicationSchema>;
 export type DocumentQualityConfig = z.infer<typeof documentQualitySchema>;
 export type EmbeddingConfig = z.infer<typeof embeddingSchema>;
 export type RetrievalConfig = z.infer<typeof retrievalSchema>;
+export type ReviewWorkflowConfig = z.infer<typeof reviewWorkflowSchema>;
+export type ReviewWorkflowArtifactTypeConfig = z.infer<typeof reviewWorkflowArtifactTypeSchema>;
+export type ReviewWorkflowDepthConfig = z.infer<typeof reviewWorkflowDepthSchema>;
+export type ReviewWorkflowMetricsConfig = z.infer<typeof reviewWorkflowMetricsSchema>;
 export type GroundingConfig = z.infer<typeof groundingSchema>;
 export type IngestProvenanceConfig = z.infer<typeof ingestProvenanceSchema>;
 export type AnalysisConfig = z.infer<typeof analysisSchema>;

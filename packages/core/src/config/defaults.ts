@@ -189,6 +189,41 @@ export const CONFIG_DEFAULTS = {
 		},
 	},
 
+	review_workflow: {
+		enabled: true,
+		artifact_types: {
+			assertion_classification: {
+				review_depth: 'spot_check' as const,
+				spot_check_percentage: 20,
+				auto_approve_after_hours: 168,
+				auto_approve_min_confidence: 0.9,
+			},
+			credibility_profile: {
+				review_depth: 'double_review' as const,
+				auto_approve_after_hours: null,
+				escalation_reviewer: null,
+			},
+			taxonomy_mapping: {
+				review_depth: 'single_review' as const,
+				auto_approve_after_hours: 336,
+			},
+			similar_case_link: {
+				review_depth: 'single_review' as const,
+				auto_approve_after_hours: 168,
+			},
+			agent_finding: {
+				review_depth: 'single_review' as const,
+				auto_approve_after_hours: null,
+			},
+		},
+		metrics: {
+			track_accuracy: true,
+			auto_adjust_depth: true,
+			accuracy_threshold_for_upgrade: 0.7,
+			accuracy_threshold_for_downgrade: 0.95,
+		},
+	},
+
 	enrichment: {
 		model: 'gemini-2.5-flash',
 		max_story_tokens: 15000,

@@ -27,6 +27,7 @@ import type {
 	ResolveConflictNodeInput,
 } from './conflict-node.types.js';
 import type { AssertionType } from './knowledge-assertion.types.js';
+import { upsertReviewableArtifact } from './review-workflow.repository.js';
 
 type Queryable = pg.Pool | pg.PoolClient;
 
@@ -217,6 +218,76 @@ function mapConflictNodeRow(row: ConflictNodeRow): ConflictNode {
 	};
 }
 
+function sourceIdForReviewArtifact(node: ConflictNode): string | null {
+	const sourceIds = [...new Set(node.assertions.map((assertion) => assertion.sourceDocumentId))];
+	return sourceIds.length === 1 ? sourceIds[0] : null;
+}
+
+async function registerConflictNodeReviewArtifact(client: Queryable, node: ConflictNode): Promise<void> {
+	await upsertReviewableArtifact(client, {
+		artifactType: 'conflict_node',
+		subjectId: node.id,
+		subjectTable: 'conflict_nodes',
+		createdBy: node.detectionMethod === 'human_reported' ? 'human' : 'llm_auto',
+		reviewStatus: 'pending',
+		currentValue: {
+			conflict_type: node.conflictType,
+			resolution_status: node.resolutionStatus,
+			severity: node.severity,
+			severity_rationale: node.severityRationale,
+			confidence: node.confidence,
+			participants: node.assertions.map((assertion) => ({
+				assertion_id: assertion.assertionId,
+				source_document_id: assertion.sourceDocumentId,
+				assertion_type: assertion.assertionType,
+				claim: assertion.claim,
+				participant_role: assertion.participantRole,
+				credibility_profile_id: assertion.credibilityProfileId,
+			})),
+		},
+		context: {
+			detection_method: node.detectionMethod,
+			detected_by: node.detectedBy,
+			detected_at: node.detectedAt.toISOString(),
+			provenance: node.provenance,
+			sensitivity_level: node.sensitivityLevel,
+			sensitivity_metadata: node.sensitivityMetadata,
+		},
+		sourceId: sourceIdForReviewArtifact(node),
+	});
+}
+
+async function registerConflictResolutionReviewArtifact(client: Queryable, node: ConflictNode): Promise<void> {
+	if (!node.latestResolution) return;
+	await upsertReviewableArtifact(client, {
+		artifactType: 'conflict_resolution',
+		subjectId: node.latestResolution.id,
+		subjectTable: 'conflict_resolutions',
+		createdBy: node.latestResolution.resolvedBy === 'llm_auto' ? 'llm_auto' : 'human',
+		reviewStatus: 'pending',
+		currentValue: {
+			resolution_type: node.latestResolution.resolutionType,
+			explanation: node.latestResolution.explanation,
+			resolved_by: node.latestResolution.resolvedBy,
+			resolved_at: node.latestResolution.resolvedAt.toISOString(),
+			evidence_refs: node.latestResolution.evidenceRefs,
+			review_status: node.latestResolution.reviewStatus,
+		},
+		context: {
+			conflict_id: node.id,
+			conflict_type: node.conflictType,
+			resolution_status: node.resolutionStatus,
+			severity: node.severity,
+			participants: node.assertions.map((assertion) => ({
+				assertion_id: assertion.assertionId,
+				source_document_id: assertion.sourceDocumentId,
+				claim: assertion.claim,
+			})),
+		},
+		sourceId: sourceIdForReviewArtifact(node),
+	});
+}
+
 function conflictNodeSelect(whereSql: string, suffixSql = ''): string {
 	return `
 		SELECT
@@ -401,6 +472,7 @@ async function writeConflictNode(client: Queryable, input: CreateConflictNodeInp
 
 	const written = await findConflictNodeById(client, conflictId);
 	if (!written) fail('Conflict node disappeared after write', { conflictId });
+	await registerConflictNodeReviewArtifact(client, written);
 	return written;
 }
 
@@ -574,6 +646,7 @@ async function writeResolution(client: Queryable, input: ResolveConflictNodeInpu
 	}
 	const node = await findConflictNodeById(client, input.conflictId);
 	if (!node) fail('Conflict node disappeared after resolution', { conflictId: input.conflictId });
+	await registerConflictResolutionReviewArtifact(client, node);
 	return node;
 }
 
