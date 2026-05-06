@@ -63,6 +63,7 @@ function getConfigProjection(config: MulderConfig, step: ReprocessableStep): unk
 			};
 		case 'enrich':
 			return {
+				credibility: config.credibility,
 				enrichment: config.enrichment,
 				entity_resolution: config.entity_resolution,
 				ontology: config.ontology,

@@ -309,7 +309,7 @@ Builds the trust infrastructure. Depends on M10 foundations (provenance, asserti
 
 | Status | Step | What | Spec |
 |--------|------|------|------|
-| ⚪ | L1 | Credibility profile data model + LLM auto-generation | §A8 |
+| 🟢 | L1 | Credibility profile data model + LLM auto-generation | §A8 |
 | ⚪ | L2 | Contradiction management — ConflictNode entities, severity, resolution | §A9 |
 | ⚪ | L3 | Review workflow infrastructure — ReviewableArtifact, queues, events | §A13 |
 | ⚪ | L4 | Translation service — two paths, caching | §A7 |

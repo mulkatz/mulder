@@ -20,6 +20,8 @@ export type {
 	ApiConfig,
 	ApiRateLimitingConfig,
 	CloudSqlConfig,
+	CredibilityConfig,
+	CredibilityDimensionConfig,
 	DeduplicationConfig,
 	DocumentAiConfig,
 	DocumentQualityConfig,

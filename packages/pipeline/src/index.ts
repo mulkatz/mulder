@@ -41,6 +41,8 @@ export {
 	generateQuestions,
 } from './embed/index.js';
 export type {
+	CredibilityProfileGenerationResult,
+	CredibilityProfileGenerationStatus,
 	EnrichInput,
 	EnrichmentData,
 	EnrichResult,
@@ -58,6 +60,7 @@ export {
 	execute as executeEnrich,
 	forceCleanupSource as forceCleanupEnrichSource,
 	generateExtractionSchema,
+	generateSourceCredibilityProfileDraft,
 	getEntityTypeNames,
 	getExtractionResponseSchema,
 	resolveEntity,

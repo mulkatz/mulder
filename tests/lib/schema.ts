@@ -26,6 +26,8 @@ const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
 export const MULDER_TEST_TABLES = [
+	'credibility_dimensions',
+	'source_credibility_profiles',
 	'chunks',
 	'story_entities',
 	'entity_edges',
