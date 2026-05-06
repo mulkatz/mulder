@@ -386,6 +386,58 @@ const contradictionManagementObj = z.object({
 });
 const contradictionManagementSchema = contradictionManagementObj.default(defaults(contradictionManagementObj));
 
+// --- Review Workflow ---
+
+const reviewWorkflowDepthSchema = z.enum(['spot_check', 'single_review', 'double_review']);
+
+const reviewWorkflowArtifactTypeSchema = z.object({
+	review_depth: reviewWorkflowDepthSchema,
+	spot_check_percentage: z.number().int().min(0).max(100).optional(),
+	auto_approve_after_hours: z.number().positive().int().nullable().default(null),
+	auto_approve_min_confidence: z.number().min(0).max(1).optional(),
+	escalation_reviewer: z.string().min(1).nullable().optional(),
+});
+
+const reviewWorkflowMetricsSchema = z.object({
+	track_accuracy: z.boolean().default(true),
+	auto_adjust_depth: z.boolean().default(true),
+	accuracy_threshold_for_upgrade: z.number().min(0).max(1).default(0.7),
+	accuracy_threshold_for_downgrade: z.number().min(0).max(1).default(0.95),
+});
+
+const reviewWorkflowArtifactTypesSchema = z.object({
+	assertion_classification: reviewWorkflowArtifactTypeSchema.default({
+		review_depth: 'spot_check',
+		spot_check_percentage: 20,
+		auto_approve_after_hours: 168,
+		auto_approve_min_confidence: 0.9,
+	}),
+	credibility_profile: reviewWorkflowArtifactTypeSchema.default({
+		review_depth: 'double_review',
+		auto_approve_after_hours: null,
+		escalation_reviewer: null,
+	}),
+	taxonomy_mapping: reviewWorkflowArtifactTypeSchema.default({
+		review_depth: 'single_review',
+		auto_approve_after_hours: 336,
+	}),
+	similar_case_link: reviewWorkflowArtifactTypeSchema.default({
+		review_depth: 'single_review',
+		auto_approve_after_hours: 168,
+	}),
+	agent_finding: reviewWorkflowArtifactTypeSchema.default({
+		review_depth: 'single_review',
+		auto_approve_after_hours: null,
+	}),
+});
+
+const reviewWorkflowObj = z.object({
+	enabled: z.boolean().default(true),
+	artifact_types: reviewWorkflowArtifactTypesSchema.default(defaults(reviewWorkflowArtifactTypesSchema)),
+	metrics: reviewWorkflowMetricsSchema.default(defaults(reviewWorkflowMetricsSchema)),
+});
+const reviewWorkflowSchema = reviewWorkflowObj.default(defaults(reviewWorkflowObj));
+
 // --- Enrichment ---
 
 const assertionClassificationSchema = z.object({
@@ -660,6 +712,7 @@ const baseMulderConfigSchema = z.object({
 	source_rollback: sourceRollbackSchema,
 	credibility: credibilitySchema,
 	contradiction_management: contradictionManagementSchema,
+	review_workflow: reviewWorkflowSchema,
 	enrichment: enrichmentSchema,
 	taxonomy: taxonomySchema,
 	entity_resolution: entityResolutionSchema,
@@ -752,6 +805,11 @@ export {
 	projectSchema,
 	relationshipSchema,
 	retrievalSchema,
+	reviewWorkflowArtifactTypeSchema,
+	reviewWorkflowArtifactTypesSchema,
+	reviewWorkflowDepthSchema,
+	reviewWorkflowMetricsSchema,
+	reviewWorkflowSchema,
 	safetySchema,
 	sourceRollbackSchema,
 	storageSchema,

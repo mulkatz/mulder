@@ -4,6 +4,11 @@ import {
 	markAcquisitionContextsForSourceDeleted,
 	restoreAcquisitionContextsForSource,
 } from './ingest-provenance.repository.js';
+import {
+	purgeReviewArtifactsForSource,
+	restoreReviewArtifactsForSource,
+	softDeleteReviewArtifactsForSource,
+} from './review-workflow.repository.js';
 import type {
 	AuditLogEvent,
 	PurgeSourceInput,
@@ -207,6 +212,7 @@ export async function softDeleteSource(pool: pg.Pool, input: SoftDeleteSourceInp
 			[input.sourceId, deletedAt],
 		);
 		await markAcquisitionContextsForSourceDeleted(client, input.sourceId, deletedAt);
+		await softDeleteReviewArtifactsForSource(client, input.sourceId, deletedAt);
 
 		const deletionResult = await client.query<SourceDeletionRow>(
 			`
@@ -286,6 +292,7 @@ export async function restoreSource(pool: pg.Pool, input: RestoreSourceInput): P
 		);
 		await restoreAcquisitionContextsForSource(client, input.sourceId, restoredAt);
 		const deletion = mapSourceDeletionRow(deletionRow);
+		await restoreReviewArtifactsForSource(client, input.sourceId, deletion.deletedAt);
 		await insertAuditEvent(client, {
 			eventType: 'source.rollback.restored',
 			artifactType: 'source',
@@ -400,6 +407,12 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 			'url_lifecycle',
 			sourceId,
 			'SELECT COUNT(*) AS count FROM url_lifecycle WHERE source_id = $1',
+		),
+		await countExclusiveAndShared(
+			pool,
+			'review_artifacts',
+			sourceId,
+			'SELECT COUNT(*) AS count FROM review_artifacts WHERE source_id = $1',
 		),
 		await countExclusiveAndShared(
 			pool,
@@ -833,6 +846,7 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 			pipelineRunLinksDeleted: 0,
 			documentQualityAssessmentsDeleted: 0,
 			urlLifecycleRowsDeleted: 0,
+			reviewArtifactsDeleted: 0,
 			storiesDeleted: 0,
 			chunksDeleted: 0,
 			chunksUpdated: 0,
@@ -1003,6 +1017,7 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 		effects.documentQualityAssessmentsDeleted = quality.rowCount ?? 0;
 		const urlLifecycle = await client.query('DELETE FROM url_lifecycle WHERE source_id = $1', [input.sourceId]);
 		effects.urlLifecycleRowsDeleted = urlLifecycle.rowCount ?? 0;
+		effects.reviewArtifactsDeleted = await purgeReviewArtifactsForSource(client, input.sourceId);
 		const stories = await client.query(
 			`
 				DELETE FROM stories s

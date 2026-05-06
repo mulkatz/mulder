@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
+import { upsertReviewableArtifact } from './review-workflow.repository.js';
 import type {
 	CredibilityProfileAuthor,
 	CredibilityReviewStatus,
@@ -246,6 +247,35 @@ async function writeProfile(
 	}
 	const written = await findSourceCredibilityProfileBySourceId(client, input.sourceId);
 	if (!written) fail('Source credibility profile disappeared after upsert', { sourceId: input.sourceId });
+	if (written.profileAuthor === 'llm_auto' || written.reviewStatus === 'draft') {
+		await upsertReviewableArtifact(client, {
+			artifactType: 'credibility_profile',
+			subjectId: written.profileId,
+			subjectTable: 'source_credibility_profiles',
+			createdBy: written.profileAuthor === 'llm_auto' ? 'llm_auto' : 'human',
+			reviewStatus: 'pending',
+			currentValue: {
+				source_name: written.sourceName,
+				source_type: written.sourceType,
+				profile_author: written.profileAuthor,
+				review_status: written.reviewStatus,
+				dimensions: written.dimensions.map((dimension) => ({
+					id: dimension.dimensionId,
+					label: dimension.label,
+					score: dimension.score,
+					rationale: dimension.rationale,
+					evidence_refs: dimension.evidenceRefs,
+					known_factors: dimension.knownFactors,
+				})),
+			},
+			context: {
+				source_id: written.sourceId,
+				last_reviewed: written.lastReviewed?.toISOString() ?? null,
+				dimension_count: written.dimensions.length,
+			},
+			sourceId: written.sourceId,
+		});
+	}
 	return written;
 }
 
