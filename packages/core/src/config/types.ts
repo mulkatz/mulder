@@ -43,6 +43,8 @@ import type {
 	storageSchema,
 	taxonomySchema,
 	thresholdsSchema,
+	translationOutputFormatSchema,
+	translationSchema,
 	vertexSchema,
 	visualIntelligenceSchema,
 } from './schema.js';
@@ -75,6 +77,8 @@ export type ReviewWorkflowArtifactTypeConfig = z.infer<typeof reviewWorkflowArti
 export type ReviewWorkflowDepthConfig = z.infer<typeof reviewWorkflowDepthSchema>;
 export type ReviewWorkflowMetricsConfig = z.infer<typeof reviewWorkflowMetricsSchema>;
 export type GroundingConfig = z.infer<typeof groundingSchema>;
+export type TranslationConfig = z.infer<typeof translationSchema>;
+export type TranslationOutputFormatConfig = z.infer<typeof translationOutputFormatSchema>;
 export type IngestProvenanceConfig = z.infer<typeof ingestProvenanceSchema>;
 export type AnalysisConfig = z.infer<typeof analysisSchema>;
 export type TaxonomyConfig = z.infer<typeof taxonomySchema>;

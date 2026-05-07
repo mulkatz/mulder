@@ -51,6 +51,8 @@ export type {
 	StorageConfig,
 	TaxonomyConfig,
 	ThresholdsConfig,
+	TranslationConfig,
+	TranslationOutputFormatConfig,
 	VertexConfig,
 	VisualIntelligenceConfig,
 } from './types.js';

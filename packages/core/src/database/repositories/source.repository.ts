@@ -30,6 +30,7 @@ import type {
 	UpdateSourceInput,
 	UpsertSourceStepInput,
 } from './source.types.js';
+import { markTranslatedDocumentsStaleForSource } from './translated-document.repository.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'source-repository' });
@@ -535,6 +536,11 @@ export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourc
 
 	params.push(id);
 	const sql = `UPDATE sources SET ${setClauses.join(', ')} WHERE id = $${paramIndex} RETURNING *`;
+	const sourceMaterialChanged =
+		input.storagePath !== undefined ||
+		input.fileHash !== undefined ||
+		input.sourceType !== undefined ||
+		input.formatMetadata !== undefined;
 
 	try {
 		const result = await pool.query<SourceRow>(sql, params);
@@ -542,6 +548,9 @@ export async function updateSource(pool: pg.Pool, id: string, input: UpdateSourc
 			throw new DatabaseError(`Source not found: ${id}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
 				context: { id },
 			});
+		}
+		if (sourceMaterialChanged) {
+			await markTranslatedDocumentsStaleForSource(pool, id);
 		}
 		repoLogger.debug({ sourceId: id }, 'Source updated');
 		return mapSourceRow(result.rows[0]);

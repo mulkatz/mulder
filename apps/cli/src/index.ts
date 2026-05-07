@@ -38,6 +38,7 @@ import { registerShowCommands } from './commands/show.js';
 import { registerSourceCommands } from './commands/source.js';
 import { registerStatusCommand } from './commands/status.js';
 import { registerTaxonomyCommands } from './commands/taxonomy.js';
+import { registerTranslateCommands } from './commands/translate.js';
 import { registerUrlCommands } from './commands/url.js';
 import { registerWorkerCommands } from './commands/worker.js';
 
@@ -92,6 +93,7 @@ registerSourceCommands(program);
 registerStatusCommand(program);
 registerWorkerCommands(program);
 registerTaxonomyCommands(program);
+registerTranslateCommands(program);
 registerUrlCommands(program);
 
 program.parse();

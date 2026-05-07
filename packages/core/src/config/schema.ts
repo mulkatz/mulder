@@ -589,6 +589,24 @@ const groundingObj = z.object({
 });
 const groundingSchema = groundingObj.default(defaults(groundingObj));
 
+// --- Translation ---
+
+const translationOutputFormatSchema = z.enum(['markdown', 'html']);
+
+const translationObj = z.object({
+	enabled: z.boolean().default(true),
+	default_target_language: z.string().min(1).default('en'),
+	supported_languages: z
+		.array(z.string().min(1))
+		.min(1)
+		.default(['de', 'en', 'fr', 'es', 'pt', 'ru', 'zh', 'ja', 'pl', 'cs']),
+	engine: z.string().min(1).default('gemini-2.5-flash'),
+	output_format: translationOutputFormatSchema.default('markdown'),
+	cache_enabled: z.boolean().default(true),
+	max_document_length_tokens: z.number().positive().int().default(500000),
+});
+const translationSchema = translationObj.default(defaults(translationObj));
+
 // --- Analysis (v2.0) ---
 
 const analysisObj = z.object({
@@ -721,6 +739,7 @@ const baseMulderConfigSchema = z.object({
 	embedding: embeddingSchema,
 	retrieval: retrievalSchema,
 	grounding: groundingSchema,
+	translation: translationSchema,
 	analysis: analysisSchema,
 	thresholds: thresholdsSchema,
 	pipeline: pipelineSchema,
@@ -815,6 +834,8 @@ export {
 	storageSchema,
 	taxonomySchema,
 	thresholdsSchema,
+	translationOutputFormatSchema,
+	translationSchema,
 	vertexSchema,
 	visualIntelligenceSchema,
 };
