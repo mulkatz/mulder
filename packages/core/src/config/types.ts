@@ -50,6 +50,14 @@ import type {
 	taxonomyHarmonizationStatusSchema,
 	taxonomyHarmonizationTaxonomyRefSchema,
 	taxonomySchema,
+	temporalAnomalyDetectionSchema,
+	temporalHotspotClusteringSchema,
+	temporalPatternCategoryRefSchema,
+	temporalPatternDetectionSchema,
+	temporalPatternGranularitySchema,
+	temporalPatternKnownPatternSchema,
+	temporalPatternRegionGridSchema,
+	temporalReportingBiasSchema,
 	thresholdsSchema,
 	translationOutputFormatSchema,
 	translationSchema,
@@ -98,6 +106,14 @@ export type TaxonomyHarmonizationStatusConfig = z.infer<typeof taxonomyHarmoniza
 export type TaxonomyHarmonizationTaxonomyRefConfig = z.infer<typeof taxonomyHarmonizationTaxonomyRefSchema>;
 export type TaxonomyHarmonizationAutoMappingConfig = z.infer<typeof taxonomyHarmonizationAutoMappingSchema>;
 export type TaxonomyHarmonizationExtractionConfig = z.infer<typeof taxonomyHarmonizationExtractionSchema>;
+export type TemporalPatternDetectionConfig = z.infer<typeof temporalPatternDetectionSchema>;
+export type TemporalAnomalyDetectionConfig = z.infer<typeof temporalAnomalyDetectionSchema>;
+export type TemporalHotspotClusteringConfig = z.infer<typeof temporalHotspotClusteringSchema>;
+export type TemporalReportingBiasConfig = z.infer<typeof temporalReportingBiasSchema>;
+export type TemporalPatternGranularityConfig = z.infer<typeof temporalPatternGranularitySchema>;
+export type TemporalPatternRegionGridConfig = z.infer<typeof temporalPatternRegionGridSchema>;
+export type TemporalPatternCategoryRefConfig = z.infer<typeof temporalPatternCategoryRefSchema>;
+export type TemporalPatternKnownPatternConfig = z.infer<typeof temporalPatternKnownPatternSchema>;
 export type ThresholdsConfig = z.infer<typeof thresholdsSchema>;
 export type PipelineConfig = z.infer<typeof pipelineSchema>;
 export type SafetyConfig = z.infer<typeof safetySchema>;

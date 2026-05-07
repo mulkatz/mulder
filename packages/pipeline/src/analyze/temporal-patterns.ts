@@ -1,0 +1,822 @@
+import { createHash } from 'node:crypto';
+import type {
+	ArtifactProvenanceInput,
+	ClassificationCategoryRef,
+	CreateSpatiotemporalHotspotClusterInput,
+	CreateTemporalAnomalyClusterInput,
+	HotspotPersistence,
+	MulderConfig,
+	SensitivityLevel,
+	SensitivityMetadata,
+	TemporalPatternEntityEvent,
+	TemporalPatternKnownPatternConfig,
+	TemporalPatternRegionGridConfig,
+} from '@mulder/core';
+import {
+	loadTemporalPatternEntityEvents,
+	mergeSensitivityMetadata,
+	mostRestrictiveSensitivityLevel,
+	replaceTemporalPatternSnapshot,
+} from '@mulder/core';
+import type pg from 'pg';
+import type {
+	TemporalPatternAnalyzeData,
+	TemporalPatternAnomalySummary,
+	TemporalPatternDetectionResult,
+	TemporalPatternHotspotSummary,
+} from './types.js';
+
+const WEAK_SIGNAL_CAVEAT = 'Patterns are hypothesis starters, not causal evidence.';
+const EARTH_RADIUS_KM = 6371;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+interface NormalizedEvent {
+	entityId: string;
+	occurredAt: Date;
+	latitude: number | null;
+	longitude: number | null;
+	attributes: Record<string, unknown>;
+	categoryRefs: ClassificationCategoryRef[];
+	provenance: ArtifactProvenanceInput;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
+}
+
+interface RegionEvent extends NormalizedEvent {
+	regionKey: string;
+	regionGeojson: Record<string, unknown> | null;
+}
+
+interface BucketedRegionEvents {
+	regionKey: string;
+	regionGeojson: Record<string, unknown> | null;
+	events: RegionEvent[];
+	buckets: Map<number, RegionEvent[]>;
+}
+
+interface AnomalyCandidate {
+	input: CreateTemporalAnomalyClusterInput;
+	summary: TemporalPatternAnomalySummary;
+	rawSignificance: number;
+}
+
+interface HotspotCandidate {
+	id: string;
+	groupKey: string;
+	bucketKey: number;
+	centroidLat: number;
+	centroidLng: number;
+	timeStart: Date;
+	timeEnd: Date;
+	events: NormalizedEvent[];
+}
+
+interface HotspotInputWithSummary {
+	input: CreateSpatiotemporalHotspotClusterInput;
+	summary: TemporalPatternHotspotSummary;
+}
+
+function readString(value: unknown): string | null {
+	return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readNumber(value: unknown): number | null {
+	if (typeof value === 'number' && Number.isFinite(value)) return value;
+	if (typeof value !== 'string') return null;
+	const parsed = Number.parseFloat(value);
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseIsoDate(value: string | null): Date | null {
+	const trimmed = value?.trim() ?? '';
+	if (trimmed.length === 0) return null;
+	const normalized = /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? `${trimmed}T00:00:00.000Z` : trimmed;
+	const timestamp = Date.parse(normalized);
+	if (Number.isNaN(timestamp)) return null;
+	return new Date(timestamp);
+}
+
+function normalizeEvent(event: TemporalPatternEntityEvent): NormalizedEvent | null {
+	const occurredAt = parseIsoDate(event.isoDate);
+	if (!occurredAt) return null;
+
+	return {
+		entityId: event.entityId,
+		occurredAt,
+		latitude: event.latitude,
+		longitude: event.longitude,
+		attributes: event.attributes,
+		categoryRefs: event.categoryRefs,
+		provenance: event.provenance,
+		sensitivityLevel: event.sensitivityLevel,
+		sensitivityMetadata: event.sensitivityMetadata,
+	};
+}
+
+function startOfUtcDay(date: Date): Date {
+	return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function startOfUtcWeek(date: Date): Date {
+	const dayStart = startOfUtcDay(date);
+	const day = dayStart.getUTCDay();
+	const delta = day === 0 ? 6 : day - 1;
+	return new Date(dayStart.getTime() - delta * DAY_MS);
+}
+
+function bucketStart(
+	date: Date,
+	granularity: MulderConfig['temporal_pattern_detection']['anomaly_detection']['granularity'],
+): Date {
+	switch (granularity) {
+		case 'day':
+			return startOfUtcDay(date);
+		case 'week':
+			return startOfUtcWeek(date);
+		case 'month':
+			return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+		case 'year':
+			return new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+	}
+}
+
+function addBuckets(
+	date: Date,
+	count: number,
+	granularity: MulderConfig['temporal_pattern_detection']['anomaly_detection']['granularity'],
+): Date {
+	switch (granularity) {
+		case 'day':
+			return new Date(date.getTime() + count * DAY_MS);
+		case 'week':
+			return new Date(date.getTime() + count * 7 * DAY_MS);
+		case 'month':
+			return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + count, 1));
+		case 'year':
+			return new Date(Date.UTC(date.getUTCFullYear() + count, 0, 1));
+	}
+}
+
+function bucketCountBetween(
+	start: Date,
+	end: Date,
+	granularity: MulderConfig['temporal_pattern_detection']['anomaly_detection']['granularity'],
+): number {
+	if (end.getTime() <= start.getTime()) return 0;
+	switch (granularity) {
+		case 'day':
+			return Math.max(0, Math.round((startOfUtcDay(end).getTime() - startOfUtcDay(start).getTime()) / DAY_MS));
+		case 'week':
+			return Math.max(0, Math.round((startOfUtcWeek(end).getTime() - startOfUtcWeek(start).getTime()) / (7 * DAY_MS)));
+		case 'month':
+			return (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + (end.getUTCMonth() - start.getUTCMonth());
+		case 'year':
+			return end.getUTCFullYear() - start.getUTCFullYear();
+	}
+}
+
+function isoDay(date: Date): string {
+	return date.toISOString().slice(0, 10);
+}
+
+function readRegionKey(event: NormalizedEvent, strategy: TemporalPatternRegionGridConfig): string | null {
+	switch (strategy) {
+		case 'country':
+			return readString(
+				event.attributes.country ??
+					event.attributes.country_code ??
+					event.attributes.countryCode ??
+					event.attributes.region_country,
+			);
+		case 'admin1': {
+			const admin1 = readString(
+				event.attributes.admin1 ?? event.attributes.admin_1 ?? event.attributes.state ?? event.attributes.province,
+			);
+			if (!admin1) return null;
+			const country = readString(
+				event.attributes.country ?? event.attributes.country_code ?? event.attributes.countryCode,
+			);
+			return country ? `${country}:${admin1}` : admin1;
+		}
+		case 'hex_grid_100km':
+			if (event.latitude === null || event.longitude === null) return null;
+			return coordinateBucketKey(event.latitude, event.longitude);
+	}
+}
+
+function coordinateBucketKey(latitude: number, longitude: number): string {
+	return `hex_grid_100km:${Math.round(latitude)}:${Math.round(longitude)}`;
+}
+
+function regionGeojsonForEvent(event: NormalizedEvent): Record<string, unknown> | null {
+	if (event.latitude === null || event.longitude === null) return null;
+	return {
+		type: 'Point',
+		coordinates: [event.longitude, event.latitude],
+	};
+}
+
+function groupRegionEvents(
+	events: NormalizedEvent[],
+	config: MulderConfig['temporal_pattern_detection']['anomaly_detection'],
+): BucketedRegionEvents[] {
+	const groups = new Map<string, BucketedRegionEvents>();
+
+	for (const event of events) {
+		const regionKey = readRegionKey(event, config.region_grid);
+		if (!regionKey) continue;
+		const existing = groups.get(regionKey) ?? {
+			regionKey,
+			regionGeojson: regionGeojsonForEvent(event),
+			events: [],
+			buckets: new Map<number, RegionEvent[]>(),
+		};
+		const regionEvent = {
+			...event,
+			regionKey,
+			regionGeojson: existing.regionGeojson ?? regionGeojsonForEvent(event),
+		};
+		existing.events.push(regionEvent);
+		const key = bucketStart(regionEvent.occurredAt, config.granularity).getTime();
+		existing.buckets.set(key, [...(existing.buckets.get(key) ?? []), regionEvent]);
+		groups.set(regionKey, existing);
+	}
+
+	return [...groups.values()]
+		.sort((left, right) => right.events.length - left.events.length || left.regionKey.localeCompare(right.regionKey))
+		.slice(0, config.max_regions);
+}
+
+function erfApprox(value: number): number {
+	const sign = value < 0 ? -1 : 1;
+	const x = Math.abs(value);
+	const t = 1 / (1 + 0.3275911 * x);
+	const y =
+		1 -
+		((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+	return sign * y;
+}
+
+function normalUpperTail(zScore: number): number {
+	return Math.max(0, Math.min(1, 0.5 * (1 - erfApprox(zScore / Math.SQRT2))));
+}
+
+function poissonUpperTail(observed: number, expected: number): number {
+	if (observed <= 0) return 1;
+	if (expected <= 0) return 0;
+	if (expected > 100 || observed > 180) {
+		const zScore = (observed - expected) / Math.sqrt(expected);
+		return normalUpperTail(zScore);
+	}
+
+	let term = Math.exp(-expected);
+	let cdf = term;
+	for (let k = 1; k < observed; k++) {
+		term *= expected / k;
+		cdf += term;
+	}
+	return Math.max(0, Math.min(1, 1 - cdf));
+}
+
+function mergeProvenance(events: readonly NormalizedEvent[]): ArtifactProvenanceInput {
+	const sourceIds = new Set<string>();
+	for (const event of events) {
+		for (const sourceId of event.provenance.sourceDocumentIds ?? []) {
+			sourceIds.add(sourceId);
+		}
+	}
+	return {
+		sourceDocumentIds: [...sourceIds].sort(),
+		extractionPipelineRun: null,
+		createdAt: new Date(),
+	};
+}
+
+function mergeSensitivity(events: readonly NormalizedEvent[]): {
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
+} {
+	const sensitivityLevel = mostRestrictiveSensitivityLevel(
+		events.map((event) => event.sensitivityLevel),
+		'internal',
+	);
+	return {
+		sensitivityLevel,
+		sensitivityMetadata: mergeSensitivityMetadata(
+			events.map((event) => event.sensitivityMetadata),
+			sensitivityLevel,
+		),
+	};
+}
+
+function categoryRefKey(ref: ClassificationCategoryRef): string {
+	return `${ref.taxonomyId ?? ''}:${ref.categoryId}`;
+}
+
+function dominantCategoryRef(events: readonly NormalizedEvent[]): ClassificationCategoryRef | null {
+	const counts = new Map<string, { ref: ClassificationCategoryRef; count: number }>();
+	for (const event of events) {
+		for (const ref of event.categoryRefs) {
+			const key = categoryRefKey(ref);
+			const existing = counts.get(key);
+			counts.set(key, { ref, count: (existing?.count ?? 0) + 1 });
+		}
+	}
+
+	return (
+		[...counts.values()].sort(
+			(left, right) =>
+				right.count - left.count ||
+				(left.ref.taxonomyId ?? '').localeCompare(right.ref.taxonomyId ?? '') ||
+				left.ref.categoryId.localeCompare(right.ref.categoryId),
+		)[0]?.ref ?? null
+	);
+}
+
+function reportingBiasWarning(
+	events: readonly NormalizedEvent[],
+	config: MulderConfig['temporal_pattern_detection']['reporting_bias'],
+): string | null {
+	if (!config.correction_enabled || !config.correction_field) return null;
+
+	const values = events
+		.map((event) => event.attributes[config.correction_field ?? ''])
+		.map(readNumber)
+		.filter((value): value is number => value !== null);
+	if (values.length === 0) return null;
+
+	const average = values.reduce((total, value) => total + value, 0) / values.length;
+	if (average < config.elevated_threshold) return null;
+	return 'Potential reporting bias: configured observation intensity is elevated for contributing entities.';
+}
+
+function knownPatternMatch(
+	regionKey: string,
+	timeStart: Date,
+	timeEnd: Date,
+	categoryRef: ClassificationCategoryRef | null,
+	patterns: readonly TemporalPatternKnownPatternConfig[],
+): string | null {
+	for (const pattern of patterns) {
+		if (pattern.region_key && pattern.region_key !== regionKey) continue;
+		if (pattern.category_ref && categoryRef) {
+			if (pattern.category_ref.category_id !== categoryRef.categoryId) continue;
+			if (pattern.category_ref.taxonomy_id && pattern.category_ref.taxonomy_id !== categoryRef.taxonomyId) continue;
+		}
+		if (pattern.time_start) {
+			const patternStart = parseIsoDate(pattern.time_start);
+			if (patternStart && timeEnd.getTime() < patternStart.getTime()) continue;
+		}
+		if (pattern.time_end) {
+			const patternEnd = parseIsoDate(pattern.time_end);
+			if (patternEnd && timeStart.getTime() > patternEnd.getTime()) continue;
+		}
+		return pattern.id;
+	}
+	return null;
+}
+
+function peakDate(
+	events: readonly NormalizedEvent[],
+	granularity: MulderConfig['temporal_pattern_detection']['anomaly_detection']['granularity'],
+): Date {
+	const counts = new Map<number, { count: number; firstDate: Date }>();
+	for (const event of events) {
+		const key = bucketStart(event.occurredAt, granularity).getTime();
+		const existing = counts.get(key);
+		if (!existing) {
+			counts.set(key, { count: 1, firstDate: event.occurredAt });
+			continue;
+		}
+		counts.set(key, {
+			count: existing.count + 1,
+			firstDate: existing.firstDate.getTime() <= event.occurredAt.getTime() ? existing.firstDate : event.occurredAt,
+		});
+	}
+	return (
+		[...counts.values()].sort(
+			(left, right) => right.count - left.count || left.firstDate.getTime() - right.firstDate.getTime(),
+		)[0]?.firstDate ??
+		events[0]?.occurredAt ??
+		new Date()
+	);
+}
+
+function buildAnomalyCandidates(
+	events: NormalizedEvent[],
+	config: MulderConfig['temporal_pattern_detection'],
+	computedAt: Date,
+): { candidates: AnomalyCandidate[]; comparisonCount: number; boundedComparisonCount: number } {
+	const anomalyConfig = config.anomaly_detection;
+	if (!config.enabled || !anomalyConfig.enabled) {
+		return { candidates: [], comparisonCount: 0, boundedComparisonCount: 0 };
+	}
+
+	const regionGroups = groupRegionEvents(events, anomalyConfig);
+	const preliminary: AnomalyCandidate[] = [];
+	let comparisonCount = 0;
+	let boundedComparisonCount = 0;
+
+	for (const group of regionGroups) {
+		const bucketStarts = [...group.buckets.keys()]
+			.sort((left, right) => left - right)
+			.slice(-anomalyConfig.max_windows);
+		for (const bucketKey of bucketStarts) {
+			const windowStart = new Date(bucketKey);
+			const windowEnd = addBuckets(windowStart, anomalyConfig.window_size_buckets, anomalyConfig.granularity);
+			const baselineStart = new Date(
+				Date.UTC(
+					windowStart.getUTCFullYear() - anomalyConfig.baseline_window_years,
+					windowStart.getUTCMonth(),
+					windowStart.getUTCDate(),
+				),
+			);
+			const baselineBucketCount = bucketCountBetween(baselineStart, windowStart, anomalyConfig.granularity);
+			if (baselineBucketCount <= 0) continue;
+
+			const observedEvents = group.events.filter(
+				(event) =>
+					event.occurredAt.getTime() >= windowStart.getTime() && event.occurredAt.getTime() < windowEnd.getTime(),
+			);
+			const baselineEvents = group.events.filter(
+				(event) =>
+					event.occurredAt.getTime() >= baselineStart.getTime() && event.occurredAt.getTime() < windowStart.getTime(),
+			);
+			comparisonCount++;
+			if (comparisonCount <= anomalyConfig.max_regions * anomalyConfig.max_windows) {
+				boundedComparisonCount = comparisonCount;
+			}
+			if (observedEvents.length < anomalyConfig.min_entities) continue;
+
+			const baselineRate = baselineEvents.length / baselineBucketCount;
+			const observedRate = observedEvents.length / anomalyConfig.window_size_buckets;
+			const expected = Math.max(0.000001, baselineRate * anomalyConfig.window_size_buckets);
+			if (observedRate <= baselineRate) continue;
+
+			const rawSignificance = poissonUpperTail(observedEvents.length, expected);
+			const categoryRef = dominantCategoryRef(observedEvents);
+			const sensitivity = mergeSensitivity(observedEvents);
+			const input: CreateTemporalAnomalyClusterInput = {
+				regionKey: group.regionKey,
+				regionGeojson: group.regionGeojson,
+				anomalyType: 'frequency_spike',
+				timeStart: windowStart,
+				timeEnd: windowEnd,
+				entityCount: observedEvents.length,
+				baselineRate,
+				observedRate,
+				rawSignificance,
+				comparisonCount: 1,
+				correctedSignificance: rawSignificance,
+				significanceThreshold: anomalyConfig.significance_threshold,
+				peakDate: peakDate(observedEvents, anomalyConfig.granularity),
+				dominantCategoryRef: categoryRef,
+				contributingEntityIds: observedEvents
+					.map((event) => event.entityId)
+					.sort((left, right) => left.localeCompare(right)),
+				knownPatternMatch: knownPatternMatch(
+					group.regionKey,
+					windowStart,
+					windowEnd,
+					categoryRef,
+					anomalyConfig.known_patterns,
+				),
+				biasWarning: reportingBiasWarning(observedEvents, config.reporting_bias),
+				caveats: [WEAK_SIGNAL_CAVEAT],
+				provenance: mergeProvenance(observedEvents),
+				sensitivityLevel: sensitivity.sensitivityLevel,
+				sensitivityMetadata: sensitivity.sensitivityMetadata,
+				computedAt,
+			};
+			preliminary.push({
+				input,
+				rawSignificance,
+				summary: {
+					regionKey: group.regionKey,
+					timeStart: windowStart,
+					timeEnd: windowEnd,
+					entityCount: observedEvents.length,
+					baselineRate,
+					observedRate,
+					rawSignificance,
+					correctedSignificance: rawSignificance,
+					contributingEntityIds: input.contributingEntityIds,
+				},
+			});
+		}
+	}
+
+	const corrected = preliminary
+		.map((candidate) => {
+			const correctedSignificance = Math.min(1, candidate.rawSignificance * Math.max(1, comparisonCount));
+			return {
+				...candidate,
+				input: {
+					...candidate.input,
+					comparisonCount: Math.max(1, comparisonCount),
+					correctedSignificance,
+				},
+				summary: {
+					...candidate.summary,
+					correctedSignificance,
+				},
+			};
+		})
+		.filter((candidate) => candidate.input.correctedSignificance <= anomalyConfig.significance_threshold)
+		.sort(
+			(left, right) =>
+				left.input.correctedSignificance - right.input.correctedSignificance ||
+				left.input.timeStart.getTime() - right.input.timeStart.getTime() ||
+				left.input.regionKey.localeCompare(right.input.regionKey),
+		);
+
+	return { candidates: corrected, comparisonCount, boundedComparisonCount };
+}
+
+function haversineKm(left: NormalizedEvent, right: NormalizedEvent): number {
+	if (left.latitude === null || left.longitude === null || right.latitude === null || right.longitude === null) {
+		return Number.POSITIVE_INFINITY;
+	}
+	const leftLat = (left.latitude * Math.PI) / 180;
+	const rightLat = (right.latitude * Math.PI) / 180;
+	const deltaLat = ((right.latitude - left.latitude) * Math.PI) / 180;
+	const deltaLng = ((right.longitude - left.longitude) * Math.PI) / 180;
+	const a =
+		Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+		Math.cos(leftLat) * Math.cos(rightLat) * Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
+	return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function collectConnectedComponents(events: NormalizedEvent[], radiusKm: number): NormalizedEvent[][] {
+	const adjacency = new Map<string, Set<string>>(events.map((event) => [event.entityId, new Set<string>()]));
+	for (let leftIndex = 0; leftIndex < events.length; leftIndex++) {
+		for (let rightIndex = leftIndex + 1; rightIndex < events.length; rightIndex++) {
+			if (haversineKm(events[leftIndex], events[rightIndex]) <= radiusKm) {
+				adjacency.get(events[leftIndex].entityId)?.add(events[rightIndex].entityId);
+				adjacency.get(events[rightIndex].entityId)?.add(events[leftIndex].entityId);
+			}
+		}
+	}
+
+	const byId = new Map(events.map((event) => [event.entityId, event]));
+	const visited = new Set<string>();
+	const components: NormalizedEvent[][] = [];
+
+	for (const event of events) {
+		if (visited.has(event.entityId)) continue;
+		const stack = [event.entityId];
+		const component: NormalizedEvent[] = [];
+		while (stack.length > 0) {
+			const currentId = stack.pop();
+			if (!currentId || visited.has(currentId)) continue;
+			visited.add(currentId);
+			const currentEvent = byId.get(currentId);
+			if (currentEvent) component.push(currentEvent);
+			for (const neighborId of adjacency.get(currentId) ?? []) {
+				if (!visited.has(neighborId)) stack.push(neighborId);
+			}
+		}
+		components.push(component.sort((left, right) => left.entityId.localeCompare(right.entityId)));
+	}
+
+	return components;
+}
+
+function deterministicUuid(key: string): string {
+	const hash = createHash('sha256').update(key).digest('hex');
+	const variant = ((Number.parseInt(hash.slice(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, '0');
+	return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-${variant}${hash.slice(18, 20)}-${hash.slice(20, 32)}`;
+}
+
+function hotspotGroupKey(latitude: number, longitude: number): string {
+	return `hotspot:${Math.round(latitude)}:${Math.round(longitude)}`;
+}
+
+function monthsForGranularity(
+	granularity: MulderConfig['temporal_pattern_detection']['hotspot_clustering']['temporal_granularity'],
+): number {
+	switch (granularity) {
+		case 'day':
+			return 1 / 30;
+		case 'week':
+			return 7 / 30;
+		case 'month':
+			return 1;
+		case 'year':
+			return 12;
+	}
+}
+
+function yearsBetween(start: Date, end: Date): number {
+	return Math.max(0, (end.getTime() - start.getTime()) / (365.25 * DAY_MS));
+}
+
+function persistenceForGroup(
+	group: readonly HotspotCandidate[],
+	latestBucketKey: number | null,
+	thresholdYears: number,
+): HotspotPersistence {
+	if (group.length <= 1) return 'transient';
+	const sorted = [...group].sort((left, right) => left.bucketKey - right.bucketKey);
+	const spanYears = yearsBetween(sorted[0].timeStart, sorted[sorted.length - 1].timeEnd);
+	if (spanYears >= thresholdYears && sorted[sorted.length - 1].bucketKey === latestBucketKey) return 'permanent';
+	return 'recurring';
+}
+
+function recurrencePatternForGroup(
+	group: readonly HotspotCandidate[],
+	granularity: MulderConfig['temporal_pattern_detection']['hotspot_clustering']['temporal_granularity'],
+): string | null {
+	if (group.length <= 1) return null;
+	const sorted = [...group].sort((left, right) => left.bucketKey - right.bucketKey);
+	return `observed_in_${group.length}_${granularity}_windows_from_${isoDay(sorted[0].timeStart)}_to_${isoDay(sorted[sorted.length - 1].timeEnd)}`;
+}
+
+function buildHotspotCandidates(
+	events: NormalizedEvent[],
+	config: MulderConfig['temporal_pattern_detection'],
+	computedAt: Date,
+): HotspotInputWithSummary[] {
+	const hotspotConfig = config.hotspot_clustering;
+	if (!config.enabled || !hotspotConfig.enabled) return [];
+
+	const geocoded = events
+		.filter((event) => event.latitude !== null && event.longitude !== null)
+		.sort(
+			(left, right) =>
+				left.occurredAt.getTime() - right.occurredAt.getTime() || left.entityId.localeCompare(right.entityId),
+		);
+	const buckets = new Map<number, NormalizedEvent[]>();
+	for (const event of geocoded) {
+		const key = bucketStart(event.occurredAt, hotspotConfig.temporal_granularity).getTime();
+		buckets.set(key, [...(buckets.get(key) ?? []), event]);
+	}
+
+	const candidates: HotspotCandidate[] = [];
+	for (const [bucketKey, bucketEvents] of [...buckets.entries()].sort((left, right) => left[0] - right[0])) {
+		for (const component of collectConnectedComponents(bucketEvents, hotspotConfig.radius_km)) {
+			if (component.length < hotspotConfig.min_cluster_size) continue;
+			const centroidLat = component.reduce((total, event) => total + (event.latitude ?? 0), 0) / component.length;
+			const centroidLng = component.reduce((total, event) => total + (event.longitude ?? 0), 0) / component.length;
+			const timeStart = new Date(bucketKey);
+			const timeEnd = addBuckets(timeStart, 1, hotspotConfig.temporal_granularity);
+			const groupKey = hotspotGroupKey(centroidLat, centroidLng);
+			const entityIds = component.map((event) => event.entityId).join(',');
+			candidates.push({
+				id: deterministicUuid(`${groupKey}:${bucketKey}:${entityIds}`),
+				groupKey,
+				bucketKey,
+				centroidLat,
+				centroidLng,
+				timeStart,
+				timeEnd,
+				events: component,
+			});
+		}
+	}
+
+	const latestBucketKey =
+		candidates.length === 0 ? null : Math.max(...candidates.map((candidate) => candidate.bucketKey));
+	const byGroup = new Map<string, HotspotCandidate[]>();
+	for (const candidate of candidates) {
+		byGroup.set(candidate.groupKey, [...(byGroup.get(candidate.groupKey) ?? []), candidate]);
+	}
+
+	return candidates
+		.map((candidate) => {
+			const group = byGroup.get(candidate.groupKey) ?? [candidate];
+			const relatedClusterIds = group
+				.map((related) => related.id)
+				.filter((id) => id !== candidate.id)
+				.sort((left, right) => left.localeCompare(right));
+			const sensitivity = mergeSensitivity(candidate.events);
+			const areaKm2 = Math.PI * hotspotConfig.radius_km * hotspotConfig.radius_km;
+			const months = monthsForGranularity(hotspotConfig.temporal_granularity);
+			const density = candidate.events.length / Math.max(1, areaKm2 * months);
+			const contributingEntityIds = candidate.events
+				.map((event) => event.entityId)
+				.sort((left, right) => left.localeCompare(right));
+			const input: CreateSpatiotemporalHotspotClusterInput = {
+				id: candidate.id,
+				regionKey: candidate.groupKey,
+				hotspotType: 'density_cluster',
+				centroidLat: candidate.centroidLat,
+				centroidLng: candidate.centroidLng,
+				radiusKm: hotspotConfig.radius_km,
+				timeStart: candidate.timeStart,
+				timeEnd: candidate.timeEnd,
+				entityCount: candidate.events.length,
+				density,
+				persistence: persistenceForGroup(group, latestBucketKey, hotspotConfig.persistence_threshold_years),
+				recurrencePattern: recurrencePatternForGroup(group, hotspotConfig.temporal_granularity),
+				relatedClusterIds,
+				contributingEntityIds,
+				dominantCategoryRef: dominantCategoryRef(candidate.events),
+				biasWarning: reportingBiasWarning(candidate.events, config.reporting_bias),
+				caveats: [WEAK_SIGNAL_CAVEAT],
+				provenance: mergeProvenance(candidate.events),
+				sensitivityLevel: sensitivity.sensitivityLevel,
+				sensitivityMetadata: sensitivity.sensitivityMetadata,
+				computedAt,
+			};
+			return {
+				input,
+				summary: {
+					regionKey: input.regionKey,
+					centroidLat: input.centroidLat,
+					centroidLng: input.centroidLng,
+					timeStart: input.timeStart,
+					timeEnd: input.timeEnd,
+					entityCount: input.entityCount,
+					density: input.density,
+					persistence: input.persistence,
+					contributingEntityIds,
+				},
+			};
+		})
+		.sort(
+			(left, right) =>
+				right.input.density - left.input.density ||
+				left.input.timeStart.getTime() - right.input.timeStart.getTime() ||
+				left.input.regionKey.localeCompare(right.input.regionKey),
+		)
+		.slice(0, hotspotConfig.max_clusters);
+}
+
+function makeSkippedResult(reason: string): TemporalPatternDetectionResult {
+	return {
+		status: 'skipped',
+		data: {
+			mode: 'temporal-patterns',
+			eventCount: 0,
+			timestampEventCount: 0,
+			geometryEventCount: 0,
+			anomalyComparisonCount: 0,
+			anomalyCount: 0,
+			hotspotCount: 0,
+			persistedAnomalyCount: 0,
+			persistedHotspotCount: 0,
+			warnings: [reason],
+			caveat: WEAK_SIGNAL_CAVEAT,
+			anomalies: [],
+			hotspots: [],
+		},
+		snapshot: { anomalies: [], hotspots: [] },
+	};
+}
+
+export async function detectTemporalPatterns(
+	pool: pg.Pool,
+	config: MulderConfig,
+): Promise<TemporalPatternDetectionResult> {
+	if (!config.temporal_pattern_detection.enabled) {
+		return makeSkippedResult('temporal pattern detection is disabled in the active configuration');
+	}
+
+	const rawEvents = await loadTemporalPatternEntityEvents(pool);
+	const events = rawEvents
+		.map(normalizeEvent)
+		.filter((event): event is NormalizedEvent => event !== null)
+		.sort(
+			(left, right) =>
+				left.occurredAt.getTime() - right.occurredAt.getTime() || left.entityId.localeCompare(right.entityId),
+		);
+	const geometryEventCount = events.filter((event) => event.latitude !== null && event.longitude !== null).length;
+	const computedAt = new Date();
+
+	const anomalies = buildAnomalyCandidates(events, config.temporal_pattern_detection, computedAt);
+	const hotspots = buildHotspotCandidates(events, config.temporal_pattern_detection, computedAt);
+	const snapshot = await replaceTemporalPatternSnapshot(pool, {
+		anomalies: anomalies.candidates.map((candidate) => candidate.input),
+		hotspots: hotspots.map((candidate) => candidate.input),
+	});
+	const warnings: string[] = [];
+	if (anomalies.comparisonCount > anomalies.boundedComparisonCount && anomalies.boundedComparisonCount > 0) {
+		warnings.push('Temporal anomaly comparisons were bounded by configured max region/window limits.');
+	}
+	if (events.length === 0) {
+		warnings.push('No timestamp-bearing entity events were available for temporal pattern detection.');
+	}
+
+	const data: TemporalPatternAnalyzeData = {
+		mode: 'temporal-patterns',
+		eventCount: rawEvents.length,
+		timestampEventCount: events.length,
+		geometryEventCount,
+		anomalyComparisonCount: anomalies.comparisonCount,
+		anomalyCount: anomalies.candidates.length,
+		hotspotCount: hotspots.length,
+		persistedAnomalyCount: snapshot.anomalies.length,
+		persistedHotspotCount: snapshot.hotspots.length,
+		warnings,
+		caveat: WEAK_SIGNAL_CAVEAT,
+		anomalies: anomalies.candidates.map((candidate) => candidate.summary),
+		hotspots: hotspots.map((candidate) => candidate.summary),
+	};
+
+	return {
+		status: 'success',
+		data,
+		snapshot,
+	};
+}

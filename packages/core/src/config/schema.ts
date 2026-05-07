@@ -729,6 +729,65 @@ const analysisObj = z.object({
 });
 const analysisSchema = analysisObj.default(defaults(analysisObj));
 
+// --- Temporal Pattern Detection ---
+
+const temporalPatternGranularitySchema = z.enum(['day', 'week', 'month', 'year']);
+const temporalPatternRegionGridSchema = z.enum(['country', 'admin1', 'hex_grid_100km']);
+
+const temporalPatternCategoryRefSchema = z.object({
+	taxonomy_id: z.string().min(1).optional(),
+	category_id: z.string().min(1),
+});
+
+const temporalPatternKnownPatternSchema = z.object({
+	id: z.string().min(1),
+	region_key: z.string().min(1).optional(),
+	category_ref: temporalPatternCategoryRefSchema.optional(),
+	time_start: z.string().min(1).optional(),
+	time_end: z.string().min(1).optional(),
+});
+
+const temporalAnomalyDetectionObj = z.object({
+	enabled: z.boolean().default(true),
+	min_entities: z.number().positive().int().default(5),
+	significance_threshold: z.number().min(0).max(1).default(0.05),
+	baseline_window_years: z.number().positive().int().default(10),
+	granularity: temporalPatternGranularitySchema.default('month'),
+	region_grid: temporalPatternRegionGridSchema.default('country'),
+	max_regions: z.number().positive().int().default(250),
+	max_windows: z.number().positive().int().default(120),
+	window_size_buckets: z.number().positive().int().default(1),
+	known_patterns: z.array(temporalPatternKnownPatternSchema).default([]),
+});
+const temporalAnomalyDetectionSchema = temporalAnomalyDetectionObj.default(defaults(temporalAnomalyDetectionObj));
+
+const temporalHotspotClusteringObj = z.object({
+	enabled: z.boolean().default(true),
+	algorithm: z.enum(['dbscan', 'hdbscan']).default('hdbscan'),
+	min_cluster_size: z.number().positive().int().default(3),
+	radius_km: z.number().positive().default(100),
+	temporal_granularity: temporalPatternGranularitySchema.default('year'),
+	persistence_threshold_years: z.number().positive().int().default(5),
+	max_clusters: z.number().positive().int().default(100),
+});
+const temporalHotspotClusteringSchema = temporalHotspotClusteringObj.default(defaults(temporalHotspotClusteringObj));
+
+const temporalReportingBiasObj = z.object({
+	correction_enabled: z.boolean().default(true),
+	correction_field: z.string().min(1).nullable().default(null),
+	elevated_threshold: z.number().positive().default(1.5),
+});
+const temporalReportingBiasSchema = temporalReportingBiasObj.default(defaults(temporalReportingBiasObj));
+
+const temporalPatternDetectionObj = z.object({
+	enabled: z.boolean().default(true),
+	schedule: z.enum(['manual', 'daily', 'weekly', 'monthly']).default('weekly'),
+	anomaly_detection: temporalAnomalyDetectionSchema,
+	hotspot_clustering: temporalHotspotClusteringSchema,
+	reporting_bias: temporalReportingBiasSchema,
+});
+const temporalPatternDetectionSchema = temporalPatternDetectionObj.default(defaults(temporalPatternDetectionObj));
+
 // --- Thresholds ---
 
 const thresholdsObj = z.object({
@@ -851,6 +910,7 @@ const baseMulderConfigSchema = z.object({
 	grounding: groundingSchema,
 	translation: translationSchema,
 	analysis: analysisSchema,
+	temporal_pattern_detection: temporalPatternDetectionSchema,
 	thresholds: thresholdsSchema,
 	pipeline: pipelineSchema,
 	safety: safetySchema,
@@ -952,6 +1012,14 @@ export {
 	taxonomyHarmonizationStatusSchema,
 	taxonomyHarmonizationTaxonomyRefSchema,
 	taxonomySchema,
+	temporalAnomalyDetectionSchema,
+	temporalHotspotClusteringSchema,
+	temporalPatternCategoryRefSchema,
+	temporalPatternDetectionSchema,
+	temporalPatternGranularitySchema,
+	temporalPatternKnownPatternSchema,
+	temporalPatternRegionGridSchema,
+	temporalReportingBiasSchema,
 	thresholdsSchema,
 	translationOutputFormatSchema,
 	translationSchema,

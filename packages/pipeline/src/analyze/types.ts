@@ -10,6 +10,8 @@ import type {
 	ClassificationCategoryRef,
 	CoreSimilarityDimensions,
 	DomainSimilarityDimension,
+	HotspotPersistence,
+	ReplaceTemporalPatternSnapshotResult,
 	SensitivityLevel,
 	SensitivityMetadata,
 	SimilarityCacheRecord,
@@ -166,6 +168,52 @@ export interface SpatioTemporalAnalyzeData {
 	spatioTemporalClusterCount: number;
 	clusters: SpatioTemporalCluster[];
 	warning: string | null;
+}
+
+export interface TemporalPatternAnomalySummary {
+	regionKey: string;
+	timeStart: Date;
+	timeEnd: Date;
+	entityCount: number;
+	baselineRate: number;
+	observedRate: number;
+	rawSignificance: number;
+	correctedSignificance: number;
+	contributingEntityIds: string[];
+}
+
+export interface TemporalPatternHotspotSummary {
+	regionKey: string;
+	centroidLat: number;
+	centroidLng: number;
+	timeStart: Date;
+	timeEnd: Date;
+	entityCount: number;
+	density: number;
+	persistence: HotspotPersistence;
+	contributingEntityIds: string[];
+}
+
+export interface TemporalPatternAnalyzeData {
+	mode: 'temporal-patterns';
+	eventCount: number;
+	timestampEventCount: number;
+	geometryEventCount: number;
+	anomalyComparisonCount: number;
+	anomalyCount: number;
+	hotspotCount: number;
+	persistedAnomalyCount: number;
+	persistedHotspotCount: number;
+	warnings: string[];
+	caveat: string;
+	anomalies: TemporalPatternAnomalySummary[];
+	hotspots: TemporalPatternHotspotSummary[];
+}
+
+export interface TemporalPatternDetectionResult {
+	status: 'success' | 'skipped';
+	data: TemporalPatternAnalyzeData;
+	snapshot: ReplaceTemporalPatternSnapshotResult;
 }
 
 export interface SimilarEntityDiscoveryOptions {

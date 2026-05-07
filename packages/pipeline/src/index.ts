@@ -24,9 +24,18 @@ export type {
 	SpatioTemporalEvent,
 	TaxonomyMappingSimilarityInput,
 	TaxonomyMappingSimilarityResult,
+	TemporalPatternAnalyzeData,
+	TemporalPatternAnomalySummary,
+	TemporalPatternDetectionResult,
+	TemporalPatternHotspotSummary,
 	WinningClaim,
 } from './analyze/index.js';
-export { discoverSimilarEntities, execute as executeAnalyze, scoreTaxonomyMappingSimilarity } from './analyze/index.js';
+export {
+	detectTemporalPatterns,
+	discoverSimilarEntities,
+	execute as executeAnalyze,
+	scoreTaxonomyMappingSimilarity,
+} from './analyze/index.js';
 export type {
 	ChunkerConfig,
 	EmbedChunkInput,

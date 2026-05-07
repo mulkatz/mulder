@@ -349,6 +349,34 @@ analysis:
   spatio_temporal: true
   cluster_window_days: 30
 
+# --- Temporal Pattern Detection (internal weak signals) ---
+temporal_pattern_detection:
+  enabled: true
+  schedule: "weekly"                  # Metadata only; no scheduler side effects in N3
+  anomaly_detection:
+    enabled: true
+    min_entities: 5
+    significance_threshold: 0.05
+    baseline_window_years: 10
+    granularity: "month"              # day | week | month | year
+    region_grid: "country"            # country | admin1 | hex_grid_100km
+    max_regions: 250
+    max_windows: 120
+    window_size_buckets: 1
+    known_patterns: []                # Optional generic pattern refs for annotation only
+  hotspot_clustering:
+    enabled: true
+    algorithm: "hdbscan"              # Deterministic bounded clustering in N3
+    min_cluster_size: 3
+    radius_km: 100
+    temporal_granularity: "year"
+    persistence_threshold_years: 5
+    max_clusters: 100
+  reporting_bias:
+    correction_enabled: true
+    correction_field: null            # Configure an ontology attribute such as observation intensity
+    elevated_threshold: 1.5
+
 # --- Sparse Graph Thresholds ---
 # Features degrade gracefully below these thresholds.
 # API responses include a confidence object with corpus_size and feature status.
