@@ -10,6 +10,8 @@ import type {
 	ClassificationCategoryRef,
 	CoreSimilarityDimensions,
 	DomainSimilarityDimension,
+	ExternalCorrelation,
+	ExternalCorrelationMethod,
 	HotspotPersistence,
 	ReplaceTemporalPatternSnapshotResult,
 	SensitivityLevel,
@@ -194,6 +196,21 @@ export interface TemporalPatternHotspotSummary {
 	contributingEntityIds: string[];
 }
 
+export interface ExternalCorrelationSummary {
+	internalSeriesKey: string;
+	externalSourceId: string;
+	externalSeriesId: string;
+	method: ExternalCorrelationMethod;
+	coefficient: number;
+	pValue: number;
+	lagDays: number;
+	timeStart: Date;
+	timeEnd: Date;
+	dataPointCount: number;
+	contributingEntityIds: string[];
+	interpretationCaveat: string;
+}
+
 export interface TemporalPatternAnalyzeData {
 	mode: 'temporal-patterns';
 	eventCount: number;
@@ -202,18 +219,21 @@ export interface TemporalPatternAnalyzeData {
 	anomalyComparisonCount: number;
 	anomalyCount: number;
 	hotspotCount: number;
+	externalCorrelationCount: number;
 	persistedAnomalyCount: number;
 	persistedHotspotCount: number;
+	persistedExternalCorrelationCount: number;
 	warnings: string[];
 	caveat: string;
 	anomalies: TemporalPatternAnomalySummary[];
 	hotspots: TemporalPatternHotspotSummary[];
+	externalCorrelations: ExternalCorrelationSummary[];
 }
 
 export interface TemporalPatternDetectionResult {
 	status: 'success' | 'skipped';
 	data: TemporalPatternAnalyzeData;
-	snapshot: ReplaceTemporalPatternSnapshotResult;
+	snapshot: ReplaceTemporalPatternSnapshotResult & { externalCorrelations: ExternalCorrelation[] };
 }
 
 export interface SimilarEntityDiscoveryOptions {

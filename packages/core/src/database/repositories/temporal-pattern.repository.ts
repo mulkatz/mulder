@@ -5,9 +5,15 @@ import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../.
 import { mapArtifactProvenanceFromDb, stringifyArtifactProvenance } from './artifact-provenance.js';
 import type { ClassificationCategoryRef } from './classification-harmonization.types.js';
 import type {
+	CreateExternalCorrelationInput,
 	CreateSpatiotemporalHotspotClusterInput,
 	CreateTemporalAnomalyClusterInput,
+	ExternalCorrelation,
+	ExternalCorrelationListOptions,
+	ExternalCorrelationMethod,
 	HotspotPersistence,
+	ReplaceExternalCorrelationSnapshotInput,
+	ReplaceExternalCorrelationSnapshotResult,
 	ReplaceTemporalPatternSnapshotInput,
 	ReplaceTemporalPatternSnapshotResult,
 	SpatiotemporalHotspotCluster,
@@ -25,6 +31,7 @@ import type {
 type Queryable = pg.Pool | pg.PoolClient;
 
 const WEAK_SIGNAL_CAVEAT = 'Patterns are hypothesis starters, not causal evidence.';
+const CORRELATION_CAVEAT = 'Correlation ≠ Causation';
 
 interface TemporalPatternEntityEventRow {
 	entity_id: string;
@@ -88,6 +95,30 @@ interface SpatiotemporalHotspotClusterRow {
 	review_status: TemporalPatternReviewStatus;
 	provenance: unknown;
 	sensitivity_level: SpatiotemporalHotspotCluster['sensitivityLevel'];
+	sensitivity_metadata: unknown;
+	computed_at: Date;
+	deleted_at: Date | null;
+}
+
+interface ExternalCorrelationRow {
+	id: string;
+	internal_series_key: string;
+	external_source_id: string;
+	external_series_id: string;
+	method: ExternalCorrelationMethod;
+	coefficient: number | string;
+	p_value: number | string;
+	lag_days: number;
+	time_start: Date;
+	time_end: Date;
+	data_point_count: number;
+	contributing_entity_ids: string[];
+	interpretation_caveat: string;
+	signal_strength: ExternalCorrelation['signalStrength'];
+	caveats: string[];
+	review_status: TemporalPatternReviewStatus;
+	provenance: unknown;
+	sensitivity_level: ExternalCorrelation['sensitivityLevel'];
 	sensitivity_metadata: unknown;
 	computed_at: Date;
 	deleted_at: Date | null;
@@ -193,6 +224,16 @@ function normalizeCaveats(value: readonly string[] | undefined): string[] {
 	return [...caveats].sort();
 }
 
+function normalizeCorrelationCaveats(value: readonly string[] | undefined): string[] {
+	const caveats = new Set<string>();
+	for (const item of value ?? []) {
+		const trimmed = item.trim();
+		if (trimmed.length > 0) caveats.add(trimmed);
+	}
+	caveats.add(CORRELATION_CAVEAT);
+	return [...caveats].sort();
+}
+
 function numeric(value: number | string): number {
 	return typeof value === 'number' ? value : Number.parseFloat(value);
 }
@@ -272,6 +313,32 @@ function mapSpatiotemporalHotspotCluster(row: SpatiotemporalHotspotClusterRow): 
 	};
 }
 
+function mapExternalCorrelation(row: ExternalCorrelationRow): ExternalCorrelation {
+	return {
+		id: row.id,
+		internalSeriesKey: row.internal_series_key,
+		externalSourceId: row.external_source_id,
+		externalSeriesId: row.external_series_id,
+		method: row.method,
+		coefficient: numeric(row.coefficient),
+		pValue: numeric(row.p_value),
+		lagDays: Number(row.lag_days),
+		timeStart: row.time_start,
+		timeEnd: row.time_end,
+		dataPointCount: Number(row.data_point_count),
+		contributingEntityIds: row.contributing_entity_ids ?? [],
+		interpretationCaveat: row.interpretation_caveat,
+		signalStrength: row.signal_strength,
+		caveats: row.caveats ?? [],
+		reviewStatus: row.review_status,
+		provenance: mapArtifactProvenanceFromDb(row.provenance),
+		sensitivityLevel: row.sensitivity_level ?? 'internal',
+		sensitivityMetadata: normalizeSensitivityMetadata(row.sensitivity_metadata, row.sensitivity_level ?? 'internal'),
+		computedAt: row.computed_at,
+		deletedAt: row.deleted_at,
+	};
+}
+
 function appendCommonFilters(
 	conditions: string[],
 	params: unknown[],
@@ -340,6 +407,11 @@ async function softDeleteSpatiotemporalHotspotClusters(pool: Queryable): Promise
 	const result = await pool.query(
 		'UPDATE spatiotemporal_hotspot_clusters SET deleted_at = now() WHERE deleted_at IS NULL',
 	);
+	return result.rowCount ?? 0;
+}
+
+async function softDeleteExternalCorrelations(pool: Queryable): Promise<number> {
+	const result = await pool.query('UPDATE external_correlations SET deleted_at = now() WHERE deleted_at IS NULL');
 	return result.rowCount ?? 0;
 }
 
@@ -573,6 +645,103 @@ async function upsertSpatiotemporalHotspotCluster(
 	return mapSpatiotemporalHotspotCluster(result.rows[0]);
 }
 
+async function upsertExternalCorrelation(
+	pool: Queryable,
+	input: CreateExternalCorrelationInput,
+): Promise<ExternalCorrelation> {
+	const sensitivityLevel = input.sensitivityLevel ?? 'internal';
+	const sql = `
+		INSERT INTO external_correlations (
+			id,
+			internal_series_key,
+			external_source_id,
+			external_series_id,
+			method,
+			coefficient,
+			p_value,
+			lag_days,
+			time_start,
+			time_end,
+			data_point_count,
+			contributing_entity_ids,
+			interpretation_caveat,
+			caveats,
+			review_status,
+			provenance,
+			sensitivity_level,
+			sensitivity_metadata,
+			computed_at,
+			deleted_at
+		)
+		VALUES (
+			COALESCE($1::uuid, gen_random_uuid()),
+			$2,
+			$3,
+			$4,
+			$5,
+			$6,
+			$7,
+			$8,
+			$9,
+			$10,
+			$11,
+			$12::uuid[],
+			$13,
+			$14::text[],
+			$15,
+			$16::jsonb,
+			$17,
+			$18::jsonb,
+			$19,
+			NULL
+		)
+		ON CONFLICT (id) DO UPDATE SET
+			internal_series_key = EXCLUDED.internal_series_key,
+			external_source_id = EXCLUDED.external_source_id,
+			external_series_id = EXCLUDED.external_series_id,
+			method = EXCLUDED.method,
+			coefficient = EXCLUDED.coefficient,
+			p_value = EXCLUDED.p_value,
+			lag_days = EXCLUDED.lag_days,
+			time_start = EXCLUDED.time_start,
+			time_end = EXCLUDED.time_end,
+			data_point_count = EXCLUDED.data_point_count,
+			contributing_entity_ids = EXCLUDED.contributing_entity_ids,
+			interpretation_caveat = EXCLUDED.interpretation_caveat,
+			caveats = EXCLUDED.caveats,
+			review_status = EXCLUDED.review_status,
+			provenance = EXCLUDED.provenance,
+			sensitivity_level = EXCLUDED.sensitivity_level,
+			sensitivity_metadata = EXCLUDED.sensitivity_metadata,
+			computed_at = EXCLUDED.computed_at,
+			deleted_at = NULL
+		RETURNING *
+	`;
+	const params = [
+		input.id ?? null,
+		input.internalSeriesKey,
+		input.externalSourceId,
+		input.externalSeriesId,
+		input.method,
+		input.coefficient,
+		input.pValue,
+		input.lagDays,
+		input.timeStart,
+		input.timeEnd,
+		input.dataPointCount,
+		input.contributingEntityIds,
+		input.interpretationCaveat ?? CORRELATION_CAVEAT,
+		normalizeCorrelationCaveats(input.caveats),
+		input.reviewStatus ?? 'pending',
+		stringifyArtifactProvenance(input.provenance),
+		sensitivityLevel,
+		stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
+		input.computedAt ?? new Date(),
+	];
+	const result = await pool.query<ExternalCorrelationRow>(sql, params);
+	return mapExternalCorrelation(result.rows[0]);
+}
+
 export async function loadTemporalPatternEntityEvents(pool: Queryable): Promise<TemporalPatternEntityEvent[]> {
 	const sql = `
 		SELECT
@@ -637,6 +806,34 @@ export async function replaceTemporalPatternSnapshot(
 	}
 }
 
+export async function replaceExternalCorrelationSnapshot(
+	pool: pg.Pool,
+	input: ReplaceExternalCorrelationSnapshotInput,
+): Promise<ReplaceExternalCorrelationSnapshotResult> {
+	const client = await pool.connect();
+
+	try {
+		await client.query('BEGIN');
+		await softDeleteExternalCorrelations(client);
+
+		const correlations: ExternalCorrelation[] = [];
+		for (const correlation of input.correlations) {
+			correlations.push(await upsertExternalCorrelation(client, correlation));
+		}
+
+		await client.query('COMMIT');
+		return { correlations };
+	} catch (error: unknown) {
+		await client.query('ROLLBACK').catch(() => {});
+		throw new DatabaseError('Failed to replace external correlation snapshot', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { correlationCount: input.correlations.length },
+		});
+	} finally {
+		client.release();
+	}
+}
+
 export async function listTemporalAnomalyClusters(
 	pool: Queryable,
 	options?: TemporalAnomalyClusterListOptions,
@@ -667,6 +864,96 @@ export async function listTemporalAnomalyClusters(
 		throw new DatabaseError('Failed to list temporal anomaly clusters', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause: error,
 			context: { options },
+		});
+	}
+}
+
+export async function listExternalCorrelations(
+	pool: Queryable,
+	options?: ExternalCorrelationListOptions,
+): Promise<ExternalCorrelation[]> {
+	const conditions: string[] = [];
+	const params: unknown[] = [];
+	appendCommonFilters(conditions, params, 'ec', options);
+	if (options?.timeStart) {
+		params.push(options.timeStart);
+		conditions.push(`ec.time_end >= $${params.length}`);
+	}
+	if (options?.timeEnd) {
+		params.push(options.timeEnd);
+		conditions.push(`ec.time_start <= $${params.length}`);
+	}
+	if (options?.reviewStatus) {
+		params.push(Array.isArray(options.reviewStatus) ? [...options.reviewStatus] : [options.reviewStatus]);
+		conditions.push(`ec.review_status = ANY($${params.length})`);
+	}
+	if (options?.signalStrength) {
+		params.push(options.signalStrength);
+		conditions.push(`ec.signal_strength = $${params.length}`);
+	}
+	if (options?.internalSeriesKey) {
+		params.push(options.internalSeriesKey);
+		conditions.push(`ec.internal_series_key = $${params.length}`);
+	}
+	if (options?.externalSourceId) {
+		params.push(options.externalSourceId);
+		conditions.push(`ec.external_source_id = $${params.length}`);
+	}
+	if (options?.externalSeriesId) {
+		params.push(options.externalSeriesId);
+		conditions.push(`ec.external_series_id = $${params.length}`);
+	}
+	if (options?.method) {
+		params.push(Array.isArray(options.method) ? [...options.method] : [options.method]);
+		conditions.push(`ec.method = ANY($${params.length})`);
+	}
+	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+	const limitOffset = appendLimitOffset(params, options?.limit, options?.offset);
+
+	try {
+		const result = await pool.query<ExternalCorrelationRow>(
+			`
+				SELECT ec.*
+				FROM external_correlations ec
+				${whereClause}
+				ORDER BY ABS(ec.coefficient) DESC, ec.time_start ASC, ec.external_source_id ASC, ec.external_series_id ASC, ec.id ASC
+				${limitOffset}
+			`,
+			params,
+		);
+		return result.rows.map(mapExternalCorrelation);
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to list external correlations', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { options },
+		});
+	}
+}
+
+export async function findExternalCorrelation(
+	pool: Queryable,
+	id: string,
+	options?: TemporalPatternFindOptions,
+): Promise<ExternalCorrelation | null> {
+	const conditions = ['ec.id = $1'];
+	const params: unknown[] = [id];
+	appendCommonFilters(conditions, params, 'ec', options);
+
+	try {
+		const result = await pool.query<ExternalCorrelationRow>(
+			`
+				SELECT ec.*
+				FROM external_correlations ec
+				WHERE ${conditions.join(' AND ')}
+				LIMIT 1
+			`,
+			params,
+		);
+		return result.rows[0] ? mapExternalCorrelation(result.rows[0]) : null;
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to find external correlation', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { id, options },
 		});
 	}
 }

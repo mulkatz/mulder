@@ -4,6 +4,7 @@ import type { ClassificationCategoryRef } from './classification-harmonization.t
 
 export type TemporalAnomalyType = 'frequency_spike';
 export type SpatiotemporalHotspotType = 'density_cluster';
+export type ExternalCorrelationMethod = 'spearman' | 'cross_correlation';
 export type TemporalPatternSignalStrength = 'weak';
 export type TemporalPatternReviewStatus = 'pending' | 'approved' | 'rejected' | 'contested';
 export type HotspotPersistence = 'transient' | 'recurring' | 'permanent';
@@ -76,6 +77,30 @@ export interface SpatiotemporalHotspotCluster {
 	deletedAt: Date | null;
 }
 
+export interface ExternalCorrelation {
+	id: string;
+	internalSeriesKey: string;
+	externalSourceId: string;
+	externalSeriesId: string;
+	method: ExternalCorrelationMethod;
+	coefficient: number;
+	pValue: number;
+	lagDays: number;
+	timeStart: Date;
+	timeEnd: Date;
+	dataPointCount: number;
+	contributingEntityIds: string[];
+	interpretationCaveat: string;
+	signalStrength: TemporalPatternSignalStrength;
+	caveats: string[];
+	reviewStatus: TemporalPatternReviewStatus;
+	provenance: ArtifactProvenance;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
+	computedAt: Date;
+	deletedAt: Date | null;
+}
+
 export interface CreateTemporalAnomalyClusterInput {
 	id?: string;
 	regionKey: string;
@@ -128,6 +153,28 @@ export interface CreateSpatiotemporalHotspotClusterInput {
 	computedAt?: Date;
 }
 
+export interface CreateExternalCorrelationInput {
+	id?: string;
+	internalSeriesKey: string;
+	externalSourceId: string;
+	externalSeriesId: string;
+	method: ExternalCorrelationMethod;
+	coefficient: number;
+	pValue: number;
+	lagDays: number;
+	timeStart: Date;
+	timeEnd: Date;
+	dataPointCount: number;
+	contributingEntityIds: string[];
+	interpretationCaveat?: string;
+	caveats?: string[];
+	reviewStatus?: TemporalPatternReviewStatus;
+	provenance?: ArtifactProvenanceInput;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
+	computedAt?: Date;
+}
+
 export interface ReplaceTemporalPatternSnapshotInput {
 	anomalies: CreateTemporalAnomalyClusterInput[];
 	hotspots: CreateSpatiotemporalHotspotClusterInput[];
@@ -136,6 +183,14 @@ export interface ReplaceTemporalPatternSnapshotInput {
 export interface ReplaceTemporalPatternSnapshotResult {
 	anomalies: TemporalAnomalyCluster[];
 	hotspots: SpatiotemporalHotspotCluster[];
+}
+
+export interface ReplaceExternalCorrelationSnapshotInput {
+	correlations: CreateExternalCorrelationInput[];
+}
+
+export interface ReplaceExternalCorrelationSnapshotResult {
+	correlations: ExternalCorrelation[];
 }
 
 export interface TemporalPatternListOptions {
@@ -157,6 +212,13 @@ export interface TemporalAnomalyClusterListOptions extends TemporalPatternListOp
 export interface SpatiotemporalHotspotClusterListOptions extends TemporalPatternListOptions {
 	hotspotType?: SpatiotemporalHotspotType;
 	persistence?: HotspotPersistence | readonly HotspotPersistence[];
+}
+
+export interface ExternalCorrelationListOptions extends Omit<TemporalPatternListOptions, 'regionKey'> {
+	internalSeriesKey?: string;
+	externalSourceId?: string;
+	externalSeriesId?: string;
+	method?: ExternalCorrelationMethod | readonly ExternalCorrelationMethod[];
 }
 
 export interface TemporalPatternFindOptions {

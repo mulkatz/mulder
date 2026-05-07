@@ -11,6 +11,7 @@ export type {
 	EvidenceChainsAnalyzeData,
 	EvidenceChainsAvailability,
 	EvidenceChainThesisOutcome,
+	ExternalCorrelationSummary,
 	FullAnalyzeData,
 	ReliabilityAnalyzeData,
 	SimilarEntityDiscoveryOptions,
@@ -31,10 +32,25 @@ export type {
 	WinningClaim,
 } from './analyze/index.js';
 export {
+	clearExternalDataSourcePlugins,
+	createStaticExternalDataSourcePlugin,
 	detectTemporalPatterns,
 	discoverSimilarEntities,
 	execute as executeAnalyze,
+	ExternalDataSourceRegistry,
+	getExternalDataSourceRegistry,
+	registerExternalDataSourcePlugin,
 	scoreTaxonomyMappingSimilarity,
+} from './analyze/index.js';
+export type {
+	ExternalDataFetchRequest,
+	ExternalDataFetchResult,
+	ExternalDataPoint,
+	ExternalDataSourceKind,
+	ExternalDataSourcePlugin,
+	ExternalDataUpdateFrequency,
+	ExternalEvent,
+	ExternalStaticDataset,
 } from './analyze/index.js';
 export type {
 	ChunkerConfig,

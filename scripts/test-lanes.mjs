@@ -479,6 +479,7 @@ const CLASSIFICATION_SCHEMA_HELPER_TABLE_LINES = new Set([
 	"'classification_taxonomies',",
 ]);
 const TEMPORAL_PATTERN_SCHEMA_HELPER_TABLE_LINES = new Set([
+	"'external_correlations',",
 	"'spatiotemporal_hotspot_clusters',",
 	"'temporal_anomaly_clusters',",
 ]);
@@ -519,6 +520,17 @@ function diffTouchesTemporalPattern(diff) {
 		'temporal_anomaly',
 		'spatiotemporal_hotspot',
 		'detectTemporalPatterns',
+	].some((token) => diff.includes(token));
+}
+
+function diffTouchesExternalCorrelation(diff) {
+	return [
+		'external_correlation',
+		'external_correlations',
+		'ExternalCorrelation',
+		'ExternalDataSource',
+		'registerExternalDataSourcePlugin',
+		'Correlation ≠ Causation',
 	].some((token) => diff.includes(token));
 }
 
@@ -717,6 +729,11 @@ const TEST_GROUPS = {
 		'tests/specs/111_rbac_implementation.test.ts',
 		'tests/specs/114_classification_harmonization.test.ts',
 	],
+	externalCorrelation: [
+		'tests/specs/03_config_loader.test.ts',
+		'tests/specs/08_core_schema_migrations.test.ts',
+		'tests/specs/116_external_correlation_plugins.test.ts',
+	],
 };
 
 function selectTestGroup(selected, discoveredByPath, groupName) {
@@ -770,6 +787,13 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 
 	if (file === 'mulder.config.example.yaml') {
 		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesExternalCorrelation(diff)) {
+			selectSpecOrFallback('116', 'externalCorrelation');
+			return {
+				rule: 'external correlation example config',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		if (diffTouchesTemporalPattern(diff)) {
 			selectSpecOrFallback('115', 'temporalPatternDetection');
 			return {
@@ -792,6 +816,13 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 
 	if (file.startsWith('packages/core/src/config/')) {
 		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesExternalCorrelation(diff)) {
+			selectSpecOrFallback('116', 'externalCorrelation');
+			return {
+				rule: 'external correlation config',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		if (diffTouchesTemporalPattern(diff)) {
 			selectSpecOrFallback('115', 'temporalPatternDetection');
 			return {
@@ -855,6 +886,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 		};
 	}
 
+	if (file === 'packages/core/src/database/migrations/047_external_correlations.sql') {
+		selectSpecOrFallback('116', 'externalCorrelation');
+		return {
+			rule: 'external correlation migration',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
 	if (file.startsWith('packages/core/src/database/migrations/')) {
 		selectLanes(['schema', 'db', 'heavy']);
 		return { rule: 'unknown migration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
@@ -886,6 +925,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 	}
 
 	if (file.startsWith('packages/core/src/database/repositories/temporal-pattern.')) {
+		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesExternalCorrelation(diff)) {
+			selectSpecOrFallback('116', 'externalCorrelation');
+			return {
+				rule: 'external correlation repository',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		selectSpecOrFallback('115', 'temporalPatternDetection');
 		return {
 			rule: 'temporal pattern detection repository',
@@ -953,6 +1000,13 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 
 	if (file === 'packages/core/src/database/repositories/index.ts') {
 		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesExternalCorrelation(diff)) {
+			selectSpecOrFallback('116', 'externalCorrelation');
+			return {
+				rule: 'external correlation repository exports',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		if (diffTouchesTemporalPattern(diff)) {
 			selectSpecOrFallback('115', 'temporalPatternDetection');
 			return {
@@ -1037,6 +1091,13 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 
 	if (file === 'packages/core/src/index.ts') {
 		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesExternalCorrelation(diff)) {
+			selectSpecOrFallback('116', 'externalCorrelation');
+			return {
+				rule: 'external correlation core exports',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		if (diffTouchesTemporalPattern(diff)) {
 			selectSpecOrFallback('115', 'temporalPatternDetection');
 			return {
@@ -1080,7 +1141,23 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 		return { rule: 'similarity analyze integration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
+	if (file === 'packages/pipeline/src/analyze/external-correlation.ts') {
+		selectSpecOrFallback('116', 'externalCorrelation');
+		return {
+			rule: 'external correlation plugin registry',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
 	if (file === 'packages/pipeline/src/analyze/temporal-patterns.ts') {
+		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesExternalCorrelation(diff)) {
+			selectSpecOrFallback('116', 'externalCorrelation');
+			return {
+				rule: 'external correlation analyze integration',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		selectSpecOrFallback('115', 'temporalPatternDetection');
 		return {
 			rule: 'temporal pattern detection analyze integration',
@@ -1090,6 +1167,13 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 
 	if (file === 'packages/pipeline/src/analyze/index.ts' || file === 'packages/pipeline/src/analyze/types.ts') {
 		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesExternalCorrelation(diff)) {
+			selectSpecOrFallback('116', 'externalCorrelation');
+			return {
+				rule: 'external correlation analyze contract',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		if (diffTouchesTemporalPattern(diff)) {
 			selectSpecOrFallback('115', 'temporalPatternDetection');
 			return {
@@ -1107,6 +1191,13 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 
 	if (file === 'packages/pipeline/src/index.ts') {
 		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesExternalCorrelation(diff)) {
+			selectSpecOrFallback('116', 'externalCorrelation');
+			return {
+				rule: 'external correlation pipeline exports',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		if (diffTouchesTemporalPattern(diff)) {
 			selectSpecOrFallback('115', 'temporalPatternDetection');
 			return {
@@ -1171,6 +1262,13 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 
 	if (file === 'tests/lib/schema.ts') {
 		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesExternalCorrelation(diff)) {
+			selectSpecOrFallback('116', 'externalCorrelation');
+			return {
+				rule: 'external correlation test schema helper',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		if (isTemporalPatternSchemaHelperOnlyDiff(diff)) {
 			selectSpecOrFallback('115', 'temporalPatternDetection');
 			return {
