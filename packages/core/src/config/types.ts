@@ -44,6 +44,11 @@ import type {
 	similarityDomainDimensionSchema,
 	sourceRollbackSchema,
 	storageSchema,
+	taxonomyHarmonizationAutoMappingSchema,
+	taxonomyHarmonizationExtractionSchema,
+	taxonomyHarmonizationSchema,
+	taxonomyHarmonizationStatusSchema,
+	taxonomyHarmonizationTaxonomyRefSchema,
 	taxonomySchema,
 	thresholdsSchema,
 	translationOutputFormatSchema,
@@ -88,6 +93,11 @@ export type TranslationOutputFormatConfig = z.infer<typeof translationOutputForm
 export type IngestProvenanceConfig = z.infer<typeof ingestProvenanceSchema>;
 export type AnalysisConfig = z.infer<typeof analysisSchema>;
 export type TaxonomyConfig = z.infer<typeof taxonomySchema>;
+export type TaxonomyHarmonizationConfig = z.infer<typeof taxonomyHarmonizationSchema>;
+export type TaxonomyHarmonizationStatusConfig = z.infer<typeof taxonomyHarmonizationStatusSchema>;
+export type TaxonomyHarmonizationTaxonomyRefConfig = z.infer<typeof taxonomyHarmonizationTaxonomyRefSchema>;
+export type TaxonomyHarmonizationAutoMappingConfig = z.infer<typeof taxonomyHarmonizationAutoMappingSchema>;
+export type TaxonomyHarmonizationExtractionConfig = z.infer<typeof taxonomyHarmonizationExtractionSchema>;
 export type ThresholdsConfig = z.infer<typeof thresholdsSchema>;
 export type PipelineConfig = z.infer<typeof pipelineSchema>;
 export type SafetyConfig = z.infer<typeof safetySchema>;

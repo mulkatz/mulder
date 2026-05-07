@@ -7,6 +7,7 @@
 
 import type {
 	ArtifactProvenanceInput,
+	ClassificationCategoryRef,
 	CoreSimilarityDimensions,
 	DomainSimilarityDimension,
 	SensitivityLevel,
@@ -14,6 +15,8 @@ import type {
 	SimilarityCacheRecord,
 	SimilarityResult,
 	StepError,
+	TaxonomyMappingReviewStatus,
+	TaxonomyMappingSimilarityScore,
 } from '@mulder/core';
 
 export interface AnalyzeInput {
@@ -174,6 +177,16 @@ export interface SimilarEntityDiscoveryOptions {
 	maxSensitivityLevel?: SensitivityLevel;
 	explanation?: string;
 }
+
+export interface TaxonomyMappingSimilarityInput {
+	sourceRefs: ClassificationCategoryRef[];
+	targetRefs: ClassificationCategoryRef[];
+	reviewStatus?: TaxonomyMappingReviewStatus | TaxonomyMappingReviewStatus[];
+	minConfidence?: number;
+	maxSensitivityLevel?: SensitivityLevel;
+}
+
+export type TaxonomyMappingSimilarityResult = TaxonomyMappingSimilarityScore;
 
 export interface SimilarEntityScore {
 	entityId: string;

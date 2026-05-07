@@ -1,5 +1,6 @@
 import type {
 	ArtifactProvenanceInput,
+	ClassificationCategoryRef,
 	CoreSimilarityDimensions,
 	DomainSimilarityDimension,
 	Entity,
@@ -8,6 +9,11 @@ import type {
 	SensitivityLevel,
 	SimilarityDimensionScore,
 	SimilarityDomainDimensionConfig,
+	TaxonomyMappingReviewStatus,
+	TaxonomyMappingSimilarityEvidence,
+	TaxonomyMappingSimilarityScore,
+	TaxonomyMappingType,
+	TaxonomyMappingView,
 } from '@mulder/core';
 import {
 	allowedSensitivityLevelsForMax,
@@ -19,17 +25,36 @@ import {
 	listSimilarEntities,
 	mergeSensitivityMetadata,
 	mostRestrictiveSensitivityLevel,
+	resolveTaxonomyMappings,
 	updateEdge,
 	upsertReviewableArtifact,
 	upsertSimilarityResult,
 } from '@mulder/core';
 import type pg from 'pg';
-import type { SimilarEntityDiscoveryOptions, SimilarEntityDiscoveryResult, SimilarEntityScore } from './types.js';
+import type {
+	SimilarEntityDiscoveryOptions,
+	SimilarEntityDiscoveryResult,
+	SimilarEntityScore,
+	TaxonomyMappingSimilarityInput,
+	TaxonomyMappingSimilarityResult,
+} from './types.js';
 
 const DAYS_PER_YEAR = 365.25;
 const DEFAULT_GEO_RADIUS_KM = 100;
 const DEFAULT_TEMPORAL_WINDOW_YEARS = 10;
 const SCORE_PRECISION = 6;
+const TAXONOMY_MAPPING_TYPE_WEIGHTS: Record<TaxonomyMappingType, number> = {
+	equivalent: 1,
+	overlapping: 0.85,
+	broader: 0.7,
+	narrower: 0.7,
+	related: 0.45,
+};
+const TAXONOMY_MAPPING_REVIEW_STATUSES: readonly TaxonomyMappingReviewStatus[] = [
+	'draft',
+	'reviewed',
+	'contested',
+] as const;
 
 interface CandidateSupplementRow {
 	candidate_id: string;
@@ -52,6 +77,88 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function readNonEmptyString(value: unknown): string | null {
+	return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readStringField(root: Record<string, unknown>, keys: readonly string[]): string | null {
+	for (const key of keys) {
+		const value = readNonEmptyString(root[key]);
+		if (value) return value;
+	}
+	return null;
+}
+
+function isTaxonomyMappingReviewStatus(value: unknown): value is TaxonomyMappingReviewStatus {
+	return TAXONOMY_MAPPING_REVIEW_STATUSES.some((status) => status === value);
+}
+
+function readReviewStatusFilter(
+	metadata: Record<string, unknown>,
+): TaxonomyMappingReviewStatus | TaxonomyMappingReviewStatus[] | undefined {
+	const value = metadata.reviewStatus ?? metadata.review_status ?? metadata.reviewStatuses ?? metadata.review_statuses;
+	if (isTaxonomyMappingReviewStatus(value)) return value;
+	if (!Array.isArray(value)) return undefined;
+	const statuses = value.filter(isTaxonomyMappingReviewStatus);
+	return statuses.length > 0 ? [...new Set(statuses)] : undefined;
+}
+
+function readMinConfidence(metadata: Record<string, unknown>): number | undefined {
+	const value = metadata.minConfidence ?? metadata.min_confidence;
+	return typeof value === 'number' && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : undefined;
+}
+
+function categoryRef(categoryId: string, taxonomyId: string | null): ClassificationCategoryRef {
+	return taxonomyId ? { taxonomyId, categoryId } : { categoryId };
+}
+
+function categoryRefKey(ref: ClassificationCategoryRef): string {
+	return `${ref.taxonomyId ?? ''}\u0000${ref.categoryId}`;
+}
+
+function uniqueCategoryRefs(refs: readonly ClassificationCategoryRef[]): ClassificationCategoryRef[] {
+	const unique = new Map<string, ClassificationCategoryRef>();
+	for (const ref of refs) {
+		const categoryId = readNonEmptyString(ref.categoryId);
+		if (!categoryId) continue;
+		const taxonomyId = readNonEmptyString(ref.taxonomyId);
+		const normalized = categoryRef(categoryId, taxonomyId);
+		unique.set(categoryRefKey(normalized), normalized);
+	}
+	return [...unique.values()].sort(
+		(left, right) =>
+			(left.taxonomyId ?? '').localeCompare(right.taxonomyId ?? '') || left.categoryId.localeCompare(right.categoryId),
+	);
+}
+
+function categoryRefsFromRecord(
+	value: Record<string, unknown>,
+	fallbackTaxonomyId: string | null,
+): ClassificationCategoryRef[] {
+	for (const nestedKey of ['refs', 'categories', 'category_refs', 'classification_refs']) {
+		const nestedValue = value[nestedKey];
+		if (Array.isArray(nestedValue)) return categoryRefsFromAttribute(nestedValue, fallbackTaxonomyId);
+	}
+	const categoryId = readStringField(value, ['categoryId', 'category_id', 'id']);
+	if (!categoryId) return [];
+	const taxonomyId = readStringField(value, ['taxonomyId', 'taxonomy_id', 'taxonomy']) ?? fallbackTaxonomyId;
+	return [categoryRef(categoryId, taxonomyId)];
+}
+
+function categoryRefsFromAttribute(value: unknown, fallbackTaxonomyId: string | null): ClassificationCategoryRef[] {
+	if (Array.isArray(value))
+		return uniqueCategoryRefs(value.flatMap((item) => categoryRefsFromAttribute(item, fallbackTaxonomyId)));
+	const categoryId = readNonEmptyString(value);
+	if (categoryId) return [categoryRef(categoryId, fallbackTaxonomyId)];
+	if (isRecord(value)) return categoryRefsFromRecord(value, fallbackTaxonomyId);
+	return [];
+}
+
+function readCategoryRefs(value: unknown, metadata: Record<string, unknown>): ClassificationCategoryRef[] {
+	const fallbackTaxonomyId = readStringField(metadata, ['taxonomyId', 'taxonomy_id', 'taxonomy']);
+	return uniqueCategoryRefs(categoryRefsFromAttribute(value, fallbackTaxonomyId));
+}
+
 function roundScore(value: number): number {
 	return Number(Math.min(1, Math.max(0, value)).toFixed(SCORE_PRECISION));
 }
@@ -70,6 +177,91 @@ function emptyCoreScores(): CoreSimilarityDimensions {
 		structural: insufficientData('sparse_graph_topology'),
 		geospatial: insufficientData('missing_geometry'),
 		temporal: insufficientData('missing_iso_date'),
+	};
+}
+
+function insufficientTaxonomyMappingScore(reason: string): TaxonomyMappingSimilarityScore {
+	return {
+		status: 'insufficient_data',
+		score: null,
+		reason,
+		evidence: [],
+	};
+}
+
+function taxonomyMappingScore(mapping: TaxonomyMappingView): number {
+	return roundScore(mapping.confidence * TAXONOMY_MAPPING_TYPE_WEIGHTS[mapping.mappingType]);
+}
+
+function taxonomyMappingEvidence(mapping: TaxonomyMappingView): TaxonomyMappingSimilarityEvidence {
+	return {
+		mappingId: mapping.id,
+		mappingType: mapping.mappingType,
+		originalMappingType: mapping.originalMappingType,
+		direction: mapping.direction,
+		confidence: mapping.confidence,
+		reviewStatus: mapping.reviewStatus,
+		source: {
+			taxonomyId: mapping.sourceTaxonomyId,
+			categoryId: mapping.sourceCategoryId,
+		},
+		target: {
+			taxonomyId: mapping.targetTaxonomyId,
+			categoryId: mapping.targetCategoryId,
+		},
+		conditions: mapping.conditions,
+		rationale: mapping.rationale,
+	};
+}
+
+function targetRefMatchesMapping(ref: ClassificationCategoryRef, mapping: TaxonomyMappingView): boolean {
+	if (mapping.targetCategoryId !== ref.categoryId) return false;
+	return ref.taxonomyId === undefined || mapping.targetTaxonomyId === ref.taxonomyId;
+}
+
+export async function scoreTaxonomyMappingSimilarity(
+	pool: pg.Pool,
+	input: TaxonomyMappingSimilarityInput,
+): Promise<TaxonomyMappingSimilarityResult> {
+	const sourceRefs = uniqueCategoryRefs(input.sourceRefs);
+	const targetRefs = uniqueCategoryRefs(input.targetRefs);
+	if (sourceRefs.length === 0 || targetRefs.length === 0) {
+		return insufficientTaxonomyMappingScore('missing_category_refs');
+	}
+
+	const mappingsByView = new Map<string, TaxonomyMappingView>();
+	for (const sourceRef of sourceRefs) {
+		for (const targetRef of targetRefs) {
+			const mappings = await resolveTaxonomyMappings(pool, {
+				categoryId: sourceRef.categoryId,
+				taxonomyId: sourceRef.taxonomyId,
+				targetCategoryId: targetRef.categoryId,
+				targetTaxonomyId: targetRef.taxonomyId,
+				reviewStatus: input.reviewStatus,
+				minConfidence: input.minConfidence,
+				maxSensitivityLevel: input.maxSensitivityLevel,
+			});
+			for (const mapping of mappings) {
+				if (!targetRefMatchesMapping(targetRef, mapping)) continue;
+				mappingsByView.set(`${mapping.id}:${mapping.direction}`, mapping);
+			}
+		}
+	}
+
+	const mappings = [...mappingsByView.values()].sort((left, right) => {
+		const scoreDiff = taxonomyMappingScore(right) - taxonomyMappingScore(left);
+		if (scoreDiff !== 0) return scoreDiff;
+		const confidenceDiff = right.confidence - left.confidence;
+		if (confidenceDiff !== 0) return confidenceDiff;
+		return left.id.localeCompare(right.id);
+	});
+	if (mappings.length === 0) return insufficientTaxonomyMappingScore('no_usable_taxonomy_mapping');
+
+	return {
+		status: 'scored',
+		score: taxonomyMappingScore(mappings[0]),
+		reason: null,
+		evidence: mappings.map(taxonomyMappingEvidence),
 	};
 }
 
@@ -429,13 +621,37 @@ function scoreTemporal(source: Entity, candidate: Entity, windowYears: number | 
 	return scored(1 - Math.min(diffYears, denominator) / denominator);
 }
 
-function scoreDomainDimension(
+async function scoreDomainDimension(
+	pool: pg.Pool,
 	source: Entity,
 	candidate: Entity,
 	dimension: SimilarityDomainDimensionConfig,
-): DomainSimilarityDimension {
+	maxSensitivityLevel?: SensitivityLevel,
+): Promise<DomainSimilarityDimension> {
 	const left = source.attributes[dimension.config_ref];
 	const right = candidate.attributes[dimension.config_ref];
+	if (dimension.source === 'taxonomy_mapping') {
+		const mappingScore = await scoreTaxonomyMappingSimilarity(pool, {
+			sourceRefs: readCategoryRefs(left, dimension.metadata),
+			targetRefs: readCategoryRefs(right, dimension.metadata),
+			reviewStatus: readReviewStatusFilter(dimension.metadata),
+			minConfidence: readMinConfidence(dimension.metadata),
+			maxSensitivityLevel,
+		});
+		return {
+			id: dimension.id,
+			label: dimension.label,
+			source: dimension.source,
+			configRef: dimension.config_ref,
+			score: mappingScore.score,
+			status: mappingScore.status,
+			reason: mappingScore.reason,
+			metadata: {
+				...dimension.metadata,
+				evidence: mappingScore.evidence,
+			},
+		};
+	}
 	if (dimension.source !== 'attribute_comparison') {
 		return {
 			id: dimension.id,
@@ -653,8 +869,10 @@ export async function discoverSimilarEntities(
 		);
 		const structural = await scoreStructural(pool, source, candidate.entity, options.maxSensitivityLevel);
 		core.structural = structural.score;
-		const domain = config.similar_case_discovery.scoring.domain_dimensions.map((dimension) =>
-			scoreDomainDimension(source, candidate.entity, dimension),
+		const domain = await Promise.all(
+			config.similar_case_discovery.scoring.domain_dimensions.map((dimension) =>
+				scoreDomainDimension(pool, source, candidate.entity, dimension, options.maxSensitivityLevel),
+			),
 		);
 		const sensitivityLevel = mostRestrictiveSensitivityLevel([
 			source.sensitivityLevel,

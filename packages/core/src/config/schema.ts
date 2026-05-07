@@ -472,8 +472,39 @@ const enrichmentSchema = enrichmentObj.default(defaults(enrichmentObj));
 
 // --- Taxonomy ---
 
+const taxonomyHarmonizationStatusSchema = z.enum(['active', 'inactive', 'draft', 'deprecated']);
+
+const taxonomyHarmonizationTaxonomyRefSchema = z.object({
+	id: z.string().min(1),
+	source: z.string().min(1).optional(),
+	version: z.string().min(1).optional(),
+	language: z.string().min(1).optional(),
+	status: taxonomyHarmonizationStatusSchema.default('active'),
+});
+
+const taxonomyHarmonizationAutoMappingSchema = z.object({
+	enabled: z.boolean().default(false),
+	engine: z.string().min(1).default('gemini-2.5-pro'),
+	require_human_review: z.boolean().default(true),
+	min_confidence_for_auto_link: z.number().min(0).max(1).default(0.7),
+});
+
+const taxonomyHarmonizationExtractionSchema = z.object({
+	detect_classification_refs: z.boolean().default(true),
+	detect_implicit_classifications: z.boolean().default(true),
+});
+
+const taxonomyHarmonizationObj = z.object({
+	enabled: z.boolean().default(true),
+	taxonomies: z.array(taxonomyHarmonizationTaxonomyRefSchema).default([]),
+	auto_mapping: taxonomyHarmonizationAutoMappingSchema.default(defaults(taxonomyHarmonizationAutoMappingSchema)),
+	extraction: taxonomyHarmonizationExtractionSchema.default(defaults(taxonomyHarmonizationExtractionSchema)),
+});
+const taxonomyHarmonizationSchema = taxonomyHarmonizationObj.default(defaults(taxonomyHarmonizationObj));
+
 const taxonomyObj = z.object({
 	normalization_threshold: z.number().min(0).max(1).default(0.4),
+	harmonization: taxonomyHarmonizationSchema,
 });
 const taxonomySchema = taxonomyObj.default(defaults(taxonomyObj));
 
@@ -914,6 +945,12 @@ export {
 	similarityDomainDimensionSchema,
 	sourceRollbackSchema,
 	storageSchema,
+	taxonomyHarmonizationAutoMappingSchema,
+	taxonomyHarmonizationExtractionSchema,
+	taxonomyHarmonizationObj,
+	taxonomyHarmonizationSchema,
+	taxonomyHarmonizationStatusSchema,
+	taxonomyHarmonizationTaxonomyRefSchema,
 	taxonomySchema,
 	thresholdsSchema,
 	translationOutputFormatSchema,
