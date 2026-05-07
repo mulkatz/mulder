@@ -51,6 +51,7 @@ import type {
 	taxonomyHarmonizationTaxonomyRefSchema,
 	taxonomySchema,
 	temporalAnomalyDetectionSchema,
+	temporalChangepointDetectionSchema,
 	temporalExternalCorrelationMethodSchema,
 	temporalExternalCorrelationSchema,
 	temporalExternalCorrelationSeriesSchema,
@@ -111,6 +112,7 @@ export type TaxonomyHarmonizationAutoMappingConfig = z.infer<typeof taxonomyHarm
 export type TaxonomyHarmonizationExtractionConfig = z.infer<typeof taxonomyHarmonizationExtractionSchema>;
 export type TemporalPatternDetectionConfig = z.infer<typeof temporalPatternDetectionSchema>;
 export type TemporalAnomalyDetectionConfig = z.infer<typeof temporalAnomalyDetectionSchema>;
+export type TemporalChangepointDetectionConfig = z.infer<typeof temporalChangepointDetectionSchema>;
 export type TemporalHotspotClusteringConfig = z.infer<typeof temporalHotspotClusteringSchema>;
 export type TemporalExternalCorrelationConfig = z.infer<typeof temporalExternalCorrelationSchema>;
 export type TemporalExternalCorrelationSeriesConfig = z.infer<typeof temporalExternalCorrelationSeriesSchema>;

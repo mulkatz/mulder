@@ -571,6 +571,45 @@ describe('Spec 113: Similar Entity Discovery', () => {
 		},
 	);
 
+	it.skipIf(!pgAvailable)('custom scorer dimensions remain reserved without a plugin boundary', async () => {
+		const entityA = await createEntityFixture('Spec 113 Custom Scorer A', {
+			attributes: { reserved_signal: 'same' },
+		});
+		const entityB = await createEntityFixture('Spec 113 Custom Scorer B', {
+			attributes: { reserved_signal: 'same' },
+		});
+		const config = cloneConfig();
+		config.similar_case_discovery.scoring.domain_dimensions = [
+			{
+				id: 'reserved_custom_scorer',
+				label: 'Reserved custom scorer',
+				source: 'custom_scorer',
+				config_ref: 'reserved_signal',
+				weight: 1,
+				metadata: {},
+			},
+		];
+
+		const result = await pipelineModule.discoverSimilarEntities(pool, config, {
+			entityId: entityA.id,
+			candidateIds: [entityB.id],
+			maxResults: 1,
+			persistResults: false,
+			autoDiscover: false,
+		});
+
+		expect(result.results).toHaveLength(1);
+		expect(result.results[0].domain).toEqual([
+			expect.objectContaining({
+				id: 'reserved_custom_scorer',
+				source: 'custom_scorer',
+				score: null,
+				status: 'insufficient_data',
+				reason: 'dimension_source_not_available',
+			}),
+		]);
+	});
+
 	it.skipIf(!pgAvailable)('QA-05: Auto-discovery persists bounded links', async () => {
 		const sourceAId = await createSourceFixture('auto-a');
 		const sourceHighId = await createSourceFixture('auto-high');
@@ -680,6 +719,8 @@ describe('Spec 113: Similar Entity Discovery', () => {
 			target_entity_id: high.id,
 			explanation: 'Query-persisted auto-discovery explanation',
 		});
+		expect(artifacts[0].currentValue).not.toHaveProperty('weightedRankScore');
+		expect(artifacts[0].currentValue).not.toHaveProperty('weighted_rank_score');
 		const edgeRows = await pool.query(
 			"SELECT COUNT(*)::int AS count FROM entity_edges WHERE relationship = 'SIMILAR_TO';",
 		);
@@ -853,6 +894,8 @@ describe('Spec 113: Similar Entity Discovery', () => {
 				sourceDocumentIds: expect.arrayContaining([sourceAId, sourceBId]),
 			}),
 		});
+		expect(artifact.currentValue).not.toHaveProperty('weightedRankScore');
+		expect(artifact.currentValue).not.toHaveProperty('weighted_rank_score');
 		expect(artifact.context).toMatchObject({
 			source_entity_id: entityA.id,
 			target_entity_id: entityB.id,

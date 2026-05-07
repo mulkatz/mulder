@@ -747,6 +747,16 @@ const temporalPatternKnownPatternSchema = z.object({
 	time_end: z.string().min(1).optional(),
 });
 
+const temporalChangepointDetectionObj = z.object({
+	enabled: z.boolean().default(true),
+	threshold: z.number().positive().default(5),
+	drift_allowance: z.number().nonnegative().default(0.5),
+	min_consecutive_windows: z.number().positive().int().default(2),
+});
+const temporalChangepointDetectionSchema = temporalChangepointDetectionObj.default(
+	defaults(temporalChangepointDetectionObj),
+);
+
 const temporalAnomalyDetectionObj = z.object({
 	enabled: z.boolean().default(true),
 	min_entities: z.number().positive().int().default(5),
@@ -758,12 +768,13 @@ const temporalAnomalyDetectionObj = z.object({
 	max_windows: z.number().positive().int().default(120),
 	window_size_buckets: z.number().positive().int().default(1),
 	known_patterns: z.array(temporalPatternKnownPatternSchema).default([]),
+	changepoint_detection: temporalChangepointDetectionSchema,
 });
 const temporalAnomalyDetectionSchema = temporalAnomalyDetectionObj.default(defaults(temporalAnomalyDetectionObj));
 
 const temporalHotspotClusteringObj = z.object({
 	enabled: z.boolean().default(true),
-	algorithm: z.enum(['dbscan', 'hdbscan']).default('hdbscan'),
+	algorithm: z.literal('dbscan').default('dbscan'),
 	min_cluster_size: z.number().positive().int().default(3),
 	radius_km: z.number().positive().default(100),
 	temporal_granularity: temporalPatternGranularitySchema.default('year'),
@@ -800,7 +811,7 @@ const temporalExternalCorrelationObj = z.object({
 	methods: z.array(temporalExternalCorrelationMethodSchema).nonempty().default(['spearman', 'cross_correlation']),
 	min_data_points: z.number().positive().int().default(30),
 	max_lag_days: z.number().nonnegative().int().default(90),
-	always_include_caveat: z.boolean().default(true),
+	always_include_caveat: z.literal(true).default(true),
 });
 const temporalExternalCorrelationSchema = temporalExternalCorrelationObj.default(
 	defaults(temporalExternalCorrelationObj),
@@ -1041,6 +1052,7 @@ export {
 	taxonomyHarmonizationTaxonomyRefSchema,
 	taxonomySchema,
 	temporalAnomalyDetectionSchema,
+	temporalChangepointDetectionSchema,
 	temporalExternalCorrelationMethodSchema,
 	temporalExternalCorrelationSchema,
 	temporalExternalCorrelationSeriesSchema,

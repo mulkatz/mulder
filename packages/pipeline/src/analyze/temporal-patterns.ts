@@ -446,6 +446,72 @@ function peakDate(
 	);
 }
 
+function makeAnomalyCandidate(input: {
+	group: BucketedRegionEvents;
+	observedEvents: RegionEvent[];
+	windowStart: Date;
+	windowEnd: Date;
+	anomalyType: CreateTemporalAnomalyClusterInput['anomalyType'];
+	baselineRate: number;
+	observedRate: number;
+	rawSignificance: number;
+	significanceThreshold: number;
+	granularity: MulderConfig['temporal_pattern_detection']['anomaly_detection']['granularity'];
+	knownPatterns: MulderConfig['temporal_pattern_detection']['anomaly_detection']['known_patterns'];
+	reportingBias: MulderConfig['temporal_pattern_detection']['reporting_bias'];
+	computedAt: Date;
+}): AnomalyCandidate {
+	const categoryRef = dominantCategoryRef(input.observedEvents);
+	const sensitivity = mergeSensitivity(input.observedEvents);
+	const anomalyInput: CreateTemporalAnomalyClusterInput = {
+		regionKey: input.group.regionKey,
+		regionGeojson: input.group.regionGeojson,
+		anomalyType: input.anomalyType,
+		timeStart: input.windowStart,
+		timeEnd: input.windowEnd,
+		entityCount: input.observedEvents.length,
+		baselineRate: input.baselineRate,
+		observedRate: input.observedRate,
+		rawSignificance: input.rawSignificance,
+		comparisonCount: 1,
+		correctedSignificance: input.rawSignificance,
+		significanceThreshold: input.significanceThreshold,
+		peakDate: peakDate(input.observedEvents, input.granularity),
+		dominantCategoryRef: categoryRef,
+		contributingEntityIds: input.observedEvents
+			.map((event) => event.entityId)
+			.sort((left, right) => left.localeCompare(right)),
+		knownPatternMatch: knownPatternMatch(
+			input.group.regionKey,
+			input.windowStart,
+			input.windowEnd,
+			categoryRef,
+			input.knownPatterns,
+		),
+		biasWarning: reportingBiasWarning(input.observedEvents, input.reportingBias),
+		caveats: [WEAK_SIGNAL_CAVEAT],
+		provenance: mergeProvenance(input.observedEvents),
+		sensitivityLevel: sensitivity.sensitivityLevel,
+		sensitivityMetadata: sensitivity.sensitivityMetadata,
+		computedAt: input.computedAt,
+	};
+	return {
+		input: anomalyInput,
+		rawSignificance: input.rawSignificance,
+		summary: {
+			regionKey: input.group.regionKey,
+			timeStart: input.windowStart,
+			timeEnd: input.windowEnd,
+			entityCount: input.observedEvents.length,
+			baselineRate: input.baselineRate,
+			observedRate: input.observedRate,
+			rawSignificance: input.rawSignificance,
+			correctedSignificance: input.rawSignificance,
+			contributingEntityIds: anomalyInput.contributingEntityIds,
+		},
+	};
+}
+
 function buildAnomalyCandidates(
 	events: NormalizedEvent[],
 	config: MulderConfig['temporal_pattern_detection'],
@@ -498,55 +564,98 @@ function buildAnomalyCandidates(
 			if (observedRate <= baselineRate) continue;
 
 			const rawSignificance = poissonUpperTail(observedEvents.length, expected);
-			const categoryRef = dominantCategoryRef(observedEvents);
-			const sensitivity = mergeSensitivity(observedEvents);
-			const input: CreateTemporalAnomalyClusterInput = {
-				regionKey: group.regionKey,
-				regionGeojson: group.regionGeojson,
-				anomalyType: 'frequency_spike',
-				timeStart: windowStart,
-				timeEnd: windowEnd,
-				entityCount: observedEvents.length,
-				baselineRate,
-				observedRate,
-				rawSignificance,
-				comparisonCount: 1,
-				correctedSignificance: rawSignificance,
-				significanceThreshold: anomalyConfig.significance_threshold,
-				peakDate: peakDate(observedEvents, anomalyConfig.granularity),
-				dominantCategoryRef: categoryRef,
-				contributingEntityIds: observedEvents
-					.map((event) => event.entityId)
-					.sort((left, right) => left.localeCompare(right)),
-				knownPatternMatch: knownPatternMatch(
-					group.regionKey,
+			preliminary.push(
+				makeAnomalyCandidate({
+					group,
+					observedEvents,
 					windowStart,
 					windowEnd,
-					categoryRef,
-					anomalyConfig.known_patterns,
-				),
-				biasWarning: reportingBiasWarning(observedEvents, config.reporting_bias),
-				caveats: [WEAK_SIGNAL_CAVEAT],
-				provenance: mergeProvenance(observedEvents),
-				sensitivityLevel: sensitivity.sensitivityLevel,
-				sensitivityMetadata: sensitivity.sensitivityMetadata,
-				computedAt,
-			};
-			preliminary.push({
-				input,
-				rawSignificance,
-				summary: {
-					regionKey: group.regionKey,
-					timeStart: windowStart,
-					timeEnd: windowEnd,
-					entityCount: observedEvents.length,
+					anomalyType: 'frequency_spike',
 					baselineRate,
 					observedRate,
 					rawSignificance,
-					correctedSignificance: rawSignificance,
-					contributingEntityIds: input.contributingEntityIds,
-				},
-			});
+					significanceThreshold: anomalyConfig.significance_threshold,
+					granularity: anomalyConfig.granularity,
+					knownPatterns: anomalyConfig.known_patterns,
+					reportingBias: config.reporting_bias,
+					computedAt,
+				}),
+			);
+		}
+	}
+
+	if (anomalyConfig.changepoint_detection.enabled) {
+		const changepointConfig = anomalyConfig.changepoint_detection;
+		for (const group of regionGroups) {
+			let cusum = 0;
+			let consecutiveWindows = 0;
+			const bucketStarts = [...group.buckets.keys()]
+				.sort((left, right) => left - right)
+				.slice(-anomalyConfig.max_windows);
+			for (const bucketKey of bucketStarts) {
+				const windowStart = new Date(bucketKey);
+				const windowEnd = addBuckets(windowStart, anomalyConfig.window_size_buckets, anomalyConfig.granularity);
+				const baselineStart = new Date(
+					Date.UTC(
+						windowStart.getUTCFullYear() - anomalyConfig.baseline_window_years,
+						windowStart.getUTCMonth(),
+						windowStart.getUTCDate(),
+					),
+				);
+				const baselineBucketCount = bucketCountBetween(baselineStart, windowStart, anomalyConfig.granularity);
+				if (baselineBucketCount <= 0) continue;
+
+				const observedEvents = group.events.filter(
+					(event) =>
+						event.occurredAt.getTime() >= windowStart.getTime() && event.occurredAt.getTime() < windowEnd.getTime(),
+				);
+				const baselineEvents = group.events.filter(
+					(event) =>
+						event.occurredAt.getTime() >= baselineStart.getTime() && event.occurredAt.getTime() < windowStart.getTime(),
+				);
+				comparisonCount++;
+				if (comparisonCount <= anomalyConfig.max_regions * anomalyConfig.max_windows) {
+					boundedComparisonCount = comparisonCount;
+				}
+
+				const baselineRate = baselineEvents.length / baselineBucketCount;
+				const observedRate = observedEvents.length / anomalyConfig.window_size_buckets;
+				const expected = Math.max(0.000001, baselineRate * anomalyConfig.window_size_buckets);
+				if (observedEvents.length < anomalyConfig.min_entities || observedRate <= baselineRate) {
+					cusum = 0;
+					consecutiveWindows = 0;
+					continue;
+				}
+				const standardizedShift = (observedEvents.length - expected) / Math.sqrt(expected);
+				cusum = Math.max(0, cusum + standardizedShift - changepointConfig.drift_allowance);
+				if (cusum >= changepointConfig.threshold) {
+					consecutiveWindows++;
+				} else {
+					consecutiveWindows = 0;
+				}
+				if (consecutiveWindows < changepointConfig.min_consecutive_windows) continue;
+
+				const rawSignificance = poissonUpperTail(observedEvents.length, expected);
+				preliminary.push(
+					makeAnomalyCandidate({
+						group,
+						observedEvents,
+						windowStart,
+						windowEnd,
+						anomalyType: 'frequency_changepoint',
+						baselineRate,
+						observedRate,
+						rawSignificance,
+						significanceThreshold: anomalyConfig.significance_threshold,
+						granularity: anomalyConfig.granularity,
+						knownPatterns: anomalyConfig.known_patterns,
+						reportingBias: config.reporting_bias,
+						computedAt,
+					}),
+				);
+				cusum = 0;
+				consecutiveWindows = 0;
+			}
 		}
 	}
 
@@ -591,39 +700,61 @@ function haversineKm(left: NormalizedEvent, right: NormalizedEvent): number {
 	return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function collectConnectedComponents(events: NormalizedEvent[], radiusKm: number): NormalizedEvent[][] {
-	const adjacency = new Map<string, Set<string>>(events.map((event) => [event.entityId, new Set<string>()]));
-	for (let leftIndex = 0; leftIndex < events.length; leftIndex++) {
-		for (let rightIndex = leftIndex + 1; rightIndex < events.length; rightIndex++) {
-			if (haversineKm(events[leftIndex], events[rightIndex]) <= radiusKm) {
-				adjacency.get(events[leftIndex].entityId)?.add(events[rightIndex].entityId);
-				adjacency.get(events[rightIndex].entityId)?.add(events[leftIndex].entityId);
+function collectDbscanClusters(
+	events: NormalizedEvent[],
+	radiusKm: number,
+	minClusterSize: number,
+): NormalizedEvent[][] {
+	const neighborsByIndex = events.map((event, index) => {
+		const neighbors: number[] = [];
+		for (let candidateIndex = 0; candidateIndex < events.length; candidateIndex++) {
+			if (index === candidateIndex || haversineKm(event, events[candidateIndex]) <= radiusKm) {
+				neighbors.push(candidateIndex);
 			}
 		}
-	}
+		return neighbors;
+	});
+	const visited = new Set<number>();
+	const assigned = new Set<number>();
+	const clusters: NormalizedEvent[][] = [];
 
-	const byId = new Map(events.map((event) => [event.entityId, event]));
-	const visited = new Set<string>();
-	const components: NormalizedEvent[][] = [];
+	for (let index = 0; index < events.length; index++) {
+		if (assigned.has(index)) continue;
+		visited.add(index);
+		const seedNeighbors = neighborsByIndex[index];
+		if (seedNeighbors.length < minClusterSize) continue;
 
-	for (const event of events) {
-		if (visited.has(event.entityId)) continue;
-		const stack = [event.entityId];
-		const component: NormalizedEvent[] = [];
-		while (stack.length > 0) {
-			const currentId = stack.pop();
-			if (!currentId || visited.has(currentId)) continue;
-			visited.add(currentId);
-			const currentEvent = byId.get(currentId);
-			if (currentEvent) component.push(currentEvent);
-			for (const neighborId of adjacency.get(currentId) ?? []) {
-				if (!visited.has(neighborId)) stack.push(neighborId);
+		const cluster = new Set<number>();
+		const queue = [...seedNeighbors];
+		for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
+			const neighborIndex = queue[queueIndex];
+			if (!assigned.has(neighborIndex)) cluster.add(neighborIndex);
+			if (visited.has(neighborIndex)) continue;
+
+			visited.add(neighborIndex);
+			const expandedNeighbors = neighborsByIndex[neighborIndex];
+			if (expandedNeighbors.length < minClusterSize) continue;
+			for (const expandedIndex of expandedNeighbors) {
+				if (!assigned.has(expandedIndex)) cluster.add(expandedIndex);
+				if (!visited.has(expandedIndex) && !queue.includes(expandedIndex)) queue.push(expandedIndex);
 			}
 		}
-		components.push(component.sort((left, right) => left.entityId.localeCompare(right.entityId)));
+
+		if (cluster.size < minClusterSize) continue;
+		for (const clusterIndex of cluster) assigned.add(clusterIndex);
+		clusters.push(
+			[...cluster]
+				.map((clusterIndex) => events[clusterIndex])
+				.sort((left, right) => left.entityId.localeCompare(right.entityId)),
+		);
 	}
 
-	return components;
+	return clusters.sort(
+		(left, right) =>
+			right.length - left.length ||
+			(left[0]?.occurredAt.getTime() ?? 0) - (right[0]?.occurredAt.getTime() ?? 0) ||
+			(left[0]?.entityId ?? '').localeCompare(right[0]?.entityId ?? ''),
+	);
 }
 
 function deterministicUuid(key: string): string {
@@ -898,7 +1029,7 @@ async function buildExternalCorrelationInputs(
 				dataPointCount: computed.dataPointCount,
 				contributingEntityIds,
 				interpretationCaveat: CORRELATION_CAVEAT,
-				caveats: externalConfig.always_include_caveat ? [CORRELATION_CAVEAT] : [],
+				caveats: [CORRELATION_CAVEAT],
 				provenance: mergeProvenance(computed.events),
 				sensitivityLevel: sensitivity.sensitivityLevel,
 				sensitivityMetadata: sensitivity.sensitivityMetadata,
@@ -989,8 +1120,11 @@ function buildHotspotCandidates(
 
 	const candidates: HotspotCandidate[] = [];
 	for (const [bucketKey, bucketEvents] of [...buckets.entries()].sort((left, right) => left[0] - right[0])) {
-		for (const component of collectConnectedComponents(bucketEvents, hotspotConfig.radius_km)) {
-			if (component.length < hotspotConfig.min_cluster_size) continue;
+		for (const component of collectDbscanClusters(
+			bucketEvents,
+			hotspotConfig.radius_km,
+			hotspotConfig.min_cluster_size,
+		)) {
 			const centroidLat = component.reduce((total, event) => total + (event.latitude ?? 0), 0) / component.length;
 			const centroidLng = component.reduce((total, event) => total + (event.longitude ?? 0), 0) / component.length;
 			const timeStart = new Date(bucketKey);

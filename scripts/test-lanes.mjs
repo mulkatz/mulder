@@ -878,7 +878,10 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 		};
 	}
 
-	if (file === 'packages/core/src/database/migrations/046_temporal_pattern_detection.sql') {
+	if (
+		file === 'packages/core/src/database/migrations/046_temporal_pattern_detection.sql' ||
+		file === 'packages/core/src/database/migrations/048_m12_review_temporal_followups.sql'
+	) {
 		selectSpecOrFallback('115', 'temporalPatternDetection');
 		return {
 			rule: 'temporal pattern detection migration',

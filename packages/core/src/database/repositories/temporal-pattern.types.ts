@@ -2,7 +2,7 @@ import type { SensitivityLevel, SensitivityMetadata } from '../../shared/sensiti
 import type { ArtifactProvenance, ArtifactProvenanceInput } from './artifact-provenance.js';
 import type { ClassificationCategoryRef } from './classification-harmonization.types.js';
 
-export type TemporalAnomalyType = 'frequency_spike';
+export type TemporalAnomalyType = 'frequency_spike' | 'frequency_changepoint';
 export type SpatiotemporalHotspotType = 'density_cluster';
 export type ExternalCorrelationMethod = 'spearman' | 'cross_correlation';
 export type TemporalPatternSignalStrength = 'weak';

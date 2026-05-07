@@ -49,7 +49,7 @@ This step intentionally keeps dimensions visible instead of collapsing them into
 - Add a `similarity_cache` persistence model for unordered entity pairs, per-dimension core scores, optional domain dimension scores, explanation, shared entity ids, key differences, provenance, sensitivity metadata, review status, auto-discovery metadata, and timestamps.
 - Add repository APIs to upsert/list/find cached similarity results idempotently by entity pair and to return query-mode results for a selected entity.
 - Add deterministic scoring helpers for core dimensions using available entity embeddings, graph connectivity, geometry, and ISO date attributes. Missing dimensions must be represented as `null`/`insufficient_data`, not fabricated scores.
-- Add a domain-dimension extension point that accepts configured attribute-comparison dimensions now and can consume taxonomy mappings when M12-N2 adds them.
+- Add a domain-dimension extension point that accepts configured attribute-comparison dimensions now, can consume taxonomy mappings when M12-N2 adds them, and treats `custom_scorer` as reserved until a scorer plugin boundary exists.
 - Add an Analyze-facing public function that runs candidate scoring for one entity, sorts by configured weights, stores top results when requested, and optionally creates bounded `SIMILAR_TO` edges through the existing edge repository when auto-discovery thresholds are met.
 - Register `similar_case_link` review artifacts when the M11 review workflow is available, without requiring a UI or manual review route.
 
@@ -64,7 +64,7 @@ This step intentionally keeps dimensions visible instead of collapsing them into
 **Architectural constraints:**
 
 - Core code must stay domain-agnostic. Use generic entities, configured attributes, taxonomy ids, and display labels only from config.
-- Do not combine dimensions into a persisted aggregate score. Sorting may compute a transient weighted rank and must keep raw dimension values visible.
+- Do not combine dimensions into a persisted aggregate score. Sorting may compute a transient weighted rank, but that value is sort-only: it must not be persisted, placed in review payloads, or presented as evidence strength.
 - Candidate work must be bounded by config (`vector_top_k`, max results, `max_auto_links`) so ingest or analysis cannot fan out unboundedly.
 - Similarity links must carry provenance and sensitivity metadata, and read APIs must preserve M11 RBAC filtering surfaces.
 - Auto-discovery must be idempotent: rerunning for the same entity pair updates the cache/edge rather than duplicating rows.
@@ -101,11 +101,12 @@ N1 blocks later M12 discovery workflows that consume similar entity links, inclu
    - Implement deterministic core-dimension scoring from available entity fields and graph edges.
    - Return explicit insufficient-data markers for missing embeddings, missing geometry, missing dates, or sparse graph topology.
    - Sort transiently by configured weights while returning raw dimension scores.
+   - Return `insufficient_data` for `custom_scorer` dimensions until a real scorer plugin boundary is implemented.
    - Persist top-N results when requested and create/update `SIMILAR_TO` edges only when `auto_discovery.create_graph_edge` is enabled and thresholds are met.
 
 5. Add review integration:
    - Register reviewable artifacts of type `similar_case_link` for persisted auto-discovered links when review workflow helpers are available.
-   - Include current score payload, explanation, provenance, sensitivity, and entity ids in review context.
+   - Include current score payload, explanation, provenance, sensitivity, and entity ids in review context, without including the transient weighted rank score.
    - Do not auto-approve or expose reviewer assignment beyond the existing review workflow defaults.
 
 6. Update affected-test mapping only if needed:

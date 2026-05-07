@@ -2,7 +2,7 @@
 spec: 116
 title: "External Correlation Plugins"
 roadmap_step: "M12-N4"
-functional_spec: "§A12.1 Level 3, §D1 Rule 4, §D1 Rule 6"
+functional_spec: "§A12.1 Level 3, §D2.4, §D2.6"
 scope: "phased"
 issue: "https://github.com/mulkatz/mulder/issues/305"
 created: 2026-05-07
@@ -46,7 +46,7 @@ This step must remain domain-agnostic. External source ids, labels, and semantic
 
 **In scope:**
 
-- Add `temporal_pattern_detection.external_correlation` config with `enabled`, `series`, `methods`, `min_data_points`, `max_lag_days`, and `always_include_caveat`.
+- Add `temporal_pattern_detection.external_correlation` config with `enabled`, `series`, `methods`, `min_data_points`, `max_lag_days`, and `always_include_caveat`. The caveat switch is declarative and must remain `true`; external correlations cannot disable "Correlation ≠ Causation".
 - Define a generic external data source plugin interface for time-series, event-list, and static-dataset sources.
 - Provide a deterministic registry/fetch path so Analyze code can use registered plugins without hard-coded external sources.
 - Add `external_correlations` persistence with internal series id/key, external source/series ids, method, coefficient, p-value, lag days, time window, caveat, provenance, sensitivity metadata, review status, signal strength, computed_at, and soft delete.
@@ -66,7 +66,8 @@ This step must remain domain-agnostic. External source ids, labels, and semantic
 
 **Architectural constraints:**
 
-- External sources are plugins per §D1 Rule 4. Core code may ship interfaces and a test/static plugin implementation, but no domain-specific source is hard-coded.
+- External sources are plugins per §D2.4. Core code may ship interfaces and a test/static plugin implementation, but no domain-specific source is hard-coded.
+- Plugin metadata must match the §A12.1/§D2.4 contract: `id`, `name`, `description`, `type`, `update_frequency`, and request-aware `fetch`.
 - Plugin ids and series ids must be stable, queryable strings and must be validated as non-empty domain-neutral identifiers.
 - Correlation results are weak signals only. They cannot upgrade evidence strength and must carry "Correlation ≠ Causation".
 - Analysis must be bounded by config: selected series, min data points, max lag, enabled methods, max internal series/windows where needed.
@@ -88,8 +89,9 @@ N4 completes the M12 discovery feature set and prepares M13/M14 reporting and ag
    - Keep defaults enabled but empty-series safe so ordinary runs do no external work.
 
 2. Add plugin interface:
-   - Define `ExternalDataSourcePlugin`, `ExternalDataPoint`, and registry functions in pipeline/analyze or a small shared module.
+   - Define `ExternalDataSource`, `ExternalDataSourcePlugin` as a compatibility alias, `ExternalDataPoint`, and registry functions in pipeline/analyze or a small shared module.
    - Support static fixture plugins for tests.
+   - Validate plugin metadata and throw a custom analyze validation error for invalid registrations.
    - Validate plugin output shape and drop invalid points with warnings rather than throwing when possible.
 
 3. Add migration and repository:
@@ -116,7 +118,7 @@ N4 completes the M12 discovery feature set and prepares M13/M14 reporting and ag
 1. **QA-01: Config exposes §A12.1 external correlation defaults**
    - Given example/default config
    - When config is loaded
-   - Then `external_correlation` exists, defaults to an empty safe series list, supports bounded methods, and does not require local config.
+   - Then `external_correlation` exists, defaults to an empty safe series list, supports bounded methods, rejects `always_include_caveat: false`, and does not require local config.
 
 2. **QA-02: External correlation schema is constrained and queryable**
    - Given a migrated test database
@@ -126,7 +128,7 @@ N4 completes the M12 discovery feature set and prepares M13/M14 reporting and ag
 3. **QA-03: External source plugins are registered and fetched generically**
    - Given static test plugins and configured series
    - When correlation analysis runs
-   - Then data is fetched through plugin ids only, with no hard-coded external source names or network calls.
+   - Then data is fetched through plugin ids only, plugin metadata follows §D2.4, invalid registrations throw custom validation errors, and no hard-coded external source names or network calls are used.
 
 4. **QA-04: Spearman/cross-correlation computes bounded lagged results**
    - Given aligned internal and external time series with a known lag

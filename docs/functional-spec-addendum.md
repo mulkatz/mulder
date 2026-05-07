@@ -1486,7 +1486,7 @@ interface SpatiotemporalCluster {
 }
 ```
 
-**Method:** DBSCAN or HDBSCAN on (lat, lng, time) tuples (PostGIS + application code). Separate analysis per time window → hotspot evolution over time. Persistence classification: transient (one occurrence), recurring (periodic), permanent (ongoing).
+**Method:** DBSCAN or HDBSCAN on (lat, lng, time) tuples (PostGIS + application code). M12 implements deterministic DBSCAN using configured radius and minimum cluster size; HDBSCAN remains an allowed future enhancement when a true implementation is added. Separate analysis per time window → hotspot evolution over time. Persistence classification: transient (one occurrence), recurring (periodic), permanent (ongoing).
 
 #### Level 3: External Correlation Analysis
 
@@ -1506,7 +1506,7 @@ interface CorrelationResult {
 }
 ```
 
-**External data source plugin interface** (see §D1 Rule 4):
+**External data source plugin interface** (see §D2.4):
 
 ```typescript
 interface ExternalDataSource {
@@ -2220,7 +2220,7 @@ Analysis features that generate research value from the combined data. Depends o
 | ⚪ | N3 | Temporal pattern detection — anomaly detection, hotspot clustering | §A12 |
 | ⚪ | N4 | External data source plugin interface + correlation analysis | §A12.1 (Level 3) |
 
-**Also read for all M12 steps:** §A11 (taxonomy mappings used by §A10 domain dimensions), §D1 Rule 4 (external data sources are plugins), §D1 Rule 6 (similarity dimensions configurable)
+**Also read for all M12 steps:** §A11 (taxonomy mappings used by §A10 domain dimensions), §D2.4 (external data sources are plugins), §D2.6 (similarity dimensions configurable)
 
 **Testable:** Similar entities found across dimensions with explanations. Cross-taxonomy mappings enable system-spanning queries. Temporal anomalies detected with statistical significance. External correlations computed with mandatory caveats.
 

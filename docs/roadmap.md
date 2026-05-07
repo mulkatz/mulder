@@ -334,7 +334,7 @@ Analysis features that generate research value from the combined data. Depends o
 | 🟢 | N3 | Temporal pattern detection — anomaly detection, hotspot clustering | §A12 |
 | 🟢 | N4 | External data source plugin interface + correlation analysis | §A12 |
 
-**Also read for all M12 steps:** §A11 (taxonomy mappings), §D1 Rules 4 + 6
+**Also read for all M12 steps:** §A11 (taxonomy mappings), §D2.4 (external data-source plugins), §D2.6 (configurable similarity dimensions)
 
 **Testable:** Similar entities found across dimensions. Cross-taxonomy mappings enable cross-system queries. Temporal anomalies detected. External correlations computed with caveats.
 
