@@ -410,6 +410,46 @@ describe('Spec 111: RBAC implementation', () => {
 				await coreModule.findStoriesByEntityId(pool, internalFixture.entity.id, { maxSensitivityLevel: 'internal' })
 			).map((story) => story.id),
 		).not.toContain(restrictedStoryForInternalEntity.id);
+		const internalProfile = await coreModule.upsertSourceCredibilityProfile(pool, {
+			sourceId: internalFixture.source.id,
+			sourceName: 'Internal credibility source',
+			sourceType: 'other',
+			profileAuthor: 'llm_auto',
+			reviewStatus: 'draft',
+			dimensions: [
+				{
+					dimensionId: 'transparency',
+					label: 'Transparency',
+					score: 0.72,
+					rationale: 'Fixture internal profile',
+				},
+			],
+		});
+		const restrictedProfile = await coreModule.upsertSourceCredibilityProfile(pool, {
+			sourceId: restrictedFixture.source.id,
+			sourceName: 'Restricted credibility source',
+			sourceType: 'other',
+			profileAuthor: 'llm_auto',
+			reviewStatus: 'draft',
+			dimensions: [
+				{
+					dimensionId: 'transparency',
+					label: 'Transparency',
+					score: 0.64,
+					rationale: 'Fixture restricted profile',
+				},
+			],
+		});
+		expect(
+			(await coreModule.listSourceCredibilityProfiles(pool, { maxSensitivityLevel: 'internal' })).map(
+				(profile) => profile.profileId,
+			),
+		).toEqual([internalProfile.profileId]);
+		expect(
+			(await coreModule.listSourceCredibilityProfiles(pool, { maxSensitivityLevel: 'confidential' })).map(
+				(profile) => profile.profileId,
+			),
+		).toEqual(expect.arrayContaining([internalProfile.profileId, restrictedProfile.profileId]));
 		expect(await coreModule.findAllSources(pool, { maxSensitivityLevel: 'confidential' })).toHaveLength(4);
 	});
 

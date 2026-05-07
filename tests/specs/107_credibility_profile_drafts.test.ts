@@ -138,7 +138,21 @@ function cleanTables(): void {
 	truncateExistingTables(['credibility_dimensions', 'source_credibility_profiles', ...MULDER_TEST_TABLES]);
 }
 
-async function createTextSource(label = 'spec107') {
+function sensitivityMetadata(level: import('@mulder/core').SensitivityLevel) {
+	return {
+		level,
+		reason: 'spec107_fixture',
+		assignedBy: 'policy_rule' as const,
+		assignedAt: '2026-05-07T00:00:00.000Z',
+		piiTypes: [],
+		declassifyDate: null,
+	};
+}
+
+async function createTextSource(
+	label = 'spec107',
+	sensitivityLevel: import('@mulder/core').SensitivityLevel = 'internal',
+) {
 	const source = await coreModule.createSource(pool, {
 		filename: `${label}-${randomUUID()}.md`,
 		storagePath: `raw/${label}-${randomUUID()}.md`,
@@ -148,6 +162,8 @@ async function createTextSource(label = 'spec107') {
 		pageCount: 1,
 		hasNativeText: true,
 		nativeTextRatio: 1,
+		sensitivityLevel,
+		sensitivityMetadata: sensitivityMetadata(sensitivityLevel),
 	});
 	return source;
 }
@@ -409,6 +425,8 @@ describe('Spec 107: credibility profile drafts', () => {
 		for (const value of ['llm_auto', 'human', 'hybrid', 'draft', 'reviewed', 'contested']) {
 			expect(profileChecks).toContain(value);
 		}
+		expect(profileChecks).toContain('jsonb_typeof(provenance)');
+		expect(profileChecks).toContain('sensitivity_level');
 
 		const dimensionChecks = db.runSql(
 			[
@@ -426,11 +444,13 @@ describe('Spec 107: credibility profile drafts', () => {
 				'SELECT indexname',
 				'FROM pg_indexes',
 				"WHERE schemaname = 'public'",
-				"  AND indexname IN ('idx_source_credibility_profiles_review_status', 'idx_credibility_dimensions_dimension_id', 'idx_credibility_dimensions_low_score_review')",
+				"  AND indexname IN ('idx_source_credibility_profiles_review_status', 'idx_source_credibility_profiles_provenance_source_ids', 'idx_source_credibility_profiles_sensitivity_level', 'idx_credibility_dimensions_dimension_id', 'idx_credibility_dimensions_low_score_review')",
 				'ORDER BY indexname;',
 			].join('\n'),
 		);
 		expect(indexes).toContain('idx_source_credibility_profiles_review_status');
+		expect(indexes).toContain('idx_source_credibility_profiles_provenance_source_ids');
+		expect(indexes).toContain('idx_source_credibility_profiles_sensitivity_level');
 		expect(indexes).toContain('idx_credibility_dimensions_dimension_id');
 		expect(indexes).toContain('idx_credibility_dimensions_low_score_review');
 	});
@@ -475,11 +495,41 @@ describe('Spec 107: credibility profile drafts', () => {
 		expect(second.profileId).toBe(first.profileId);
 		expect(second.dimensions).toHaveLength(config.credibility.dimensions.length);
 		expect(second.dimensions[0].score).toBeGreaterThan(first.dimensions[0].score);
+		expect(second.provenance.sourceDocumentIds).toEqual([source.id]);
+		expect(second.sensitivityLevel).toBe('internal');
+		expect(second.sensitivityMetadata.level).toBe('internal');
 		expect(
 			Number(
 				db.runSql(`SELECT COUNT(*) FROM credibility_dimensions WHERE profile_id = ${sqlLiteral(second.profileId)};`),
 			),
 		).toBe(config.credibility.dimensions.length);
+	});
+
+	it.skipIf(!pgAvailable)('QA-03b: repository carries sensitivity/provenance and filters by access level', async () => {
+		const source = await createTextSource('spec107-qa03b', 'restricted');
+		const profile = await coreModule.upsertSourceCredibilityProfile(pool, {
+			sourceId: source.id,
+			sourceName: source.filename,
+			sourceType: 'witness',
+			profileAuthor: 'llm_auto',
+			reviewStatus: 'draft',
+			dimensions: dimensionInputs(0.5),
+		});
+		const artifact = await coreModule.findReviewableArtifactBySubject(pool, 'credibility_profile', profile.profileId);
+
+		expect(profile.provenance.sourceDocumentIds).toEqual([source.id]);
+		expect(profile.sensitivityLevel).toBe('restricted');
+		expect(profile.sensitivityMetadata.level).toBe('restricted');
+		expect(artifact?.context.source_id).toBe(source.id);
+		expect(artifact?.context.sensitivity_level).toBe('restricted');
+		expect(artifact?.context.provenance).toMatchObject({ source_document_ids: [source.id] });
+		await expect(
+			coreModule.findSourceCredibilityProfileBySourceId(pool, source.id, {
+				maxSensitivityLevel: 'internal',
+			}),
+		).resolves.toBeNull();
+		expect(await coreModule.listSourceCredibilityProfiles(pool, { maxSensitivityLevel: 'internal' })).toEqual([]);
+		expect(await coreModule.listSourceCredibilityProfiles(pool, { maxSensitivityLevel: 'restricted' })).toHaveLength(1);
 	});
 
 	it.skipIf(!pgAvailable)('QA-04: draft generation creates reviewable profiles', async () => {

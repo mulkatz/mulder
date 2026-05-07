@@ -255,7 +255,7 @@ describe('Spec 109: review workflow infrastructure', () => {
 		expect(config.review_workflow.artifact_types.agent_finding.auto_approve_after_hours).toBeNull();
 		expect(config.review_workflow.metrics).toEqual({
 			track_accuracy: true,
-			auto_adjust_depth: true,
+			auto_adjust_depth: false,
 			accuracy_threshold_for_upgrade: 0.7,
 			accuracy_threshold_for_downgrade: 0.95,
 		});
@@ -495,6 +495,64 @@ describe('Spec 109: review workflow infrastructure', () => {
 		expect(artifact?.sourceId).toBe(source.id);
 		expect(artifact?.currentValue.source_name).toBe('Spec 109 Source');
 		expect(artifact?.context.source_id).toBe(source.id);
+		expect(artifact?.context.sensitivity_level).toBe('internal');
+		expect(artifact?.context.provenance).toMatchObject({ source_document_ids: [source.id] });
+	});
+
+	it.skipIf(!pgAvailable)('QA-07b: LLM assertion classifications register review artifacts', async () => {
+		const { source, story } = await createStory('qa07b');
+		const assertion = await coreModule.upsertKnowledgeAssertion(pool, {
+			sourceId: source.id,
+			storyId: story.id,
+			assertionType: 'hypothesis',
+			content: 'The observed pattern may indicate coordinated activity.',
+			confidenceMetadata: confidenceMetadata(),
+			classificationProvenance: 'llm_auto',
+			extractedEntityIds: [],
+			provenance: { sourceDocumentIds: [source.id] },
+			qualityMetadata: { classifier: 'fixture' },
+			sensitivityLevel: 'restricted',
+			sensitivityMetadata: {
+				level: 'restricted',
+				reason: 'fixture',
+				assignedBy: 'llm_auto',
+				assignedAt: '2026-05-06T00:00:00.000Z',
+				piiTypes: [],
+				declassifyDate: null,
+			},
+		});
+		const artifact = await coreModule.findReviewableArtifactBySubject(pool, 'assertion_classification', assertion.id);
+		const reviewed = await coreModule.upsertKnowledgeAssertion(pool, {
+			sourceId: source.id,
+			storyId: story.id,
+			assertionType: 'observation',
+			content: 'A reviewer explicitly classified this sentence.',
+			confidenceMetadata: confidenceMetadata(),
+			classificationProvenance: 'human_reviewed',
+			extractedEntityIds: [],
+			provenance: { sourceDocumentIds: [source.id] },
+			sensitivityLevel: 'internal',
+			sensitivityMetadata: {
+				level: 'internal',
+				reason: 'fixture',
+				assignedBy: 'human',
+				assignedAt: '2026-05-06T00:00:00.000Z',
+				piiTypes: [],
+				declassifyDate: null,
+			},
+		});
+
+		expect(artifact?.reviewStatus).toBe('pending');
+		expect(artifact?.sourceId).toBe(source.id);
+		expect(artifact?.currentValue.assertion_type).toBe('hypothesis');
+		expect(artifact?.currentValue.classification_provenance).toBe('llm_auto');
+		expect(artifact?.currentValue.quality_metadata).toMatchObject({ classifier: 'fixture' });
+		expect(artifact?.context.story_id).toBe(story.id);
+		expect(artifact?.context.sensitivity_level).toBe('restricted');
+		expect(artifact?.context.provenance).toMatchObject({ source_document_ids: [source.id] });
+		await expect(
+			coreModule.findReviewableArtifactBySubject(pool, 'assertion_classification', reviewed.id),
+		).resolves.toBeNull();
 	});
 
 	it.skipIf(!pgAvailable)('QA-08: conflict nodes and resolutions register review artifacts', async () => {

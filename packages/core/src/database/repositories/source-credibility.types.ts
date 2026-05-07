@@ -1,3 +1,6 @@
+import type { SensitivityLevel, SensitivityMetadata } from '../../shared/sensitivity.js';
+import type { ArtifactProvenance, ArtifactProvenanceInput } from './artifact-provenance.js';
+
 export type CredibilitySourceType =
 	| 'government'
 	| 'academic'
@@ -32,6 +35,9 @@ export interface SourceCredibilityProfile {
 	profileAuthor: CredibilityProfileAuthor;
 	lastReviewed: Date | null;
 	reviewStatus: CredibilityReviewStatus;
+	provenance: ArtifactProvenance;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
 	dimensions: CredibilityDimension[];
 	createdAt: Date;
 	updatedAt: Date;
@@ -53,12 +59,16 @@ export interface UpsertSourceCredibilityProfileInput {
 	profileAuthor?: CredibilityProfileAuthor;
 	lastReviewed?: Date | string | null;
 	reviewStatus?: CredibilityReviewStatus;
+	provenance?: ArtifactProvenanceInput;
+	sensitivityLevel?: SensitivityLevel;
+	sensitivityMetadata?: unknown;
 	dimensions: readonly UpsertCredibilityDimensionInput[];
 }
 
 export interface SourceCredibilityProfileListOptions {
 	sourceType?: CredibilitySourceType;
 	reviewStatus?: CredibilityReviewStatus;
+	maxSensitivityLevel?: SensitivityLevel;
 	limit?: number;
 	offset?: number;
 }

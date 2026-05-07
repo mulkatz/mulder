@@ -220,7 +220,7 @@ export const CONFIG_DEFAULTS = {
 		},
 		metrics: {
 			track_accuracy: true,
-			auto_adjust_depth: true,
+			auto_adjust_depth: false,
 			accuracy_threshold_for_upgrade: 0.7,
 			accuracy_threshold_for_downgrade: 0.95,
 		},

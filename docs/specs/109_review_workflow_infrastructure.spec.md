@@ -55,7 +55,7 @@ The review layer is not a parallel fact store. It records the human-review state
 
 - Review API routes, app UI, notifications, export/import of offline review batches, or project-board style reviewer assignment screens.
 - Expertise weighting, gamification, consensus algorithms, or any product choice listed as open in §A13.8.
-- Agent findings, taxonomy mappings, similar-case links, and assertion-classification review integration beyond keeping the artifact type model generic enough for later steps.
+- Agent findings, taxonomy mappings, and similar-case links beyond keeping the artifact type model generic enough for later steps.
 - Changing credibility dimension scores, conflict severity, or assertion classification values automatically based on review metrics.
 - Background schedulers for auto-approval. L3 provides a repository operation that callers can invoke later.
 
@@ -102,7 +102,8 @@ L3 blocks L4/L5 only at the milestone integration level, but it directly enables
    - `artifact_types.taxonomy_mapping` defaults to single-review and auto-approve after 336 hours.
    - `artifact_types.similar_case_link` defaults to single-review and auto-approve after 168 hours.
    - `artifact_types.agent_finding` defaults to single-review and no auto-approval.
-   - `metrics.track_accuracy`, `auto_adjust_depth`, `accuracy_threshold_for_upgrade`, and `accuracy_threshold_for_downgrade` match §A13.
+   - `metrics.track_accuracy`, `accuracy_threshold_for_upgrade`, and `accuracy_threshold_for_downgrade` match §A13.
+   - `metrics.auto_adjust_depth` is explicitly reserved with a default of `false` until a review-depth policy worker is implemented.
 
 4. Integrate existing M11 artifacts:
    - When a source credibility profile is created or updated with `profile_author = llm_auto` or draft-like status, upsert a `credibility_profile` review artifact with a compact current value and source context.
@@ -113,6 +114,7 @@ L3 blocks L4/L5 only at the milestone integration level, but it directly enables
 5. Add metrics-ready behavior without automating policy decisions:
    - Repository list options expose status/action filters sufficient for later accuracy reporting.
    - L3 does not implement automatic review-depth upgrades/downgrades. It stores config and events needed for that later behavior.
+   - The default config therefore keeps `review_workflow.metrics.auto_adjust_depth = false`; setting it to `true` is non-operational until a later worker/spec defines the policy loop.
 
 6. Update roadmap state only after gates:
    - Keep L3 in progress while implementation is open.
@@ -159,6 +161,11 @@ L3 blocks L4/L5 only at the milestone integration level, but it directly enables
    - Given a conflict node and a typed conflict resolution are created
    - When the conflict repository completes
    - Then `conflict_node` and `conflict_resolution` review artifacts exist with participant/resolution context and can be found through the conflict review queue.
+
+9. **QA-09: LLM assertion classifications register review artifacts**
+   - Given a knowledge assertion whose classification provenance is `llm_auto`
+   - When the assertion repository persists it
+   - Then an `assertion_classification` review artifact exists with assertion value, provenance, and sensitivity context.
 
 ## 5b. CLI Test Matrix
 

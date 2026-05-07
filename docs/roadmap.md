@@ -315,6 +315,8 @@ Builds the trust infrastructure. Depends on M10 foundations (provenance, asserti
 | 🟢 | L4 | Translation service — two paths, caching | §A7 |
 | 🟢 | L5 | RBAC implementation — roles, permissions, sensitivity-based filtering | §A5.3 |
 
+**Post-review repair:** Spec 112 records the M11 review-warning fixes for credibility trust metadata, review metrics reservation, and assertion-classification review artifact registration. M11 remains complete at `5/5`.
+
 **Also read for all M11 steps:** §A3 (assertion types), §A5 (sensitivity)
 
 **Testable:** Credibility profiles auto-generated on ingest. Contradictions detected and modeled as graph entities. Review queues populated. Documents translatable. Role-based access filtering works.
