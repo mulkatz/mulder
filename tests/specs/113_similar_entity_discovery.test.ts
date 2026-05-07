@@ -124,6 +124,24 @@ async function createEntityFixture(label: string, overrides: Partial<import('@mu
 	});
 }
 
+async function createSourceFixture(label: string): Promise<string> {
+	const source = await coreModule.createSource(pool, {
+		filename: `${label}.txt`,
+		storagePath: `gs://spec113/${label}-${randomUUID()}.txt`,
+		fileHash: `spec113-${label}-${randomUUID()}`,
+		sourceType: 'text',
+	});
+	return source.id;
+}
+
+async function setEntityGeometry(entityId: string, latitude: number, longitude: number): Promise<void> {
+	await pool.query('UPDATE entities SET geom = ST_SetSRID(ST_MakePoint($2, $1), 4326) WHERE id = $3;', [
+		latitude,
+		longitude,
+		entityId,
+	]);
+}
+
 async function upsertSimilarity(
 	sourceEntityId: string,
 	targetEntityId: string,
@@ -362,9 +380,104 @@ describe('Spec 113: Similar Entity Discovery', () => {
 		expect(cachedRows.rows[0].count).toBe(0);
 	});
 
+	it.skipIf(!pgAvailable)('keeps restricted structural evidence out of lower-sensitivity query scoring', async () => {
+		const entityA = await createEntityFixture('Spec 113 Structural Filter A');
+		const entityB = await createEntityFixture('Spec 113 Structural Filter B');
+		const shared = await createEntityFixture('Spec 113 Structural Restricted Shared', {
+			sensitivityLevel: 'restricted',
+			sensitivityMetadata: sensitivityMetadata('restricted'),
+		});
+		const restrictedEdge = {
+			relationship: 'RELATIONSHIP',
+			edgeType: 'RELATIONSHIP' as const,
+			sensitivityLevel: 'restricted' as const,
+			sensitivityMetadata: sensitivityMetadata('restricted'),
+		};
+		await coreModule.createEdge(pool, {
+			sourceEntityId: entityA.id,
+			targetEntityId: shared.id,
+			...restrictedEdge,
+		});
+		await coreModule.createEdge(pool, {
+			sourceEntityId: entityB.id,
+			targetEntityId: shared.id,
+			...restrictedEdge,
+		});
+
+		const config = cloneConfig();
+		const internalResult = await pipelineModule.discoverSimilarEntities(pool, config, {
+			entityId: entityA.id,
+			candidateIds: [entityB.id],
+			maxResults: 1,
+			maxSensitivityLevel: 'internal',
+		});
+		const restrictedResult = await pipelineModule.discoverSimilarEntities(pool, config, {
+			entityId: entityA.id,
+			candidateIds: [entityB.id],
+			maxResults: 1,
+			maxSensitivityLevel: 'restricted',
+		});
+
+		expect(internalResult.results[0].core.structural).toMatchObject({
+			status: 'insufficient_data',
+			score: null,
+		});
+		expect(internalResult.results[0].sharedEntityIds).toEqual([]);
+		expect(restrictedResult.results[0].core.structural).toMatchObject({
+			status: 'scored',
+			score: 1,
+		});
+		expect(restrictedResult.results[0].sharedEntityIds).toEqual([shared.id]);
+	});
+
+	it.skipIf(!pgAvailable)('unions bounded geospatial and temporal candidate sets beyond vector top-k', async () => {
+		const entityA = await createEntityFixture('Spec 113 Candidate Union A', {
+			attributes: { date: '2020-01-01' },
+		});
+		const geoCandidate = await createEntityFixture('Spec 113 Candidate Union Geo', {
+			attributes: { date: '1900-01-01' },
+		});
+		const temporalCandidate = await createEntityFixture('Spec 113 Candidate Union Temporal', {
+			attributes: { date: '2020-06-01' },
+		});
+		const unrelated = await createEntityFixture('Spec 113 Candidate Union Far', {
+			attributes: { date: '1900-01-01' },
+		});
+		await setEntityGeometry(entityA.id, 52.52, 13.405);
+		await setEntityGeometry(geoCandidate.id, 52.5205, 13.4055);
+		await setEntityGeometry(unrelated.id, 48.137, 11.575);
+
+		const config = cloneConfig();
+		config.similar_case_discovery.max_results = 5;
+		config.similar_case_discovery.candidate_retrieval.vector_top_k = 1;
+		config.similar_case_discovery.candidate_retrieval.geo_radius_km = 1;
+		config.similar_case_discovery.candidate_retrieval.temporal_window_years = 1;
+
+		const result = await pipelineModule.discoverSimilarEntities(pool, config, {
+			entityId: entityA.id,
+			maxResults: 5,
+			persistResults: false,
+			autoDiscover: false,
+		});
+
+		const resultIds = result.results.map((item) => item.entityId);
+		expect(resultIds).toEqual(expect.arrayContaining([geoCandidate.id, temporalCandidate.id]));
+		expect(resultIds).not.toContain(unrelated.id);
+		expect(result.results.find((item) => item.entityId === geoCandidate.id)?.core.geospatial.status).toBe('scored');
+		expect(result.results.find((item) => item.entityId === temporalCandidate.id)?.core.temporal.status).toBe('scored');
+	});
+
 	it.skipIf(!pgAvailable)('QA-05: Auto-discovery persists bounded links', async () => {
-		const entityA = await createEntityFixture('Spec 113 Auto A', { attributes: { date: '2020-01-01' } });
-		const high = await createEntityFixture('Spec 113 Auto High', { attributes: { date: '2020-01-01' } });
+		const sourceAId = await createSourceFixture('auto-a');
+		const sourceHighId = await createSourceFixture('auto-high');
+		const entityA = await createEntityFixture('Spec 113 Auto A', {
+			attributes: { date: '2020-01-01' },
+			provenance: { sourceDocumentIds: [sourceAId] },
+		});
+		const high = await createEntityFixture('Spec 113 Auto High', {
+			attributes: { date: '2020-01-01' },
+			provenance: { sourceDocumentIds: [sourceHighId] },
+		});
 		const low = await createEntityFixture('Spec 113 Auto Low', { attributes: { date: '1900-01-01' } });
 		const config = cloneConfig();
 		config.similar_case_discovery.max_results = 2;
@@ -401,6 +514,21 @@ describe('Spec 113: Similar Entity Discovery', () => {
 		const linked = await coreModule.findSimilarityByPair(pool, entityA.id, high.id);
 		expect(linked?.autoDiscovered).toBe(true);
 		expect(linked?.rankPosition).toBe(1);
+		expect(linked?.provenance.sourceDocumentIds.sort()).toEqual([sourceAId, sourceHighId].sort());
+		expect(linked?.autoDiscoveryMetadata).toMatchObject({
+			threshold: 0,
+			max_auto_links: 1,
+			create_graph_edge: true,
+		});
+		expect(linked?.autoDiscoveryMetadata).not.toHaveProperty('weighted_rank_score');
+		const edge = await pool.query<{
+			confidence: number | null;
+			attributes: Record<string, unknown>;
+			provenance: { source_document_ids?: string[] };
+		}>("SELECT confidence, attributes, provenance FROM entity_edges WHERE relationship = 'SIMILAR_TO';");
+		expect(edge.rows[0].confidence).toBeNull();
+		expect(edge.rows[0].attributes).not.toHaveProperty('weighted_rank_score');
+		expect(edge.rows[0].provenance.source_document_ids?.sort()).toEqual([sourceAId, sourceHighId].sort());
 	});
 
 	it.skipIf(!pgAvailable)('QA-06: Sensitivity filtering hides over-sensitive links', async () => {
@@ -438,8 +566,16 @@ describe('Spec 113: Similar Entity Discovery', () => {
 	});
 
 	it.skipIf(!pgAvailable)('QA-07: Review artifact registration is observable', async () => {
-		const entityA = await createEntityFixture('Spec 113 Review A', { attributes: { date: '2020-01-01' } });
-		const entityB = await createEntityFixture('Spec 113 Review B', { attributes: { date: '2020-01-01' } });
+		const sourceAId = await createSourceFixture('review-a');
+		const sourceBId = await createSourceFixture('review-b');
+		const entityA = await createEntityFixture('Spec 113 Review A', {
+			attributes: { date: '2020-01-01' },
+			provenance: { sourceDocumentIds: [sourceAId] },
+		});
+		const entityB = await createEntityFixture('Spec 113 Review B', {
+			attributes: { date: '2020-01-01' },
+			provenance: { sourceDocumentIds: [sourceBId] },
+		});
 		const config = cloneConfig();
 		config.similar_case_discovery.auto_discovery.threshold = 0;
 		config.similar_case_discovery.auto_discovery.max_auto_links = 1;
@@ -461,16 +597,25 @@ describe('Spec 113: Similar Entity Discovery', () => {
 		const artifact = artifacts[0];
 		expect(artifact.subjectTable).toBe('similarity_cache');
 		expect(artifact.currentValue).toMatchObject({
-			entity_id: entityB.id,
+			source_entity_id: entityA.id,
+			target_entity_id: entityB.id,
 			explanation: 'Review artifact explanation',
 			core: expect.objectContaining({
 				semantic: expect.objectContaining({ status: 'insufficient_data' }),
 				temporal: expect.objectContaining({ status: 'scored' }),
 			}),
 			domain: [],
+			provenance: expect.objectContaining({
+				sourceDocumentIds: expect.arrayContaining([sourceAId, sourceBId]),
+			}),
 		});
 		expect(artifact.context).toMatchObject({
+			source_entity_id: entityA.id,
+			target_entity_id: entityB.id,
 			shared_entity_ids: [],
+			provenance: expect.objectContaining({
+				sourceDocumentIds: expect.arrayContaining([sourceAId, sourceBId]),
+			}),
 			sensitivity_level: 'internal',
 			sensitivity_metadata: expect.objectContaining({ level: 'internal' }),
 		});

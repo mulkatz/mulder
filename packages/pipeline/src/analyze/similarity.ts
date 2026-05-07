@@ -1,4 +1,5 @@
 import type {
+	ArtifactProvenanceInput,
 	CoreSimilarityDimensions,
 	DomainSimilarityDimension,
 	Entity,
@@ -34,6 +35,12 @@ interface CandidateSupplementRow {
 	candidate_id: string;
 	semantic_score: number | null;
 	distance_meters: number | null;
+}
+
+interface CandidateSupplement {
+	candidateId: string;
+	semanticScore: number | null;
+	distanceMeters: number | null;
 }
 
 interface GeoPoint {
@@ -132,11 +139,154 @@ function buildKeyDifferences(source: Entity, candidate: Entity): string[] {
 async function loadCandidateSupplements(
 	pool: pg.Pool,
 	entityId: string,
-	limit: number,
+	config: MulderConfig,
+	maxResults: number,
 	maxSensitivityLevel?: SensitivityLevel,
-): Promise<CandidateSupplementRow[]> {
+): Promise<CandidateSupplement[]> {
+	const candidateLimit = Math.max(maxResults, config.similar_case_discovery.candidate_retrieval.vector_top_k);
+	const geoRadiusKm = config.similar_case_discovery.candidate_retrieval.geo_radius_km;
+	const temporalWindowYears = config.similar_case_discovery.candidate_retrieval.temporal_window_years;
+	const sensitivityClause = maxSensitivityLevel ? 'AND e.sensitivity_level = ANY($6)' : '';
+	const params: unknown[] = [
+		entityId,
+		config.similar_case_discovery.candidate_retrieval.vector_top_k,
+		geoRadiusKm,
+		temporalWindowYears,
+		candidateLimit,
+	];
+	if (maxSensitivityLevel) params.push(allowedSensitivityLevelsForMax(maxSensitivityLevel));
+	const result = await pool.query<CandidateSupplementRow>(
+		`
+			WITH source_entity AS (
+				SELECT
+					id,
+					type,
+					name_embedding,
+					geom,
+					CASE
+						WHEN COALESCE(
+							attributes->>'iso_date',
+							attributes->>'date',
+							attributes->>'occurred_at',
+							attributes->>'timestamp',
+							attributes->>'publication_date'
+						) ~ '^\\d{4}-\\d{2}-\\d{2}'
+						THEN COALESCE(
+							attributes->>'iso_date',
+							attributes->>'date',
+							attributes->>'occurred_at',
+							attributes->>'timestamp',
+							attributes->>'publication_date'
+						)::timestamptz
+						ELSE NULL
+					END AS comparable_date
+				FROM entities
+				WHERE id = $1
+			),
+			candidate_pool AS (
+				SELECT
+					e.id,
+					e.name,
+					e.name_embedding,
+					e.geom,
+					CASE
+						WHEN COALESCE(
+							e.attributes->>'iso_date',
+							e.attributes->>'date',
+							e.attributes->>'occurred_at',
+							e.attributes->>'timestamp',
+							e.attributes->>'publication_date'
+						) ~ '^\\d{4}-\\d{2}-\\d{2}'
+						THEN COALESCE(
+							e.attributes->>'iso_date',
+							e.attributes->>'date',
+							e.attributes->>'occurred_at',
+							e.attributes->>'timestamp',
+							e.attributes->>'publication_date'
+						)::timestamptz
+						ELSE NULL
+					END AS comparable_date
+				FROM source_entity
+				JOIN entities e ON e.type = source_entity.type
+				WHERE e.id <> source_entity.id
+				  AND e.canonical_id IS NULL
+				  ${sensitivityClause}
+			),
+			vector_candidates AS (
+				SELECT
+					cp.id,
+					1 - (source_entity.name_embedding <=> cp.name_embedding) AS semantic_score
+				FROM source_entity
+				JOIN candidate_pool cp ON true
+				WHERE source_entity.name_embedding IS NOT NULL
+				  AND cp.name_embedding IS NOT NULL
+				ORDER BY semantic_score DESC NULLS LAST, cp.name ASC
+				LIMIT $2
+			),
+			geo_candidates AS (
+				SELECT cp.id
+				FROM source_entity
+				JOIN candidate_pool cp ON true
+				WHERE $3::float IS NOT NULL
+				  AND source_entity.geom IS NOT NULL
+				  AND cp.geom IS NOT NULL
+				  AND ST_DWithin(source_entity.geom::geography, cp.geom::geography, $3::float * 1000)
+				ORDER BY ST_Distance(source_entity.geom::geography, cp.geom::geography), cp.name ASC
+				LIMIT $5
+			),
+			temporal_candidates AS (
+				SELECT cp.id
+				FROM source_entity
+				JOIN candidate_pool cp ON true
+				WHERE $4::float IS NOT NULL
+				  AND source_entity.comparable_date IS NOT NULL
+				  AND cp.comparable_date IS NOT NULL
+				  AND ABS(EXTRACT(EPOCH FROM (source_entity.comparable_date - cp.comparable_date))) <= $4::float * ${DAYS_PER_YEAR} * 24 * 60 * 60
+				ORDER BY ABS(EXTRACT(EPOCH FROM (source_entity.comparable_date - cp.comparable_date))), cp.name ASC
+				LIMIT $5
+			),
+			all_candidate_ids AS (
+				SELECT id FROM vector_candidates
+				UNION
+				SELECT id FROM geo_candidates
+				UNION
+				SELECT id FROM temporal_candidates
+			)
+			SELECT
+				cp.id AS candidate_id,
+				CASE
+					WHEN source_entity.name_embedding IS NOT NULL AND cp.name_embedding IS NOT NULL
+					THEN 1 - (source_entity.name_embedding <=> cp.name_embedding)
+					ELSE NULL
+				END AS semantic_score,
+				CASE
+					WHEN source_entity.geom IS NOT NULL AND cp.geom IS NOT NULL
+					THEN ST_Distance(source_entity.geom::geography, cp.geom::geography)
+					ELSE NULL
+				END AS distance_meters
+			FROM entities source_entity
+			JOIN candidate_pool cp ON true
+			JOIN all_candidate_ids candidate_ids ON candidate_ids.id = cp.id
+			WHERE source_entity.id = $1
+			ORDER BY semantic_score DESC NULLS LAST, distance_meters ASC NULLS LAST, cp.name ASC
+		`,
+		params,
+	);
+	return result.rows.map((row) => ({
+		candidateId: row.candidate_id,
+		semanticScore: row.semantic_score === null ? null : row.semantic_score,
+		distanceMeters: row.distance_meters === null ? null : row.distance_meters,
+	}));
+}
+
+async function loadExplicitCandidateSupplements(
+	pool: pg.Pool,
+	entityId: string,
+	candidateIds: string[],
+	maxSensitivityLevel?: SensitivityLevel,
+): Promise<CandidateSupplement[]> {
 	const sensitivityClause = maxSensitivityLevel ? 'AND e.sensitivity_level = ANY($3)' : '';
-	const params: unknown[] = [entityId, limit];
+	const params: unknown[] = [entityId, candidateIds];
 	if (maxSensitivityLevel) params.push(allowedSensitivityLevelsForMax(maxSensitivityLevel));
 	const result = await pool.query<CandidateSupplementRow>(
 		`
@@ -153,17 +303,19 @@ async function loadCandidateSupplements(
 					ELSE NULL
 				END AS distance_meters
 			FROM entities source_entity
-			JOIN entities e ON e.type = source_entity.type
+			JOIN entities e ON e.id = ANY($2::uuid[])
 			WHERE source_entity.id = $1
 			  AND e.id <> source_entity.id
-			  AND e.canonical_id IS NULL
 			  ${sensitivityClause}
-			ORDER BY semantic_score DESC NULLS LAST, e.name ASC
-			LIMIT $2
+			ORDER BY array_position($2::uuid[], e.id)
 		`,
 		params,
 	);
-	return result.rows;
+	return result.rows.map((row) => ({
+		candidateId: row.candidate_id,
+		semanticScore: row.semantic_score === null ? null : row.semantic_score,
+		distanceMeters: row.distance_meters === null ? null : row.distance_meters,
+	}));
 }
 
 async function resolveCandidates(
@@ -178,16 +330,25 @@ async function resolveCandidates(
 	);
 	if (options.candidateIds && options.candidateIds.length > 0) {
 		const uniqueIds = [...new Set(options.candidateIds)].filter((id) => id !== source.id).slice(0, limit);
+		const supplements = await loadExplicitCandidateSupplements(pool, source.id, uniqueIds, options.maxSensitivityLevel);
+		const supplementById = new Map(supplements.map((row) => [row.candidateId, row]));
 		const entities = await Promise.all(
 			uniqueIds.map((id) => findEntityById(pool, id, { maxSensitivityLevel: options.maxSensitivityLevel })),
 		);
 		return entities
 			.filter((entity): entity is Entity => entity !== null)
-			.map((entity) => ({ entity, semanticScore: null, distanceMeters: null }));
+			.map((entity) => {
+				const supplement = supplementById.get(entity.id);
+				return {
+					entity,
+					semanticScore: supplement?.semanticScore ?? null,
+					distanceMeters: supplement?.distanceMeters ?? null,
+				};
+			});
 	}
 
-	const supplements = await loadCandidateSupplements(pool, source.id, limit, options.maxSensitivityLevel);
-	const supplementById = new Map(supplements.map((row) => [row.candidate_id, row]));
+	const supplements = await loadCandidateSupplements(pool, source.id, config, limit, options.maxSensitivityLevel);
+	const supplementById = new Map(supplements.map((row) => [row.candidateId, row]));
 	const fallbackEntities =
 		supplements.length === 0
 			? await findAllEntities(pool, {
@@ -197,16 +358,20 @@ async function resolveCandidates(
 				})
 			: [];
 	const ids =
-		supplements.length > 0 ? supplements.map((row) => row.candidate_id) : fallbackEntities.map((entity) => entity.id);
-	const entities = await Promise.all(ids.filter((id) => id !== source.id).map((id) => findEntityById(pool, id)));
+		supplements.length > 0 ? supplements.map((row) => row.candidateId) : fallbackEntities.map((entity) => entity.id);
+	const entities = await Promise.all(
+		ids
+			.filter((id) => id !== source.id)
+			.map((id) => findEntityById(pool, id, { maxSensitivityLevel: options.maxSensitivityLevel })),
+	);
 	return entities
 		.filter((entity): entity is Entity => entity !== null)
 		.map((entity) => {
 			const supplement = supplementById.get(entity.id);
 			return {
 				entity,
-				semanticScore: supplement?.semantic_score === null ? null : (supplement?.semantic_score ?? null),
-				distanceMeters: supplement?.distance_meters === null ? null : (supplement?.distance_meters ?? null),
+				semanticScore: supplement?.semanticScore ?? null,
+				distanceMeters: supplement?.distanceMeters ?? null,
 			};
 		});
 }
@@ -215,11 +380,12 @@ async function scoreStructural(
 	pool: pg.Pool,
 	source: Entity,
 	candidate: Entity,
+	maxSensitivityLevel?: SensitivityLevel,
 ): Promise<{ score: SimilarityDimensionScore; sharedEntityIds: string[] }> {
 	const [sourceEdges, candidateEdges, directEdges]: [EntityEdge[], EntityEdge[], EntityEdge[]] = await Promise.all([
-		findEdgesByEntityId(pool, source.id),
-		findEdgesByEntityId(pool, candidate.id),
-		findEdgesBetweenEntities(pool, source.id, candidate.id),
+		findEdgesByEntityId(pool, source.id, { maxSensitivityLevel }),
+		findEdgesByEntityId(pool, candidate.id, { maxSensitivityLevel }),
+		findEdgesBetweenEntities(pool, source.id, candidate.id, { maxSensitivityLevel }),
 	]);
 	const sourceNeighbors = new Set<string>(
 		sourceEdges.map((edge) => (edge.sourceEntityId === source.id ? edge.targetEntityId : edge.sourceEntityId)),
@@ -352,22 +518,41 @@ function deterministicExplanation(source: Entity, candidate: Entity, core: CoreS
 	return `${candidate.name} is similar to ${source.name} on ${scoredDimensions.join(' and ')} dimensions. Missing dimensions are preserved as insufficient data rather than inferred.`;
 }
 
+function pairProvenance(source: Entity, candidate: Entity): ArtifactProvenanceInput {
+	return {
+		sourceDocumentIds: [...source.provenance.sourceDocumentIds, ...candidate.provenance.sourceDocumentIds],
+		extractionPipelineRun: source.provenance.extractionPipelineRun ?? candidate.provenance.extractionPipelineRun,
+	};
+}
+
+function autoDiscoveryMetadata(config: MulderConfig): Record<string, unknown> {
+	const autoConfig = config.similar_case_discovery.auto_discovery;
+	return {
+		trigger: autoConfig.trigger,
+		threshold: autoConfig.threshold,
+		max_auto_links: autoConfig.max_auto_links,
+		create_graph_edge: autoConfig.create_graph_edge,
+	};
+}
+
 async function persistAutoEdge(pool: pg.Pool, source: Entity, result: SimilarEntityScore): Promise<string> {
 	const attributes = {
 		generatedBy: 'analyze.similar_case_discovery',
 		rankPosition: result.overallRank,
+		autoDiscoveryThreshold: result.autoDiscoveryThreshold,
 		core: result.core,
 		domain: result.domain,
 	};
 	const analysis = { explanation: result.explanation, sharedEntityIds: result.sharedEntityIds };
-	const existing = (await findEdgesBetweenEntities(pool, source.id, result.entityId)).find(
-		(edge) => edge.relationship === 'SIMILAR_TO' && edge.edgeType === 'RELATIONSHIP' && edge.storyId === null,
-	);
+	const existing = (
+		await findEdgesBetweenEntities(pool, source.id, result.entityId, { maxSensitivityLevel: result.sensitivityLevel })
+	).find((edge) => edge.relationship === 'SIMILAR_TO' && edge.edgeType === 'RELATIONSHIP' && edge.storyId === null);
 	if (existing) {
 		const updated = await updateEdge(pool, existing.id, {
 			attributes,
 			analysis,
-			confidence: result.weightedRankScore,
+			confidence: null,
+			provenance: result.provenance,
 			sensitivityLevel: result.sensitivityLevel,
 			sensitivityMetadata: result.sensitivityMetadata,
 		});
@@ -380,7 +565,7 @@ async function persistAutoEdge(pool: pg.Pool, source: Entity, result: SimilarEnt
 		edgeType: 'RELATIONSHIP',
 		attributes,
 		analysis,
-		confidence: result.weightedRankScore,
+		provenance: result.provenance,
 		sensitivityLevel: result.sensitivityLevel,
 		sensitivityMetadata: result.sensitivityMetadata,
 	});
@@ -389,6 +574,7 @@ async function persistAutoEdge(pool: pg.Pool, source: Entity, result: SimilarEnt
 
 async function registerReviewArtifact(
 	pool: pg.Pool,
+	sourceEntityId: string,
 	cacheRecordId: string,
 	result: SimilarEntityScore,
 	config: MulderConfig,
@@ -400,14 +586,19 @@ async function registerReviewArtifact(
 		subjectTable: 'similarity_cache',
 		createdBy: 'agent',
 		currentValue: {
-			entity_id: result.entityId,
+			source_entity_id: sourceEntityId,
+			target_entity_id: result.entityId,
 			core: result.core,
 			domain: result.domain,
 			explanation: result.explanation,
+			provenance: result.provenance,
 		},
 		context: {
+			source_entity_id: sourceEntityId,
+			target_entity_id: result.entityId,
 			shared_entity_ids: result.sharedEntityIds,
 			key_differences: result.keyDifferences,
+			provenance: result.provenance,
 			sensitivity_level: result.sensitivityLevel,
 			sensitivity_metadata: result.sensitivityMetadata,
 		},
@@ -459,7 +650,7 @@ export async function discoverSimilarEntities(
 			candidate.entity,
 			config.similar_case_discovery.candidate_retrieval.temporal_window_years,
 		);
-		const structural = await scoreStructural(pool, source, candidate.entity);
+		const structural = await scoreStructural(pool, source, candidate.entity, options.maxSensitivityLevel);
 		core.structural = structural.score;
 		const domain = config.similar_case_discovery.scoring.domain_dimensions.map((dimension) =>
 			scoreDomainDimension(source, candidate.entity, dimension),
@@ -473,6 +664,7 @@ export async function discoverSimilarEntities(
 			sensitivityLevel,
 		);
 		const weightedScore = weightedRankScore(core, domain, config);
+		const provenance = pairProvenance(source, candidate.entity);
 		results.push({
 			entityId: candidate.entity.id,
 			entityTitle: candidate.entity.name,
@@ -483,6 +675,8 @@ export async function discoverSimilarEntities(
 			sharedEntityIds: structural.sharedEntityIds,
 			keyDifferences: buildKeyDifferences(source, candidate.entity),
 			weightedRankScore: weightedScore,
+			provenance,
+			autoDiscoveryThreshold: config.similar_case_discovery.auto_discovery.threshold,
 			sensitivityLevel,
 			sensitivityMetadata,
 			cacheRecord: null,
@@ -514,7 +708,8 @@ export async function discoverSimilarEntities(
 				keyDifferences: result.keyDifferences,
 				rankPosition: result.overallRank,
 				autoDiscovered: shouldAutoDiscover,
-				autoDiscoveryMetadata: shouldAutoDiscover ? { weighted_rank_score: result.weightedRankScore } : {},
+				autoDiscoveryMetadata: shouldAutoDiscover ? autoDiscoveryMetadata(config) : {},
+				provenance: result.provenance,
 				sensitivityLevel: result.sensitivityLevel,
 				sensitivityMetadata: result.sensitivityMetadata,
 			});
@@ -541,7 +736,8 @@ export async function discoverSimilarEntities(
 				keyDifferences: result.keyDifferences,
 				rankPosition: result.overallRank,
 				autoDiscovered: true,
-				autoDiscoveryMetadata: { weighted_rank_score: result.weightedRankScore },
+				autoDiscoveryMetadata: autoDiscoveryMetadata(config),
+				provenance: result.provenance,
 				sensitivityLevel: result.sensitivityLevel,
 				sensitivityMetadata: result.sensitivityMetadata,
 			});
@@ -554,7 +750,7 @@ export async function discoverSimilarEntities(
 			result.graphEdgeId = await persistAutoEdge(pool, source, result);
 			autoLinkCount++;
 			if (result.cacheRecord) {
-				result.reviewArtifactId = await registerReviewArtifact(pool, result.cacheRecord.id, result, config);
+				result.reviewArtifactId = await registerReviewArtifact(pool, source.id, result.cacheRecord.id, result, config);
 			}
 		}
 	}

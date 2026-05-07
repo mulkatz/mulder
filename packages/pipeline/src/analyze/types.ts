@@ -6,6 +6,7 @@
  */
 
 import type {
+	ArtifactProvenanceInput,
 	CoreSimilarityDimensions,
 	DomainSimilarityDimension,
 	SensitivityLevel,
@@ -184,6 +185,8 @@ export interface SimilarEntityScore {
 	sharedEntityIds: string[];
 	keyDifferences: string[];
 	weightedRankScore: number;
+	provenance: ArtifactProvenanceInput;
+	autoDiscoveryThreshold: number;
 	sensitivityLevel: SensitivityLevel;
 	sensitivityMetadata: SensitivityMetadata;
 	cacheRecord: SimilarityCacheRecord | null;
