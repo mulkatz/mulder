@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS classification_categories (
   label TEXT NOT NULL,
   translations JSONB NOT NULL DEFAULT '{}'::jsonb,
   definition TEXT,
-  parent_id TEXT REFERENCES classification_categories(id) ON DELETE SET NULL,
+  parent_id TEXT,
   attributes JSONB NOT NULL DEFAULT '[]'::jsonb,
   status TEXT NOT NULL DEFAULT 'active',
   provenance JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -71,6 +71,8 @@ CREATE TABLE IF NOT EXISTS classification_categories (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   deleted_at TIMESTAMPTZ,
   CONSTRAINT classification_categories_taxonomy_id_id_unique UNIQUE (taxonomy_id, id),
+  CONSTRAINT classification_categories_parent_same_taxonomy_fk FOREIGN KEY (taxonomy_id, parent_id)
+    REFERENCES classification_categories(taxonomy_id, id) ON DELETE SET NULL (parent_id),
   CONSTRAINT classification_categories_id_required_check CHECK (length(trim(id)) > 0),
   CONSTRAINT classification_categories_code_required_check CHECK (length(trim(code)) > 0),
   CONSTRAINT classification_categories_label_required_check CHECK (length(trim(label)) > 0),

@@ -7,6 +7,7 @@ import type {
 	EntityEdge,
 	MulderConfig,
 	SensitivityLevel,
+	SensitivityMetadata,
 	SimilarityDimensionScore,
 	SimilarityDomainDimensionConfig,
 	TaxonomyMappingReviewStatus,
@@ -73,8 +74,18 @@ interface GeoPoint {
 	lng: number;
 }
 
+interface ScoredDomainDimension {
+	dimension: DomainSimilarityDimension;
+	sensitivityLevel: SensitivityLevel | null;
+	sensitivityMetadata: SensitivityMetadata | null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasSensitivityMetadata(value: SensitivityMetadata | null): value is SensitivityMetadata {
+	return value !== null;
 }
 
 function readNonEmptyString(value: unknown): string | null {
@@ -186,6 +197,8 @@ function insufficientTaxonomyMappingScore(reason: string): TaxonomyMappingSimila
 		score: null,
 		reason,
 		evidence: [],
+		sensitivityLevel: null,
+		sensitivityMetadata: null,
 	};
 }
 
@@ -211,6 +224,8 @@ function taxonomyMappingEvidence(mapping: TaxonomyMappingView): TaxonomyMappingS
 		},
 		conditions: mapping.conditions,
 		rationale: mapping.rationale,
+		sensitivityLevel: mapping.sensitivityLevel,
+		sensitivityMetadata: mapping.sensitivityMetadata,
 	};
 }
 
@@ -257,11 +272,19 @@ export async function scoreTaxonomyMappingSimilarity(
 	});
 	if (mappings.length === 0) return insufficientTaxonomyMappingScore('no_usable_taxonomy_mapping');
 
+	const sensitivityLevel = mostRestrictiveSensitivityLevel(mappings.map((mapping) => mapping.sensitivityLevel));
+	const sensitivityMetadata = mergeSensitivityMetadata(
+		mappings.map((mapping) => mapping.sensitivityMetadata),
+		sensitivityLevel,
+	);
+
 	return {
 		status: 'scored',
 		score: taxonomyMappingScore(mappings[0]),
 		reason: null,
 		evidence: mappings.map(taxonomyMappingEvidence),
+		sensitivityLevel,
+		sensitivityMetadata,
 	};
 }
 
@@ -627,7 +650,7 @@ async function scoreDomainDimension(
 	candidate: Entity,
 	dimension: SimilarityDomainDimensionConfig,
 	maxSensitivityLevel?: SensitivityLevel,
-): Promise<DomainSimilarityDimension> {
+): Promise<ScoredDomainDimension> {
 	const left = source.attributes[dimension.config_ref];
 	const right = candidate.attributes[dimension.config_ref];
 	if (dimension.source === 'taxonomy_mapping') {
@@ -639,53 +662,71 @@ async function scoreDomainDimension(
 			maxSensitivityLevel,
 		});
 		return {
-			id: dimension.id,
-			label: dimension.label,
-			source: dimension.source,
-			configRef: dimension.config_ref,
-			score: mappingScore.score,
-			status: mappingScore.status,
-			reason: mappingScore.reason,
-			metadata: {
-				...dimension.metadata,
-				evidence: mappingScore.evidence,
+			dimension: {
+				id: dimension.id,
+				label: dimension.label,
+				source: dimension.source,
+				configRef: dimension.config_ref,
+				score: mappingScore.score,
+				status: mappingScore.status,
+				reason: mappingScore.reason,
+				metadata: {
+					...dimension.metadata,
+					evidence: mappingScore.evidence,
+					sensitivityLevel: mappingScore.sensitivityLevel,
+					sensitivityMetadata: mappingScore.sensitivityMetadata,
+				},
 			},
+			sensitivityLevel: mappingScore.sensitivityLevel,
+			sensitivityMetadata: mappingScore.sensitivityMetadata,
 		};
 	}
 	if (dimension.source !== 'attribute_comparison') {
 		return {
-			id: dimension.id,
-			label: dimension.label,
-			source: dimension.source,
-			configRef: dimension.config_ref,
-			score: null,
-			status: 'insufficient_data',
-			reason: 'dimension_source_not_available',
-			metadata: dimension.metadata,
+			dimension: {
+				id: dimension.id,
+				label: dimension.label,
+				source: dimension.source,
+				configRef: dimension.config_ref,
+				score: null,
+				status: 'insufficient_data',
+				reason: 'dimension_source_not_available',
+				metadata: dimension.metadata,
+			},
+			sensitivityLevel: null,
+			sensitivityMetadata: null,
 		};
 	}
 	if (left === undefined || right === undefined) {
 		return {
-			id: dimension.id,
-			label: dimension.label,
-			source: dimension.source,
-			configRef: dimension.config_ref,
-			score: null,
-			status: 'insufficient_data',
-			reason: 'missing_attribute',
-			metadata: dimension.metadata,
+			dimension: {
+				id: dimension.id,
+				label: dimension.label,
+				source: dimension.source,
+				configRef: dimension.config_ref,
+				score: null,
+				status: 'insufficient_data',
+				reason: 'missing_attribute',
+				metadata: dimension.metadata,
+			},
+			sensitivityLevel: null,
+			sensitivityMetadata: null,
 		};
 	}
 	const score = Array.isArray(left) && Array.isArray(right) ? scoreArrayOverlap(left, right) : left === right ? 1 : 0;
 	return {
-		id: dimension.id,
-		label: dimension.label,
-		source: dimension.source,
-		configRef: dimension.config_ref,
-		score: roundScore(score),
-		status: 'scored',
-		reason: null,
-		metadata: dimension.metadata,
+		dimension: {
+			id: dimension.id,
+			label: dimension.label,
+			source: dimension.source,
+			configRef: dimension.config_ref,
+			score: roundScore(score),
+			status: 'scored',
+			reason: null,
+			metadata: dimension.metadata,
+		},
+		sensitivityLevel: null,
+		sensitivityMetadata: null,
 	};
 }
 
@@ -869,17 +910,22 @@ export async function discoverSimilarEntities(
 		);
 		const structural = await scoreStructural(pool, source, candidate.entity, options.maxSensitivityLevel);
 		core.structural = structural.score;
-		const domain = await Promise.all(
+		const scoredDomain = await Promise.all(
 			config.similar_case_discovery.scoring.domain_dimensions.map((dimension) =>
 				scoreDomainDimension(pool, source, candidate.entity, dimension, options.maxSensitivityLevel),
 			),
 		);
+		const domain = scoredDomain.map((item) => item.dimension);
+		const domainSensitivityMetadata = scoredDomain
+			.map((item) => item.sensitivityMetadata)
+			.filter(hasSensitivityMetadata);
 		const sensitivityLevel = mostRestrictiveSensitivityLevel([
 			source.sensitivityLevel,
 			candidate.entity.sensitivityLevel,
+			...scoredDomain.map((item) => item.sensitivityLevel),
 		]);
 		const sensitivityMetadata = mergeSensitivityMetadata(
-			[source.sensitivityMetadata, candidate.entity.sensitivityMetadata],
+			[source.sensitivityMetadata, candidate.entity.sensitivityMetadata, ...domainSensitivityMetadata],
 			sensitivityLevel,
 		);
 		const weightedScore = weightedRankScore(core, domain, config);

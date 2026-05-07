@@ -108,6 +108,10 @@ function provenance(sourceDocumentIds: string[] = [randomUUID()]) {
 	};
 }
 
+function cloneConfig() {
+	return structuredClone(coreModule.loadConfig(EXAMPLE_CONFIG));
+}
+
 function invertMappingType(
 	type: import('@mulder/core').TaxonomyMappingType,
 ): import('@mulder/core').TaxonomyMappingType {
@@ -121,6 +125,17 @@ function expectReviewRef(value: unknown, taxonomyId: string, categoryId: string)
 	const ref = value as Record<string, unknown>;
 	expect([ref.taxonomy_id, ref.taxonomyId]).toContain(taxonomyId);
 	expect([ref.category_id, ref.categoryId]).toContain(categoryId);
+}
+
+async function createEntityFixture(label: string, overrides: Partial<import('@mulder/core').CreateEntityInput> = {}) {
+	return coreModule.createEntity(pool, {
+		name: `Spec 114 ${label} ${randomUUID()}`,
+		type: 'case',
+		attributes: {},
+		sensitivityLevel: 'internal',
+		sensitivityMetadata: sensitivityMetadata('internal'),
+		...overrides,
+	});
 }
 
 async function createTaxonomyFixture(
@@ -337,6 +352,7 @@ describe('Spec 114: Classification Harmonization', () => {
 		expect(constraintDefs).toContain('confidence >=');
 		expect(constraintDefs).toContain('confidence <=');
 		expect(constraintDefs).toContain('source_taxonomy_id <> target_taxonomy_id');
+		expect(constraintDefs).toContain('FOREIGN KEY (taxonomy_id, parent_id)');
 		expect(constraintDefs).toContain('jsonb_typeof(provenance)');
 		expect(constraintDefs).toContain('sensitivity_metadata');
 
@@ -448,6 +464,22 @@ describe('Spec 114: Classification Harmonization', () => {
 		});
 		expect(listedChild?.provenance.sourceDocumentIds).toEqual([childSourceId]);
 		expect(await coreModule.findClassificationCategory(pool, child.id, { maxSensitivityLevel: 'internal' })).toBeNull();
+	});
+
+	it.skipIf(!pgAvailable)('rejects cross-taxonomy category parents', async () => {
+		const parentTaxonomy = await createTaxonomyFixture('parent-boundary');
+		const childTaxonomy = await createTaxonomyFixture('child-boundary');
+		const parent = await createCategoryFixture(parentTaxonomy.id, 'same-taxonomy-parent');
+		const sameTaxonomyChild = await createCategoryFixture(parentTaxonomy.id, 'same-taxonomy-child', {
+			parentId: parent.id,
+		});
+
+		expect(sameTaxonomyChild.parentId).toBe(parent.id);
+		await expect(
+			createCategoryFixture(childTaxonomy.id, 'cross-taxonomy-child', {
+				parentId: parent.id,
+			}),
+		).rejects.toThrow('Failed to upsert classification category');
 	});
 
 	it.skipIf(!pgAvailable)('QA-04: Directed mappings resolve both ways', async () => {
@@ -669,4 +701,137 @@ describe('Spec 114: Classification Harmonization', () => {
 			evidence: [],
 		});
 	});
+
+	it.skipIf(!pgAvailable)(
+		'keeps restricted taxonomy mapping evidence out of internal persisted similarity reads',
+		async () => {
+			const sourceTaxonomy = await createTaxonomyFixture('restricted-similarity-source');
+			const targetTaxonomy = await createTaxonomyFixture('restricted-similarity-target');
+			const sourceCategory = await createCategoryFixture(sourceTaxonomy.id, 'restricted-similarity-source-category');
+			const targetCategory = await createCategoryFixture(targetTaxonomy.id, 'restricted-similarity-target-category');
+			const restrictedMapping = await createMappingFixture(sourceCategory, targetCategory, {
+				mappingType: 'overlapping',
+				confidence: 0.9,
+				conditions: 'restricted mapping condition',
+				rationale: 'Restricted mapping rationale must not be visible to internal readers.',
+				reviewStatus: 'reviewed',
+				sensitivityLevel: 'restricted',
+				sensitivityMetadata: sensitivityMetadata('restricted'),
+			});
+			const sourceEntity = await createEntityFixture('Restricted Similarity Source Entity', {
+				attributes: {
+					classification_refs: [{ taxonomyId: sourceTaxonomy.id, categoryId: sourceCategory.id }],
+					date: '2020-01-01',
+				},
+			});
+			const targetEntity = await createEntityFixture('Restricted Similarity Target Entity', {
+				attributes: {
+					classification_refs: [{ taxonomyId: targetTaxonomy.id, categoryId: targetCategory.id }],
+					date: '2020-01-01',
+				},
+			});
+			const config = cloneConfig();
+			config.review_workflow.enabled = true;
+			config.similar_case_discovery.scoring.weights = {
+				semantic: 0,
+				structural: 0,
+				geospatial: 0,
+				temporal: 0,
+			};
+			config.similar_case_discovery.scoring.domain_dimensions = [
+				{
+					id: 'classification_similarity',
+					label: 'Classification similarity',
+					source: 'taxonomy_mapping',
+					config_ref: 'classification_refs',
+					weight: 1,
+					metadata: { reviewStatus: 'reviewed' },
+				},
+			];
+			config.similar_case_discovery.auto_discovery.threshold = 0;
+			config.similar_case_discovery.auto_discovery.max_auto_links = 1;
+			config.similar_case_discovery.auto_discovery.create_graph_edge = true;
+
+			const result = await pipelineModule.discoverSimilarEntities(pool, config, {
+				entityId: sourceEntity.id,
+				candidateIds: [targetEntity.id],
+				maxResults: 1,
+				persistResults: true,
+				autoDiscover: true,
+				maxSensitivityLevel: 'restricted',
+				explanation: 'Restricted mapping evidence regression.',
+			});
+
+			expect(result.results).toHaveLength(1);
+			expect(result.results[0]).toMatchObject({
+				entityId: targetEntity.id,
+				sensitivityLevel: 'restricted',
+				cacheRecord: expect.objectContaining({ sensitivityLevel: 'restricted' }),
+				graphEdgeId: expect.any(String),
+				reviewArtifactId: expect.any(String),
+			});
+			expect(result.results[0].domain[0].metadata.evidence).toEqual([
+				expect.objectContaining({
+					mappingId: restrictedMapping.id,
+					rationale: 'Restricted mapping rationale must not be visible to internal readers.',
+					sensitivityLevel: 'restricted',
+					sensitivityMetadata: expect.objectContaining({ level: 'restricted' }),
+				}),
+			]);
+
+			await expect(
+				coreModule.findSimilarityByPair(pool, sourceEntity.id, targetEntity.id, { maxSensitivityLevel: 'internal' }),
+			).resolves.toBeNull();
+			await expect(
+				coreModule.listSimilarEntities(pool, {
+					entityId: sourceEntity.id,
+					maxSensitivityLevel: 'internal',
+				}),
+			).resolves.toEqual([]);
+			const restrictedCached = await coreModule.listSimilarEntities(pool, {
+				entityId: sourceEntity.id,
+				maxSensitivityLevel: 'restricted',
+			});
+			expect(restrictedCached).toHaveLength(1);
+			expect(restrictedCached[0]).toMatchObject({
+				entityId: targetEntity.id,
+				sensitivityLevel: 'restricted',
+			});
+
+			const internalEdges = await coreModule.findEdgesBetweenEntities(pool, sourceEntity.id, targetEntity.id, {
+				maxSensitivityLevel: 'internal',
+			});
+			expect(internalEdges.filter((edge) => edge.relationship === 'SIMILAR_TO')).toEqual([]);
+			const restrictedEdges = await coreModule.findEdgesBetweenEntities(pool, sourceEntity.id, targetEntity.id, {
+				maxSensitivityLevel: 'restricted',
+			});
+			expect(restrictedEdges).toEqual([
+				expect.objectContaining({
+					relationship: 'SIMILAR_TO',
+					sensitivityLevel: 'restricted',
+					sensitivityMetadata: expect.objectContaining({ level: 'restricted' }),
+				}),
+			]);
+
+			await expect(
+				coreModule.listReviewableArtifacts(pool, {
+					artifactType: 'similar_case_link',
+					maxSensitivityLevel: 'internal',
+				}),
+			).resolves.toEqual([]);
+			const restrictedArtifacts = await coreModule.listReviewableArtifacts(pool, {
+				artifactType: 'similar_case_link',
+				maxSensitivityLevel: 'restricted',
+			});
+			expect(restrictedArtifacts).toEqual([
+				expect.objectContaining({
+					artifactType: 'similar_case_link',
+					context: expect.objectContaining({
+						sensitivity_level: 'restricted',
+						sensitivity_metadata: expect.objectContaining({ level: 'restricted' }),
+					}),
+				}),
+			]);
+		},
+	);
 });

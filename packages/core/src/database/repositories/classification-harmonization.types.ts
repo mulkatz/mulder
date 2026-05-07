@@ -173,6 +173,8 @@ export interface TaxonomyMappingSimilarityEvidence {
 	target: ClassificationCategoryRef;
 	conditions: string | null;
 	rationale: string;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
 }
 
 export interface TaxonomyMappingSimilarityScore {
@@ -180,4 +182,6 @@ export interface TaxonomyMappingSimilarityScore {
 	score: number | null;
 	reason: string | null;
 	evidence: TaxonomyMappingSimilarityEvidence[];
+	sensitivityLevel: SensitivityLevel | null;
+	sensitivityMetadata: SensitivityMetadata | null;
 }
