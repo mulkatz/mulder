@@ -478,6 +478,10 @@ const CLASSIFICATION_SCHEMA_HELPER_TABLE_LINES = new Set([
 	"'classification_categories',",
 	"'classification_taxonomies',",
 ]);
+const CLASSIFICATION_HARMONIZATION_MIGRATIONS = new Set([
+	'packages/core/src/database/migrations/044_classification_harmonization.sql',
+	'packages/core/src/database/migrations/045_classification_category_parent_taxonomy_constraint.sql',
+]);
 
 function isClassificationSchemaHelperOnlyDiff(diff) {
 	const changedLines = diff
@@ -785,7 +789,7 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 		return { rule: 'similarity cache migration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
-	if (file === 'packages/core/src/database/migrations/044_classification_harmonization.sql') {
+	if (CLASSIFICATION_HARMONIZATION_MIGRATIONS.has(file)) {
 		selectSpecOrFallback('114', 'classificationHarmonization');
 		return {
 			rule: 'classification harmonization migration',
