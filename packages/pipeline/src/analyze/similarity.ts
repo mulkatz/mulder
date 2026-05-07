@@ -544,9 +544,9 @@ async function persistAutoEdge(pool: pg.Pool, source: Entity, result: SimilarEnt
 		domain: result.domain,
 	};
 	const analysis = { explanation: result.explanation, sharedEntityIds: result.sharedEntityIds };
-	const existing = (
-		await findEdgesBetweenEntities(pool, source.id, result.entityId, { maxSensitivityLevel: result.sensitivityLevel })
-	).find((edge) => edge.relationship === 'SIMILAR_TO' && edge.edgeType === 'RELATIONSHIP' && edge.storyId === null);
+	const existing = (await findEdgesBetweenEntities(pool, source.id, result.entityId)).find(
+		(edge) => edge.relationship === 'SIMILAR_TO' && edge.edgeType === 'RELATIONSHIP' && edge.storyId === null,
+	);
 	if (existing) {
 		const updated = await updateEdge(pool, existing.id, {
 			attributes,
@@ -747,10 +747,12 @@ export async function discoverSimilarEntities(
 		}
 	}
 
-	if (shouldAutoDiscover && autoConfig.enabled && autoConfig.create_graph_edge) {
+	if (shouldAutoDiscover && autoConfig.enabled) {
 		for (const result of autoResults) {
-			result.graphEdgeId = await persistAutoEdge(pool, source, result);
-			autoLinkCount++;
+			if (autoConfig.create_graph_edge) {
+				result.graphEdgeId = await persistAutoEdge(pool, source, result);
+				autoLinkCount++;
+			}
 			if (result.cacheRecord) {
 				result.reviewArtifactId = await registerReviewArtifact(pool, source.id, result.cacheRecord.id, result, config);
 			}

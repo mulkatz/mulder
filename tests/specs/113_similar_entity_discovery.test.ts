@@ -546,6 +546,7 @@ describe('Spec 113: Similar Entity Discovery', () => {
 		config.similar_case_discovery.auto_discovery.threshold = 0;
 		config.similar_case_discovery.auto_discovery.max_auto_links = 1;
 		config.similar_case_discovery.auto_discovery.create_graph_edge = false;
+		config.review_workflow.enabled = true;
 
 		const result = await pipelineModule.discoverSimilarEntities(pool, config, {
 			entityId: entityA.id,
@@ -566,6 +567,74 @@ describe('Spec 113: Similar Entity Discovery', () => {
 		expect(lowCache?.autoDiscovered).toBe(false);
 		expect(lowCache?.autoDiscoveryMetadata).toEqual({});
 		expect(result.cachedResults.map((item) => item.entityId).sort()).toEqual([high.id, low.id].sort());
+		expect(result.results[0].reviewArtifactId).toMatch(/^[0-9a-f-]+$/);
+		expect(result.results[1].reviewArtifactId).toBeNull();
+		const artifacts = await coreModule.listReviewableArtifacts(pool, { artifactType: 'similar_case_link' });
+		expect(artifacts).toHaveLength(1);
+		expect(artifacts[0].currentValue).toMatchObject({
+			source_entity_id: entityA.id,
+			target_entity_id: high.id,
+			explanation: 'Query-persisted auto-discovery explanation',
+		});
+		const edgeRows = await pool.query(
+			"SELECT COUNT(*)::int AS count FROM entity_edges WHERE relationship = 'SIMILAR_TO';",
+		);
+		expect(edgeRows.rows[0].count).toBe(0);
+	});
+
+	it.skipIf(!pgAvailable)('updates an existing higher-sensitivity SIMILAR_TO edge during auto-discovery', async () => {
+		const entityA = await createEntityFixture('Spec 113 Edge Sensitivity A', {
+			attributes: { date: '2020-01-01' },
+		});
+		const entityB = await createEntityFixture('Spec 113 Edge Sensitivity B', {
+			attributes: { date: '2020-01-01' },
+		});
+		const existing = await coreModule.createEdge(pool, {
+			sourceEntityId: entityA.id,
+			targetEntityId: entityB.id,
+			relationship: 'SIMILAR_TO',
+			edgeType: 'RELATIONSHIP',
+			attributes: { previous: true },
+			sensitivityLevel: 'restricted',
+			sensitivityMetadata: sensitivityMetadata('restricted'),
+		});
+		const config = cloneConfig();
+		config.similar_case_discovery.auto_discovery.threshold = 0;
+		config.similar_case_discovery.auto_discovery.max_auto_links = 1;
+		config.similar_case_discovery.auto_discovery.create_graph_edge = true;
+
+		const result = await pipelineModule.discoverSimilarEntities(pool, config, {
+			entityId: entityA.id,
+			candidateIds: [entityB.id],
+			maxResults: 1,
+			autoDiscover: true,
+			explanation: 'Updated edge explanation',
+		});
+
+		expect(result.autoLinkCount).toBe(1);
+		expect(result.results[0].graphEdgeId).toBe(existing.id);
+		const rows = await pool.query<{
+			count: number;
+			id: string;
+			sensitivity_level: string;
+			attributes: Record<string, unknown>;
+		}>(
+			[
+				'SELECT COUNT(*) OVER ()::int AS count, id, sensitivity_level, attributes',
+				'FROM entity_edges',
+				"WHERE relationship = 'SIMILAR_TO'",
+				'ORDER BY created_at;',
+			].join('\n'),
+		);
+		expect(rows.rows).toHaveLength(1);
+		expect(rows.rows[0]).toMatchObject({
+			count: 1,
+			id: existing.id,
+			sensitivity_level: 'internal',
+			attributes: expect.objectContaining({
+				generatedBy: 'analyze.similar_case_discovery',
+			}),
+		});
 	});
 
 	it.skipIf(!pgAvailable)('QA-06: Sensitivity filtering hides over-sensitive links', async () => {
