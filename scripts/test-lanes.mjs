@@ -19,6 +19,14 @@ const HEAD_CHANGED_FILES_OVERRIDE_ENV = 'MULDER_TEST_AFFECTED_HEAD_CHANGED_FILES
 const HEAD_REF_ENV = 'MULDER_TEST_AFFECTED_HEAD_REF';
 const SPEC_DOC_TEST_OVERRIDES = new Map([
 	['77_document_observability_aggregation', ['tests/specs/77_document_observability_route.test.ts']],
+	[
+		'112_m11_trust_layer_review_repair',
+		[
+			'tests/specs/107_credibility_profile_drafts.test.ts',
+			'tests/specs/109_review_workflow_infrastructure.test.ts',
+			'tests/specs/111_rbac_implementation.test.ts',
+		],
+	],
 ]);
 
 function usage() {
@@ -708,6 +716,19 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 		return { rule: 'rbac access-role migration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
+	if (file === 'packages/core/src/database/migrations/042_source_credibility_trust_metadata.sql') {
+		selectExact([
+			'tests/specs/08_core_schema_migrations.test.ts',
+			'tests/specs/107_credibility_profile_drafts.test.ts',
+			'tests/specs/109_review_workflow_infrastructure.test.ts',
+			'tests/specs/111_rbac_implementation.test.ts',
+		]);
+		return {
+			rule: 'source credibility trust metadata migration',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
 	if (file.startsWith('packages/core/src/database/migrations/')) {
 		selectLanes(['schema', 'db', 'heavy']);
 		return { rule: 'unknown migration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
@@ -716,6 +737,30 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 	if (file.startsWith('packages/core/src/database/repositories/access-role')) {
 		selectExact(['tests/specs/111_rbac_implementation.test.ts']);
 		return { rule: 'rbac access-role repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/source-credibility.')) {
+		selectExact([
+			'tests/specs/107_credibility_profile_drafts.test.ts',
+			'tests/specs/109_review_workflow_infrastructure.test.ts',
+			'tests/specs/111_rbac_implementation.test.ts',
+		]);
+		return {
+			rule: 'source credibility repository',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/knowledge-assertion.')) {
+		selectExact([
+			'tests/specs/101_assertion_classification_enrich.test.ts',
+			'tests/specs/109_review_workflow_infrastructure.test.ts',
+			'tests/specs/111_rbac_implementation.test.ts',
+		]);
+		return {
+			rule: 'knowledge assertion repository',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
 	}
 
 	if (file.startsWith('packages/core/src/database/repositories/source.')) {

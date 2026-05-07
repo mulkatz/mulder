@@ -202,6 +202,15 @@ access_control:
   external_query_gate:
     enabled: false
 
+# --- Review Workflow ---
+review_workflow:
+  enabled: true
+  metrics:
+    track_accuracy: true
+    auto_adjust_depth: false           # Reserved until a review-depth policy worker exists
+    accuracy_threshold_for_upgrade: 0.7
+    accuracy_threshold_for_downgrade: 0.95
+
 # --- Enrichment ---
 enrichment:
   model: "gemini-2.5-flash"

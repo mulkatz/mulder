@@ -1,5 +1,12 @@
 import type pg from 'pg';
+import { allowedSensitivityLevelsForMax } from '../../shared/access-control.js';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
+import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
+import {
+	mapArtifactProvenanceFromDb,
+	normalizeArtifactProvenance,
+	stringifyArtifactProvenance,
+} from './artifact-provenance.js';
 import { upsertReviewableArtifact } from './review-workflow.repository.js';
 import type {
 	CredibilityProfileAuthor,
@@ -32,6 +39,9 @@ interface JoinedRow {
 	profile_author: CredibilityProfileAuthor;
 	last_reviewed: Date | null;
 	review_status: CredibilityReviewStatus;
+	provenance: unknown;
+	sensitivity_level: SourceCredibilityProfile['sensitivityLevel'];
+	sensitivity_metadata: unknown;
 	profile_created_at: Date;
 	profile_updated_at: Date;
 	dim_row_id: string | null;
@@ -43,6 +53,13 @@ interface JoinedRow {
 	known_factors: string[] | null;
 	dim_created_at: Date | null;
 	dim_updated_at: Date | null;
+}
+
+interface SourceTrustRow {
+	id: string;
+	sensitivity_level: SourceCredibilityProfile['sensitivityLevel'];
+	sensitivity_metadata: unknown;
+	created_at: Date;
 }
 
 function isPool(value: Queryable): value is pg.Pool {
@@ -65,6 +82,26 @@ function required(value: string, field: string): string {
 
 function normalizeTextArray(value: readonly string[] | undefined): string[] {
 	return [...new Set((value ?? []).map((item) => item.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+function parseJsonValue(value: string): unknown {
+	return JSON.parse(value);
+}
+
+function profileProvenanceForSource(
+	sourceId: string,
+	input: UpsertSourceCredibilityProfileInput['provenance'],
+	sourceCreatedAt: Date,
+) {
+	const provenance = normalizeArtifactProvenance(
+		input ?? { sourceDocumentIds: [sourceId], createdAt: sourceCreatedAt },
+	);
+	return {
+		...provenance,
+		sourceDocumentIds: [...new Set([...provenance.sourceDocumentIds, sourceId])].sort((left, right) =>
+			left.localeCompare(right),
+		),
+	};
 }
 
 function validate(input: UpsertSourceCredibilityProfileInput): void {
@@ -101,6 +138,12 @@ function collectProfiles(rows: JoinedRow[]): SourceCredibilityProfile[] {
 				profileAuthor: row.profile_author,
 				lastReviewed: row.last_reviewed,
 				reviewStatus: row.review_status,
+				provenance: mapArtifactProvenanceFromDb(row.provenance),
+				sensitivityLevel: row.sensitivity_level ?? 'internal',
+				sensitivityMetadata: normalizeSensitivityMetadata(
+					row.sensitivity_metadata,
+					row.sensitivity_level ?? 'internal',
+				),
 				dimensions: [],
 				createdAt: row.profile_created_at,
 				updatedAt: row.profile_updated_at,
@@ -133,10 +176,12 @@ async function readProfiles(pool: Queryable, whereSql: string, params: unknown[]
 		`
 			SELECT
 				p.profile_id, p.source_id, p.source_name, p.source_type, p.profile_author,
-				p.last_reviewed, p.review_status, p.created_at AS profile_created_at, p.updated_at AS profile_updated_at,
+				p.last_reviewed, p.review_status, p.provenance, p.sensitivity_level, p.sensitivity_metadata,
+				p.created_at AS profile_created_at, p.updated_at AS profile_updated_at,
 				d.id AS dim_row_id, d.dimension_id, d.label, d.score, d.rationale, d.evidence_refs, d.known_factors,
 				d.created_at AS dim_created_at, d.updated_at AS dim_updated_at
 			FROM source_credibility_profiles p
+			JOIN sources s ON s.id = p.source_id
 			LEFT JOIN credibility_dimensions d ON d.profile_id = p.profile_id
 			${whereSql}
 			ORDER BY p.updated_at DESC, p.source_name ASC, p.profile_id ASC, d.dimension_id ASC
@@ -149,13 +194,21 @@ async function readProfiles(pool: Queryable, whereSql: string, params: unknown[]
 export async function findSourceCredibilityProfileBySourceId(
 	pool: Queryable,
 	sourceId: string,
+	options?: Pick<SourceCredibilityProfileListOptions, 'maxSensitivityLevel'>,
 ): Promise<SourceCredibilityProfile | null> {
+	const params: unknown[] = [sourceId];
+	const filters = ['p.source_id = $1'];
+	if (options?.maxSensitivityLevel) {
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		filters.push(`p.sensitivity_level = ANY($${params.length})`);
+		filters.push(`s.sensitivity_level = ANY($${params.length})`);
+	}
 	try {
-		return (await readProfiles(pool, 'WHERE p.source_id = $1', [sourceId]))[0] ?? null;
+		return (await readProfiles(pool, `WHERE ${filters.join(' AND ')}`, params))[0] ?? null;
 	} catch (cause: unknown) {
 		throw new DatabaseError('Failed to find source credibility profile', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause,
-			context: { sourceId },
+			context: { sourceId, maxSensitivityLevel: options?.maxSensitivityLevel },
 		});
 	}
 }
@@ -176,6 +229,11 @@ export async function listSourceCredibilityProfiles(
 		params.push(options.reviewStatus);
 		filters.push(`p.review_status = $${params.length}`);
 	}
+	if (options?.maxSensitivityLevel) {
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		filters.push(`p.sensitivity_level = ANY($${params.length})`);
+		filters.push(`s.sensitivity_level = ANY($${params.length})`);
+	}
 	const where = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
 	const limit = options?.limit ?? 100;
 	const offset = options?.offset ?? 0;
@@ -184,25 +242,58 @@ export async function listSourceCredibilityProfiles(
 	} catch (cause: unknown) {
 		throw new DatabaseError('Failed to list source credibility profiles', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause,
-			context: { sourceType: options?.sourceType, reviewStatus: options?.reviewStatus, limit, offset },
+			context: {
+				sourceType: options?.sourceType,
+				reviewStatus: options?.reviewStatus,
+				maxSensitivityLevel: options?.maxSensitivityLevel,
+				limit,
+				offset,
+			},
 		});
 	}
+}
+
+async function readSourceTrust(client: Queryable, sourceId: string): Promise<SourceTrustRow> {
+	const result = await client.query<SourceTrustRow>(
+		'SELECT id, sensitivity_level, sensitivity_metadata, created_at FROM sources WHERE id = $1',
+		[sourceId],
+	);
+	const source = result.rows[0];
+	if (!source) fail('Source credibility profile source does not exist', { sourceId });
+	return source;
 }
 
 async function writeProfile(
 	client: Queryable,
 	input: UpsertSourceCredibilityProfileInput,
 ): Promise<SourceCredibilityProfile> {
+	const source = await readSourceTrust(client, input.sourceId);
+	const sensitivityLevel = input.sensitivityLevel ?? source.sensitivity_level ?? 'internal';
+	const sensitivityMetadata = input.sensitivityMetadata ?? source.sensitivity_metadata;
+	const provenance = profileProvenanceForSource(input.sourceId, input.provenance, source.created_at);
 	const profile = await client.query<{ profile_id: string }>(
 		`
-			INSERT INTO source_credibility_profiles (source_id, source_name, source_type, profile_author, last_reviewed, review_status)
-			VALUES ($1, $2, $3, $4, $5, $6)
+			INSERT INTO source_credibility_profiles (
+				source_id,
+				source_name,
+				source_type,
+				profile_author,
+				last_reviewed,
+				review_status,
+				provenance,
+				sensitivity_level,
+				sensitivity_metadata
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb)
 			ON CONFLICT (source_id) DO UPDATE SET
 				source_name = EXCLUDED.source_name,
 				source_type = EXCLUDED.source_type,
 				profile_author = EXCLUDED.profile_author,
 				last_reviewed = EXCLUDED.last_reviewed,
 				review_status = EXCLUDED.review_status,
+				provenance = EXCLUDED.provenance,
+				sensitivity_level = EXCLUDED.sensitivity_level,
+				sensitivity_metadata = EXCLUDED.sensitivity_metadata,
 				updated_at = now()
 			RETURNING profile_id
 		`,
@@ -213,6 +304,9 @@ async function writeProfile(
 			input.profileAuthor ?? 'llm_auto',
 			input.lastReviewed ?? null,
 			input.reviewStatus ?? 'draft',
+			stringifyArtifactProvenance(provenance),
+			sensitivityLevel,
+			stringifySensitivityMetadata(sensitivityMetadata, sensitivityLevel),
 		],
 	);
 	const profileId = profile.rows[0].profile_id;
@@ -272,6 +366,11 @@ async function writeProfile(
 				source_id: written.sourceId,
 				last_reviewed: written.lastReviewed?.toISOString() ?? null,
 				dimension_count: written.dimensions.length,
+				provenance: parseJsonValue(stringifyArtifactProvenance(written.provenance)),
+				sensitivity_level: written.sensitivityLevel,
+				sensitivity_metadata: parseJsonValue(
+					stringifySensitivityMetadata(written.sensitivityMetadata, written.sensitivityLevel),
+				),
 			},
 			sourceId: written.sourceId,
 		});

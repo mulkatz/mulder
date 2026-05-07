@@ -325,6 +325,28 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		expect(plan.lanes.heavy.count).toBe(0);
 	});
 
+	it('QA-05e5b: M11 review-repair surfaces stay scoped to trust-layer specs', () => {
+		const plan = affectedPlanForFiles([
+			'packages/core/src/database/migrations/042_source_credibility_trust_metadata.sql',
+			'packages/core/src/database/repositories/source-credibility.repository.ts',
+			'packages/core/src/database/repositories/knowledge-assertion.repository.ts',
+			'docs/specs/112_m11_trust_layer_review_repair.spec.md',
+		]);
+		const files = plan.files.map((file) => file.relativePath);
+
+		expect(files).toEqual(
+			expect.arrayContaining([
+				'tests/specs/08_core_schema_migrations.test.ts',
+				'tests/specs/101_assertion_classification_enrich.test.ts',
+				'tests/specs/107_credibility_profile_drafts.test.ts',
+				'tests/specs/109_review_workflow_infrastructure.test.ts',
+				'tests/specs/111_rbac_implementation.test.ts',
+			]),
+		);
+		expect(plan.totalFiles).toBe(5);
+		expect(plan.lanes.heavy.count).toBe(0);
+	});
+
 	it('QA-05e6: docs-only PR head commits do not select DB or schema lanes', () => {
 		const plan = affectedHeadPlanForFiles(['docs/specs/111_rbac_implementation.spec.md', 'docs/roadmap.md']);
 

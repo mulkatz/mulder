@@ -413,7 +413,7 @@ const reviewWorkflowArtifactTypeSchema = z.object({
 
 const reviewWorkflowMetricsSchema = z.object({
 	track_accuracy: z.boolean().default(true),
-	auto_adjust_depth: z.boolean().default(true),
+	auto_adjust_depth: z.boolean().default(false),
 	accuracy_threshold_for_upgrade: z.number().min(0).max(1).default(0.7),
 	accuracy_threshold_for_downgrade: z.number().min(0).max(1).default(0.95),
 });
