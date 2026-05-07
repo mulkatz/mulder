@@ -610,6 +610,24 @@ const TEST_GROUPS = {
 		'tests/specs/66_evidence_package_boundary.test.ts',
 		'tests/specs/75_evidence_api_routes.test.ts',
 	],
+	rbacSchema: ['tests/specs/08_core_schema_migrations.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	rbacAccessControl: ['tests/specs/03_config_loader.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	rbacDocumentsApi: ['tests/specs/76_document_retrieval_routes.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	rbacEntitiesApi: ['tests/specs/74_entity_api_routes.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	sourceRepository: ['tests/specs/14_source_repository.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	storyRepository: ['tests/specs/22_story_repository.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	entityRepository: ['tests/specs/24_entity_alias_repositories.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	edgeRepository: ['tests/specs/25_edge_repository.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	conflictRepository: [
+		'tests/specs/108_conflict_node_management.test.ts',
+		'tests/specs/111_rbac_implementation.test.ts',
+	],
+	reviewRepository: [
+		'tests/specs/109_review_workflow_infrastructure.test.ts',
+		'tests/specs/111_rbac_implementation.test.ts',
+	],
+	translationRepository: ['tests/specs/110_translation_service.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	repositoryExports: ['tests/specs/02_monorepo_setup.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
 };
 
 function selectTestGroup(selected, discoveredByPath, groupName) {
@@ -654,6 +672,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 		};
 	}
 
+	if (file === 'mulder.config.example.yaml') {
+		selectGroup('rbacAccessControl');
+		return {
+			rule: 'example config access-control smoke',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
 	if (file === 'packages/core/src/config/reprocess-hash.ts') {
 		selectGroup('reprocessConfig');
 		return { rule: 'reprocess config hash', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
@@ -677,9 +703,62 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 		};
 	}
 
+	if (file === 'packages/core/src/database/migrations/041_access_roles.sql') {
+		selectGroup('rbacSchema');
+		return { rule: 'rbac access-role migration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
 	if (file.startsWith('packages/core/src/database/migrations/')) {
 		selectLanes(['schema', 'db', 'heavy']);
 		return { rule: 'unknown migration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/access-role')) {
+		selectExact(['tests/specs/111_rbac_implementation.test.ts']);
+		return { rule: 'rbac access-role repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/source.')) {
+		selectGroup('sourceRepository');
+		return { rule: 'source repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (
+		file.startsWith('packages/core/src/database/repositories/story.') ||
+		file.startsWith('packages/core/src/database/repositories/story-entity.')
+	) {
+		selectGroup('storyRepository');
+		return { rule: 'story repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/entity.')) {
+		selectGroup('entityRepository');
+		return { rule: 'entity repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/edge.')) {
+		selectGroup('edgeRepository');
+		return { rule: 'edge repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/conflict-node.')) {
+		selectGroup('conflictRepository');
+		return { rule: 'conflict-node repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/review-workflow.')) {
+		selectGroup('reviewRepository');
+		return { rule: 'review-workflow repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/translated-document.')) {
+		selectGroup('translationRepository');
+		return { rule: 'translated-document repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file === 'packages/core/src/database/repositories/index.ts') {
+		selectGroup('repositoryExports');
+		return { rule: 'repository barrel exports', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
 	if (file.startsWith('packages/core/src/database/repositories/document-quality')) {
@@ -731,6 +810,11 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 	if (file.startsWith('packages/core/src/shared/cost-estimator')) {
 		selectExact(['tests/specs/77_cost_estimator.test.ts', 'tests/specs/78_selective_reprocessing.test.ts']);
 		return { rule: 'cost estimator', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file === 'packages/core/src/shared/access-control.ts') {
+		selectGroup('rbacAccessControl');
+		return { rule: 'rbac access-control helpers', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
 	if (file.startsWith('packages/core/src/shared/')) {
@@ -806,6 +890,16 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 	if (file.startsWith('packages/evidence/')) {
 		selectGroup('evidence');
 		return { rule: 'evidence package', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file === 'apps/api/src/lib/documents.ts' || file === 'apps/api/src/routes/documents.ts') {
+		selectGroup('rbacDocumentsApi');
+		return { rule: 'documents api route/runtime', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file === 'apps/api/src/lib/entities.ts' || file === 'apps/api/src/routes/entities.ts') {
+		selectGroup('rbacEntitiesApi');
+		return { rule: 'entities api route/runtime', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
 	if (file.startsWith('apps/api/')) {

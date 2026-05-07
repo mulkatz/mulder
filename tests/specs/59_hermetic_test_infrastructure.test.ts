@@ -61,10 +61,15 @@ function runTestLanes(args: string[]): { stdout: string; stderr: string; exitCod
 	};
 }
 
-function affectedPlanFor(changedFile: string): AffectedPlan {
-	const result = runTestLanes(['affected-plan', '--changed-file', changedFile, '--json']);
+function affectedPlanForFiles(changedFiles: string[]): AffectedPlan {
+	const changedFileArgs = changedFiles.flatMap((changedFile) => ['--changed-file', changedFile]);
+	const result = runTestLanes(['affected-plan', ...changedFileArgs, '--json']);
 	expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
 	return JSON.parse(result.stdout) as AffectedPlan;
+}
+
+function affectedPlanFor(changedFile: string): AffectedPlan {
+	return affectedPlanForFiles([changedFile]);
 }
 
 function resetSchemaToMissing(): void {
@@ -268,6 +273,41 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 			]),
 		);
 		expect(taxonomyPlan.totalFiles).toBeLessThan(10);
+	});
+
+	it('QA-05e4: access-role migrations stay scoped to schema and RBAC specs', () => {
+		const plan = affectedPlanFor('packages/core/src/database/migrations/041_access_roles.sql');
+		const files = plan.files.map((file) => file.relativePath);
+
+		expect(files).toEqual(
+			expect.arrayContaining([
+				'tests/specs/08_core_schema_migrations.test.ts',
+				'tests/specs/111_rbac_implementation.test.ts',
+			]),
+		);
+		expect(plan.totalFiles).toBe(2);
+		expect(plan.lanes.heavy.count).toBe(0);
+	});
+
+	it('QA-05e5: RBAC API/config surfaces do not fan out to the full DB lane', () => {
+		const plan = affectedPlanForFiles([
+			'mulder.config.example.yaml',
+			'packages/core/src/shared/access-control.ts',
+			'apps/api/src/lib/documents.ts',
+			'apps/api/src/lib/entities.ts',
+		]);
+		const files = plan.files.map((file) => file.relativePath);
+
+		expect(files).toEqual(
+			expect.arrayContaining([
+				'tests/specs/03_config_loader.test.ts',
+				'tests/specs/74_entity_api_routes.test.ts',
+				'tests/specs/76_document_retrieval_routes.test.ts',
+				'tests/specs/111_rbac_implementation.test.ts',
+			]),
+		);
+		expect(plan.totalFiles).toBe(4);
+		expect(plan.lanes.heavy.count).toBe(0);
 	});
 
 	it('QA-05f: affected lane shards pass cleanly when their selected shard is empty', () => {
