@@ -275,6 +275,34 @@ retrieval:
       max_hops: 2                     # Recursive CTE depth limit
       supernode_threshold: 100        # Skip entities with more source mentions than this
 
+# --- Similar Case Discovery ---
+similar_case_discovery:
+  enabled: true
+  max_results: 10
+  candidate_retrieval:
+    vector_top_k: 100                 # Bounded broad candidate set
+    geo_radius_km: null               # null = no geo filter at retrieval
+    temporal_window_years: null       # null = no temporal filter at retrieval
+  scoring:
+    core_dimensions: ["semantic", "structural", "geospatial", "temporal"]
+    weights:
+      semantic: 0.25
+      structural: 0.20
+      geospatial: 0.15
+      temporal: 0.10
+    domain_dimensions: []             # Add generic ontology attribute comparisons here
+  explanation:
+    enabled: true
+    engine: "deterministic"           # No paid LLM calls in M12-N1
+    max_tokens: 200
+  auto_discovery:
+    enabled: true
+    trigger: "on_ingest"
+    threshold: 0.60
+    create_graph_edge: true
+    edge_type: "SIMILAR_TO"
+    max_auto_links: 10
+
 # --- Web Grounding (v2.0) ---
 grounding:
   enabled: false                      # Enable for v2.0

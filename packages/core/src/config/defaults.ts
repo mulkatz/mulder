@@ -6,7 +6,7 @@
  */
 
 import { DEFAULT_ACCESS_ROLE_CONFIGS } from '../shared/access-control.js';
-import type { ApiConfig } from './types.js';
+import type { ApiConfig, SimilarCaseDiscoveryConfig } from './types.js';
 
 const apiDefaults: ApiConfig = {
 	port: 8080,
@@ -33,6 +33,39 @@ const apiDefaults: ApiConfig = {
 		enrich_per_source_usd: 0.015,
 		embed_per_source_usd: 0.004,
 		graph_per_source_usd: 0.001,
+	},
+};
+
+const similarCaseDiscoveryDefaults: SimilarCaseDiscoveryConfig = {
+	enabled: true,
+	max_results: 10,
+	candidate_retrieval: {
+		vector_top_k: 100,
+		geo_radius_km: null,
+		temporal_window_years: null,
+	},
+	scoring: {
+		core_dimensions: ['semantic', 'structural', 'geospatial', 'temporal'],
+		weights: {
+			semantic: 0.25,
+			structural: 0.2,
+			geospatial: 0.15,
+			temporal: 0.1,
+		},
+		domain_dimensions: [],
+	},
+	explanation: {
+		enabled: true,
+		engine: 'deterministic',
+		max_tokens: 200,
+	},
+	auto_discovery: {
+		enabled: true,
+		trigger: 'on_ingest',
+		threshold: 0.6,
+		create_graph_edge: true,
+		edge_type: 'SIMILAR_TO',
+		max_auto_links: 10,
 	},
 };
 
@@ -288,6 +321,8 @@ export const CONFIG_DEFAULTS = {
 			graph: { weight: 0.2, max_hops: 2, supernode_threshold: 100 },
 		},
 	},
+
+	similar_case_discovery: similarCaseDiscoveryDefaults,
 
 	grounding: {
 		enabled: false,

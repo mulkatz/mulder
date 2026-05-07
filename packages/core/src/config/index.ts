@@ -48,6 +48,8 @@ export type {
 	ReviewWorkflowDepthConfig,
 	ReviewWorkflowMetricsConfig,
 	SafetyConfig,
+	SimilarCaseDiscoveryConfig,
+	SimilarityDomainDimensionConfig,
 	SourceRollbackConfig,
 	StorageConfig,
 	TaxonomyConfig,

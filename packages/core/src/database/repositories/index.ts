@@ -380,6 +380,28 @@ export type {
 	UpsertReviewableArtifactInput,
 	UpsertReviewQueueInput,
 } from './review-workflow.types.js';
+export {
+	deleteSimilarityResultsForEntity,
+	findSimilarityByPair,
+	listSimilarEntities,
+	normalizeSharedEntityIds,
+	upsertSimilarityResult,
+} from './similarity.repository.js';
+export type {
+	AutoDiscoveryResult,
+	CoreSimilarityDimensions,
+	DeleteSimilarityResultsForEntityOptions,
+	DomainSimilarityDimension,
+	ListSimilarEntitiesOptions,
+	SimilarityCacheRecord,
+	SimilarityCoreDimension,
+	SimilarityDimensionScore,
+	SimilarityDomainDimensionSource,
+	SimilarityPairOptions,
+	SimilarityResult,
+	SimilarityScoreStatus,
+	UpsertSimilarityResultInput,
+} from './similarity.types.js';
 export type { SourceReliabilityFilter } from './source.repository.js';
 export {
 	countScoredSources,
