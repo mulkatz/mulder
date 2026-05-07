@@ -434,7 +434,7 @@ async function upsertTemporalAnomalyCluster(
 	const params = [
 		input.id ?? null,
 		input.regionKey,
-		JSON.stringify(input.regionGeojson ?? null),
+		input.regionGeojson == null ? null : JSON.stringify(input.regionGeojson),
 		input.anomalyType ?? 'frequency_spike',
 		input.timeStart,
 		input.timeEnd,
@@ -472,7 +472,8 @@ async function upsertSpatiotemporalHotspotCluster(
 			id,
 			region_key,
 			hotspot_type,
-			centroid,
+			centroid_lat,
+			centroid_lng,
 			radius_km,
 			time_start,
 			time_end,
@@ -496,7 +497,8 @@ async function upsertSpatiotemporalHotspotCluster(
 			COALESCE($1::uuid, gen_random_uuid()),
 			$2,
 			$3,
-			ST_SetSRID(ST_MakePoint($5, $4), 4326),
+			$4,
+			$5,
 			$6,
 			$7,
 			$8,
@@ -519,7 +521,8 @@ async function upsertSpatiotemporalHotspotCluster(
 		ON CONFLICT (id) DO UPDATE SET
 			region_key = EXCLUDED.region_key,
 			hotspot_type = EXCLUDED.hotspot_type,
-			centroid = EXCLUDED.centroid,
+			centroid_lat = EXCLUDED.centroid_lat,
+			centroid_lng = EXCLUDED.centroid_lng,
 			radius_km = EXCLUDED.radius_km,
 			time_start = EXCLUDED.time_start,
 			time_end = EXCLUDED.time_end,
@@ -538,7 +541,7 @@ async function upsertSpatiotemporalHotspotCluster(
 			sensitivity_metadata = EXCLUDED.sensitivity_metadata,
 			computed_at = EXCLUDED.computed_at,
 			deleted_at = NULL
-		RETURNING *, ST_Y(centroid)::double precision AS centroid_lat, ST_X(centroid)::double precision AS centroid_lng
+		RETURNING *
 	`;
 
 	const params = [
@@ -712,7 +715,7 @@ export async function listSpatiotemporalHotspotClusters(
 	try {
 		const result = await pool.query<SpatiotemporalHotspotClusterRow>(
 			`
-				SELECT shc.*, ST_Y(shc.centroid)::double precision AS centroid_lat, ST_X(shc.centroid)::double precision AS centroid_lng
+				SELECT shc.*
 				FROM spatiotemporal_hotspot_clusters shc
 				${whereClause}
 				ORDER BY shc.density DESC, shc.time_start ASC, shc.region_key ASC, shc.id ASC
@@ -741,7 +744,7 @@ export async function findSpatiotemporalHotspotCluster(
 	try {
 		const result = await pool.query<SpatiotemporalHotspotClusterRow>(
 			`
-				SELECT shc.*, ST_Y(shc.centroid)::double precision AS centroid_lat, ST_X(shc.centroid)::double precision AS centroid_lng
+				SELECT shc.*
 				FROM spatiotemporal_hotspot_clusters shc
 				WHERE ${conditions.join(' AND ')}
 				LIMIT 1

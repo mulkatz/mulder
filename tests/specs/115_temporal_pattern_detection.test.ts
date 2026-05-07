@@ -385,7 +385,8 @@ describe('Spec 115: Temporal Pattern Detection', () => {
 		expect([...(columnsByTable.get('spatiotemporal_hotspot_clusters') ?? [])]).toEqual(
 			expect.arrayContaining([
 				'region_key',
-				'centroid',
+				'centroid_lat',
+				'centroid_lng',
 				'radius_km',
 				'time_start',
 				'time_end',
@@ -406,9 +407,15 @@ describe('Spec 115: Temporal Pattern Detection', () => {
 			]),
 		);
 		expect(
-			columns.rows.find((row) => row.table_name === 'spatiotemporal_hotspot_clusters' && row.column_name === 'centroid')
-				?.udt_name,
-		).toBe('geometry');
+			columns.rows.find(
+				(row) => row.table_name === 'spatiotemporal_hotspot_clusters' && row.column_name === 'centroid_lat',
+			)?.udt_name,
+		).toBe('float8');
+		expect(
+			columns.rows.find(
+				(row) => row.table_name === 'spatiotemporal_hotspot_clusters' && row.column_name === 'centroid_lng',
+			)?.udt_name,
+		).toBe('float8');
 
 		const constraints = await pool.query<{ definition: string }>(
 			[
@@ -428,6 +435,8 @@ describe('Spec 115: Temporal Pattern Detection', () => {
 		expect(constraintDefs).toContain('sensitivity_metadata');
 		expect(constraintDefs).toContain('review_status');
 		expect(constraintDefs).toContain('persistence');
+		expect(constraintDefs).toContain('centroid_lat');
+		expect(constraintDefs).toContain('centroid_lng');
 
 		const indexes = await pool.query<{ indexname: string; indexdef: string }>(
 			[
@@ -445,7 +454,8 @@ describe('Spec 115: Temporal Pattern Detection', () => {
 		expect(indexDefs).toContain('contributing_entity_ids');
 		expect(indexDefs).toContain('sensitivity_level');
 		expect(indexDefs).toContain('review_status');
-		expect(indexDefs).toContain('USING gist (centroid)');
+		expect(indexDefs).toContain('centroid_lat');
+		expect(indexDefs).toContain('centroid_lng');
 		expect(indexDefs).toContain('related_cluster_ids');
 	});
 

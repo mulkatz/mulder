@@ -87,7 +87,8 @@ CREATE TABLE IF NOT EXISTS spatiotemporal_hotspot_clusters (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   region_key TEXT NOT NULL,
   hotspot_type TEXT NOT NULL DEFAULT 'density_cluster',
-  centroid geometry(Point, 4326) NOT NULL,
+  centroid_lat DOUBLE PRECISION NOT NULL,
+  centroid_lng DOUBLE PRECISION NOT NULL,
   radius_km DOUBLE PRECISION NOT NULL,
   time_start TIMESTAMPTZ NOT NULL,
   time_end TIMESTAMPTZ NOT NULL,
@@ -116,6 +117,12 @@ CREATE TABLE IF NOT EXISTS spatiotemporal_hotspot_clusters (
   deleted_at TIMESTAMPTZ,
   CONSTRAINT spatiotemporal_hotspot_clusters_region_key_required_check CHECK (length(trim(region_key)) > 0),
   CONSTRAINT spatiotemporal_hotspot_clusters_hotspot_type_check CHECK (hotspot_type IN ('density_cluster')),
+  CONSTRAINT spatiotemporal_hotspot_clusters_centroid_lat_check CHECK (
+    centroid_lat >= -90 AND centroid_lat <= 90
+  ),
+  CONSTRAINT spatiotemporal_hotspot_clusters_centroid_lng_check CHECK (
+    centroid_lng >= -180 AND centroid_lng <= 180
+  ),
   CONSTRAINT spatiotemporal_hotspot_clusters_radius_check CHECK (radius_km > 0),
   CONSTRAINT spatiotemporal_hotspot_clusters_time_order_check CHECK (time_end > time_start),
   CONSTRAINT spatiotemporal_hotspot_clusters_entity_count_check CHECK (entity_count >= 0),
@@ -157,6 +164,67 @@ CREATE TABLE IF NOT EXISTS spatiotemporal_hotspot_clusters (
   )
 );
 
+ALTER TABLE spatiotemporal_hotspot_clusters
+  ADD COLUMN IF NOT EXISTS centroid_lat DOUBLE PRECISION;
+ALTER TABLE spatiotemporal_hotspot_clusters
+  ADD COLUMN IF NOT EXISTS centroid_lng DOUBLE PRECISION;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'spatiotemporal_hotspot_clusters'
+      AND column_name = 'centroid'
+  ) THEN
+    EXECUTE '
+      UPDATE spatiotemporal_hotspot_clusters
+        SET
+          centroid_lat = COALESCE(centroid_lat, ST_Y(centroid)::double precision),
+          centroid_lng = COALESCE(centroid_lng, ST_X(centroid)::double precision)
+        WHERE centroid IS NOT NULL
+          AND (centroid_lat IS NULL OR centroid_lng IS NULL)
+    ';
+  END IF;
+END $$;
+
+UPDATE spatiotemporal_hotspot_clusters
+  SET
+    centroid_lat = COALESCE(centroid_lat, 0),
+    centroid_lng = COALESCE(centroid_lng, 0)
+  WHERE centroid_lat IS NULL OR centroid_lng IS NULL;
+
+ALTER TABLE spatiotemporal_hotspot_clusters
+  ALTER COLUMN centroid_lat SET NOT NULL;
+ALTER TABLE spatiotemporal_hotspot_clusters
+  ALTER COLUMN centroid_lng SET NOT NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'spatiotemporal_hotspot_clusters_centroid_lat_check'
+  ) THEN
+    ALTER TABLE spatiotemporal_hotspot_clusters
+      ADD CONSTRAINT spatiotemporal_hotspot_clusters_centroid_lat_check CHECK (
+        centroid_lat >= -90 AND centroid_lat <= 90
+      );
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'spatiotemporal_hotspot_clusters_centroid_lng_check'
+  ) THEN
+    ALTER TABLE spatiotemporal_hotspot_clusters
+      ADD CONSTRAINT spatiotemporal_hotspot_clusters_centroid_lng_check CHECK (
+        centroid_lng >= -180 AND centroid_lng <= 180
+      );
+  END IF;
+END $$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_temporal_anomaly_clusters_active_region_time_type
   ON temporal_anomaly_clusters(region_key, time_start, time_end, anomaly_type)
   WHERE deleted_at IS NULL;
@@ -185,8 +253,8 @@ CREATE INDEX IF NOT EXISTS idx_temporal_anomaly_clusters_review_status
 CREATE UNIQUE INDEX IF NOT EXISTS idx_spatiotemporal_hotspot_clusters_active_region_time_type
   ON spatiotemporal_hotspot_clusters(region_key, time_start, time_end, hotspot_type)
   WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_spatiotemporal_hotspot_clusters_centroid
-  ON spatiotemporal_hotspot_clusters USING GIST (centroid)
+CREATE INDEX IF NOT EXISTS idx_spatiotemporal_hotspot_clusters_centroid_lat_lng
+  ON spatiotemporal_hotspot_clusters(centroid_lat, centroid_lng)
   WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_spatiotemporal_hotspot_clusters_time
   ON spatiotemporal_hotspot_clusters(time_start, time_end)
