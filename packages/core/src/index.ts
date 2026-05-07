@@ -52,6 +52,7 @@ export type {
 	TaxonomyHarmonizationStatusConfig,
 	TaxonomyHarmonizationTaxonomyRefConfig,
 	TemporalAnomalyDetectionConfig,
+	TemporalChangepointDetectionConfig,
 	TemporalExternalCorrelationConfig,
 	TemporalExternalCorrelationMethodConfig,
 	TemporalExternalCorrelationSeriesConfig,

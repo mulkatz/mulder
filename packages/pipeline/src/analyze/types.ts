@@ -265,6 +265,11 @@ export interface SimilarEntityScore {
 	explanation: string;
 	sharedEntityIds: string[];
 	keyDifferences: string[];
+	/**
+	 * Sort-only score used to rank candidates within a discovery run.
+	 * This is not evidence strength, is not persisted to similarity_cache, and
+	 * must not be surfaced as review/report trust metadata.
+	 */
 	weightedRankScore: number;
 	provenance: ArtifactProvenanceInput;
 	autoDiscoveryThreshold: number;

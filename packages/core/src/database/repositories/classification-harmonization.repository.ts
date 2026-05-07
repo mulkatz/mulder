@@ -844,6 +844,29 @@ function addMappingListFilters(
 	}
 }
 
+function addResolveMappingTypeFilter(
+	filters: string[],
+	params: unknown[],
+	options: ResolveTaxonomyMappingsOptions,
+): void {
+	const mappingTypes = enumFilter(options.mappingType, MAPPING_TYPES, 'mappingType');
+	if (mappingTypes.length === 0) return;
+
+	params.push(mappingTypes);
+	const typeParam = params.length;
+	const forwardPredicate = options.taxonomyId
+		? '(source_category_id = $1 AND source_taxonomy_id = $2)'
+		: 'source_category_id = $1';
+	filters.push(`(
+		CASE
+			WHEN ${forwardPredicate} THEN mapping_type
+			WHEN mapping_type = 'broader' THEN 'narrower'
+			WHEN mapping_type = 'narrower' THEN 'broader'
+			ELSE mapping_type
+		END
+	) = ANY($${typeParam})`);
+}
+
 export async function listTaxonomyMappings(
 	pool: Queryable,
 	options?: TaxonomyMappingListOptions,
@@ -899,7 +922,9 @@ export async function resolveTaxonomyMappings(
 		includeDeleted: true,
 		categoryId: undefined,
 		taxonomyId: undefined,
+		mappingType: undefined,
 	});
+	addResolveMappingTypeFilter(filters, params, options);
 	const where = `WHERE ${filters.join(' AND ')}`;
 	const suffix = appendLimitOffset(params, options.limit ?? 100, options.offset ?? 0);
 	try {

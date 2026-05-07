@@ -53,9 +53,10 @@ This step is intentionally internal-data only. External data source plugins and 
 - Add deterministic Analyze-facing functions to:
   - bucket entity events by configured granularity and region strategy,
   - calculate historical baseline and observed rates,
+  - run CUSUM changepoint detection for sustained frequency shifts,
   - apply Bonferroni correction across tested regions/windows,
   - persist only significant anomalies that meet `min_entities`,
-  - compute hotspot density, persistence, recurrence metadata, related clusters, and contributing entity ids.
+  - compute DBSCAN hotspot density, persistence, recurrence metadata, related clusters, and contributing entity ids.
 - Include dominant category metadata when configured entity/category attributes are present, using generic category refs from N2 rather than domain labels.
 - Store reporting-bias warnings and mandatory weak-signal caveats on all persisted pattern results.
 - Update affected-test mapping so N3 config/repository/analyze/migration changes select the N3 spec tests without full-suite fan-out.
@@ -72,7 +73,7 @@ This step is intentionally internal-data only. External data source plugins and 
 
 - Core and pipeline code must stay domain-agnostic. Use `region_key`, `category_ref`, `known_pattern_match`, and config-supplied labels only.
 - N3 results are analytical weak signals, not evidence assertions. Persist `signal_strength = weak` and bias/caveat fields so later agent/reporting code cannot silently upgrade them.
-- Statistical work must be bounded by config: minimum entity counts, baseline window, granularity, max regions/windows, and hotspot cluster size.
+- Statistical work must be bounded by config: minimum entity counts, baseline window, granularity, CUSUM thresholds, max regions/windows, and hotspot cluster size.
 - Bonferroni correction must be observable in the persisted anomaly payload: raw significance, tested comparison count, corrected significance, and threshold.
 - Sensitivity must propagate from contributing entities. A pattern containing a restricted entity must not be visible through internal-only reads.
 - Fresh checkouts must work from example/default config and must not require a local `mulder.config.yaml`.
@@ -89,7 +90,7 @@ N3 enables N4 external correlations, M13 observability over pattern outputs, and
 ## 4. Blueprint
 
 1. Add config support:
-   - Define `temporal_pattern_detection.enabled`, `schedule`, `anomaly_detection`, `hotspot_clustering`, and `reporting_bias`.
+   - Define `temporal_pattern_detection.enabled`, `schedule`, `anomaly_detection`, `anomaly_detection.changepoint_detection`, `hotspot_clustering`, and `reporting_bias`.
    - Defaults should match §A12 intent while staying safe for tests: enabled by default, no scheduler side effects, bounded candidate windows, and no external correlation section beyond an explicit N4-reserved placeholder if necessary.
    - Keep `mulder.config.example.yaml` self-contained and domain-neutral.
 
@@ -108,9 +109,9 @@ N3 enables N4 external correlations, M13 observability over pattern outputs, and
    - Reuse or mirror the existing clusterable entity event loading contract: `entities.attributes.iso_date` and `entities.geom` are the current event signal.
    - Bucket events by configured granularity (`day`, `week`, `month`, `year`) and region strategy (`country`, `admin1`, `hex_grid_100km`). For N3, `country`/`admin1` may read generic entity attributes, and `hex_grid_100km` may use a deterministic rounded coordinate bucket.
    - Compute baseline rates from historical buckets within `baseline_window_years` and observed rates over sliding windows.
-   - Use a deterministic Poisson/z-score style significance approximation and apply Bonferroni correction across tested comparisons.
+   - Use deterministic Poisson significance for spikes, CUSUM for changepoints, and Bonferroni correction across tested comparisons.
    - Persist only anomalies with corrected significance at or below the configured threshold and at least `min_entities`.
-   - Build hotspot clusters from time-windowed geocoded events using configured radius/min cluster size, then classify persistence as `transient`, `recurring`, or `permanent` from repeated window presence.
+   - Build hotspot clusters from time-windowed geocoded events with DBSCAN using configured radius/min cluster size, then classify persistence as `transient`, `recurring`, or `permanent` from repeated window presence. HDBSCAN is explicitly deferred until a true implementation exists.
 
 5. Add bias and provenance behavior:
    - Always set `signal_strength = weak`.
@@ -153,7 +154,12 @@ N3 enables N4 external correlations, M13 observability over pattern outputs, and
    - When hotspot detection runs
    - Then hotspot rows contain centroid, radius, density, persistence, recurrence pattern, contributing ids, and related cluster ids where applicable.
 
-6. **QA-06: Sensitivity filtering hides over-sensitive patterns**
+6. **QA-06: CUSUM changepoints and DBSCAN noise/border semantics are deterministic**
+   - Given sustained frequency shifts and geocoded events containing cluster points, border points, and noise
+   - When temporal pattern detection runs
+   - Then changepoints persist as `frequency_changepoint`, DBSCAN includes border points, and noise is not persisted as a hotspot.
+
+7. **QA-07: Sensitivity filtering hides over-sensitive patterns**
    - Given a pattern whose contributing entities include restricted or confidential sensitivity
    - When repository reads run with `maxSensitivityLevel = internal`
    - Then the pattern is omitted, while admin-level reads can see it.

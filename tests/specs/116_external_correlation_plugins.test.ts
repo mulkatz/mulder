@@ -188,6 +188,11 @@ describe('Spec 116: External Correlation Plugins', () => {
 			max_lag_days: 90,
 			always_include_caveat: true,
 		});
+		const parsed = structuredClone(config) as Record<string, unknown>;
+		(
+			(parsed.temporal_pattern_detection as Record<string, unknown>).external_correlation as Record<string, unknown>
+		).always_include_caveat = false;
+		expect(() => coreModule.mulderConfigSchema.parse(parsed)).toThrow();
 	});
 
 	it.skipIf(!pgAvailable)('QA-02: external correlation schema is constrained and queryable', async () => {
@@ -292,7 +297,13 @@ describe('Spec 116: External Correlation Plugins', () => {
 		}) as typeof fetch;
 		try {
 			const plugin = registry.get('spec116-static');
-			expect(plugin?.kind).toBe('time_series');
+			expect(plugin).toMatchObject({
+				id: 'spec116-static',
+				name: 'spec116-static',
+				description: expect.any(String),
+				type: 'time_series',
+				update_frequency: 'manual',
+			});
 			const fetched = await plugin?.fetch({
 				sourceId: 'configured-source',
 				seriesId: 'observations',
@@ -308,6 +319,16 @@ describe('Spec 116: External Correlation Plugins', () => {
 		} finally {
 			globalThis.fetch = originalFetch;
 		}
+		expect(() =>
+			registry.register({
+				id: '',
+				name: 'Invalid plugin',
+				description: 'Invalid fixture',
+				type: 'time_series',
+				update_frequency: 'manual',
+				fetch: () => ({ points: [] }),
+			}),
+		).toThrow(/id must be a non-empty string/);
 	});
 
 	it.skipIf(!pgAvailable)('QA-04: Spearman and cross-correlation persist bounded lagged results', async () => {
@@ -315,8 +336,10 @@ describe('Spec 116: External Correlation Plugins', () => {
 		const fetchRequests: string[] = [];
 		pipelineModule.registerExternalDataSourcePlugin({
 			id: 'spec116-plugin',
-			kind: 'time_series',
-			updateFrequency: 'static',
+			name: 'Spec 116 plugin',
+			description: 'Deterministic external series fixture.',
+			type: 'time_series',
+			update_frequency: 'manual',
 			fetch(request) {
 				fetchRequests.push(`${request.sourceId}/${request.seriesId}`);
 				const points =
@@ -455,8 +478,10 @@ describe('Spec 116: External Correlation Plugins', () => {
 			];
 			pipelineModule.registerExternalDataSourcePlugin({
 				id: 'spec116-zero-align-plugin',
-				kind: 'time_series',
-				updateFrequency: 'static',
+				name: 'Spec 116 zero align plugin',
+				description: 'Deterministic zero-aligned external series fixture.',
+				type: 'time_series',
+				update_frequency: 'manual',
 				fetch() {
 					return {
 						points: [

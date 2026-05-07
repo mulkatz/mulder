@@ -101,10 +101,16 @@ const temporalPatternDetectionDefaults: TemporalPatternDetectionConfig = {
 		max_windows: 120,
 		window_size_buckets: 1,
 		known_patterns: [],
+		changepoint_detection: {
+			enabled: true,
+			threshold: 5,
+			drift_allowance: 0.5,
+			min_consecutive_windows: 2,
+		},
 	},
 	hotspot_clustering: {
 		enabled: true,
-		algorithm: 'hdbscan',
+		algorithm: 'dbscan',
 		min_cluster_size: 3,
 		radius_km: 100,
 		temporal_granularity: 'year',

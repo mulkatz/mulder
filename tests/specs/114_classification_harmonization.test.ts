@@ -516,9 +516,26 @@ describe('Spec 114: Classification Harmonization', () => {
 				reviewStatus: 'reviewed',
 				maxSensitivityLevel: 'internal',
 			});
+			const forwardFiltered = await coreModule.resolveTaxonomyMappings(pool, {
+				taxonomyId: sourceTaxonomy.id,
+				categoryId: sourceCategory.id,
+				targetTaxonomyId: targetTaxonomy.id,
+				mappingType,
+				reviewStatus: 'reviewed',
+				maxSensitivityLevel: 'internal',
+			});
+			const reverseFiltered = await coreModule.resolveTaxonomyMappings(pool, {
+				taxonomyId: targetTaxonomy.id,
+				categoryId: targetCategory.id,
+				mappingType: invertMappingType(mappingType),
+				reviewStatus: 'reviewed',
+				maxSensitivityLevel: 'internal',
+			});
 
 			expect(forward).toHaveLength(1);
 			expect(reverse).toHaveLength(1);
+			expect(forwardFiltered).toHaveLength(1);
+			expect(reverseFiltered).toHaveLength(1);
 			expect(forward[0]).toMatchObject({
 				id: mapping.id,
 				direction: 'forward',
@@ -545,6 +562,10 @@ describe('Spec 114: Classification Harmonization', () => {
 				rationale: `Rationale for ${mappingType}`,
 			});
 			expect(reverse[0].confidence).toBeCloseTo(0.7 + index * 0.05, 3);
+			expect(forwardFiltered[0].id).toBe(mapping.id);
+			expect(forwardFiltered[0].mappingType).toBe(mappingType);
+			expect(reverseFiltered[0].id).toBe(mapping.id);
+			expect(reverseFiltered[0].mappingType).toBe(invertMappingType(mappingType));
 		}
 	});
 

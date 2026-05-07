@@ -251,7 +251,7 @@ mulder/
 - All GCP-native — no third-party services. LLM calls via Vertex AI SDK. Web Grounding via Gemini `google_search_retrieval`.
 - All capabilities are feature-flagged via config. Sensible defaults so minimal config gets you started.
 - Graph traversal depth limited by `max_hops` config (default: 2).
-- Phase 2 features (Visual Intelligence, Pattern Discovery) are reserved in the data model (GCS structure, Firestore collections, graph node types) but not implemented.
+- Phase 2 Pattern Discovery is partially implemented through M12 discovery surfaces; later Phase 2 surfaces such as Visual Intelligence, richer insight APIs, and advanced clustering variants remain reserved until their milestones land.
 
 ## Local Development
 

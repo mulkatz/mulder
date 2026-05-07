@@ -84,6 +84,40 @@ function writeMinimalConfigWithoutTemporalPatterns(): string {
 	return configPath;
 }
 
+function writeConfigWithHdbscanHotspotAlgorithm(): string {
+	if (!tempDir) tempDir = mkdtempSync(join(tmpdir(), 'mulder-spec115-'));
+	const configPath = join(tempDir, `hdbscan-${randomUUID()}.yaml`);
+	writeFileSync(
+		configPath,
+		[
+			'project:',
+			'  name: "spec115"',
+			'  supported_locales: ["en"]',
+			'gcp:',
+			'  project_id: "test-project"',
+			'  region: "europe-west1"',
+			'  cloud_sql:',
+			'    instance_name: "mulder-db"',
+			'    database: "mulder"',
+			'  storage:',
+			'    bucket: "mulder-test"',
+			'  document_ai:',
+			'    processor_id: "processor"',
+			'ontology:',
+			'  entity_types:',
+			'    - name: "event"',
+			'      description: "Generic event entity"',
+			'  relationships: []',
+			'temporal_pattern_detection:',
+			'  hotspot_clustering:',
+			'    algorithm: "hdbscan"',
+			'',
+		].join('\n'),
+		'utf-8',
+	);
+	return configPath;
+}
+
 function cleanTables(): void {
 	truncateExistingTables(MULDER_TEST_TABLES);
 }
@@ -139,7 +173,7 @@ function tunedTemporalConfig(options?: {
 	config.temporal_pattern_detection.hotspot_clustering = {
 		...config.temporal_pattern_detection.hotspot_clustering,
 		enabled: options?.hotspots ?? true,
-		algorithm: 'hdbscan',
+		algorithm: 'dbscan',
 		min_cluster_size: options?.minClusterSize ?? 3,
 		radius_km: options?.radiusKm ?? 25,
 		temporal_granularity: 'year',
@@ -261,6 +295,64 @@ async function seedRecurringHotspotFixture(): Promise<string[]> {
 	return ids;
 }
 
+async function seedChangepointFixture(): Promise<string[]> {
+	for (let year = 2021; year <= 2023; year += 1) {
+		for (let month = 1; month <= 12; month += 1) {
+			await createEventFixture({
+				label: `changepoint-baseline-${year}-${month}`,
+				isoDate: `${year}-${String(month).padStart(2, '0')}-12`,
+				regionKey: 'shift-zone',
+				reportingIntensity: 1,
+				categoryRefs: [SPEC_CATEGORY_ATTR_REF],
+			});
+		}
+	}
+
+	const shiftedIds: string[] = [];
+	for (const month of [1, 2]) {
+		for (let index = 0; index < 8; index += 1) {
+			shiftedIds.push(
+				await createEventFixture({
+					label: `changepoint-shift-${month}-${index}`,
+					isoDate: `2024-${String(month).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`,
+					regionKey: 'shift-zone',
+					reportingIntensity: 2,
+					categoryRefs: [SPEC_CATEGORY_ATTR_REF],
+				}),
+			);
+		}
+	}
+	return shiftedIds;
+}
+
+async function seedDbscanBoundaryFixture(): Promise<{ clusterIds: string[]; noiseId: string }> {
+	const clusterIds: string[] = [];
+	for (const [index, coords] of [
+		{ lat: 52.5, lng: 13.4 },
+		{ lat: 52.501, lng: 13.401 },
+		{ lat: 52.502, lng: 13.402 },
+		{ lat: 52.506, lng: 13.406 },
+	].entries()) {
+		clusterIds.push(
+			await createEventFixture({
+				label: `dbscan-cluster-${index}`,
+				isoDate: `2024-06-${String(index + 1).padStart(2, '0')}`,
+				regionKey: 'dbscan-zone',
+				coords,
+				categoryRefs: [SPEC_CATEGORY_ATTR_REF],
+			}),
+		);
+	}
+	const noiseId = await createEventFixture({
+		label: 'dbscan-noise',
+		isoDate: '2024-06-15',
+		regionKey: 'dbscan-zone',
+		coords: { lat: 54, lng: 15 },
+		categoryRefs: [SPEC_CATEGORY_ATTR_REF],
+	});
+	return { clusterIds, noiseId };
+}
+
 async function rowCount(table: string): Promise<number> {
 	const result = await pool.query<{ count: string }>(`SELECT count(*)::text AS count FROM ${table};`);
 	return Number.parseInt(result.rows[0]?.count ?? '0', 10);
@@ -314,10 +406,16 @@ describe('Spec 115: Temporal Pattern Detection', () => {
 			expect(anomaly.max_windows).toBeGreaterThan(0);
 			expect(anomaly.window_size_buckets).toBeGreaterThan(0);
 			expect(anomaly.known_patterns).toEqual([]);
+			expect(anomaly.changepoint_detection).toMatchObject({
+				enabled: true,
+				threshold: 5,
+				drift_allowance: 0.5,
+				min_consecutive_windows: 2,
+			});
 
 			const hotspot = temporal.hotspot_clustering as Record<string, unknown>;
 			expect(hotspot.enabled).toBe(true);
-			expect(['dbscan', 'hdbscan']).toContain(hotspot.algorithm);
+			expect(hotspot.algorithm).toBe('dbscan');
 			expect(hotspot.min_cluster_size).toBeGreaterThan(0);
 			expect(hotspot.radius_km).toBeGreaterThan(0);
 			expect(['day', 'week', 'month', 'year']).toContain(hotspot.temporal_granularity);
@@ -330,6 +428,7 @@ describe('Spec 115: Temporal Pattern Detection', () => {
 			expect(reportingBias.elevated_threshold).toBeGreaterThan(1);
 			expect(JSON.stringify(temporal).toLowerCase()).not.toMatch(/ufo|ufology|sighting|icd|naics|medical/);
 		}
+		expect(() => coreModule.loadConfig(writeConfigWithHdbscanHotspotAlgorithm())).toThrow();
 	});
 
 	it.skipIf(!pgAvailable)('QA-02: Temporal pattern schema is constrained and queryable', async () => {
@@ -430,6 +529,7 @@ describe('Spec 115: Temporal Pattern Detection', () => {
 		);
 		const constraintDefs = constraints.rows.map((row) => row.definition).join('\n');
 		expect(constraintDefs).toContain("signal_strength = 'weak'");
+		expect(constraintDefs).toContain('frequency_changepoint');
 		expect(constraintDefs).toContain('corrected_significance');
 		expect(constraintDefs).toContain('comparison_count > 0');
 		expect(constraintDefs).toContain('time_end > time_start');
@@ -493,6 +593,34 @@ describe('Spec 115: Temporal Pattern Detection', () => {
 		expect(await rowCount('temporal_anomaly_clusters')).toBe(1);
 	});
 
+	it.skipIf(!pgAvailable)('detects CUSUM changepoints for sustained rate shifts', async () => {
+		const shiftedIds = await seedChangepointFixture();
+		const config = tunedTemporalConfig({ hotspots: false });
+		config.temporal_pattern_detection.anomaly_detection.changepoint_detection = {
+			enabled: true,
+			threshold: 5,
+			drift_allowance: 0.5,
+			min_consecutive_windows: 2,
+		};
+
+		const result = await pipelineModule.detectTemporalPatterns(pool, config);
+		const changepoints = (await coreModule.listTemporalAnomalyClusters(pool)).filter(
+			(anomaly) => anomaly.anomalyType === 'frequency_changepoint',
+		);
+
+		expect(result.status).toBe('success');
+		expect(changepoints.length).toBeGreaterThan(0);
+		expect(changepoints[0]).toMatchObject({
+			regionKey: 'shift-zone',
+			anomalyType: 'frequency_changepoint',
+			signalStrength: 'weak',
+		});
+		expect(changepoints[0].observedRate).toBeGreaterThan(changepoints[0].baselineRate);
+		expect(changepoints[0].correctedSignificance).toBeLessThanOrEqual(changepoints[0].significanceThreshold);
+		expect(changepoints[0].contributingEntityIds).toEqual(expect.arrayContaining(shiftedIds.slice(-8)));
+		expect(changepoints[0].caveats).toContain(GENERIC_CAVEAT);
+	});
+
 	it.skipIf(!pgAvailable)('QA-04: Non-significant or sparse windows do not persist anomalies', async () => {
 		await seedSparseAnomalyFixture();
 		const config = tunedTemporalConfig({ hotspots: false, minEntities: 5 });
@@ -542,6 +670,26 @@ describe('Spec 115: Temporal Pattern Detection', () => {
 		expect(hotspot.caveats.join(' ')).toMatch(/hypothesis starters|not causal evidence/i);
 		expect(result.data.persistedHotspotCount).toBe(hotspots.length);
 		expect(await rowCount('spatiotemporal_hotspot_clusters')).toBe(hotspots.length);
+	});
+
+	it.skipIf(!pgAvailable)('DBSCAN excludes noise and includes deterministic border points', async () => {
+		const { clusterIds, noiseId } = await seedDbscanBoundaryFixture();
+		const config = tunedTemporalConfig({
+			anomalies: false,
+			minClusterSize: 4,
+			radiusKm: 0.6,
+			persistenceThresholdYears: 2,
+		});
+
+		const result = await pipelineModule.detectTemporalPatterns(pool, config);
+		const hotspots = await coreModule.listSpatiotemporalHotspotClusters(pool);
+
+		expect(result.status).toBe('success');
+		expect(hotspots).toHaveLength(1);
+		expect(hotspots[0].contributingEntityIds).toEqual(expect.arrayContaining(clusterIds));
+		expect(hotspots[0].contributingEntityIds).not.toContain(noiseId);
+		expect(hotspots[0].entityCount).toBe(4);
+		expect(hotspots[0].persistence).toBe('transient');
 	});
 
 	it.skipIf(!pgAvailable)('QA-06: Sensitivity filtering hides over-sensitive patterns', async () => {
