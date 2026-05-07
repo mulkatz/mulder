@@ -86,6 +86,7 @@ export interface UpdateEntityInput {
 export interface EntityFilter {
 	type?: string;
 	canonicalId?: string;
+	canonicalOnly?: boolean;
 	taxonomyStatus?: TaxonomyStatus;
 	/** Case-insensitive substring match on entity name (ILIKE). */
 	search?: string;

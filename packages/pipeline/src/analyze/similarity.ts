@@ -353,6 +353,7 @@ async function resolveCandidates(
 		supplements.length === 0
 			? await findAllEntities(pool, {
 					type: source.type,
+					canonicalOnly: true,
 					limit,
 					maxSensitivityLevel: options.maxSensitivityLevel,
 				})

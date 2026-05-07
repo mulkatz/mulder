@@ -535,6 +535,42 @@ describe('Spec 113: Similar Entity Discovery', () => {
 		},
 	);
 
+	it.skipIf(!pgAvailable)(
+		'excludes merged aliases from automatic fallback candidates without supplements',
+		async () => {
+			const entityA = await createEntityFixture('Spec 113 Fallback Source');
+			const canonicalCandidate = await createEntityFixture('Spec 113 Fallback Canonical');
+			const mergedAlias = await createEntityFixture('Spec 113 Fallback Merged Alias', {
+				canonicalId: canonicalCandidate.id,
+			});
+			const config = cloneConfig();
+			config.similar_case_discovery.max_results = 5;
+			config.similar_case_discovery.candidate_retrieval.vector_top_k = 5;
+			config.similar_case_discovery.candidate_retrieval.geo_radius_km = null;
+			config.similar_case_discovery.candidate_retrieval.temporal_window_years = null;
+			config.similar_case_discovery.auto_discovery.threshold = 0;
+			config.similar_case_discovery.auto_discovery.max_auto_links = 5;
+			config.similar_case_discovery.auto_discovery.create_graph_edge = true;
+
+			const result = await pipelineModule.discoverSimilarEntities(pool, config, {
+				entityId: entityA.id,
+				maxResults: 5,
+				persistResults: false,
+				autoDiscover: true,
+				explanation: 'Fallback auto-discovery explanation',
+			});
+
+			expect(result.results.map((item) => item.entityId)).toEqual([canonicalCandidate.id]);
+			expect(result.results.map((item) => item.entityId)).not.toContain(mergedAlias.id);
+			expect(await coreModule.findSimilarityByPair(pool, entityA.id, canonicalCandidate.id)).not.toBeNull();
+			expect(await coreModule.findSimilarityByPair(pool, entityA.id, mergedAlias.id)).toBeNull();
+			const edgeRows = await pool.query<{ target_entity_id: string }>(
+				"SELECT target_entity_id FROM entity_edges WHERE relationship = 'SIMILAR_TO' ORDER BY target_entity_id;",
+			);
+			expect(edgeRows.rows.map((row) => row.target_entity_id)).toEqual([canonicalCandidate.id]);
+		},
+	);
+
 	it.skipIf(!pgAvailable)('QA-05: Auto-discovery persists bounded links', async () => {
 		const sourceAId = await createSourceFixture('auto-a');
 		const sourceHighId = await createSourceFixture('auto-high');
