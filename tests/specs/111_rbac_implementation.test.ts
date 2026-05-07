@@ -15,6 +15,7 @@ const API_DIR = resolve(ROOT, 'apps/api');
 const CLI_DIR = resolve(ROOT, 'apps/cli');
 const CORE_DIST = resolve(CORE_DIR, 'dist/index.js');
 const API_DOCUMENTS_DIST = resolve(API_DIR, 'dist/lib/documents.js');
+const API_ENTITIES_DIST = resolve(API_DIR, 'dist/lib/entities.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
 const PG_CONFIG = {
@@ -38,12 +39,22 @@ type TestAuthPrincipal =
 	| { type: 'session'; userId: string; email: string; role: 'member' | 'admin' | 'owner' }
 	| { type: 'api_key'; keyName: string };
 
+type ApiEntitiesModule = {
+	resetEntityContextForTests(): void;
+	getEntityDetail(
+		id: string,
+		logger: import('@mulder/core').Logger,
+		options: { authPrincipal: TestAuthPrincipal },
+	): Promise<{ data: { aliases: Array<{ alias: string }> } }>;
+};
+
 const pgAvailable = db.isPgAvailable();
 let pool: pg.Pool;
 let tempDir: string | null = null;
 let previousConfigPath: string | undefined;
 let coreModule: typeof import('@mulder/core');
 let apiDocumentsModule: ApiDocumentsModule;
+let apiEntitiesModule: ApiEntitiesModule;
 
 function buildPackage(packageDir: string): void {
 	const result = spawnSync('pnpm', ['build'], {
@@ -186,6 +197,7 @@ beforeAll(async () => {
 	buildPackage(API_DIR);
 	coreModule = await import(pathToFileURL(CORE_DIST).href);
 	apiDocumentsModule = (await import(pathToFileURL(API_DOCUMENTS_DIST).href)) as ApiDocumentsModule;
+	apiEntitiesModule = (await import(pathToFileURL(API_ENTITIES_DIST).href)) as ApiEntitiesModule;
 
 	if (!pgAvailable) return;
 	ensureSchema();
@@ -327,6 +339,39 @@ describe('Spec 111: RBAC implementation', () => {
 			sensitivityLevel: 'restricted',
 			sensitivityMetadata: sensitivityMetadata('restricted'),
 		});
+		const restrictedEntityOnInternalStory = await coreModule.upsertEntityByNameType(pool, {
+			name: `Restricted mixed entity ${randomUUID()}`,
+			type: 'person',
+			attributes: {},
+			provenance: { sourceDocumentIds: [internalFixture.source.id] },
+			sensitivityLevel: 'restricted',
+			sensitivityMetadata: sensitivityMetadata('restricted'),
+		});
+		await coreModule.linkStoryEntity(pool, {
+			storyId: internalFixture.story.id,
+			entityId: restrictedEntityOnInternalStory.id,
+			mentionCount: 1,
+			provenance: { sourceDocumentIds: [internalFixture.source.id] },
+			sensitivityLevel: 'internal',
+			sensitivityMetadata: sensitivityMetadata('internal'),
+		});
+		const restrictedStoryForInternalEntity = await coreModule.createStory(pool, {
+			sourceId: internalFixture.source.id,
+			title: `Restricted mixed story ${randomUUID()}`,
+			gcsMarkdownUri: `segments/${internalFixture.source.id}/restricted-story.md`,
+			gcsMetadataUri: `segments/${internalFixture.source.id}/restricted-story.meta.json`,
+			extractionConfidence: 0.95,
+			sensitivityLevel: 'restricted',
+			sensitivityMetadata: sensitivityMetadata('restricted'),
+		});
+		await coreModule.linkStoryEntity(pool, {
+			storyId: restrictedStoryForInternalEntity.id,
+			entityId: internalFixture.entity.id,
+			mentionCount: 1,
+			provenance: { sourceDocumentIds: [internalFixture.source.id] },
+			sensitivityLevel: 'internal',
+			sensitivityMetadata: sensitivityMetadata('internal'),
+		});
 
 		expect(
 			(await coreModule.findAllSources(pool, { maxSensitivityLevel: 'internal' })).map((source) => source.id).sort(),
@@ -350,6 +395,16 @@ describe('Spec 111: RBAC implementation', () => {
 				maxSensitivityLevel: 'internal',
 			}),
 		).toHaveLength(1);
+		expect(
+			(await coreModule.findEntitiesByStoryId(pool, internalFixture.story.id, { maxSensitivityLevel: 'internal' })).map(
+				(entity) => entity.id,
+			),
+		).not.toContain(restrictedEntityOnInternalStory.id);
+		expect(
+			(
+				await coreModule.findStoriesByEntityId(pool, internalFixture.entity.id, { maxSensitivityLevel: 'internal' })
+			).map((story) => story.id),
+		).not.toContain(restrictedStoryForInternalEntity.id);
 		expect(await coreModule.findAllSources(pool, { maxSensitivityLevel: 'confidential' })).toHaveLength(4);
 	});
 
@@ -360,19 +415,54 @@ describe('Spec 111: RBAC implementation', () => {
 			previousConfigPath = process.env.MULDER_CONFIG;
 			process.env.MULDER_CONFIG = configPath;
 			apiDocumentsModule.resetDocumentContextForTests();
+			apiEntitiesModule.resetEntityContextForTests();
 
 			const internalFixture = await createSourceFixture('internal', 'api-internal');
 			const restrictedFixture = await createSourceFixture('restricted', 'api-restricted');
+			await coreModule.createEntityAlias(pool, {
+				entityId: internalFixture.entity.id,
+				alias: 'Restricted API Alias',
+				source: 'fixture',
+				provenance: { sourceDocumentIds: [internalFixture.source.id] },
+				sensitivityLevel: 'restricted',
+				sensitivityMetadata: sensitivityMetadata('restricted'),
+			});
+			const memberPrincipal: TestAuthPrincipal = {
+				type: 'session',
+				userId: randomUUID(),
+				email: 'member@example.test',
+				role: 'member',
+			};
+			const adminPrincipal: TestAuthPrincipal = {
+				type: 'session',
+				userId: randomUUID(),
+				email: 'admin@example.test',
+				role: 'admin',
+			};
 
 			const member = await apiDocumentsModule.listDocuments({ limit: 100, offset: 0 }, coreModule.createLogger(), {
-				authPrincipal: { type: 'session', userId: randomUUID(), email: 'member@example.test', role: 'member' },
+				authPrincipal: memberPrincipal,
 			});
 			const admin = await apiDocumentsModule.listDocuments({ limit: 100, offset: 0 }, coreModule.createLogger(), {
-				authPrincipal: { type: 'session', userId: randomUUID(), email: 'admin@example.test', role: 'admin' },
+				authPrincipal: adminPrincipal,
 			});
 			const apiKey = await apiDocumentsModule.listDocuments({ limit: 100, offset: 0 }, coreModule.createLogger(), {
 				authPrincipal: { type: 'api_key', keyName: 'automation' },
 			});
+			const memberEntity = await apiEntitiesModule.getEntityDetail(
+				internalFixture.entity.id,
+				coreModule.createLogger(),
+				{
+					authPrincipal: memberPrincipal,
+				},
+			);
+			const adminEntity = await apiEntitiesModule.getEntityDetail(
+				internalFixture.entity.id,
+				coreModule.createLogger(),
+				{
+					authPrincipal: adminPrincipal,
+				},
+			);
 
 			expect(member.data.map((document) => document.id)).toEqual([internalFixture.source.id]);
 			expect(admin.data.map((document) => document.id).sort()).toEqual(
@@ -381,6 +471,8 @@ describe('Spec 111: RBAC implementation', () => {
 			expect(apiKey.data.map((document) => document.id).sort()).toEqual(
 				[internalFixture.source.id, restrictedFixture.source.id].sort(),
 			);
+			expect(memberEntity.data.aliases.map((alias) => alias.alias)).not.toContain('Restricted API Alias');
+			expect(adminEntity.data.aliases.map((alias) => alias.alias)).toContain('Restricted API Alias');
 		},
 	);
 });

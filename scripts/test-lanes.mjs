@@ -731,7 +731,10 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 		return { rule: 'story repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
-	if (file.startsWith('packages/core/src/database/repositories/entity.')) {
+	if (
+		file.startsWith('packages/core/src/database/repositories/entity.') ||
+		file.startsWith('packages/core/src/database/repositories/entity-alias.')
+	) {
 		selectGroup('entityRepository');
 		return { rule: 'entity repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}

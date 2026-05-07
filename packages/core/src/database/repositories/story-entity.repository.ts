@@ -192,7 +192,9 @@ export async function findEntitiesByStoryId(
 	const activeVisibilityClause = options?.includeDeleted
 		? ''
 		: `AND ${activeSourceClause('src')} AND ${storyEntityActiveSourceClause('se')} AND ${entityActiveSourceClause('e')}`;
-	const sensitivityClause = options?.maxSensitivityLevel ? 'AND se.sensitivity_level = ANY($2)' : '';
+	const sensitivityClause = options?.maxSensitivityLevel
+		? 'AND se.sensitivity_level = ANY($2) AND e.sensitivity_level = ANY($2) AND s.sensitivity_level = ANY($2) AND src.sensitivity_level = ANY($2)'
+		: '';
 	const sql = `
     SELECT
       e.*,
@@ -296,19 +298,22 @@ export async function findStoriesByEntityId(
 	const activeVisibilityClause = options?.includeDeleted
 		? ''
 		: `AND ${activeSourceClause('src')} AND ${storyEntityActiveSourceClause('se')}`;
-	const sensitivityClause = options?.maxSensitivityLevel ? 'AND se.sensitivity_level = ANY($2)' : '';
+	const sensitivityClause = options?.maxSensitivityLevel
+		? 'AND se.sensitivity_level = ANY($2) AND s.sensitivity_level = ANY($2) AND src.sensitivity_level = ANY($2) AND e.sensitivity_level = ANY($2)'
+		: '';
 	const sql = `
-    SELECT
-      s.*,
+	    SELECT
+	      s.*,
       se.confidence,
       se.mention_count,
       se.provenance AS junction_provenance,
       se.sensitivity_level AS junction_sensitivity_level,
       se.sensitivity_metadata AS junction_sensitivity_metadata
-    FROM stories s
-    JOIN story_entities se ON se.story_id = s.id
-    JOIN sources src ON src.id = s.source_id
-    WHERE se.entity_id = $1
+	    FROM stories s
+	    JOIN story_entities se ON se.story_id = s.id
+	    JOIN entities e ON e.id = se.entity_id
+	    JOIN sources src ON src.id = s.source_id
+	    WHERE se.entity_id = $1
       ${activeVisibilityClause}
       ${sensitivityClause}
     ORDER BY s.created_at DESC
@@ -321,10 +326,11 @@ export async function findStoriesByEntityId(
       se.provenance AS junction_provenance,
       NULL::text AS junction_sensitivity_level,
       NULL::jsonb AS junction_sensitivity_metadata
-    FROM stories s
-    JOIN story_entities se ON se.story_id = s.id
-    JOIN sources src ON src.id = s.source_id
-    WHERE se.entity_id = $1
+	    FROM stories s
+	    JOIN story_entities se ON se.story_id = s.id
+	    JOIN entities e ON e.id = se.entity_id
+	    JOIN sources src ON src.id = s.source_id
+	    WHERE se.entity_id = $1
     ORDER BY s.created_at DESC
   `;
 	const withoutSourceDeletionSql = `

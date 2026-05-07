@@ -266,7 +266,7 @@ export async function getEntityDetail(
 
 	const entity = await requireEntityById(pool, id, maxSensitivityLevel);
 	const [aliases, stories, mergedEntities, corroborationContext] = await Promise.all([
-		findAliasesByEntityId(pool, id),
+		findAliasesByEntityId(pool, id, { maxSensitivityLevel }),
 		findStoriesByEntityId(pool, id, { maxSensitivityLevel }),
 		findEntitiesByCanonicalId(pool, id, { maxSensitivityLevel }),
 		loadCorroborationContext(pool, config),
