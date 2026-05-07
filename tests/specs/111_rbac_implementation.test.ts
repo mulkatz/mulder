@@ -25,12 +25,25 @@ const PG_CONFIG = {
 	password: db.TEST_PG_PASSWORD,
 };
 
+type ApiDocumentsModule = {
+	resetDocumentContextForTests(): void;
+	listDocuments(
+		input: { limit: number; offset: number },
+		logger: import('@mulder/core').Logger,
+		options: { authPrincipal: TestAuthPrincipal },
+	): Promise<{ data: Array<{ id: string }> }>;
+};
+
+type TestAuthPrincipal =
+	| { type: 'session'; userId: string; email: string; role: 'member' | 'admin' | 'owner' }
+	| { type: 'api_key'; keyName: string };
+
 const pgAvailable = db.isPgAvailable();
 let pool: pg.Pool;
 let tempDir: string | null = null;
 let previousConfigPath: string | undefined;
 let coreModule: typeof import('@mulder/core');
-let apiDocumentsModule: typeof import('../../apps/api/src/lib/documents.js');
+let apiDocumentsModule: ApiDocumentsModule;
 
 function buildPackage(packageDir: string): void {
 	const result = spawnSync('pnpm', ['build'], {
@@ -101,7 +114,7 @@ function sensitivityMetadata(level: import('@mulder/core').SensitivityLevel) {
 	};
 }
 
-async function createSourceFixture(level: import('@mulder/core').SensitivityLevel, label = level) {
+async function createSourceFixture(level: import('@mulder/core').SensitivityLevel, label: string = level) {
 	const source = await coreModule.createSource(pool, {
 		filename: `${label}-${randomUUID()}.md`,
 		storagePath: `raw/${label}-${randomUUID()}.md`,
@@ -172,7 +185,7 @@ beforeAll(async () => {
 	buildPackage(CLI_DIR);
 	buildPackage(API_DIR);
 	coreModule = await import(pathToFileURL(CORE_DIST).href);
-	apiDocumentsModule = await import(pathToFileURL(API_DOCUMENTS_DIST).href);
+	apiDocumentsModule = (await import(pathToFileURL(API_DOCUMENTS_DIST).href)) as ApiDocumentsModule;
 
 	if (!pgAvailable) return;
 	ensureSchema();
@@ -214,18 +227,26 @@ describe('Spec 111: RBAC implementation', () => {
 		const config = coreModule.loadConfig(writeMinimalConfig('helpers'));
 		const analyst = coreModule.resolveAccessPolicy(config, { kind: 'browser_session', browserRole: 'member' });
 		const admin = coreModule.resolveAccessPolicy(config, { kind: 'browser_session', browserRole: 'admin' });
+		const sensitivityLevels: import('@mulder/core').SensitivityLevel[] = [
+			'public',
+			'internal',
+			'restricted',
+			'confidential',
+		];
 
 		expect(coreModule.allowedSensitivityLevelsForMax('internal')).toEqual(['public', 'internal']);
-		expect(
-			['public', 'internal', 'restricted', 'confidential'].map((level) =>
-				coreModule.canReadSensitivityLevel(analyst, level),
-			),
-		).toEqual([true, true, false, false]);
-		expect(
-			['public', 'internal', 'restricted', 'confidential'].map((level) =>
-				coreModule.canReadSensitivityLevel(admin, level),
-			),
-		).toEqual([true, true, true, true]);
+		expect(sensitivityLevels.map((level) => coreModule.canReadSensitivityLevel(analyst, level))).toEqual([
+			true,
+			true,
+			false,
+			false,
+		]);
+		expect(sensitivityLevels.map((level) => coreModule.canReadSensitivityLevel(admin, level))).toEqual([
+			true,
+			true,
+			true,
+			true,
+		]);
 	});
 
 	it.skipIf(!pgAvailable)('QA-03: roles persist and round-trip', async () => {
@@ -262,8 +283,8 @@ describe('Spec 111: RBAC implementation', () => {
 			severityRationale: 'Fixture conflict',
 			confidence: 0.8,
 			assertions: [
-				{ assertionId: assertionA.id, sourceDocumentId: internalFixture.source.id, claim: assertionA.content },
-				{ assertionId: assertionB.id, sourceDocumentId: restrictedFixture.source.id, claim: assertionB.content },
+				{ assertionId: assertionA.id, participantRole: 'claim_a', claim: assertionA.content },
+				{ assertionId: assertionB.id, participantRole: 'claim_b', claim: assertionB.content },
 			],
 			sensitivityLevel: 'restricted',
 			sensitivityMetadata: sensitivityMetadata('restricted'),
