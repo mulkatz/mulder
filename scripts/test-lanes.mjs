@@ -340,6 +340,17 @@ function gitChangedFiles(baseRef) {
 		.filter(Boolean);
 }
 
+function gitChangedFileDiff(baseRef, file) {
+	const args = baseRef
+		? ['diff', '--unified=0', `${baseRef}...HEAD`, '--', file]
+		: ['diff', '--unified=0', 'HEAD', '--', file];
+	const result = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+	if (result.status !== 0) {
+		return '';
+	}
+	return result.stdout;
+}
+
 function splitChangedFiles(value) {
 	return value
 		.split(/\r?\n|,/)
@@ -462,6 +473,28 @@ function addLaneFilesToSet(selected, lanes, laneNames) {
 	}
 }
 
+const CLASSIFICATION_SCHEMA_HELPER_TABLE_LINES = new Set([
+	"'taxonomy_mappings',",
+	"'classification_categories',",
+	"'classification_taxonomies',",
+]);
+const CLASSIFICATION_HARMONIZATION_MIGRATIONS = new Set([
+	'packages/core/src/database/migrations/044_classification_harmonization.sql',
+	'packages/core/src/database/migrations/045_classification_category_parent_taxonomy_constraint.sql',
+]);
+
+function isClassificationSchemaHelperOnlyDiff(diff) {
+	const changedLines = diff
+		.split('\n')
+		.filter((line) => /^[+-]/.test(line) && !line.startsWith('+++') && !line.startsWith('---'));
+	if (changedLines.length === 0) {
+		return false;
+	}
+	return changedLines.every(
+		(line) => line.startsWith('+') && CLASSIFICATION_SCHEMA_HELPER_TABLE_LINES.has(line.slice(1).trim()),
+	);
+}
+
 function removeHealthSmokeTests(selected) {
 	selected.delete(HEALTH_SMOKE_TEST);
 }
@@ -478,6 +511,7 @@ const TEST_GROUPS = {
 	],
 	coreConfig: [
 		'tests/specs/03_config_loader.test.ts',
+		'tests/specs/114_classification_harmonization.test.ts',
 		'tests/specs/77_cost_estimator.test.ts',
 		'tests/specs/78_selective_reprocessing.test.ts',
 		'tests/specs/100_document_quality_assessment_step.test.ts',
@@ -635,17 +669,36 @@ const TEST_GROUPS = {
 		'tests/specs/111_rbac_implementation.test.ts',
 	],
 	translationRepository: ['tests/specs/110_translation_service.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
-	repositoryExports: ['tests/specs/02_monorepo_setup.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	repositoryExports: [
+		'tests/specs/02_monorepo_setup.test.ts',
+		'tests/specs/111_rbac_implementation.test.ts',
+		'tests/specs/114_classification_harmonization.test.ts',
+	],
 	similarityDiscovery: ['tests/specs/113_similar_entity_discovery.test.ts'],
+	classificationHarmonization: [
+		'tests/specs/03_config_loader.test.ts',
+		'tests/specs/08_core_schema_migrations.test.ts',
+		'tests/specs/109_review_workflow_infrastructure.test.ts',
+		'tests/specs/111_rbac_implementation.test.ts',
+		'tests/specs/113_similar_entity_discovery.test.ts',
+		'tests/specs/114_classification_harmonization.test.ts',
+	],
 };
 
 function selectTestGroup(selected, discoveredByPath, groupName) {
 	addExactTestsToSet(selected, discoveredByPath, TEST_GROUPS[groupName]);
 }
 
-function resolveAffectedRule(file, discoveredByPath, lanes) {
+function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 	const selected = new Set();
 	const selectGroup = (groupName) => selectTestGroup(selected, discoveredByPath, groupName);
+	const selectSpecOrFallback = (specNumber, fallbackGroupName) => {
+		const sizeBefore = selected.size;
+		addSpecTestsToSet(selected, discoveredByPath, [specNumber]);
+		if (selected.size === sizeBefore) {
+			selectGroup(fallbackGroupName);
+		}
+	};
 	const selectExact = (testPaths) => addExactTestsToSet(selected, discoveredByPath, testPaths);
 	const selectLanes = (laneNames) => addLaneFilesToSet(selected, lanes, laneNames);
 
@@ -683,8 +736,9 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 
 	if (file === 'mulder.config.example.yaml') {
 		selectGroup('rbacAccessControl');
+		addSpecTestsToSet(selected, discoveredByPath, ['114']);
 		return {
-			rule: 'example config access-control smoke',
+			rule: 'example config access-control/classification harmonization smoke',
 			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
 		};
 	}
@@ -735,6 +789,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 		return { rule: 'similarity cache migration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
+	if (CLASSIFICATION_HARMONIZATION_MIGRATIONS.has(file)) {
+		selectSpecOrFallback('114', 'classificationHarmonization');
+		return {
+			rule: 'classification harmonization migration',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
 	if (file.startsWith('packages/core/src/database/migrations/')) {
 		selectLanes(['schema', 'db', 'heavy']);
 		return { rule: 'unknown migration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
@@ -753,6 +815,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 		]);
 		return {
 			rule: 'source credibility repository',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/classification-harmonization.')) {
+		selectSpecOrFallback('114', 'classificationHarmonization');
+		return {
+			rule: 'classification harmonization repository',
 			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
 		};
 	}
@@ -899,6 +969,7 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 			'tests/specs/14_source_repository.test.ts',
 			'tests/specs/16_ingest_step.test.ts',
 			'tests/specs/100_document_quality_assessment_step.test.ts',
+			'tests/specs/114_classification_harmonization.test.ts',
 		]);
 		return { rule: 'core public exports', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
@@ -923,7 +994,23 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 
 	if (file.startsWith('packages/pipeline/src/analyze/similarity.')) {
 		selectGroup('similarityDiscovery');
+		addSpecTestsToSet(selected, discoveredByPath, ['114']);
 		return { rule: 'similarity analyze integration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file === 'packages/pipeline/src/analyze/index.ts' || file === 'packages/pipeline/src/analyze/types.ts') {
+		selectGroup('similarityDiscovery');
+		addSpecTestsToSet(selected, discoveredByPath, ['114']);
+		return {
+			rule: 'analyze public similarity contract',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
+	if (file === 'packages/pipeline/src/index.ts') {
+		selectGroup('similarityDiscovery');
+		addSpecTestsToSet(selected, discoveredByPath, ['114']);
+		return { rule: 'pipeline public exports', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
 	if (file.startsWith('packages/pipeline/')) {
@@ -974,6 +1061,19 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 	if (file.startsWith('apps/cli/')) {
 		selectGroup('cli');
 		return { rule: 'cli commands/runtime', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file === 'tests/lib/schema.ts') {
+		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (isClassificationSchemaHelperOnlyDiff(diff)) {
+			selectSpecOrFallback('114', 'classificationHarmonization');
+			return {
+				rule: 'classification harmonization test schema helper',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
+		selectLanes(['schema', 'db', 'heavy']);
+		return { rule: 'shared test helper change', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
 	if (file.startsWith('tests/lib/')) {
@@ -1032,7 +1132,7 @@ function buildAffectedPlan(baseRef, explicitChangedFiles = null) {
 		const result =
 			changeSelection.changeScope === 'head-docs-only'
 				? resolveDocsOnlyHeadRule(file, discoveredByPath, { mapSpecDocs: mapDocsOnlyHeadSpecDocs })
-				: resolveAffectedRule(file, discoveredByPath, lanes);
+				: resolveAffectedRule(file, discoveredByPath, lanes, { baseRef });
 		for (const selectedFile of result.selectedFiles) selected.add(selectedFile);
 		rules.push({ changedFile: file, rule: result.rule, selectedFiles: result.selectedFiles });
 	}

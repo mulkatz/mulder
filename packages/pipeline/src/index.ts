@@ -22,9 +22,11 @@ export type {
 	SpatioTemporalCluster,
 	SpatioTemporalClusterType,
 	SpatioTemporalEvent,
+	TaxonomyMappingSimilarityInput,
+	TaxonomyMappingSimilarityResult,
 	WinningClaim,
 } from './analyze/index.js';
-export { discoverSimilarEntities, execute as executeAnalyze } from './analyze/index.js';
+export { discoverSimilarEntities, execute as executeAnalyze, scoreTaxonomyMappingSimilarity } from './analyze/index.js';
 export type {
 	ChunkerConfig,
 	EmbedChunkInput,

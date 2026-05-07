@@ -72,7 +72,7 @@ import type {
 	SpatioTemporalAnalyzeData,
 } from './types.js';
 
-export { discoverSimilarEntities } from './similarity.js';
+export { discoverSimilarEntities, scoreTaxonomyMappingSimilarity } from './similarity.js';
 export type {
 	AnalyzeData,
 	AnalyzeInput,
@@ -97,6 +97,8 @@ export type {
 	SpatioTemporalCluster,
 	SpatioTemporalClusterType,
 	SpatioTemporalEvent,
+	TaxonomyMappingSimilarityInput,
+	TaxonomyMappingSimilarityResult,
 	WinningClaim,
 } from './types.js';
 

@@ -304,6 +304,27 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		expect(plan.lanes.heavy.count).toBe(0);
 	});
 
+	it('QA-05e4b: classification harmonization migrations stay scoped to Spec 114', () => {
+		for (const migration of [
+			'packages/core/src/database/migrations/044_classification_harmonization.sql',
+			'packages/core/src/database/migrations/045_classification_category_parent_taxonomy_constraint.sql',
+		]) {
+			const plan = affectedPlanFor(migration);
+			const files = plan.files.map((file) => file.relativePath);
+
+			expect(plan.rules).toEqual([
+				{
+					changedFile: migration,
+					rule: 'classification harmonization migration',
+					selectedFiles: ['tests/specs/114_classification_harmonization.test.ts'],
+				},
+			]);
+			expect(files).toEqual(['tests/specs/114_classification_harmonization.test.ts']);
+			expect(plan.totalFiles).toBe(1);
+			expect(plan.lanes.heavy.count).toBe(0);
+		}
+	});
+
 	it('QA-05e5: RBAC API/config surfaces do not fan out to the full DB lane', () => {
 		const plan = affectedPlanForFiles([
 			'mulder.config.example.yaml',
@@ -319,9 +340,10 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 				'tests/specs/74_entity_api_routes.test.ts',
 				'tests/specs/76_document_retrieval_routes.test.ts',
 				'tests/specs/111_rbac_implementation.test.ts',
+				'tests/specs/114_classification_harmonization.test.ts',
 			]),
 		);
-		expect(plan.totalFiles).toBe(4);
+		expect(plan.totalFiles).toBe(5);
 		expect(plan.lanes.heavy.count).toBe(0);
 	});
 

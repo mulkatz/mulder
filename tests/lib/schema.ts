@@ -28,6 +28,9 @@ const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 export const MULDER_TEST_TABLES = [
 	'translated_documents',
 	'similarity_cache',
+	'taxonomy_mappings',
+	'classification_categories',
+	'classification_taxonomies',
 	'review_events',
 	'review_artifacts',
 	'conflict_resolutions',

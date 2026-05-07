@@ -6,7 +6,7 @@
  */
 
 import { DEFAULT_ACCESS_ROLE_CONFIGS } from '../shared/access-control.js';
-import type { ApiConfig, SimilarCaseDiscoveryConfig } from './types.js';
+import type { ApiConfig, SimilarCaseDiscoveryConfig, TaxonomyConfig } from './types.js';
 
 const apiDefaults: ApiConfig = {
 	port: 8080,
@@ -66,6 +66,24 @@ const similarCaseDiscoveryDefaults: SimilarCaseDiscoveryConfig = {
 		create_graph_edge: true,
 		edge_type: 'SIMILAR_TO',
 		max_auto_links: 10,
+	},
+};
+
+const taxonomyDefaults: TaxonomyConfig = {
+	normalization_threshold: 0.4,
+	harmonization: {
+		enabled: true,
+		taxonomies: [],
+		auto_mapping: {
+			enabled: false,
+			engine: 'gemini-2.5-pro',
+			require_human_review: true,
+			min_confidence_for_auto_link: 0.7,
+		},
+		extraction: {
+			detect_classification_refs: true,
+			detect_implicit_classifications: true,
+		},
 	},
 };
 
@@ -273,9 +291,7 @@ export const CONFIG_DEFAULTS = {
 		},
 	},
 
-	taxonomy: {
-		normalization_threshold: 0.4,
-	},
+	taxonomy: taxonomyDefaults,
 
 	entity_resolution: {
 		strategies: [

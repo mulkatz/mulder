@@ -216,6 +216,21 @@ enrichment:
   model: "gemini-2.5-flash"
   max_story_tokens: 15000            # Pre-chunk fallback if story exceeds this
 
+# --- Taxonomy ---
+taxonomy:
+  normalization_threshold: 0.4
+  harmonization:
+    enabled: true
+    taxonomies: []                   # Add configured taxonomy refs: { id, source, version, language, status }
+    auto_mapping:
+      enabled: false                 # Storage/review boundary only; no automatic LLM generation by default
+      engine: "gemini-2.5-pro"
+      require_human_review: true
+      min_confidence_for_auto_link: 0.70
+    extraction:
+      detect_classification_refs: true
+      detect_implicit_classifications: true
+
 # --- Entity Resolution ---
 entity_resolution:
   strategies:

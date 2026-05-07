@@ -330,7 +330,7 @@ Analysis features that generate research value from the combined data. Depends o
 | Status | Step | What | Spec |
 |--------|------|------|------|
 | 🟢 | N1 | Similar case discovery — multi-dimensional scoring, auto-discovery | §A10 |
-| ⚪ | N2 | Classification harmonization — cross-taxonomy mappings | §A11 |
+| 🟢 | N2 | Classification harmonization — cross-taxonomy mappings | §A11 |
 | ⚪ | N3 | Temporal pattern detection — anomaly detection, hotspot clustering | §A12 |
 | ⚪ | N4 | External data source plugin interface + correlation analysis | §A12 |
 
