@@ -111,6 +111,7 @@ export interface SourceFilter {
 	/** Case-insensitive filename substring filter. */
 	search?: string;
 	tags?: string[];
+	maxSensitivityLevel?: SensitivityLevel;
 	limit?: number;
 	offset?: number;
 	includeDeleted?: boolean;

@@ -11,6 +11,7 @@
  */
 
 import type pg from 'pg';
+import { allowedSensitivityLevelsForMax } from '../../shared/access-control.js';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
 import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
@@ -21,7 +22,7 @@ import {
 } from './artifact-provenance.js';
 import { type EntityRow, entityActiveSourceClause, mapEntityRow } from './entity.repository.js';
 import type { CreateEntityAliasInput, Entity, EntityAlias } from './entity.types.js';
-import { queryWithSensitivityColumnFallback, queryWithSourceDeletionStatusFallback } from './schema-compat.js';
+import { queryWithSensitivityAndSourceDeletionFallback, queryWithSensitivityColumnFallback } from './schema-compat.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'entity-alias-repository' });
@@ -131,28 +132,63 @@ export async function createEntityAlias(pool: pg.Pool, input: CreateEntityAliasI
 export async function findAliasesByEntityId(
 	pool: pg.Pool,
 	entityId: string,
-	options?: { includeDeleted?: boolean },
+	options?: { includeDeleted?: boolean; maxSensitivityLevel?: EntityAlias['sensitivityLevel'] },
 ): Promise<EntityAlias[]> {
+	const activeVisibilityClause = options?.includeDeleted
+		? ''
+		: `AND ${aliasActiveSourceClause('ea')} AND ${entityActiveSourceClause('e')}`;
+	const sensitivityClause = options?.maxSensitivityLevel
+		? 'AND ea.sensitivity_level = ANY($2) AND e.sensitivity_level = ANY($2)'
+		: '';
 	const sql = `
-    SELECT ea.*
-    FROM entity_aliases ea
-    JOIN entities e ON e.id = ea.entity_id
-    WHERE ea.entity_id = $1
-      ${options?.includeDeleted ? '' : `AND ${aliasActiveSourceClause('ea')} AND ${entityActiveSourceClause('e')}`}
-    ORDER BY ea.alias
-  `;
+	    SELECT ea.*
+	    FROM entity_aliases ea
+	    JOIN entities e ON e.id = ea.entity_id
+	    WHERE ea.entity_id = $1
+	      ${activeVisibilityClause}
+	      ${sensitivityClause}
+	    ORDER BY ea.alias
+	  `;
 	const legacySql = `
-    SELECT ea.*
+	    SELECT ea.*
     FROM entity_aliases ea
     JOIN entities e ON e.id = ea.entity_id
-    WHERE ea.entity_id = $1
-    ORDER BY ea.alias
-  `;
+	    WHERE ea.entity_id = $1
+	    ORDER BY ea.alias
+	  `;
+	const withoutSourceDeletionSql = `
+	    SELECT ea.*
+	    FROM entity_aliases ea
+	    JOIN entities e ON e.id = ea.entity_id
+	    WHERE ea.entity_id = $1
+	      ${sensitivityClause}
+	    ORDER BY ea.alias
+	  `;
+	const withoutSensitivitySql = `
+	    SELECT ea.*
+	    FROM entity_aliases ea
+	    JOIN entities e ON e.id = ea.entity_id
+	    WHERE ea.entity_id = $1
+	      ${activeVisibilityClause}
+	    ORDER BY ea.alias
+	  `;
+	const params = options?.maxSensitivityLevel
+		? [entityId, allowedSensitivityLevelsForMax(options.maxSensitivityLevel)]
+		: [entityId];
+	const fallbackParams = [entityId];
 
 	try {
-		const result = await queryWithSourceDeletionStatusFallback<EntityAliasRow>(pool, sql, [entityId], legacySql, [
-			entityId,
-		]);
+		const result = await queryWithSensitivityAndSourceDeletionFallback<EntityAliasRow>(
+			pool,
+			sql,
+			params,
+			withoutSensitivitySql,
+			fallbackParams,
+			withoutSourceDeletionSql,
+			params,
+			legacySql,
+			fallbackParams,
+		);
 		return result.rows.map(mapEntityAliasRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find aliases by entity ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {

@@ -80,6 +80,7 @@ export interface EdgeFilter {
 	storyId?: string;
 	relationship?: string;
 	includeDeleted?: boolean;
+	maxSensitivityLevel?: SensitivityLevel;
 	limit?: number;
 	offset?: number;
 }

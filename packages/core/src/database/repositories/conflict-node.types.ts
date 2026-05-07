@@ -97,6 +97,7 @@ export interface ConflictNodeListOptions {
 	resolutionStatus?: ConflictResolutionStatus;
 	sourceDocumentId?: string;
 	includeDeleted?: boolean;
+	maxSensitivityLevel?: SensitivityLevel;
 	limit?: number;
 	offset?: number;
 }

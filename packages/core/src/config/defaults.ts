@@ -5,6 +5,7 @@
  * serves as documentation and test reference.
  */
 
+import { DEFAULT_ACCESS_ROLE_CONFIGS } from '../shared/access-control.js';
 import type { ApiConfig } from './types.js';
 
 const apiDefaults: ApiConfig = {
@@ -131,6 +132,7 @@ export const CONFIG_DEFAULTS = {
 		rbac: {
 			roles_source: 'config/roles.yaml',
 			default_role: 'analyst',
+			roles: [...DEFAULT_ACCESS_ROLE_CONFIGS],
 		},
 		external_query_gate: {
 			enabled: false,

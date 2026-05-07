@@ -122,7 +122,7 @@ Relationship schema:
 
 ```typescript
 export function loadConfig(path?: string): MulderConfig {
-  // 1. Resolve path: argument > MULDER_CONFIG env var > ./mulder.config.yaml
+  // 1. Resolve path: argument > MULDER_CONFIG env var > ./mulder.config.yaml > ./mulder.config.example.yaml
   // 2. Read file (throw ConfigValidationError if not found)
   // 3. Parse YAML (throw ConfigValidationError if invalid YAML)
   // 4. Validate against mulderConfigSchema (Zod .parse())
@@ -137,6 +137,7 @@ Path resolution order:
 1. Explicit `path` argument
 2. `MULDER_CONFIG` environment variable
 3. `./mulder.config.yaml` (CWD)
+4. `./mulder.config.example.yaml` (CWD) when no local default config exists in a fresh checkout
 
 ### 4.5 `ConfigValidationError`
 
@@ -214,6 +215,7 @@ All conditions must pass for this step to be marked complete.
 - **Given** a path to a non-existent file
 - **When** `loadConfig("/does/not/exist.yaml")` is called
 - **Then** it throws `ConfigValidationError` (not a raw filesystem error)
+- **And** when `loadConfig()` or `loadConfig("mulder.config.yaml")` is called in a fresh checkout with no local default config, it loads the shipped `mulder.config.example.yaml`
 
 ### QA-08: MULDER_CONFIG environment variable
 - **Given** `MULDER_CONFIG` is set to a valid config file path

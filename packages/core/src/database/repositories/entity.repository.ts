@@ -11,6 +11,7 @@
  */
 
 import type pg from 'pg';
+import { allowedSensitivityLevelsForMax } from '../../shared/access-control.js';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
 import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
@@ -317,13 +318,23 @@ export async function upsertEntityByNameType(pool: pg.Pool, input: CreateEntityI
 export async function findEntityById(
 	pool: pg.Pool,
 	id: string,
-	options?: { includeDeleted?: boolean },
+	options?: { includeDeleted?: boolean; maxSensitivityLevel?: Entity['sensitivityLevel'] },
 ): Promise<Entity | null> {
+	const conditions = ['e.id = $1'];
+	const params: unknown[] = [id];
+	let paramIndex = 2;
+	if (!options?.includeDeleted) {
+		conditions.push(entityActiveSourceClause('e'));
+	}
+	if (options?.maxSensitivityLevel) {
+		conditions.push(`e.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		paramIndex++;
+	}
 	const sql = `
     SELECT e.*
     FROM entities e
-    WHERE e.id = $1
-      ${options?.includeDeleted ? '' : `AND ${entityActiveSourceClause('e')}`}
+    WHERE ${conditions.join(' AND ')}
   `;
 	const legacySql = `
     SELECT e.*
@@ -332,7 +343,7 @@ export async function findEntityById(
   `;
 
 	try {
-		const result = await queryWithSourceDeletionStatusFallback<EntityRow>(pool, sql, [id], legacySql, [id]);
+		const result = await queryWithSourceDeletionStatusFallback<EntityRow>(pool, sql, params, legacySql, [id]);
 		if (result.rows.length === 0) {
 			return null;
 		}
@@ -351,18 +362,28 @@ export async function findEntityById(
 export async function findEntitiesByType(
 	pool: pg.Pool,
 	type: string,
-	options?: { includeDeleted?: boolean },
+	options?: { includeDeleted?: boolean; maxSensitivityLevel?: Entity['sensitivityLevel'] },
 ): Promise<Entity[]> {
+	const conditions = ['e.type = $1'];
+	const params: unknown[] = [type];
+	let paramIndex = 2;
+	if (!options?.includeDeleted) {
+		conditions.push(entityActiveSourceClause('e'));
+	}
+	if (options?.maxSensitivityLevel) {
+		conditions.push(`e.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		paramIndex++;
+	}
 	const sql = `
     SELECT e.*
     FROM entities e
-    WHERE e.type = $1
-      ${options?.includeDeleted ? '' : `AND ${entityActiveSourceClause('e')}`}
+    WHERE ${conditions.join(' AND ')}
     ORDER BY e.name
   `;
 
 	try {
-		const result = await pool.query<EntityRow>(sql, [type]);
+		const result = await pool.query<EntityRow>(sql, params);
 		return result.rows.map(mapEntityRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find entities by type', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
@@ -378,18 +399,28 @@ export async function findEntitiesByType(
 export async function findEntitiesByCanonicalId(
 	pool: pg.Pool,
 	canonicalId: string,
-	options?: { includeDeleted?: boolean },
+	options?: { includeDeleted?: boolean; maxSensitivityLevel?: Entity['sensitivityLevel'] },
 ): Promise<Entity[]> {
+	const conditions = ['e.canonical_id = $1'];
+	const params: unknown[] = [canonicalId];
+	let paramIndex = 2;
+	if (!options?.includeDeleted) {
+		conditions.push(entityActiveSourceClause('e'));
+	}
+	if (options?.maxSensitivityLevel) {
+		conditions.push(`e.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		paramIndex++;
+	}
 	const sql = `
     SELECT e.*
     FROM entities e
-    WHERE e.canonical_id = $1
-      ${options?.includeDeleted ? '' : `AND ${entityActiveSourceClause('e')}`}
+    WHERE ${conditions.join(' AND ')}
     ORDER BY e.name
   `;
 
 	try {
-		const result = await pool.query<EntityRow>(sql, [canonicalId]);
+		const result = await pool.query<EntityRow>(sql, params);
 		return result.rows.map(mapEntityRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find entities by canonical ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
@@ -435,6 +466,11 @@ export async function findAllEntities(pool: pg.Pool, filter?: EntityFilter): Pro
 	}
 	if (!filter?.includeDeleted) {
 		conditions.push(entityActiveSourceClause('e'));
+	}
+	if (filter?.maxSensitivityLevel) {
+		conditions.push(`e.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(filter.maxSensitivityLevel));
+		paramIndex++;
 	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -489,6 +525,11 @@ export async function countEntities(pool: pg.Pool, filter?: EntityFilter): Promi
 	}
 	if (!filter?.includeDeleted) {
 		conditions.push(entityActiveSourceClause('e'));
+	}
+	if (filter?.maxSensitivityLevel) {
+		conditions.push(`e.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(filter.maxSensitivityLevel));
+		paramIndex++;
 	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

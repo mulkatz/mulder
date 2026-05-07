@@ -40,6 +40,7 @@ export interface ListTranslatedDocumentsOptions {
 	targetLanguage?: string;
 	status?: TranslationStatus;
 	includeDeletedSources?: boolean;
+	maxSensitivityLevel?: SensitivityLevel;
 	limit?: number;
 	offset?: number;
 }

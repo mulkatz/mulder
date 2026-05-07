@@ -1,11 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, rmdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmdirSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const ROOT = resolve(dirname(SCRIPT_PATH), '..');
+const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
 function usage() {
 	return [
@@ -140,6 +141,9 @@ async function main() {
 		MULDER_TEST_STORAGE_ROOT: storageRoot,
 		MULDER_LOG_LEVEL: process.env.MULDER_LOG_LEVEL ?? 'silent',
 	};
+	if (!env.MULDER_CONFIG && existsSync(EXAMPLE_CONFIG)) {
+		env.MULDER_CONFIG = EXAMPLE_CONFIG;
+	}
 	env.PGHOST = env.PGHOST ?? 'localhost';
 	env.PGPORT = env.PGPORT ?? '5432';
 	env.PGUSER = env.PGUSER ?? 'mulder';
@@ -166,6 +170,7 @@ async function main() {
 				isolatedDb
 					? `test-runner: database=${isolatedDb}`
 					: `test-runner: database=${env.PGDATABASE ?? 'mulder'} (shared)`,
+				`test-runner: config=${env.MULDER_CONFIG ?? '(default loader resolution)'}`,
 				'',
 			].join('\n'),
 		);

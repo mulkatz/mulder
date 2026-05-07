@@ -90,6 +90,7 @@ export interface EntityFilter {
 	/** Case-insensitive substring match on entity name (ILIKE). */
 	search?: string;
 	includeDeleted?: boolean;
+	maxSensitivityLevel?: SensitivityLevel;
 	limit?: number;
 	offset?: number;
 }

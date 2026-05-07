@@ -3,6 +3,7 @@
 export { ZodError } from 'zod';
 export type {
 	AccessControlConfig,
+	AccessControlRbacConfig,
 	AccessControlSensitivityConfig,
 	AnalysisConfig,
 	ApiAuthConfig,
@@ -178,6 +179,7 @@ export type {
 	OriginalSourceType,
 	PathSegment,
 	PathSegmentType,
+	PersistedAccessRole,
 	PersistedSource,
 	PhysicalLocation,
 	PipelineRun,
@@ -249,6 +251,7 @@ export type {
 	UpdateSourceInput,
 	UpdateStoryInput,
 	UpdateTaxonomyEntryInput,
+	UpsertAccessRoleInput,
 	UpsertCredibilityDimensionInput,
 	UpsertDocumentBlobInput,
 	UpsertEntityGroundingInput,
@@ -330,6 +333,7 @@ export {
 	enqueueJob,
 	finalizeMonthlyBudgetReservation,
 	finalizePipelineRun,
+	findAccessRoleById,
 	findAcquisitionContextById,
 	findAliasesByEntityId,
 	findAllEdges,
@@ -403,6 +407,7 @@ export {
 	getQueryPool,
 	getWorkerPool,
 	linkStoryEntity,
+	listAccessRoles,
 	listAcquisitionContextsForBlob,
 	listAcquisitionContextsForSource,
 	listArchiveLocationsForBlob,
@@ -486,6 +491,7 @@ export {
 	updateStorySensitivityFromArtifacts,
 	updateStoryStatus,
 	updateTaxonomyEntry,
+	upsertAccessRole,
 	upsertArchive,
 	upsertArchiveMirrorCollection,
 	upsertDocumentBlob,
@@ -507,6 +513,27 @@ export type { NativeTextDetectOptions, NativeTextResult, PdfMetadata } from './p
 export { detectNativeText, extractPdfMetadata } from './pipeline/index.js';
 // ── Prompt template engine ─────────────────────────────────
 export { clearPromptCaches, listTemplates, renderPrompt } from './prompts/index.js';
+export type {
+	AccessPermission,
+	AccessPolicy,
+	AccessPrincipal,
+	AccessPrincipalKind,
+	AccessRole,
+	AccessRoleConfig,
+	BrowserAccessRole,
+} from './shared/access-control.js';
+export {
+	ACCESS_PERMISSIONS,
+	accessRoleConfigToRole,
+	accessRoleToConfig,
+	allowedSensitivityLevelsForMax,
+	canReadSensitivityLevel,
+	DEFAULT_ACCESS_ROLE_CONFIGS,
+	DEFAULT_ACCESS_ROLES,
+	hasAccessPermission,
+	mapBrowserRoleToAccessRoleId,
+	resolveAccessPolicy,
+} from './shared/access-control.js';
 export {
 	assertSha256ContentHash,
 	buildContentAddressedBlobPath,

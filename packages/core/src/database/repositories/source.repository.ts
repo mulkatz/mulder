@@ -11,6 +11,7 @@
  */
 
 import type pg from 'pg';
+import { allowedSensitivityLevelsForMax } from '../../shared/access-control.js';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
 import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
@@ -172,6 +173,12 @@ function buildSourceFilterClause(filter?: SourceFilter): { conditions: string[];
 		paramIndex++;
 	}
 
+	if (filter?.maxSensitivityLevel) {
+		conditions.push(`sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(filter.maxSensitivityLevel));
+		paramIndex++;
+	}
+
 	return { conditions, params };
 }
 
@@ -290,14 +297,24 @@ export async function createSource(pool: Queryable, input: CreateSourceInput): P
 export async function findSourceById(
 	pool: Queryable,
 	id: string,
-	options?: { includeDeleted?: boolean },
+	options?: { includeDeleted?: boolean; maxSensitivityLevel?: PersistedSource['sensitivityLevel'] },
 ): Promise<PersistedSource | null> {
-	const sql = `SELECT * FROM sources WHERE id = $1 ${
-		options?.includeDeleted ? '' : "AND deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"
-	}`;
+	const conditions = ['id = $1'];
+	const params: unknown[] = [id];
+	let paramIndex = 2;
+
+	if (!options?.includeDeleted) {
+		conditions.push("deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
+	}
+	if (options?.maxSensitivityLevel) {
+		conditions.push(`sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		paramIndex++;
+	}
+	const sql = `SELECT * FROM sources WHERE ${conditions.join(' AND ')}`;
 
 	try {
-		const result = await pool.query<SourceRow>(sql, [id]);
+		const result = await pool.query<SourceRow>(sql, params);
 		if (result.rows.length === 0) {
 			return null;
 		}

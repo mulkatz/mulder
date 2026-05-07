@@ -33,6 +33,8 @@ pnpm test:affected -- origin/main -- --reporter=verbose
 
 The affected runner is intentionally explainable: `test:affected:plan` prints the changed files, the rule that matched each file, selected specs, lanes, and estimated weight. A normal feature PR should stay near 8-15 minutes; broad changes may use the parallel affected lane jobs and should still target 20 minutes. If an affected plan unexpectedly selects most of the suite for an ordinary feature change, refine the mapping before continuing feature work.
 
+For pull requests, a head commit that changes only Markdown documentation is treated as build/lint-only by the affected runner. Spec documents remain connected to their implementation tests for normal feature diffs, but docs-only follow-up commits must not wake DB/schema/heavy lanes by themselves.
+
 Use full lane runs when changing shared infrastructure, migrations, worker dispatch, storage, or pipeline orchestration:
 
 ```bash

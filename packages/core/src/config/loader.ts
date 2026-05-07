@@ -3,8 +3,8 @@
  * Every CLI command and pipeline step calls loadConfig() as its first action.
  */
 
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { basename, dirname, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { ZodError } from 'zod';
 import { ConfigValidationError } from './errors.js';
@@ -12,6 +12,7 @@ import { mulderConfigSchema } from './schema.js';
 import type { MulderConfig } from './types.js';
 
 const DEFAULT_CONFIG_FILENAME = 'mulder.config.yaml';
+const EXAMPLE_CONFIG_FILENAME = 'mulder.config.example.yaml';
 
 /**
  * Recursively freezes an object and all nested objects/arrays.
@@ -50,13 +51,14 @@ function formatZodPath(path: readonly PropertyKey[]): string {
  * Path resolution order:
  * 1. Explicit `path` argument
  * 2. `MULDER_CONFIG` environment variable
- * 3. `./mulder.config.yaml` (CWD)
+ * 3. `./mulder.config.yaml` (CWD), falling back to `./mulder.config.example.yaml`
+ *    when the local config is absent in a fresh checkout
  *
  * @throws {ConfigValidationError} on file not found, invalid YAML, or validation failure
  */
 export function loadConfig(path?: string): Readonly<MulderConfig> {
 	// 1. Resolve path
-	const configPath = resolve(path ?? process.env.MULDER_CONFIG ?? DEFAULT_CONFIG_FILENAME);
+	const configPath = resolveConfigPath(path);
 
 	// 2. Read file
 	let rawContent: string;
@@ -110,4 +112,26 @@ export function loadConfig(path?: string): Readonly<MulderConfig> {
 
 	// 5. Deep freeze the result
 	return deepFreeze(config);
+}
+
+function resolveConfigPath(path?: string): string {
+	if (path !== undefined) {
+		const configPath = resolve(path);
+		return basename(configPath) === DEFAULT_CONFIG_FILENAME ? resolveDefaultConfigPath(configPath) : configPath;
+	}
+	if (process.env.MULDER_CONFIG !== undefined) {
+		const configPath = resolve(process.env.MULDER_CONFIG);
+		return basename(configPath) === DEFAULT_CONFIG_FILENAME ? resolveDefaultConfigPath(configPath) : configPath;
+	}
+
+	return resolveDefaultConfigPath(resolve(DEFAULT_CONFIG_FILENAME));
+}
+
+function resolveDefaultConfigPath(defaultPath: string): string {
+	if (existsSync(defaultPath)) {
+		return defaultPath;
+	}
+
+	const examplePath = resolve(dirname(defaultPath), EXAMPLE_CONFIG_FILENAME);
+	return existsSync(examplePath) ? examplePath : defaultPath;
 }
