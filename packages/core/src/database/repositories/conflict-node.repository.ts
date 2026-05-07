@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { allowedSensitivityLevelsForMax } from '../../shared/access-control.js';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import {
 	mergeSensitivityMetadata,
@@ -555,6 +556,10 @@ export async function listConflictNodes(pool: Queryable, options?: ConflictNodeL
 			SELECT 1 FROM conflict_assertions ca_filter
 			WHERE ca_filter.conflict_id = cn.id AND ca_filter.source_document_id = $${params.length}
 		)`);
+	}
+	if (options?.maxSensitivityLevel) {
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		filters.push(`cn.sensitivity_level = ANY($${params.length})`);
 	}
 	const limit = options?.limit ?? 100;
 	const offset = options?.offset ?? 0;

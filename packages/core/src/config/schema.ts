@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod';
+import { ACCESS_PERMISSIONS, DEFAULT_ACCESS_ROLE_CONFIGS } from '../shared/access-control.js';
 import { PII_TYPES, SENSITIVITY_LEVELS } from '../shared/sensitivity.js';
 
 /**
@@ -255,6 +256,14 @@ const documentQualitySchema = documentQualityObj.default(defaults(documentQualit
 // --- Access Control ---
 
 const piiTypeSchema = z.enum(PII_TYPES);
+const accessPermissionSchema = z.enum(ACCESS_PERMISSIONS);
+
+const accessRoleSchema = z.object({
+	id: z.string().min(1),
+	name: z.string().min(1),
+	max_sensitivity_level: sensitivityLevelSchema,
+	permissions: z.array(accessPermissionSchema).min(1),
+});
 
 const accessControlSensitivitySchema = z.object({
 	levels: z.array(sensitivityLevelSchema).default([...SENSITIVITY_LEVELS]),
@@ -267,6 +276,10 @@ const accessControlSensitivitySchema = z.object({
 const accessControlRbacSchema = z.object({
 	roles_source: z.string().min(1).default('config/roles.yaml'),
 	default_role: z.string().min(1).default('analyst'),
+	roles: z
+		.array(accessRoleSchema)
+		.min(1)
+		.default([...DEFAULT_ACCESS_ROLE_CONFIGS]),
 });
 
 const accessControlExternalQueryGateSchema = z.object({
@@ -792,6 +805,7 @@ export const mulderConfigSchema = baseMulderConfigSchema.superRefine((data, ctx)
 
 // Export section schemas for reuse
 export {
+	accessControlRbacSchema,
 	accessControlSchema,
 	accessControlSensitivitySchema,
 	analysisSchema,

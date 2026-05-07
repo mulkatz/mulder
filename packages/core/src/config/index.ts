@@ -12,6 +12,7 @@ export { computeReprocessConfigHash, getReprocessConfigSubset } from './reproces
 export { mulderConfigSchema } from './schema.js';
 export type {
 	AccessControlConfig,
+	AccessControlRbacConfig,
 	AccessControlSensitivityConfig,
 	AnalysisConfig,
 	ApiAuthConfig,

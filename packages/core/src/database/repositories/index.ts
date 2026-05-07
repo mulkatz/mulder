@@ -9,6 +9,15 @@
  * @see docs/specs/32_embedding_wrapper_semantic_chunker_chunk_repository.spec.md §4.5
  */
 
+export {
+	findAccessRoleById,
+	listAccessRoles,
+	upsertAccessRole,
+} from './access-role.repository.js';
+export type {
+	PersistedAccessRole,
+	UpsertAccessRoleInput,
+} from './access-role.types.js';
 export type { ArtifactProvenance, ArtifactProvenanceInput } from './artifact-provenance.js';
 export {
 	mapArtifactProvenanceFromDb,

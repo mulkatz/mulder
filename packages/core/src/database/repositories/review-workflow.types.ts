@@ -1,3 +1,5 @@
+import type { SensitivityLevel } from '../../shared/sensitivity.js';
+
 export type ReviewArtifactType =
 	| 'assertion_classification'
 	| 'credibility_profile'
@@ -80,6 +82,7 @@ export interface ReviewableArtifactListOptions {
 	reviewStatus?: ReviewStatus;
 	sourceId?: string;
 	includeDeleted?: boolean;
+	maxSensitivityLevel?: SensitivityLevel;
 	limit?: number;
 	offset?: number;
 }
@@ -117,6 +120,7 @@ export interface ReviewQueueListOptions {
 
 export interface ReviewQueueArtifactListOptions {
 	reviewStatus?: ReviewStatus;
+	maxSensitivityLevel?: SensitivityLevel;
 	limit?: number;
 	offset?: number;
 }

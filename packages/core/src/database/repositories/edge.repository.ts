@@ -12,6 +12,7 @@
  */
 
 import type pg from 'pg';
+import { allowedSensitivityLevelsForMax } from '../../shared/access-control.js';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
 import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
@@ -334,18 +335,28 @@ export async function findEdgesByTargetEntityId(
 export async function findEdgesByEntityId(
 	pool: pg.Pool,
 	entityId: string,
-	options?: { includeDeleted?: boolean },
+	options?: { includeDeleted?: boolean; maxSensitivityLevel?: EntityEdge['sensitivityLevel'] },
 ): Promise<EntityEdge[]> {
+	const conditions = ['(ee.source_entity_id = $1 OR ee.target_entity_id = $1)'];
+	const params: unknown[] = [entityId];
+	let paramIndex = 2;
+	if (!options?.includeDeleted) {
+		conditions.push(edgeActiveSourceClause('ee'));
+	}
+	if (options?.maxSensitivityLevel) {
+		conditions.push(`ee.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		paramIndex++;
+	}
 	const sql = `
     SELECT ee.*
     FROM entity_edges ee
-    WHERE (ee.source_entity_id = $1 OR ee.target_entity_id = $1)
-      ${options?.includeDeleted ? '' : `AND ${edgeActiveSourceClause('ee')}`}
+    WHERE ${conditions.join(' AND ')}
     ORDER BY ee.created_at
   `;
 
 	try {
-		const result = await pool.query<EdgeRow>(sql, [entityId]);
+		const result = await pool.query<EdgeRow>(sql, params);
 		return result.rows.map(mapEdgeRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find edges by entity ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
@@ -361,18 +372,28 @@ export async function findEdgesByEntityId(
 export async function findEdgesByStoryId(
 	pool: pg.Pool,
 	storyId: string,
-	options?: { includeDeleted?: boolean },
+	options?: { includeDeleted?: boolean; maxSensitivityLevel?: EntityEdge['sensitivityLevel'] },
 ): Promise<EntityEdge[]> {
+	const conditions = ['ee.story_id = $1'];
+	const params: unknown[] = [storyId];
+	let paramIndex = 2;
+	if (!options?.includeDeleted) {
+		conditions.push(edgeActiveSourceClause('ee'));
+	}
+	if (options?.maxSensitivityLevel) {
+		conditions.push(`ee.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		paramIndex++;
+	}
 	const sql = `
     SELECT ee.*
     FROM entity_edges ee
-    WHERE ee.story_id = $1
-      ${options?.includeDeleted ? '' : `AND ${edgeActiveSourceClause('ee')}`}
+    WHERE ${conditions.join(' AND ')}
     ORDER BY ee.created_at
   `;
 
 	try {
-		const result = await pool.query<EdgeRow>(sql, [storyId]);
+		const result = await pool.query<EdgeRow>(sql, params);
 		return result.rows.map(mapEdgeRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find edges by story ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
@@ -482,6 +503,11 @@ export async function findAllEdges(pool: pg.Pool, filter?: EdgeFilter): Promise<
 	if (!filter?.includeDeleted) {
 		conditions.push(edgeActiveSourceClause('ee'));
 	}
+	if (filter?.maxSensitivityLevel) {
+		conditions.push(`ee.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(filter.maxSensitivityLevel));
+		paramIndex++;
+	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -505,6 +531,7 @@ export async function findAllEdges(pool: pg.Pool, filter?: EdgeFilter): Promise<
 export interface EdgeTypePageFilter {
 	edgeTypes: EdgeType[];
 	includeDeleted?: boolean;
+	maxSensitivityLevel?: EntityEdge['sensitivityLevel'];
 	limit?: number;
 	offset?: number;
 }
@@ -519,17 +546,28 @@ export async function findAllEdgesByTypes(pool: pg.Pool, filter: EdgeTypePageFil
 
 	const limit = filter.limit ?? 100;
 	const offset = filter.offset ?? 0;
+	const conditions = ['ee.edge_type = ANY($1::text[])'];
+	const params: unknown[] = [filter.edgeTypes];
+	let paramIndex = 2;
+	if (!filter.includeDeleted) {
+		conditions.push(edgeActiveSourceClause('ee'));
+	}
+	if (filter.maxSensitivityLevel) {
+		conditions.push(`ee.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(filter.maxSensitivityLevel));
+		paramIndex++;
+	}
+	params.push(limit, offset);
 	const sql = `
     SELECT ee.*
     FROM entity_edges ee
-    WHERE ee.edge_type = ANY($1::text[])
-      ${filter.includeDeleted ? '' : `AND ${edgeActiveSourceClause('ee')}`}
+    WHERE ${conditions.join(' AND ')}
     ORDER BY ee.created_at ASC, ee.id ASC
-    LIMIT $2 OFFSET $3
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `;
 
 	try {
-		const result = await pool.query<EdgeRow>(sql, [filter.edgeTypes, limit, offset]);
+		const result = await pool.query<EdgeRow>(sql, params);
 		return result.rows.map(mapEdgeRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find edges by type list', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
@@ -608,6 +646,11 @@ export async function countEdges(pool: pg.Pool, filter?: EdgeFilter): Promise<nu
 	}
 	if (!filter?.includeDeleted) {
 		conditions.push(edgeActiveSourceClause('ee'));
+	}
+	if (filter?.maxSensitivityLevel) {
+		conditions.push(`ee.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(filter.maxSensitivityLevel));
+		paramIndex++;
 	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

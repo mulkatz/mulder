@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { allowedSensitivityLevelsForMax } from '../../shared/access-control.js';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
 import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
@@ -152,20 +153,32 @@ export async function findCurrentTranslatedDocument(
 	pool: Queryable,
 	sourceDocumentId: string,
 	targetLanguage: string,
-	options?: { includeDeletedSources?: boolean },
+	options?: { includeDeletedSources?: boolean; maxSensitivityLevel?: TranslatedDocument['sensitivityLevel'] },
 ): Promise<TranslatedDocument | null> {
+	const conditions = [
+		'translated_documents.source_document_id = $1',
+		'translated_documents.target_language = $2',
+		"translated_documents.status = 'current'",
+	];
+	const params: unknown[] = [sourceDocumentId, targetLanguage];
+	let paramIndex = 3;
+	if (!options?.includeDeletedSources) {
+		conditions.push("sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
+	}
+	if (options?.maxSensitivityLevel) {
+		conditions.push(`translated_documents.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		paramIndex++;
+	}
 	const sql = `
 		SELECT translated_documents.*
 		FROM translated_documents
 		JOIN sources ON sources.id = translated_documents.source_document_id
-		WHERE translated_documents.source_document_id = $1
-			AND translated_documents.target_language = $2
-			AND translated_documents.status = 'current'
-			${options?.includeDeletedSources ? '' : "AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"}
+		WHERE ${conditions.join(' AND ')}
 	`;
 
 	try {
-		const result = await pool.query<TranslatedDocumentRow>(sql, [sourceDocumentId, targetLanguage]);
+		const result = await pool.query<TranslatedDocumentRow>(sql, params);
 		const row = result.rows[0];
 		return row ? mapTranslatedDocumentRow(row) : null;
 	} catch (error: unknown) {
@@ -196,6 +209,11 @@ export async function listTranslatedDocumentsForSource(
 	if (options?.status) {
 		conditions.push(`translated_documents.status = $${paramIndex}`);
 		params.push(options.status);
+		paramIndex++;
+	}
+	if (options?.maxSensitivityLevel) {
+		conditions.push(`translated_documents.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
 		paramIndex++;
 	}
 

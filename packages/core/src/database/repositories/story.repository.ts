@@ -11,6 +11,7 @@
  */
 
 import type pg from 'pg';
+import { allowedSensitivityLevelsForMax } from '../../shared/access-control.js';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
 import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
@@ -152,18 +153,28 @@ export async function createStory(pool: pg.Pool, input: CreateStoryInput): Promi
 export async function findStoryById(
 	pool: pg.Pool,
 	id: string,
-	options?: { includeDeleted?: boolean },
+	options?: { includeDeleted?: boolean; maxSensitivityLevel?: Story['sensitivityLevel'] },
 ): Promise<Story | null> {
+	const conditions = ['stories.id = $1'];
+	const params: unknown[] = [id];
+	let paramIndex = 2;
+	if (!options?.includeDeleted) {
+		conditions.push("sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
+	}
+	if (options?.maxSensitivityLevel) {
+		conditions.push(`stories.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		paramIndex++;
+	}
 	const sql = `
     SELECT stories.*
     FROM stories
     JOIN sources ON sources.id = stories.source_id
-    WHERE stories.id = $1
-      ${options?.includeDeleted ? '' : "AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"}
+    WHERE ${conditions.join(' AND ')}
   `;
 
 	try {
-		const result = await pool.query<StoryRow>(sql, [id]);
+		const result = await pool.query<StoryRow>(sql, params);
 		if (result.rows.length === 0) {
 			return null;
 		}
@@ -185,19 +196,29 @@ export async function findStoryById(
 export async function findStoriesBySourceId(
 	pool: pg.Pool,
 	sourceId: string,
-	options?: { includeDeleted?: boolean },
+	options?: { includeDeleted?: boolean; maxSensitivityLevel?: Story['sensitivityLevel'] },
 ): Promise<Story[]> {
+	const conditions = ['stories.source_id = $1'];
+	const params: unknown[] = [sourceId];
+	let paramIndex = 2;
+	if (!options?.includeDeleted) {
+		conditions.push("sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
+	}
+	if (options?.maxSensitivityLevel) {
+		conditions.push(`stories.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		paramIndex++;
+	}
 	const sql = `
     SELECT stories.*
     FROM stories
     JOIN sources ON sources.id = stories.source_id
-    WHERE stories.source_id = $1
-      ${options?.includeDeleted ? '' : "AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"}
+    WHERE ${conditions.join(' AND ')}
     ORDER BY page_start ASC NULLS LAST, created_at ASC
   `;
 
 	try {
-		const result = await pool.query<StoryRow>(sql, [sourceId]);
+		const result = await pool.query<StoryRow>(sql, params);
 		return result.rows.map(mapStoryRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find stories by source ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
@@ -243,6 +264,11 @@ export async function findAllStories(pool: pg.Pool, filter?: StoryFilter): Promi
 	}
 	if (!filter?.includeDeleted) {
 		conditions.push("sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
+	}
+	if (filter?.maxSensitivityLevel) {
+		conditions.push(`stories.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(filter.maxSensitivityLevel));
+		paramIndex++;
 	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -304,6 +330,11 @@ export async function countStories(pool: pg.Pool, filter?: StoryFilter): Promise
 	}
 	if (!filter?.includeDeleted) {
 		conditions.push("sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')");
+	}
+	if (filter?.maxSensitivityLevel) {
+		conditions.push(`stories.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(filter.maxSensitivityLevel));
+		paramIndex++;
 	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

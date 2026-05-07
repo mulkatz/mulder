@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { allowedSensitivityLevelsForMax } from '../../shared/access-control.js';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import type {
 	AutoApproveDueReviewArtifactsOptions,
@@ -330,6 +331,10 @@ export async function listReviewableArtifacts(
 		params.push(options.sourceId);
 		filters.push(`source_id = $${params.length}`);
 	}
+	if (options?.maxSensitivityLevel) {
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		filters.push(`COALESCE(NULLIF(context->>'sensitivity_level', ''), 'internal') = ANY($${params.length})`);
+	}
 	const limit = options?.limit ?? 100;
 	const offset = options?.offset ?? 0;
 	params.push(limit, offset);
@@ -601,12 +606,19 @@ export async function listReviewQueueArtifacts(
 	assertEnum(reviewStatus, STATUSES, 'reviewStatus');
 	const limit = options?.limit ?? 100;
 	const offset = options?.offset ?? 0;
+	const filters = ['artifact_type = ANY($1::text[])', 'review_status = $2', 'deleted_at IS NULL'];
+	const params: unknown[] = [artifactTypes, reviewStatus];
+	if (options?.maxSensitivityLevel) {
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		filters.push(`COALESCE(NULLIF(context->>'sensitivity_level', ''), 'internal') = ANY($${params.length})`);
+	}
+	params.push(limit, offset);
 	try {
 		return await readArtifacts(
 			pool,
-			'WHERE artifact_type = ANY($1::text[]) AND review_status = $2 AND deleted_at IS NULL',
-			[artifactTypes, reviewStatus, limit, offset],
-			'LIMIT $3 OFFSET $4',
+			`WHERE ${filters.join(' AND ')}`,
+			params,
+			`LIMIT $${params.length - 1} OFFSET $${params.length}`,
 		);
 	} catch (cause: unknown) {
 		if (cause instanceof DatabaseError) throw cause;
