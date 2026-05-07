@@ -72,13 +72,6 @@ import type {
 	SpatioTemporalAnalyzeData,
 } from './types.js';
 
-export {
-	clearExternalDataSourcePlugins,
-	createStaticExternalDataSourcePlugin,
-	ExternalDataSourceRegistry,
-	getExternalDataSourceRegistry,
-	registerExternalDataSourcePlugin,
-} from './external-correlation.js';
 export type {
 	ExternalDataFetchRequest,
 	ExternalDataFetchResult,
@@ -88,6 +81,13 @@ export type {
 	ExternalDataUpdateFrequency,
 	ExternalEvent,
 	ExternalStaticDataset,
+} from './external-correlation.js';
+export {
+	clearExternalDataSourcePlugins,
+	createStaticExternalDataSourcePlugin,
+	ExternalDataSourceRegistry,
+	getExternalDataSourceRegistry,
+	registerExternalDataSourcePlugin,
 } from './external-correlation.js';
 export { discoverSimilarEntities, scoreTaxonomyMappingSimilarity } from './similarity.js';
 export { detectTemporalPatterns } from './temporal-patterns.js';

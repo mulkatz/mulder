@@ -22,7 +22,7 @@ import {
 	replaceTemporalPatternSnapshot,
 } from '@mulder/core';
 import type pg from 'pg';
-import type { ExternalDataPoint, ExternalDataSourceRegistry } from './external-correlation.js';
+import type { ExternalDataFetchResult, ExternalDataPoint, ExternalDataSourceRegistry } from './external-correlation.js';
 import { getExternalDataSourceRegistry } from './external-correlation.js';
 import type {
 	ExternalCorrelationSummary,
@@ -660,7 +660,8 @@ function buildInternalCorrelationSeries(
 	const filtered = events.filter((event) => {
 		if (timeStart && event.occurredAt.getTime() < timeStart.getTime()) return false;
 		if (timeEnd && event.occurredAt.getTime() > timeEnd.getTime()) return false;
-		if (series.region_key && readRegionKey(event, config.anomaly_detection.region_grid) !== series.region_key) return false;
+		if (series.region_key && readRegionKey(event, config.anomaly_detection.region_grid) !== series.region_key)
+			return false;
 		if (!eventMatchesCategory(event, categoryRef)) return false;
 		return true;
 	});
@@ -672,9 +673,7 @@ function buildInternalCorrelationSeries(
 		existing.events.push(event);
 		points.set(dateKey, existing);
 	}
-	const categoryKey = categoryRef
-		? `${categoryRef.taxonomyId ?? ''}:${categoryRef.categoryId}`
-		: 'all';
+	const categoryKey = categoryRef ? `${categoryRef.taxonomyId ?? ''}:${categoryRef.categoryId}` : 'all';
 	const regionKey = series.region_key ?? 'all';
 	return {
 		key: `entities:region=${regionKey}:category=${categoryKey}`,
@@ -716,7 +715,9 @@ function alignSeries(
 	lagDays: number,
 ): AlignedCorrelationPoint[] {
 	const aligned: AlignedCorrelationPoint[] = [];
-	for (const [dateKey, bucket] of [...internal.points.entries()].sort((left, right) => left[0].localeCompare(right[0]))) {
+	for (const [dateKey, bucket] of [...internal.points.entries()].sort((left, right) =>
+		left[0].localeCompare(right[0]),
+	)) {
 		const externalValue = external.get(shiftedDateKey(dateKey, lagDays));
 		if (externalValue === undefined) continue;
 		aligned.push({ internalValue: bucket.value, externalValue, dateKey, events: bucket.events });
@@ -798,7 +799,9 @@ function computeCorrelation(
 			timeStart: new Date(Math.min(...dates.map((date) => date.getTime()))),
 			timeEnd: new Date(Math.max(...dates.map((date) => date.getTime())) + DAY_MS),
 			dataPointCount: aligned.length,
-			events: [...eventById.values()].sort((leftEvent, rightEvent) => leftEvent.entityId.localeCompare(rightEvent.entityId)),
+			events: [...eventById.values()].sort((leftEvent, rightEvent) =>
+				leftEvent.entityId.localeCompare(rightEvent.entityId),
+			),
 		};
 		if (!best || Math.abs(candidate.coefficient) > Math.abs(best.coefficient) || candidate.lagDays < best.lagDays) {
 			best = candidate;
@@ -838,7 +841,7 @@ async function buildExternalCorrelationInputs(
 			continue;
 		}
 
-		let fetched;
+		let fetched: ExternalDataFetchResult;
 		try {
 			fetched = await plugin.fetch({
 				sourceId: series.source_id,
