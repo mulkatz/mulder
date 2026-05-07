@@ -696,31 +696,34 @@ describe('Spec 115: Temporal Pattern Detection', () => {
 		expect(hotspotCategory.rows[0]?.dominant_category_ref).toBeNull();
 	});
 
-	it.skipIf(!pgAvailable)('QA-08: Category-constrained known patterns do not annotate categoryless anomalies', async () => {
-		await seedSignificantAnomalyFixture({ categoryRefs: [] });
-		const config = tunedTemporalConfig({ hotspots: false });
-		config.temporal_pattern_detection.anomaly_detection.known_patterns = [
-			{
-				id: 'spec115-category-constrained',
-				region_key: 'alpha-zone',
-				category_ref: {
-					taxonomy_id: SPEC_CATEGORY_REF.taxonomyId,
-					category_id: SPEC_CATEGORY_REF.categoryId,
+	it.skipIf(!pgAvailable)(
+		'QA-08: Category-constrained known patterns do not annotate categoryless anomalies',
+		async () => {
+			await seedSignificantAnomalyFixture({ categoryRefs: [] });
+			const config = tunedTemporalConfig({ hotspots: false });
+			config.temporal_pattern_detection.anomaly_detection.known_patterns = [
+				{
+					id: 'spec115-category-constrained',
+					region_key: 'alpha-zone',
+					category_ref: {
+						taxonomy_id: SPEC_CATEGORY_REF.taxonomyId,
+						category_id: SPEC_CATEGORY_REF.categoryId,
+					},
+					time_start: '2024-01-01',
+					time_end: '2024-02-01',
 				},
-				time_start: '2024-01-01',
-				time_end: '2024-02-01',
-			},
-		];
+			];
 
-		const result = await pipelineModule.detectTemporalPatterns(pool, config);
-		const anomalies = await coreModule.listTemporalAnomalyClusters(pool);
+			const result = await pipelineModule.detectTemporalPatterns(pool, config);
+			const anomalies = await coreModule.listTemporalAnomalyClusters(pool);
 
-		expect(result.status).toBe('success');
-		expect(anomalies).toHaveLength(1);
-		expect(anomalies[0].dominantCategoryRef).toBeNull();
-		expect(anomalies[0].knownPatternMatch).toBeNull();
-		expect(result.snapshot.anomalies[0]?.knownPatternMatch).toBeNull();
-	});
+			expect(result.status).toBe('success');
+			expect(anomalies).toHaveLength(1);
+			expect(anomalies[0].dominantCategoryRef).toBeNull();
+			expect(anomalies[0].knownPatternMatch).toBeNull();
+			expect(result.snapshot.anomalies[0]?.knownPatternMatch).toBeNull();
+		},
+	);
 
 	it.skipIf(!pgAvailable)('QA-09: Bias warnings and dominant category metadata are preserved', async () => {
 		await seedSignificantAnomalyFixture();
