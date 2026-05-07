@@ -6,7 +6,7 @@
  */
 
 import { DEFAULT_ACCESS_ROLE_CONFIGS } from '../shared/access-control.js';
-import type { ApiConfig, SimilarCaseDiscoveryConfig, TaxonomyConfig } from './types.js';
+import type { ApiConfig, SimilarCaseDiscoveryConfig, TaxonomyConfig, TemporalPatternDetectionConfig } from './types.js';
 
 const apiDefaults: ApiConfig = {
 	port: 8080,
@@ -84,6 +84,37 @@ const taxonomyDefaults: TaxonomyConfig = {
 			detect_classification_refs: true,
 			detect_implicit_classifications: true,
 		},
+	},
+};
+
+const temporalPatternDetectionDefaults: TemporalPatternDetectionConfig = {
+	enabled: true,
+	schedule: 'weekly',
+	anomaly_detection: {
+		enabled: true,
+		min_entities: 5,
+		significance_threshold: 0.05,
+		baseline_window_years: 10,
+		granularity: 'month',
+		region_grid: 'country',
+		max_regions: 250,
+		max_windows: 120,
+		window_size_buckets: 1,
+		known_patterns: [],
+	},
+	hotspot_clustering: {
+		enabled: true,
+		algorithm: 'hdbscan',
+		min_cluster_size: 3,
+		radius_km: 100,
+		temporal_granularity: 'year',
+		persistence_threshold_years: 5,
+		max_clusters: 100,
+	},
+	reporting_bias: {
+		correction_enabled: true,
+		correction_field: null,
+		elevated_threshold: 1.5,
 	},
 };
 
@@ -368,6 +399,8 @@ export const CONFIG_DEFAULTS = {
 		spatio_temporal: true,
 		cluster_window_days: 30,
 	},
+
+	temporal_pattern_detection: temporalPatternDetectionDefaults,
 
 	thresholds: {
 		taxonomy_bootstrap: 25,

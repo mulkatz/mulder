@@ -478,6 +478,10 @@ const CLASSIFICATION_SCHEMA_HELPER_TABLE_LINES = new Set([
 	"'classification_categories',",
 	"'classification_taxonomies',",
 ]);
+const TEMPORAL_PATTERN_SCHEMA_HELPER_TABLE_LINES = new Set([
+	"'spatiotemporal_hotspot_clusters',",
+	"'temporal_anomaly_clusters',",
+]);
 const CLASSIFICATION_HARMONIZATION_MIGRATIONS = new Set([
 	'packages/core/src/database/migrations/044_classification_harmonization.sql',
 	'packages/core/src/database/migrations/045_classification_category_parent_taxonomy_constraint.sql',
@@ -493,6 +497,29 @@ function isClassificationSchemaHelperOnlyDiff(diff) {
 	return changedLines.every(
 		(line) => line.startsWith('+') && CLASSIFICATION_SCHEMA_HELPER_TABLE_LINES.has(line.slice(1).trim()),
 	);
+}
+
+function isTemporalPatternSchemaHelperOnlyDiff(diff) {
+	const changedLines = diff
+		.split('\n')
+		.filter((line) => /^[+-]/.test(line) && !line.startsWith('+++') && !line.startsWith('---'));
+	if (changedLines.length === 0) {
+		return false;
+	}
+	return changedLines.every(
+		(line) => line.startsWith('+') && TEMPORAL_PATTERN_SCHEMA_HELPER_TABLE_LINES.has(line.slice(1).trim()),
+	);
+}
+
+function diffTouchesTemporalPattern(diff) {
+	return [
+		'temporal_pattern_detection',
+		'TemporalPattern',
+		'temporal-pattern',
+		'temporal_anomaly',
+		'spatiotemporal_hotspot',
+		'detectTemporalPatterns',
+	].some((token) => diff.includes(token));
 }
 
 function removeHealthSmokeTests(selected) {
@@ -683,6 +710,13 @@ const TEST_GROUPS = {
 		'tests/specs/113_similar_entity_discovery.test.ts',
 		'tests/specs/114_classification_harmonization.test.ts',
 	],
+	temporalPatternDetection: [
+		'tests/specs/03_config_loader.test.ts',
+		'tests/specs/08_core_schema_migrations.test.ts',
+		'tests/specs/64_spatio_temporal_clustering.test.ts',
+		'tests/specs/111_rbac_implementation.test.ts',
+		'tests/specs/114_classification_harmonization.test.ts',
+	],
 };
 
 function selectTestGroup(selected, discoveredByPath, groupName) {
@@ -735,6 +769,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 	}
 
 	if (file === 'mulder.config.example.yaml') {
+		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesTemporalPattern(diff)) {
+			selectSpecOrFallback('115', 'temporalPatternDetection');
+			return {
+				rule: 'temporal pattern detection example config',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		selectGroup('rbacAccessControl');
 		addSpecTestsToSet(selected, discoveredByPath, ['114']);
 		return {
@@ -749,6 +791,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 	}
 
 	if (file.startsWith('packages/core/src/config/')) {
+		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesTemporalPattern(diff)) {
+			selectSpecOrFallback('115', 'temporalPatternDetection');
+			return {
+				rule: 'temporal pattern detection config',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		selectGroup('coreConfig');
 		return { rule: 'core config', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
@@ -797,6 +847,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 		};
 	}
 
+	if (file === 'packages/core/src/database/migrations/046_temporal_pattern_detection.sql') {
+		selectSpecOrFallback('115', 'temporalPatternDetection');
+		return {
+			rule: 'temporal pattern detection migration',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
 	if (file.startsWith('packages/core/src/database/migrations/')) {
 		selectLanes(['schema', 'db', 'heavy']);
 		return { rule: 'unknown migration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
@@ -823,6 +881,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 		selectSpecOrFallback('114', 'classificationHarmonization');
 		return {
 			rule: 'classification harmonization repository',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/temporal-pattern.')) {
+		selectSpecOrFallback('115', 'temporalPatternDetection');
+		return {
+			rule: 'temporal pattern detection repository',
 			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
 		};
 	}
@@ -886,6 +952,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 	}
 
 	if (file === 'packages/core/src/database/repositories/index.ts') {
+		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesTemporalPattern(diff)) {
+			selectSpecOrFallback('115', 'temporalPatternDetection');
+			return {
+				rule: 'temporal pattern detection repository exports',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		selectGroup('repositoryExports');
 		return { rule: 'repository barrel exports', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
@@ -962,6 +1036,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 	}
 
 	if (file === 'packages/core/src/index.ts') {
+		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesTemporalPattern(diff)) {
+			selectSpecOrFallback('115', 'temporalPatternDetection');
+			return {
+				rule: 'temporal pattern detection core exports',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		selectExact([
 			'tests/specs/02_monorepo_setup.test.ts',
 			'tests/specs/03_config_loader.test.ts',
@@ -998,7 +1080,23 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 		return { rule: 'similarity analyze integration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
+	if (file === 'packages/pipeline/src/analyze/temporal-patterns.ts') {
+		selectSpecOrFallback('115', 'temporalPatternDetection');
+		return {
+			rule: 'temporal pattern detection analyze integration',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
 	if (file === 'packages/pipeline/src/analyze/index.ts' || file === 'packages/pipeline/src/analyze/types.ts') {
+		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesTemporalPattern(diff)) {
+			selectSpecOrFallback('115', 'temporalPatternDetection');
+			return {
+				rule: 'temporal pattern detection analyze contract',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		selectGroup('similarityDiscovery');
 		addSpecTestsToSet(selected, discoveredByPath, ['114']);
 		return {
@@ -1008,6 +1106,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 	}
 
 	if (file === 'packages/pipeline/src/index.ts') {
+		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (diffTouchesTemporalPattern(diff)) {
+			selectSpecOrFallback('115', 'temporalPatternDetection');
+			return {
+				rule: 'temporal pattern detection pipeline exports',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		selectGroup('similarityDiscovery');
 		addSpecTestsToSet(selected, discoveredByPath, ['114']);
 		return { rule: 'pipeline public exports', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
@@ -1065,6 +1171,13 @@ function resolveAffectedRule(file, discoveredByPath, lanes, options = {}) {
 
 	if (file === 'tests/lib/schema.ts') {
 		const diff = gitChangedFileDiff(options.baseRef, file);
+		if (isTemporalPatternSchemaHelperOnlyDiff(diff)) {
+			selectSpecOrFallback('115', 'temporalPatternDetection');
+			return {
+				rule: 'temporal pattern detection test schema helper',
+				selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+			};
+		}
 		if (isClassificationSchemaHelperOnlyDiff(diff)) {
 			selectSpecOrFallback('114', 'classificationHarmonization');
 			return {

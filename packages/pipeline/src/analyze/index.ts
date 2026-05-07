@@ -73,6 +73,7 @@ import type {
 } from './types.js';
 
 export { discoverSimilarEntities, scoreTaxonomyMappingSimilarity } from './similarity.js';
+export { detectTemporalPatterns } from './temporal-patterns.js';
 export type {
 	AnalyzeData,
 	AnalyzeInput,
@@ -99,6 +100,10 @@ export type {
 	SpatioTemporalEvent,
 	TaxonomyMappingSimilarityInput,
 	TaxonomyMappingSimilarityResult,
+	TemporalPatternAnalyzeData,
+	TemporalPatternAnomalySummary,
+	TemporalPatternDetectionResult,
+	TemporalPatternHotspotSummary,
 	WinningClaim,
 } from './types.js';
 

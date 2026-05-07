@@ -582,6 +582,32 @@ export type {
 	UpdateTaxonomyEntryInput,
 } from './taxonomy.types.js';
 export {
+	findSpatiotemporalHotspotCluster,
+	findTemporalAnomalyCluster,
+	listSpatiotemporalHotspotClusters,
+	listTemporalAnomalyClusters,
+	loadTemporalPatternEntityEvents,
+	replaceTemporalPatternSnapshot,
+} from './temporal-pattern.repository.js';
+export type {
+	CreateSpatiotemporalHotspotClusterInput,
+	CreateTemporalAnomalyClusterInput,
+	HotspotPersistence,
+	ReplaceTemporalPatternSnapshotInput,
+	ReplaceTemporalPatternSnapshotResult,
+	SpatiotemporalHotspotCluster,
+	SpatiotemporalHotspotClusterListOptions,
+	SpatiotemporalHotspotType,
+	TemporalAnomalyCluster,
+	TemporalAnomalyClusterListOptions,
+	TemporalAnomalyType,
+	TemporalPatternEntityEvent,
+	TemporalPatternFindOptions,
+	TemporalPatternListOptions,
+	TemporalPatternReviewStatus,
+	TemporalPatternSignalStrength,
+} from './temporal-pattern.types.js';
+export {
 	createCurrentTranslatedDocument,
 	deleteTranslatedDocumentsForSource,
 	findCurrentTranslatedDocument,
