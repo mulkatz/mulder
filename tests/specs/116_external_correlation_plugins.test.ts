@@ -429,7 +429,46 @@ describe('Spec 116: External Correlation Plugins', () => {
 						};
 					},
 				},
+				{
+					name: 'fetched-zero-aligned',
+					configure(config) {
+						config.temporal_pattern_detection.external_correlation = {
+							...externalCorrelationConfig().temporal_pattern_detection.external_correlation,
+							series: [
+								{
+									source_id: 'spec116-source',
+									series_id: 'zero-aligned',
+									plugin_id: 'spec116-zero-align-plugin',
+									enabled: true,
+									region_key: 'spec116-zone',
+									time_start: '2026-01-01',
+									time_end: '2026-02-08',
+									filters: {},
+								},
+							],
+							methods: ['spearman', 'cross_correlation'],
+							min_data_points: 4,
+							max_lag_days: 2,
+						};
+					},
+				},
 			];
+			pipelineModule.registerExternalDataSourcePlugin({
+				id: 'spec116-zero-align-plugin',
+				kind: 'time_series',
+				updateFrequency: 'static',
+				fetch() {
+					return {
+						points: [
+							{ date: '2026-02-01', value: 1 },
+							{ date: '2026-02-02', value: 2 },
+							{ date: '2026-02-03', value: 3 },
+							{ date: '2026-02-04', value: 4 },
+						],
+					};
+				},
+			});
+			await seedDailyCounts();
 
 			for (const scenario of scenarios) {
 				const config = cloneConfig();
@@ -443,6 +482,9 @@ describe('Spec 116: External Correlation Plugins', () => {
 
 				expect(result.status, scenario.name).toBe('success');
 				expect(result.data.persistedExternalCorrelationCount, scenario.name).toBe(0);
+				if (scenario.name === 'fetched-zero-aligned') {
+					expect(result.data.externalCorrelationCount, scenario.name).toBe(0);
+				}
 				expect(
 					active.map((correlation) => correlation.id),
 					scenario.name,

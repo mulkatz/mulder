@@ -1136,7 +1136,7 @@ export async function detectTemporalPatterns(
 		hotspots: hotspots.map((candidate) => candidate.input),
 	});
 	const externalCorrelationSnapshot =
-		externalCorrelations.evaluatedSeriesCount > 0
+		externalCorrelations.inputs.length > 0
 			? await replaceExternalCorrelationSnapshot(pool, {
 					correlations: externalCorrelations.inputs,
 				})
