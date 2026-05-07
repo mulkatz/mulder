@@ -319,9 +319,10 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 				'tests/specs/74_entity_api_routes.test.ts',
 				'tests/specs/76_document_retrieval_routes.test.ts',
 				'tests/specs/111_rbac_implementation.test.ts',
+				'tests/specs/114_classification_harmonization.test.ts',
 			]),
 		);
-		expect(plan.totalFiles).toBe(4);
+		expect(plan.totalFiles).toBe(5);
 		expect(plan.lanes.heavy.count).toBe(0);
 	});
 
