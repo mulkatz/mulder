@@ -209,7 +209,7 @@ async function loadCandidateSupplements(
 				FROM source_entity
 				JOIN entities e ON e.type = source_entity.type
 				WHERE e.id <> source_entity.id
-				  AND e.canonical_id IS NULL
+				  AND (e.canonical_id IS NULL OR e.canonical_id = e.id)
 				  ${sensitivityClause}
 			),
 			vector_candidates AS (

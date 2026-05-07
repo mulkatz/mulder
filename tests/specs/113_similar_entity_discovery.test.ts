@@ -142,6 +142,17 @@ async function setEntityGeometry(entityId: string, latitude: number, longitude: 
 	]);
 }
 
+function embeddingLiteral(values: [number, number]): string {
+	return `[${[values[0], values[1], ...Array.from({ length: 766 }, () => 0)].join(',')}]`;
+}
+
+async function setEntityNameEmbedding(entityId: string, values: [number, number]): Promise<void> {
+	await pool.query('UPDATE entities SET name_embedding = $2::vector WHERE id = $1;', [
+		entityId,
+		embeddingLiteral(values),
+	]);
+}
+
 async function upsertSimilarity(
 	sourceEntityId: string,
 	targetEntityId: string,
@@ -466,6 +477,63 @@ describe('Spec 113: Similar Entity Discovery', () => {
 		expect(result.results.find((item) => item.entityId === geoCandidate.id)?.core.geospatial.status).toBe('scored');
 		expect(result.results.find((item) => item.entityId === temporalCandidate.id)?.core.temporal.status).toBe('scored');
 	});
+
+	it.skipIf(!pgAvailable)(
+		'includes self-canonical entities in automatic vector, geospatial, and temporal retrieval',
+		async () => {
+			const entityA = await createEntityFixture('Spec 113 Self Canonical Source', {
+				attributes: { date: '2020-01-01' },
+			});
+			const vectorCandidate = await createEntityFixture('Spec 113 Self Canonical Vector', {
+				attributes: { date: '1900-01-01' },
+			});
+			const geoCandidate = await createEntityFixture('Spec 113 Self Canonical Geo', {
+				attributes: { date: '1900-01-01' },
+			});
+			const temporalCandidate = await createEntityFixture('Spec 113 Self Canonical Temporal', {
+				attributes: { date: '2020-06-01' },
+			});
+			const mergedAlias = await createEntityFixture('Spec 113 Self Canonical Merged Alias', {
+				canonicalId: entityA.id,
+				attributes: { date: '2020-02-01' },
+			});
+			await pool.query('UPDATE entities SET canonical_id = id WHERE id = ANY($1::uuid[]);', [
+				[vectorCandidate.id, geoCandidate.id, temporalCandidate.id],
+			]);
+			await setEntityNameEmbedding(entityA.id, [1, 0]);
+			await setEntityNameEmbedding(vectorCandidate.id, [0.99, 0.01]);
+			await setEntityNameEmbedding(mergedAlias.id, [1, 0]);
+			await setEntityGeometry(entityA.id, 52.52, 13.405);
+			await setEntityGeometry(geoCandidate.id, 52.5205, 13.4055);
+			await setEntityGeometry(mergedAlias.id, 52.5202, 13.4052);
+
+			const config = cloneConfig();
+			config.similar_case_discovery.max_results = 5;
+			config.similar_case_discovery.candidate_retrieval.vector_top_k = 1;
+			config.similar_case_discovery.candidate_retrieval.geo_radius_km = 1;
+			config.similar_case_discovery.candidate_retrieval.temporal_window_years = 1;
+
+			const result = await pipelineModule.discoverSimilarEntities(pool, config, {
+				entityId: entityA.id,
+				maxResults: 5,
+				persistResults: false,
+				autoDiscover: false,
+			});
+
+			const resultIds = result.results.map((item) => item.entityId);
+			expect(resultIds).toEqual(expect.arrayContaining([vectorCandidate.id, geoCandidate.id, temporalCandidate.id]));
+			expect(resultIds).not.toContain(mergedAlias.id);
+			expect(result.results.find((item) => item.entityId === vectorCandidate.id)?.core.semantic).toMatchObject({
+				status: 'scored',
+			});
+			expect(result.results.find((item) => item.entityId === geoCandidate.id)?.core.geospatial).toMatchObject({
+				status: 'scored',
+			});
+			expect(result.results.find((item) => item.entityId === temporalCandidate.id)?.core.temporal).toMatchObject({
+				status: 'scored',
+			});
+		},
+	);
 
 	it.skipIf(!pgAvailable)('QA-05: Auto-discovery persists bounded links', async () => {
 		const sourceAId = await createSourceFixture('auto-a');
