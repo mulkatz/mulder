@@ -82,6 +82,15 @@ function cleanTables(): void {
 	truncateExistingTables(['translated_documents', ...MULDER_TEST_TABLES]);
 }
 
+function stripKnownNodeWarnings(stderr: string): string {
+	return stderr
+		.split(/\r?\n/)
+		.filter((line) => !line.includes('[DEP0040] DeprecationWarning: The `punycode` module is deprecated.'))
+		.filter((line) => !line.includes('Use `node --trace-deprecation ...` to show where the warning was created'))
+		.join('\n')
+		.trim();
+}
+
 async function createTextSource(label = 'spec110') {
 	return coreModule.createSource(pool, {
 		filename: `${label}-${randomUUID()}.md`,
@@ -488,6 +497,6 @@ describe('Spec 110: translation service', () => {
 		expect(parsed.outcome).toBe('translated');
 		expect(parsed.target_language).toBe('en');
 		expect(parsed.content).toContain('Dev Translation');
-		expect(result.stderr).toBe('');
+		expect(stripKnownNodeWarnings(result.stderr)).toBe('');
 	});
 });
