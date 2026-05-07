@@ -68,6 +68,7 @@ export interface UpdateEdgeInput {
 	confidence?: number | null;
 	edgeType?: EdgeType;
 	analysis?: Record<string, unknown> | null;
+	provenance?: ArtifactProvenanceInput;
 	sensitivityLevel?: SensitivityLevel;
 	sensitivityMetadata?: unknown;
 }

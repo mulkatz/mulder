@@ -590,6 +590,71 @@ const retrievalObj = z.object({
 });
 const retrievalSchema = retrievalObj.default(defaults(retrievalObj));
 
+// --- Similar Case Discovery ---
+
+const similarityCoreDimensionSchema = z.enum(['semantic', 'structural', 'geospatial', 'temporal']);
+
+const similarityDomainDimensionSchema = z.object({
+	id: z.string().min(1),
+	label: z.string().min(1),
+	source: z.enum(['taxonomy_mapping', 'attribute_comparison', 'custom_scorer']),
+	config_ref: z.string().min(1),
+	weight: z.number().min(0).max(1).optional(),
+	metadata: z.record(z.string(), z.unknown()).default({}),
+});
+
+const similarCaseCandidateRetrievalSchema = z.object({
+	vector_top_k: z.number().positive().int().default(100),
+	geo_radius_km: z.number().positive().nullable().default(null),
+	temporal_window_years: z.number().positive().nullable().default(null),
+});
+
+const similarCaseScoringSchema = z.object({
+	core_dimensions: z
+		.array(similarityCoreDimensionSchema)
+		.min(1)
+		.default(['semantic', 'structural', 'geospatial', 'temporal']),
+	weights: z
+		.object({
+			semantic: z.number().min(0).max(1).default(0.25),
+			structural: z.number().min(0).max(1).default(0.2),
+			geospatial: z.number().min(0).max(1).default(0.15),
+			temporal: z.number().min(0).max(1).default(0.1),
+		})
+		.default({
+			semantic: 0.25,
+			structural: 0.2,
+			geospatial: 0.15,
+			temporal: 0.1,
+		}),
+	domain_dimensions: z.array(similarityDomainDimensionSchema).default([]),
+});
+
+const similarCaseExplanationSchema = z.object({
+	enabled: z.boolean().default(true),
+	engine: z.string().min(1).default('deterministic'),
+	max_tokens: z.number().positive().int().default(200),
+});
+
+const similarCaseAutoDiscoverySchema = z.object({
+	enabled: z.boolean().default(true),
+	trigger: z.enum(['on_ingest', 'manual']).default('on_ingest'),
+	threshold: z.number().min(0).max(1).default(0.6),
+	create_graph_edge: z.boolean().default(true),
+	edge_type: z.literal('SIMILAR_TO').default('SIMILAR_TO'),
+	max_auto_links: z.number().positive().int().default(10),
+});
+
+const similarCaseDiscoveryObj = z.object({
+	enabled: z.boolean().default(true),
+	max_results: z.number().positive().int().default(10),
+	candidate_retrieval: similarCaseCandidateRetrievalSchema.default(defaults(similarCaseCandidateRetrievalSchema)),
+	scoring: similarCaseScoringSchema.default(defaults(similarCaseScoringSchema)),
+	explanation: similarCaseExplanationSchema.default(defaults(similarCaseExplanationSchema)),
+	auto_discovery: similarCaseAutoDiscoverySchema.default(defaults(similarCaseAutoDiscoverySchema)),
+});
+const similarCaseDiscoverySchema = similarCaseDiscoveryObj.default(defaults(similarCaseDiscoveryObj));
+
 // --- Grounding (v2.0) ---
 
 const groundingObj = z.object({
@@ -751,6 +816,7 @@ const baseMulderConfigSchema = z.object({
 	graph: graphSchema,
 	embedding: embeddingSchema,
 	retrieval: retrievalSchema,
+	similar_case_discovery: similarCaseDiscoverySchema,
 	grounding: groundingSchema,
 	translation: translationSchema,
 	analysis: analysisSchema,
@@ -844,6 +910,8 @@ export {
 	reviewWorkflowMetricsSchema,
 	reviewWorkflowSchema,
 	safetySchema,
+	similarCaseDiscoverySchema,
+	similarityDomainDimensionSchema,
 	sourceRollbackSchema,
 	storageSchema,
 	taxonomySchema,

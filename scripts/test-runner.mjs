@@ -7,6 +7,7 @@ import pg from 'pg';
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const ROOT = resolve(dirname(SCRIPT_PATH), '..');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
+const VITEST_BIN_SUFFIX = 'node_modules/vitest/vitest.mjs';
 
 function usage() {
 	return [
@@ -123,6 +124,10 @@ function parseArgs(rawArgs) {
 	return { label, isolateDb, keepDb, childCommand };
 }
 
+function isVitestCommand(childCommand) {
+	return childCommand.some((arg) => arg.replaceAll('\\', '/').endsWith(VITEST_BIN_SUFFIX));
+}
+
 async function main() {
 	const { label, isolateDb, keepDb, childCommand } = parseArgs(process.argv.slice(2));
 	const runId = sanitizeIdentifierPart(process.env.MULDER_TEST_RUN_ID ?? `${Date.now()}_${process.pid}`);
@@ -141,7 +146,7 @@ async function main() {
 		MULDER_TEST_STORAGE_ROOT: storageRoot,
 		MULDER_LOG_LEVEL: process.env.MULDER_LOG_LEVEL ?? 'silent',
 	};
-	if (!env.MULDER_CONFIG && existsSync(EXAMPLE_CONFIG)) {
+	if (!env.MULDER_CONFIG && !isVitestCommand(childCommand) && existsSync(EXAMPLE_CONFIG)) {
 		env.MULDER_CONFIG = EXAMPLE_CONFIG;
 	}
 	env.PGHOST = env.PGHOST ?? 'localhost';

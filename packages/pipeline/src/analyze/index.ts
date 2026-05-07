@@ -72,6 +72,7 @@ import type {
 	SpatioTemporalAnalyzeData,
 } from './types.js';
 
+export { discoverSimilarEntities } from './similarity.js';
 export type {
 	AnalyzeData,
 	AnalyzeInput,
@@ -87,6 +88,9 @@ export type {
 	EvidenceChainThesisOutcome,
 	FullAnalyzeData,
 	ReliabilityAnalyzeData,
+	SimilarEntityDiscoveryOptions,
+	SimilarEntityDiscoveryResult,
+	SimilarEntityScore,
 	SingleAnalyzeData,
 	SourceReliabilityOutcome,
 	SpatioTemporalAnalyzeData,

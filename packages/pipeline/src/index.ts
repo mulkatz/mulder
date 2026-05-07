@@ -13,6 +13,9 @@ export type {
 	EvidenceChainThesisOutcome,
 	FullAnalyzeData,
 	ReliabilityAnalyzeData,
+	SimilarEntityDiscoveryOptions,
+	SimilarEntityDiscoveryResult,
+	SimilarEntityScore,
 	SingleAnalyzeData,
 	SourceReliabilityOutcome,
 	SpatioTemporalAnalyzeData,
@@ -21,7 +24,7 @@ export type {
 	SpatioTemporalEvent,
 	WinningClaim,
 } from './analyze/index.js';
-export { execute as executeAnalyze } from './analyze/index.js';
+export { discoverSimilarEntities, execute as executeAnalyze } from './analyze/index.js';
 export type {
 	ChunkerConfig,
 	EmbedChunkInput,

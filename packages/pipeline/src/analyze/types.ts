@@ -5,7 +5,16 @@
  * @see docs/functional-spec.md §2.8
  */
 
-import type { StepError } from '@mulder/core';
+import type {
+	ArtifactProvenanceInput,
+	CoreSimilarityDimensions,
+	DomainSimilarityDimension,
+	SensitivityLevel,
+	SensitivityMetadata,
+	SimilarityCacheRecord,
+	SimilarityResult,
+	StepError,
+} from '@mulder/core';
 
 export interface AnalyzeInput {
 	full?: boolean;
@@ -154,6 +163,44 @@ export interface SpatioTemporalAnalyzeData {
 	spatioTemporalClusterCount: number;
 	clusters: SpatioTemporalCluster[];
 	warning: string | null;
+}
+
+export interface SimilarEntityDiscoveryOptions {
+	entityId: string;
+	candidateIds?: string[];
+	maxResults?: number;
+	persistResults?: boolean;
+	autoDiscover?: boolean;
+	maxSensitivityLevel?: SensitivityLevel;
+	explanation?: string;
+}
+
+export interface SimilarEntityScore {
+	entityId: string;
+	entityTitle: string;
+	overallRank: number;
+	core: CoreSimilarityDimensions;
+	domain: DomainSimilarityDimension[];
+	explanation: string;
+	sharedEntityIds: string[];
+	keyDifferences: string[];
+	weightedRankScore: number;
+	provenance: ArtifactProvenanceInput;
+	autoDiscoveryThreshold: number;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
+	cacheRecord: SimilarityCacheRecord | null;
+	graphEdgeId: string | null;
+	reviewArtifactId: string | null;
+}
+
+export interface SimilarEntityDiscoveryResult {
+	entityId: string;
+	candidatesScored: number;
+	persistedCount: number;
+	autoLinkCount: number;
+	results: SimilarEntityScore[];
+	cachedResults: SimilarityResult[];
 }
 
 export type SingleAnalyzeData =

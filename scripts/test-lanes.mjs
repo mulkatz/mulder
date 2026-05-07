@@ -636,6 +636,7 @@ const TEST_GROUPS = {
 	],
 	translationRepository: ['tests/specs/110_translation_service.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
 	repositoryExports: ['tests/specs/02_monorepo_setup.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	similarityDiscovery: ['tests/specs/113_similar_entity_discovery.test.ts'],
 };
 
 function selectTestGroup(selected, discoveredByPath, groupName) {
@@ -729,6 +730,11 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 		};
 	}
 
+	if (file === 'packages/core/src/database/migrations/043_similarity_cache.sql') {
+		selectGroup('similarityDiscovery');
+		return { rule: 'similarity cache migration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
 	if (file.startsWith('packages/core/src/database/migrations/')) {
 		selectLanes(['schema', 'db', 'heavy']);
 		return { rule: 'unknown migration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
@@ -802,6 +808,11 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 	if (file.startsWith('packages/core/src/database/repositories/translated-document.')) {
 		selectGroup('translationRepository');
 		return { rule: 'translated-document repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/similarity.')) {
+		selectGroup('similarityDiscovery');
+		return { rule: 'similarity repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
 	if (file === 'packages/core/src/database/repositories/index.ts') {
@@ -910,6 +921,11 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 		};
 	}
 
+	if (file.startsWith('packages/pipeline/src/analyze/similarity.')) {
+		selectGroup('similarityDiscovery');
+		return { rule: 'similarity analyze integration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
 	if (file.startsWith('packages/pipeline/')) {
 		selectGroup('pipelineGeneric');
 		return { rule: 'pipeline step/orchestration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
@@ -973,7 +989,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 	return { rule: 'no affected tests mapped', selectedFiles: [] };
 }
 
-function resolveDocsOnlyHeadRule(file) {
+function resolveDocsOnlyHeadRule(file, discoveredByPath, options = {}) {
+	const selected = new Set();
+	const specMatch = file.match(/^docs\/specs\/(\d+)_.*\.spec\.md$/);
+	if (specMatch && options.mapSpecDocs === true) {
+		addDocSpecTestsToSet(selected, discoveredByPath, file);
+		return { rule: `docs spec ${specMatch[1]}`, selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
 	return {
 		rule: isDocsOnlyHeadFile(file) ? 'head docs-only change (build/lint only)' : 'no affected tests mapped',
 		selectedFiles: [],
@@ -1000,11 +1023,15 @@ function buildAffectedPlan(baseRef, explicitChangedFiles = null) {
 	const changed = changeSelection.changedFiles;
 	const selected = new Set();
 	const rules = [];
+	const mapDocsOnlyHeadSpecDocs =
+		changeSelection.changeScope === 'head-docs-only' &&
+		changed.length === 1 &&
+		/^docs\/specs\/\d+_.*\.spec\.md$/.test(changed[0]);
 
 	for (const file of changed) {
 		const result =
 			changeSelection.changeScope === 'head-docs-only'
-				? resolveDocsOnlyHeadRule(file)
+				? resolveDocsOnlyHeadRule(file, discoveredByPath, { mapSpecDocs: mapDocsOnlyHeadSpecDocs })
 				: resolveAffectedRule(file, discoveredByPath, lanes);
 		for (const selectedFile of result.selectedFiles) selected.add(selectedFile);
 		rules.push({ changedFile: file, rule: result.rule, selectedFiles: result.selectedFiles });
