@@ -10,8 +10,19 @@
  */
 
 import type pg from 'pg';
+import { softDeleteReviewArtifactsForPipelineReset } from './review-workflow.repository.js';
+import type { PipelineReviewResetStep } from './review-workflow.types.js';
+import { markTranslatedDocumentsStaleForSource } from './translated-document.repository.js';
 
 export type PipelineStep = 'quality' | 'extract' | 'segment' | 'enrich' | 'embed' | 'graph';
+
+function shouldCleanReviewArtifacts(step: PipelineStep): step is PipelineReviewResetStep {
+	return step === 'extract' || step === 'segment' || step === 'enrich' || step === 'graph';
+}
+
+function shouldMarkTranslationsStale(step: PipelineStep): boolean {
+	return step === 'extract' || step === 'segment';
+}
 
 /**
  * Calls the reset_pipeline_step() PL/pgSQL function.
@@ -19,7 +30,23 @@ export type PipelineStep = 'quality' | 'extract' | 'segment' | 'enrich' | 'embed
  * GCS artifact cleanup must be handled by the caller AFTER this returns.
  */
 export async function resetPipelineStep(pool: pg.Pool, sourceId: string, step: PipelineStep): Promise<void> {
-	await pool.query('SELECT reset_pipeline_step($1, $2)', [sourceId, step]);
+	const client = await pool.connect();
+	try {
+		await client.query('BEGIN');
+		if (shouldCleanReviewArtifacts(step)) {
+			await softDeleteReviewArtifactsForPipelineReset(client, sourceId, step);
+		}
+		if (shouldMarkTranslationsStale(step)) {
+			await markTranslatedDocumentsStaleForSource(client, sourceId);
+		}
+		await client.query('SELECT reset_pipeline_step($1, $2)', [sourceId, step]);
+		await client.query('COMMIT');
+	} catch (cause: unknown) {
+		await client.query('ROLLBACK').catch(() => {});
+		throw cause;
+	} finally {
+		client.release();
+	}
 }
 
 /**

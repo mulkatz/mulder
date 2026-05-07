@@ -166,6 +166,51 @@ document_quality:
     notify_reviewers: false
     priority: "normal"
 
+# --- Access Control ---
+access_control:
+  enabled: true
+  sensitivity:
+    levels: ["public", "internal", "restricted", "confidential"]
+    default_level: "internal"
+    auto_detection: true
+    propagation: "upward"
+    pii_types:
+      - "person_name"
+      - "contact_info"
+      - "medical_data"
+      - "location_private"
+      - "location_sighting"
+      - "financial"
+      - "unpublished_research"
+      - "legal"
+  rbac:
+    roles_source: "config/roles.yaml" # Metadata only; defaults below are self-contained
+    default_role: "analyst"
+    roles:
+      - id: "analyst"
+        name: "Analyst"
+        max_sensitivity_level: "internal"
+        permissions: ["read"]
+      - id: "reviewer"
+        name: "Reviewer"
+        max_sensitivity_level: "restricted"
+        permissions: ["read", "review", "classify"]
+      - id: "admin"
+        name: "Administrator"
+        max_sensitivity_level: "confidential"
+        permissions: ["read", "write", "review", "classify", "delete", "admin", "export", "agent_config"]
+  external_query_gate:
+    enabled: false
+
+# --- Review Workflow ---
+review_workflow:
+  enabled: true
+  metrics:
+    track_accuracy: true
+    auto_adjust_depth: false           # Reserved until a review-depth policy worker exists
+    accuracy_threshold_for_upgrade: 0.7
+    accuracy_threshold_for_downgrade: 0.95
+
 # --- Enrichment ---
 enrichment:
   model: "gemini-2.5-flash"
@@ -238,6 +283,16 @@ grounding:
   cache_ttl_days: 30
   min_confidence: 0.7                 # Reject weakly supported grounding results
   exclude_domains: []                 # Optional low-quality domains to exclude from grounding
+
+# --- Translation ---
+translation:
+  enabled: true
+  default_target_language: "en"
+  supported_languages: ["de", "en", "fr", "es", "pt", "ru", "zh", "ja", "pl", "cs"]
+  engine: "gemini-2.5-flash"
+  output_format: "markdown"           # markdown | html
+  cache_enabled: true
+  max_document_length_tokens: 500000
 
 # --- Analysis (v2.0) ---
 analysis:

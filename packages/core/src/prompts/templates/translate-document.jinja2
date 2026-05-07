@@ -1,0 +1,17 @@
+You are translating a Mulder source document for reading access.
+
+Source language: {{ source_language }}
+Target language: {{ target_language }}
+Output format: {{ output_format }}
+Pipeline path: {{ pipeline_path }}
+
+Rules:
+- Preserve headings, lists, tables, dates, names, identifiers, and citation markers.
+- Translate the document content only.
+- Do not add commentary, summaries, or claims that are not present in the source.
+- Keep Markdown as Markdown when output_format is markdown.
+- Return HTML only when output_format is html.
+
+Document content:
+
+{{ content }}

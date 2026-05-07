@@ -5,6 +5,7 @@
  * serves as documentation and test reference.
  */
 
+import { DEFAULT_ACCESS_ROLE_CONFIGS } from '../shared/access-control.js';
 import type { ApiConfig } from './types.js';
 
 const apiDefaults: ApiConfig = {
@@ -131,6 +132,7 @@ export const CONFIG_DEFAULTS = {
 		rbac: {
 			roles_source: 'config/roles.yaml',
 			default_role: 'analyst',
+			roles: [...DEFAULT_ACCESS_ROLE_CONFIGS],
 		},
 		external_query_gate: {
 			enabled: false,
@@ -145,6 +147,83 @@ export const CONFIG_DEFAULTS = {
 		orphan_handling: 'mark' as const,
 		journal_annotation: true,
 		notify_on_purge: true,
+	},
+
+	credibility: {
+		enabled: true,
+		dimensions: [
+			{ id: 'institutional_authority', label: 'Institutional authority' },
+			{ id: 'domain_track_record', label: 'Domain track record' },
+			{ id: 'conflict_of_interest', label: 'Conflict of interest' },
+			{ id: 'transparency', label: 'Transparency / verifiability' },
+			{ id: 'consistency', label: 'Internal consistency over time' },
+		],
+		auto_profile_on_ingest: true,
+		require_human_review: true,
+		display_in_reports: true,
+		agent_instruction: 'weight_but_never_exclude' as const,
+	},
+
+	contradiction_management: {
+		enabled: true,
+		conflict_types: ['factual', 'interpretive', 'taxonomic', 'temporal', 'spatial', 'attributive'],
+		severity_levels: ['minor', 'significant', 'fundamental'],
+		detection: {
+			pipeline: true,
+			agent: false,
+			human_reported: false,
+			embedding_similarity_band: [0.3, 0.8] as [number, number],
+			require_shared_entity: true,
+			llm_confirmation: true,
+			llm_engine: 'gemini-2.5-pro',
+			min_confidence: 0.7,
+			max_candidates_per_story: 25,
+		},
+		auto_severity_assessment: true,
+		review: {
+			conflict_detection: 'single_review' as const,
+			resolution: 'single_review' as const,
+		},
+		metrics: {
+			track_contradiction_density: true,
+			track_resolution_rate: true,
+			feed_credibility_profiles: true,
+		},
+	},
+
+	review_workflow: {
+		enabled: true,
+		artifact_types: {
+			assertion_classification: {
+				review_depth: 'spot_check' as const,
+				spot_check_percentage: 20,
+				auto_approve_after_hours: 168,
+				auto_approve_min_confidence: 0.9,
+			},
+			credibility_profile: {
+				review_depth: 'double_review' as const,
+				auto_approve_after_hours: null,
+				escalation_reviewer: null,
+			},
+			taxonomy_mapping: {
+				review_depth: 'single_review' as const,
+				auto_approve_after_hours: 336,
+			},
+			similar_case_link: {
+				review_depth: 'single_review' as const,
+				auto_approve_after_hours: 168,
+			},
+			agent_finding: {
+				review_depth: 'single_review' as const,
+				auto_approve_after_hours: null,
+			},
+		},
+		metrics: {
+			track_accuracy: true,
+			auto_adjust_depth: false,
+			accuracy_threshold_for_upgrade: 0.7,
+			accuracy_threshold_for_downgrade: 0.95,
+		},
 	},
 
 	enrichment: {
@@ -217,6 +296,16 @@ export const CONFIG_DEFAULTS = {
 		cache_ttl_days: 30,
 		min_confidence: 0.7,
 		exclude_domains: [],
+	},
+
+	translation: {
+		enabled: true,
+		default_target_language: 'en',
+		supported_languages: ['de', 'en', 'fr', 'es', 'pt', 'ru', 'zh', 'ja', 'pl', 'cs'],
+		engine: 'gemini-2.5-flash',
+		output_format: 'markdown' as const,
+		cache_enabled: true,
+		max_document_length_tokens: 500000,
 	},
 
 	analysis: {

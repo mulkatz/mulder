@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const ROOT = resolve(import.meta.dirname, '../..');
+const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
 /**
  * Black-box QA tests for Spec 03: Config Loader + Zod Schemas
@@ -358,6 +359,35 @@ ontology:
 	describe('QA-07: File not found throws ConfigValidationError', () => {
 		it('throws ConfigValidationError (not raw filesystem error) for non-existent path', () => {
 			expect(() => loadConfig('/does/not/exist.yaml')).toThrow(ConfigValidationError);
+		});
+
+		it('uses the shipped example config when no local default config exists', () => {
+			const freshCheckoutDir = mkdtempSync(join(tmpDir, 'fresh-checkout-'));
+			copyFileSync(EXAMPLE_CONFIG, join(freshCheckoutDir, 'mulder.config.example.yaml'));
+			const originalCwd = process.cwd();
+			const originalEnv = process.env.MULDER_CONFIG;
+
+			try {
+				delete process.env.MULDER_CONFIG;
+				process.chdir(freshCheckoutDir);
+				const fallbackConfig = loadConfig() as Record<string, unknown>;
+				const explicitDefaultConfig = loadConfig('mulder.config.yaml') as Record<string, unknown>;
+				const explicitConfig = loadConfig(EXAMPLE_CONFIG) as Record<string, unknown>;
+
+				expect((fallbackConfig.project as Record<string, unknown>).name).toBe(
+					(explicitConfig.project as Record<string, unknown>).name,
+				);
+				expect((explicitDefaultConfig.project as Record<string, unknown>).name).toBe(
+					(explicitConfig.project as Record<string, unknown>).name,
+				);
+			} finally {
+				process.chdir(originalCwd);
+				if (originalEnv === undefined) {
+					delete process.env.MULDER_CONFIG;
+				} else {
+					process.env.MULDER_CONFIG = originalEnv;
+				}
+			}
 		});
 	});
 

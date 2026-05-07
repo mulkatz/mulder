@@ -11,6 +11,7 @@
  */
 
 import type pg from 'pg';
+import { allowedSensitivityLevelsForMax } from '../../shared/access-control.js';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
 import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
@@ -186,11 +187,14 @@ export async function linkStoryEntity(pool: pg.Pool, input: LinkStoryEntityInput
 export async function findEntitiesByStoryId(
 	pool: pg.Pool,
 	storyId: string,
-	options?: { includeDeleted?: boolean },
+	options?: { includeDeleted?: boolean; maxSensitivityLevel?: StoryEntityWithEntity['sensitivityLevel'] },
 ): Promise<StoryEntityWithEntity[]> {
 	const activeVisibilityClause = options?.includeDeleted
 		? ''
 		: `AND ${activeSourceClause('src')} AND ${storyEntityActiveSourceClause('se')} AND ${entityActiveSourceClause('e')}`;
+	const sensitivityClause = options?.maxSensitivityLevel
+		? 'AND se.sensitivity_level = ANY($2) AND e.sensitivity_level = ANY($2) AND s.sensitivity_level = ANY($2) AND src.sensitivity_level = ANY($2)'
+		: '';
 	const sql = `
     SELECT
       e.*,
@@ -205,6 +209,7 @@ export async function findEntitiesByStoryId(
     JOIN sources src ON src.id = s.source_id
     WHERE se.story_id = $1
       ${activeVisibilityClause}
+      ${sensitivityClause}
     ORDER BY e.name
   `;
 	const legacySql = `
@@ -235,6 +240,7 @@ export async function findEntitiesByStoryId(
     JOIN stories s ON s.id = se.story_id
     JOIN sources src ON src.id = s.source_id
     WHERE se.story_id = $1
+      ${sensitivityClause}
     ORDER BY e.name
   `;
 	const withoutSensitivitySql = `
@@ -253,7 +259,10 @@ export async function findEntitiesByStoryId(
       ${activeVisibilityClause}
     ORDER BY e.name
   `;
-	const params = [storyId];
+	const params = options?.maxSensitivityLevel
+		? [storyId, allowedSensitivityLevelsForMax(options.maxSensitivityLevel)]
+		: [storyId];
+	const fallbackParams = [storyId];
 
 	try {
 		const result = await queryWithSensitivityAndSourceDeletionFallback<EntityWithJunctionRow>(
@@ -261,11 +270,11 @@ export async function findEntitiesByStoryId(
 			sql,
 			params,
 			withoutSensitivitySql,
-			params,
+			fallbackParams,
 			withoutSourceDeletionSql,
 			params,
 			legacySql,
-			params,
+			fallbackParams,
 		);
 		return result.rows.map(mapEntityWithJunctionRow);
 	} catch (error: unknown) {
@@ -284,24 +293,29 @@ export async function findEntitiesByStoryId(
 export async function findStoriesByEntityId(
 	pool: pg.Pool,
 	entityId: string,
-	options?: { includeDeleted?: boolean },
+	options?: { includeDeleted?: boolean; maxSensitivityLevel?: StoryEntityWithStory['sensitivityLevel'] },
 ): Promise<StoryEntityWithStory[]> {
 	const activeVisibilityClause = options?.includeDeleted
 		? ''
 		: `AND ${activeSourceClause('src')} AND ${storyEntityActiveSourceClause('se')}`;
+	const sensitivityClause = options?.maxSensitivityLevel
+		? 'AND se.sensitivity_level = ANY($2) AND s.sensitivity_level = ANY($2) AND src.sensitivity_level = ANY($2) AND e.sensitivity_level = ANY($2)'
+		: '';
 	const sql = `
-    SELECT
-      s.*,
+	    SELECT
+	      s.*,
       se.confidence,
       se.mention_count,
       se.provenance AS junction_provenance,
       se.sensitivity_level AS junction_sensitivity_level,
       se.sensitivity_metadata AS junction_sensitivity_metadata
-    FROM stories s
-    JOIN story_entities se ON se.story_id = s.id
-    JOIN sources src ON src.id = s.source_id
-    WHERE se.entity_id = $1
+	    FROM stories s
+	    JOIN story_entities se ON se.story_id = s.id
+	    JOIN entities e ON e.id = se.entity_id
+	    JOIN sources src ON src.id = s.source_id
+	    WHERE se.entity_id = $1
       ${activeVisibilityClause}
+      ${sensitivityClause}
     ORDER BY s.created_at DESC
   `;
 	const legacySql = `
@@ -312,10 +326,11 @@ export async function findStoriesByEntityId(
       se.provenance AS junction_provenance,
       NULL::text AS junction_sensitivity_level,
       NULL::jsonb AS junction_sensitivity_metadata
-    FROM stories s
-    JOIN story_entities se ON se.story_id = s.id
-    JOIN sources src ON src.id = s.source_id
-    WHERE se.entity_id = $1
+	    FROM stories s
+	    JOIN story_entities se ON se.story_id = s.id
+	    JOIN entities e ON e.id = se.entity_id
+	    JOIN sources src ON src.id = s.source_id
+	    WHERE se.entity_id = $1
     ORDER BY s.created_at DESC
   `;
 	const withoutSourceDeletionSql = `
@@ -330,6 +345,7 @@ export async function findStoriesByEntityId(
     JOIN story_entities se ON se.story_id = s.id
     JOIN sources src ON src.id = s.source_id
     WHERE se.entity_id = $1
+      ${sensitivityClause}
     ORDER BY s.created_at DESC
   `;
 	const withoutSensitivitySql = `
@@ -347,7 +363,10 @@ export async function findStoriesByEntityId(
       ${activeVisibilityClause}
     ORDER BY s.created_at DESC
   `;
-	const params = [entityId];
+	const params = options?.maxSensitivityLevel
+		? [entityId, allowedSensitivityLevelsForMax(options.maxSensitivityLevel)]
+		: [entityId];
+	const fallbackParams = [entityId];
 
 	try {
 		const result = await queryWithSensitivityAndSourceDeletionFallback<StoryWithJunctionRow>(
@@ -355,11 +374,11 @@ export async function findStoriesByEntityId(
 			sql,
 			params,
 			withoutSensitivitySql,
-			params,
+			fallbackParams,
 			withoutSourceDeletionSql,
 			params,
 			legacySql,
-			params,
+			fallbackParams,
 		);
 		return result.rows.map(mapStoryWithJunctionRow);
 	} catch (error: unknown) {

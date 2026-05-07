@@ -14,8 +14,19 @@ const SERIAL_VITEST_ARGS = ['--no-file-parallelism', '--maxWorkers=1'];
 const PARALLEL_VITEST_ARGS = ['--fileParallelism=true'];
 const LANE_ORDER = ['unit', 'schema', 'db', 'heavy', 'external'];
 const HEALTH_SMOKE_TEST = 'tests/specs/44_e2e_pipeline_integration.test.ts';
+const HEAD_DOCS_ONLY_OPTIMIZATION_ENV = 'MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY';
+const HEAD_CHANGED_FILES_OVERRIDE_ENV = 'MULDER_TEST_AFFECTED_HEAD_CHANGED_FILES';
+const HEAD_REF_ENV = 'MULDER_TEST_AFFECTED_HEAD_REF';
 const SPEC_DOC_TEST_OVERRIDES = new Map([
 	['77_document_observability_aggregation', ['tests/specs/77_document_observability_route.test.ts']],
+	[
+		'112_m11_trust_layer_review_repair',
+		[
+			'tests/specs/107_credibility_profile_drafts.test.ts',
+			'tests/specs/109_review_workflow_infrastructure.test.ts',
+			'tests/specs/111_rbac_implementation.test.ts',
+		],
+	],
 ]);
 
 function usage() {
@@ -329,6 +340,78 @@ function gitChangedFiles(baseRef) {
 		.filter(Boolean);
 }
 
+function splitChangedFiles(value) {
+	return value
+		.split(/\r?\n|,/)
+		.map((line) => line.trim())
+		.filter(Boolean);
+}
+
+function gitHeadChangedFiles() {
+	const override = process.env[HEAD_CHANGED_FILES_OVERRIDE_ENV];
+	if (override) {
+		return splitChangedFiles(override);
+	}
+
+	const headRef = process.env[HEAD_REF_ENV]?.trim();
+	if (headRef) {
+		const result = spawnSync('git', ['diff', '--name-only', `${headRef}^`, headRef], {
+			cwd: ROOT,
+			encoding: 'utf8',
+			stdio: ['ignore', 'pipe', 'pipe'],
+		});
+		if (result.status === 0) {
+			return splitChangedFiles(result.stdout);
+		}
+	}
+
+	const status = spawnSync('git', ['status', '--porcelain'], {
+		cwd: ROOT,
+		encoding: 'utf8',
+		stdio: ['ignore', 'pipe', 'pipe'],
+	});
+	if (status.status !== 0 || status.stdout.trim().length > 0) {
+		return [];
+	}
+
+	const result = spawnSync('git', ['diff', '--name-only', 'HEAD~1..HEAD'], {
+		cwd: ROOT,
+		encoding: 'utf8',
+		stdio: ['ignore', 'pipe', 'pipe'],
+	});
+	if (result.status !== 0) {
+		return [];
+	}
+	return splitChangedFiles(result.stdout);
+}
+
+function isDocsOnlyHeadFile(file) {
+	if (file === 'README.md' || file === 'CLAUDE.md') {
+		return true;
+	}
+	if (/^[^/]+\.md$/.test(file)) {
+		return true;
+	}
+	return (file.startsWith('docs/') || file.startsWith('.codex/')) && file.endsWith('.md');
+}
+
+function affectedChangedFiles(baseRef) {
+	if (baseRef && process.env[HEAD_DOCS_ONLY_OPTIMIZATION_ENV] === 'true') {
+		const headChangedFiles = gitHeadChangedFiles();
+		if (headChangedFiles.length > 0 && headChangedFiles.every(isDocsOnlyHeadFile)) {
+			return {
+				changeScope: 'head-docs-only',
+				changedFiles: headChangedFiles,
+			};
+		}
+	}
+
+	return {
+		changeScope: 'base',
+		changedFiles: gitChangedFiles(baseRef),
+	};
+}
+
 function testsForSpecNumber(specNumber, discoveredByPath) {
 	const padded = String(Number.parseInt(specNumber, 10)).padStart(2, '0');
 	return [...discoveredByPath.keys()].filter((path) => path.startsWith(`tests/specs/${padded}_`));
@@ -535,6 +618,24 @@ const TEST_GROUPS = {
 		'tests/specs/66_evidence_package_boundary.test.ts',
 		'tests/specs/75_evidence_api_routes.test.ts',
 	],
+	rbacSchema: ['tests/specs/08_core_schema_migrations.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	rbacAccessControl: ['tests/specs/03_config_loader.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	rbacDocumentsApi: ['tests/specs/76_document_retrieval_routes.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	rbacEntitiesApi: ['tests/specs/74_entity_api_routes.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	sourceRepository: ['tests/specs/14_source_repository.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	storyRepository: ['tests/specs/22_story_repository.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	entityRepository: ['tests/specs/24_entity_alias_repositories.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	edgeRepository: ['tests/specs/25_edge_repository.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	conflictRepository: [
+		'tests/specs/108_conflict_node_management.test.ts',
+		'tests/specs/111_rbac_implementation.test.ts',
+	],
+	reviewRepository: [
+		'tests/specs/109_review_workflow_infrastructure.test.ts',
+		'tests/specs/111_rbac_implementation.test.ts',
+	],
+	translationRepository: ['tests/specs/110_translation_service.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
+	repositoryExports: ['tests/specs/02_monorepo_setup.test.ts', 'tests/specs/111_rbac_implementation.test.ts'],
 };
 
 function selectTestGroup(selected, discoveredByPath, groupName) {
@@ -579,6 +680,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 		};
 	}
 
+	if (file === 'mulder.config.example.yaml') {
+		selectGroup('rbacAccessControl');
+		return {
+			rule: 'example config access-control smoke',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
 	if (file === 'packages/core/src/config/reprocess-hash.ts') {
 		selectGroup('reprocessConfig');
 		return { rule: 'reprocess config hash', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
@@ -602,9 +711,102 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 		};
 	}
 
+	if (file === 'packages/core/src/database/migrations/041_access_roles.sql') {
+		selectGroup('rbacSchema');
+		return { rule: 'rbac access-role migration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file === 'packages/core/src/database/migrations/042_source_credibility_trust_metadata.sql') {
+		selectExact([
+			'tests/specs/08_core_schema_migrations.test.ts',
+			'tests/specs/107_credibility_profile_drafts.test.ts',
+			'tests/specs/109_review_workflow_infrastructure.test.ts',
+			'tests/specs/111_rbac_implementation.test.ts',
+		]);
+		return {
+			rule: 'source credibility trust metadata migration',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
 	if (file.startsWith('packages/core/src/database/migrations/')) {
 		selectLanes(['schema', 'db', 'heavy']);
 		return { rule: 'unknown migration', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/access-role')) {
+		selectExact(['tests/specs/111_rbac_implementation.test.ts']);
+		return { rule: 'rbac access-role repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/source-credibility.')) {
+		selectExact([
+			'tests/specs/107_credibility_profile_drafts.test.ts',
+			'tests/specs/109_review_workflow_infrastructure.test.ts',
+			'tests/specs/111_rbac_implementation.test.ts',
+		]);
+		return {
+			rule: 'source credibility repository',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/knowledge-assertion.')) {
+		selectExact([
+			'tests/specs/101_assertion_classification_enrich.test.ts',
+			'tests/specs/109_review_workflow_infrastructure.test.ts',
+			'tests/specs/111_rbac_implementation.test.ts',
+		]);
+		return {
+			rule: 'knowledge assertion repository',
+			selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)),
+		};
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/source.')) {
+		selectGroup('sourceRepository');
+		return { rule: 'source repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (
+		file.startsWith('packages/core/src/database/repositories/story.') ||
+		file.startsWith('packages/core/src/database/repositories/story-entity.')
+	) {
+		selectGroup('storyRepository');
+		return { rule: 'story repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (
+		file.startsWith('packages/core/src/database/repositories/entity.') ||
+		file.startsWith('packages/core/src/database/repositories/entity-alias.')
+	) {
+		selectGroup('entityRepository');
+		return { rule: 'entity repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/edge.')) {
+		selectGroup('edgeRepository');
+		return { rule: 'edge repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/conflict-node.')) {
+		selectGroup('conflictRepository');
+		return { rule: 'conflict-node repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/review-workflow.')) {
+		selectGroup('reviewRepository');
+		return { rule: 'review-workflow repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file.startsWith('packages/core/src/database/repositories/translated-document.')) {
+		selectGroup('translationRepository');
+		return { rule: 'translated-document repository', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file === 'packages/core/src/database/repositories/index.ts') {
+		selectGroup('repositoryExports');
+		return { rule: 'repository barrel exports', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
 	if (file.startsWith('packages/core/src/database/repositories/document-quality')) {
@@ -656,6 +858,11 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 	if (file.startsWith('packages/core/src/shared/cost-estimator')) {
 		selectExact(['tests/specs/77_cost_estimator.test.ts', 'tests/specs/78_selective_reprocessing.test.ts']);
 		return { rule: 'cost estimator', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file === 'packages/core/src/shared/access-control.ts') {
+		selectGroup('rbacAccessControl');
+		return { rule: 'rbac access-control helpers', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
 	if (file.startsWith('packages/core/src/shared/')) {
@@ -733,6 +940,16 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 		return { rule: 'evidence package', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
 	}
 
+	if (file === 'apps/api/src/lib/documents.ts' || file === 'apps/api/src/routes/documents.ts') {
+		selectGroup('rbacDocumentsApi');
+		return { rule: 'documents api route/runtime', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
+	if (file === 'apps/api/src/lib/entities.ts' || file === 'apps/api/src/routes/entities.ts') {
+		selectGroup('rbacEntitiesApi');
+		return { rule: 'entities api route/runtime', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
 	if (file.startsWith('apps/api/')) {
 		selectGroup('api');
 		return { rule: 'api routes/runtime', selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
@@ -756,6 +973,13 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 	return { rule: 'no affected tests mapped', selectedFiles: [] };
 }
 
+function resolveDocsOnlyHeadRule(file) {
+	return {
+		rule: isDocsOnlyHeadFile(file) ? 'head docs-only change (build/lint only)' : 'no affected tests mapped',
+		selectedFiles: [],
+	};
+}
+
 function laneNameForFile(relativePath, lanes) {
 	for (const [laneName, lane] of Object.entries(lanes)) {
 		if (lane.files.some((file) => file.relativePath === relativePath)) {
@@ -770,12 +994,18 @@ function buildAffectedPlan(baseRef, explicitChangedFiles = null) {
 	const weightedByPath = new Map(
 		Object.values(lanes).flatMap((lane) => lane.files.map((file) => [file.relativePath, file])),
 	);
-	const changed = explicitChangedFiles ?? gitChangedFiles(baseRef);
+	const changeSelection = explicitChangedFiles
+		? { changeScope: 'explicit', changedFiles: explicitChangedFiles }
+		: affectedChangedFiles(baseRef);
+	const changed = changeSelection.changedFiles;
 	const selected = new Set();
 	const rules = [];
 
 	for (const file of changed) {
-		const result = resolveAffectedRule(file, discoveredByPath, lanes);
+		const result =
+			changeSelection.changeScope === 'head-docs-only'
+				? resolveDocsOnlyHeadRule(file)
+				: resolveAffectedRule(file, discoveredByPath, lanes);
 		for (const selectedFile of result.selectedFiles) selected.add(selectedFile);
 		rules.push({ changedFile: file, rule: result.rule, selectedFiles: result.selectedFiles });
 	}
@@ -812,6 +1042,7 @@ function buildAffectedPlan(baseRef, explicitChangedFiles = null) {
 
 	return {
 		baseRef: baseRef ?? null,
+		changeScope: changeSelection.changeScope,
 		changedFiles: changed,
 		totalFiles: files.length,
 		totalWeight,
@@ -845,6 +1076,7 @@ function rewriteJUnitOutputArgs(extraArgs, suffix) {
 function formatAffectedPlan(plan) {
 	const lines = [
 		`Affected tests${plan.baseRef ? ` against ${plan.baseRef}` : ''}`,
+		`Change scope: ${plan.changeScope}`,
 		`Changed files: ${plan.changedFiles.length}`,
 		...plan.changedFiles.map((file) => ` - ${file}`),
 		'Rules:',

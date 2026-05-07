@@ -15,6 +15,7 @@ const TEST_LANES_SCRIPT = resolve(ROOT, 'scripts/test-lanes.mjs');
 const PACKAGE_JSON = resolve(ROOT, 'package.json');
 
 type AffectedPlan = {
+	changeScope: string;
 	totalFiles: number;
 	lanes: Record<string, { count: number; files: string[]; totalWeight: number }>;
 	files: Array<{ relativePath: string; lane: string; weight: number }>;
@@ -46,12 +47,16 @@ function runVitest(args: string[], env?: Record<string, string>): { stdout: stri
 	};
 }
 
-function runTestLanes(args: string[]): { stdout: string; stderr: string; exitCode: number } {
+function runTestLanes(
+	args: string[],
+	env?: Record<string, string>,
+): { stdout: string; stderr: string; exitCode: number } {
 	const result = spawnSync('node', [TEST_LANES_SCRIPT, ...args], {
 		cwd: ROOT,
 		encoding: 'utf-8',
 		timeout: 60_000,
 		stdio: ['pipe', 'pipe', 'pipe'],
+		env: { ...process.env, ...env },
 	});
 
 	return {
@@ -61,8 +66,23 @@ function runTestLanes(args: string[]): { stdout: string; stderr: string; exitCod
 	};
 }
 
+function affectedPlanForFiles(changedFiles: string[]): AffectedPlan {
+	const changedFileArgs = changedFiles.flatMap((changedFile) => ['--changed-file', changedFile]);
+	const result = runTestLanes(['affected-plan', ...changedFileArgs, '--json']);
+	expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
+	return JSON.parse(result.stdout) as AffectedPlan;
+}
+
 function affectedPlanFor(changedFile: string): AffectedPlan {
-	const result = runTestLanes(['affected-plan', '--changed-file', changedFile, '--json']);
+	return affectedPlanForFiles([changedFile]);
+}
+
+function affectedHeadPlanForFiles(changedFiles: string[]): AffectedPlan {
+	const result = runTestLanes(['affected-plan', 'origin/main', '--json'], {
+		MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: 'true',
+		MULDER_TEST_AFFECTED_HEAD_CHANGED_FILES: changedFiles.join('\n'),
+		MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: 'true',
+	});
 	expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
 	return JSON.parse(result.stdout) as AffectedPlan;
 }
@@ -141,17 +161,26 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		const gcpWorkflow = readFileSync(GCP_WORKFLOW, 'utf-8');
 
 		expect(ciWorkflow).toContain("if: github.event_name == 'pull_request'");
+		expect(ciWorkflow).toContain("startsWith(github.ref, 'refs/heads/milestone/')");
 		expect(ciWorkflow).toContain('pr-affected-plan');
 		expect(ciWorkflow).toContain('pr-affected-schema');
 		expect(ciWorkflow).toContain('pr-affected-db');
 		expect(ciWorkflow).toContain('pr-affected-heavy');
 		expect(ciWorkflow).toContain('pr-affected-tests');
 		expect(ciWorkflow).toContain('Check affected lane results');
+		expect(ciWorkflow).toContain('needs: build');
+		expect(ciWorkflow).toContain('needs: [build, pr-affected-plan]');
+		expect(ciWorkflow).toContain(
+			'needs: [pr-affected-plan, health, pr-affected-schema, pr-affected-db, pr-affected-heavy]',
+		);
+		expect(ciWorkflow).toContain(['echo "health: $', '{{ needs.health.result }}"'].join(''));
+		expect(ciWorkflow).not.toContain('needs: [build, health]');
 		expect(ciWorkflow).toContain('full-schema-tests');
 		expect(ciWorkflow).toContain('full-db-tests');
 		expect(ciWorkflow).toContain('full-heavy-tests');
 		expect(ciWorkflow).toContain('full-external-tests');
-		expect(ciWorkflow).toContain('affected-plan origin/');
+		expect(ciWorkflow).toContain(['BASE_REF="$', '{{ github.event.before }}"'].join(''));
+		expect(ciWorkflow).toContain(['BASE_REF="origin/$', '{{ github.base_ref }}"'].join(''));
 		expect(ciWorkflow).toContain('--json > .test-results/affected-plan.json');
 		expect(ciWorkflow).toContain('pnpm test:affected:lane -- schema');
 		expect(ciWorkflow).toContain('pnpm test:affected:lane -- db');
@@ -159,9 +188,15 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		expect(ciWorkflow).toContain('pnpm test:lane -- schema');
 		expect(ciWorkflow).toContain('pnpm test:lane -- db');
 		expect(ciWorkflow).toContain('pnpm test:lane -- heavy');
+		expect(ciWorkflow).toContain(
+			"if: github.event_name != 'pull_request' && (github.event_name != 'push' || !startsWith(github.ref, 'refs/heads/milestone/'))",
+		);
 		expect(ciWorkflow).toContain('Run E2E health check (Spec 44)');
 		expect(ciWorkflow).toContain('pnpm test:health');
 		expect(ciWorkflow).toContain('MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: "true"');
+		expect(ciWorkflow).toContain('MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"');
+		expect(ciWorkflow).toContain('MULDER_TEST_AFFECTED_HEAD_REF: ${{ github.event_name ==');
+		expect(readFileSync(TEST_LANES_SCRIPT, 'utf-8')).toContain("const HEAD_REF_ENV = 'MULDER_TEST_AFFECTED_HEAD_REF'");
 		expect(gcpWorkflow).toContain('workflow_dispatch');
 		expect(gcpWorkflow).toContain('schedule:');
 	});
@@ -255,6 +290,74 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		expect(taxonomyPlan.totalFiles).toBeLessThan(10);
 	});
 
+	it('QA-05e4: access-role migrations stay scoped to schema and RBAC specs', () => {
+		const plan = affectedPlanFor('packages/core/src/database/migrations/041_access_roles.sql');
+		const files = plan.files.map((file) => file.relativePath);
+
+		expect(files).toEqual(
+			expect.arrayContaining([
+				'tests/specs/08_core_schema_migrations.test.ts',
+				'tests/specs/111_rbac_implementation.test.ts',
+			]),
+		);
+		expect(plan.totalFiles).toBe(2);
+		expect(plan.lanes.heavy.count).toBe(0);
+	});
+
+	it('QA-05e5: RBAC API/config surfaces do not fan out to the full DB lane', () => {
+		const plan = affectedPlanForFiles([
+			'mulder.config.example.yaml',
+			'packages/core/src/shared/access-control.ts',
+			'apps/api/src/lib/documents.ts',
+			'apps/api/src/lib/entities.ts',
+		]);
+		const files = plan.files.map((file) => file.relativePath);
+
+		expect(files).toEqual(
+			expect.arrayContaining([
+				'tests/specs/03_config_loader.test.ts',
+				'tests/specs/74_entity_api_routes.test.ts',
+				'tests/specs/76_document_retrieval_routes.test.ts',
+				'tests/specs/111_rbac_implementation.test.ts',
+			]),
+		);
+		expect(plan.totalFiles).toBe(4);
+		expect(plan.lanes.heavy.count).toBe(0);
+	});
+
+	it('QA-05e5b: M11 review-repair surfaces stay scoped to trust-layer specs', () => {
+		const plan = affectedPlanForFiles([
+			'packages/core/src/database/migrations/042_source_credibility_trust_metadata.sql',
+			'packages/core/src/database/repositories/source-credibility.repository.ts',
+			'packages/core/src/database/repositories/knowledge-assertion.repository.ts',
+			'docs/specs/112_m11_trust_layer_review_repair.spec.md',
+		]);
+		const files = plan.files.map((file) => file.relativePath);
+
+		expect(files).toEqual(
+			expect.arrayContaining([
+				'tests/specs/08_core_schema_migrations.test.ts',
+				'tests/specs/101_assertion_classification_enrich.test.ts',
+				'tests/specs/107_credibility_profile_drafts.test.ts',
+				'tests/specs/109_review_workflow_infrastructure.test.ts',
+				'tests/specs/111_rbac_implementation.test.ts',
+			]),
+		);
+		expect(plan.totalFiles).toBe(5);
+		expect(plan.lanes.heavy.count).toBe(0);
+	});
+
+	it('QA-05e6: docs-only PR head commits do not select DB or schema lanes', () => {
+		const plan = affectedHeadPlanForFiles(['docs/specs/111_rbac_implementation.spec.md', 'docs/roadmap.md']);
+
+		expect(plan.changeScope).toBe('head-docs-only');
+		expect(plan.totalFiles).toBe(0);
+		expect(plan.lanes.schema.count).toBe(0);
+		expect(plan.lanes.db.count).toBe(0);
+		expect(plan.lanes.heavy.count).toBe(0);
+		expect(plan.rules.every((rule) => rule.rule === 'head docs-only change (build/lint only)')).toBe(true);
+	});
+
 	it('QA-05f: affected lane shards pass cleanly when their selected shard is empty', () => {
 		const emptyDbShard = runTestLanes([
 			'affected-lane',
@@ -328,5 +431,37 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		} finally {
 			rmSync(storageRoot, { recursive: true, force: true });
 		}
+	});
+
+	it('QA-07: test runner defaults fresh checkouts to the shipped example config', () => {
+		const env = { ...process.env };
+		delete env.MULDER_CONFIG;
+		const result = spawnSync(
+			'node',
+			[
+				'scripts/test-runner.mjs',
+				'run',
+				'qa59-config',
+				'--',
+				'node',
+				'--input-type=module',
+				'-e',
+				[
+					'const config = process.env.MULDER_CONFIG;',
+					"if (!config || !config.endsWith('mulder.config.example.yaml')) throw new Error('unexpected config ' + config);",
+				].join(' '),
+			],
+			{
+				cwd: ROOT,
+				encoding: 'utf-8',
+				timeout: 60_000,
+				stdio: ['pipe', 'pipe', 'pipe'],
+				env,
+			},
+		);
+
+		expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+		expect(result.stdout).toContain('test-runner: config=');
+		expect(result.stdout).toContain('mulder.config.example.yaml');
 	});
 });

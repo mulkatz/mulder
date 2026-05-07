@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import {
+	type AccessPrincipal,
 	countProcessedSources,
 	countSources,
 	createChildLogger,
@@ -24,6 +25,7 @@ import {
 	type PipelineRun,
 	type PipelineRunSource,
 	presentCorroborationScore,
+	resolveAccessPolicy,
 	type Services,
 	type Source,
 	type SourceFilter,
@@ -31,6 +33,7 @@ import {
 	type Story,
 } from '@mulder/core';
 import type pg from 'pg';
+import type { AuthPrincipal } from '../middleware/auth.js';
 import type {
 	DocumentArtifact,
 	DocumentListItem,
@@ -47,6 +50,10 @@ import { PIPELINE_STEP_VALUES } from '../routes/pipeline.schemas.js';
 interface DocumentContext {
 	config: MulderConfig;
 	pool: pg.Pool;
+}
+
+interface RouteAccessOptions {
+	authPrincipal?: AuthPrincipal;
 }
 
 const DOCUMENT_NOT_FOUND_CODE = 'DOCUMENT_NOT_FOUND';
@@ -95,6 +102,29 @@ function resolveContext(): DocumentContext {
 	cachedConfigPath = configPath;
 
 	return cachedContext;
+}
+
+function mapAuthPrincipal(principal: AuthPrincipal | undefined): AccessPrincipal {
+	if (!principal) {
+		return { kind: 'service' };
+	}
+	if (principal.type === 'api_key') {
+		return { kind: 'api_key' };
+	}
+	return {
+		kind: 'browser_session',
+		browserRole: principal.role,
+	};
+}
+
+function resolveReadMaxSensitivity(config: MulderConfig, authPrincipal: AuthPrincipal | undefined) {
+	const policy = resolveAccessPolicy(config, mapAuthPrincipal(authPrincipal));
+	if (!policy.permissions.includes('read') && !policy.permissions.includes('admin')) {
+		throw new MulderError('The current principal cannot read documents', 'AUTH_FORBIDDEN', {
+			context: { principal_kind: policy.principalKind },
+		});
+	}
+	return policy.enabled ? policy.maxSensitivityLevel : undefined;
 }
 
 function toIsoString(value: Date): string {
@@ -737,7 +767,11 @@ async function resolveObservabilityState(
 	};
 }
 
-async function buildDocumentObservabilityResponse(id: string, logger: Logger): Promise<DocumentObservabilityResponse> {
+async function buildDocumentObservabilityResponse(
+	id: string,
+	logger: Logger,
+	options?: RouteAccessOptions,
+): Promise<DocumentObservabilityResponse> {
 	const requestLogger = createRouteLogger(logger, {
 		action: 'observability',
 		source_id: id,
@@ -745,12 +779,13 @@ async function buildDocumentObservabilityResponse(id: string, logger: Logger): P
 	const { config, pool } = resolveContext();
 	const services = createServiceRegistry(config, requestLogger);
 	const startedAt = performance.now();
-	const source = await requireSource(pool, id);
+	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal);
+	const source = await requireSource(pool, id, maxSensitivityLevel);
 
 	const [sourceProjectionRecord, sourceSteps, stories, observabilityState] = await Promise.all([
 		services.firestore.getDocument('documents', id),
 		findSourceSteps(pool, id),
-		findStoriesBySourceId(pool, id),
+		findStoriesBySourceId(pool, id, { maxSensitivityLevel }),
 		resolveObservabilityState(pool, id),
 	]);
 
@@ -814,8 +849,12 @@ function notFoundError(message: string, context: Record<string, unknown>): Mulde
 	return new MulderError(message, DOCUMENT_NOT_FOUND_CODE, { context });
 }
 
-async function requireSource(pool: pg.Pool, id: string): Promise<Source> {
-	const source = await findSourceById(pool, id);
+async function requireSource(
+	pool: pg.Pool,
+	id: string,
+	maxSensitivityLevel?: Source['sensitivityLevel'],
+): Promise<Source> {
+	const source = await findSourceById(pool, id, { maxSensitivityLevel });
 	if (!source) {
 		throw notFoundError(`Document not found: ${id}`, { id });
 	}
@@ -878,7 +917,11 @@ async function loadArtifactBytes(
 	return await services.storage.download(artifact.storage_path);
 }
 
-async function buildDocumentListResponse(input: DocumentListQuery, logger: Logger): Promise<DocumentListResponse> {
+async function buildDocumentListResponse(
+	input: DocumentListQuery,
+	logger: Logger,
+	options?: RouteAccessOptions,
+): Promise<DocumentListResponse> {
 	const requestLogger = createRouteLogger(logger, {
 		action: 'list',
 		status: input.status ?? null,
@@ -888,11 +931,13 @@ async function buildDocumentListResponse(input: DocumentListQuery, logger: Logge
 	});
 	const { config, pool } = resolveContext();
 	const services = createServiceRegistry(config, requestLogger);
+	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal);
 	const filter: SourceFilter = {
 		status: input.status,
 		search: input.search,
 		limit: input.limit,
 		offset: input.offset,
+		maxSensitivityLevel,
 	};
 	const startedAt = performance.now();
 
@@ -929,9 +974,13 @@ async function buildDocumentListResponse(input: DocumentListQuery, logger: Logge
 	return response;
 }
 
-export async function listDocuments(input: DocumentListQuery, logger?: Logger): Promise<DocumentListResponse> {
+export async function listDocuments(
+	input: DocumentListQuery,
+	logger?: Logger,
+	options?: RouteAccessOptions,
+): Promise<DocumentListResponse> {
 	const rootLogger = logger ?? createLogger();
-	return await buildDocumentListResponse(input, rootLogger);
+	return await buildDocumentListResponse(input, rootLogger, options);
 }
 
 async function loadStoryMarkdown(services: Services, story: Story): Promise<string> {
@@ -948,7 +997,11 @@ async function loadStoryMarkdown(services: Services, story: Story): Promise<stri
 	return buffer.toString('utf-8');
 }
 
-export async function getDocumentStories(id: string, logger?: Logger): Promise<DocumentStoriesResponse> {
+export async function getDocumentStories(
+	id: string,
+	logger?: Logger,
+	options?: RouteAccessOptions,
+): Promise<DocumentStoriesResponse> {
 	const rootLogger = logger ?? createLogger();
 	const requestLogger = createRouteLogger(rootLogger, {
 		action: 'stories',
@@ -957,8 +1010,9 @@ export async function getDocumentStories(id: string, logger?: Logger): Promise<D
 	const { config, pool } = resolveContext();
 	const services = createServiceRegistry(config, requestLogger);
 	const startedAt = performance.now();
-	const source = await requireSource(pool, id);
-	const stories = await findStoriesBySourceId(pool, source.id);
+	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal);
+	const source = await requireSource(pool, id, maxSensitivityLevel);
+	const stories = await findStoriesBySourceId(pool, source.id, { maxSensitivityLevel });
 	const corpusSize = await countProcessedSources(pool);
 	const entityPresentation = {
 		corpusSize,
@@ -969,7 +1023,7 @@ export async function getDocumentStories(id: string, logger?: Logger): Promise<D
 		stories.map(async (story): Promise<DocumentStoryResponse> => {
 			const [markdown, entities] = await Promise.all([
 				loadStoryMarkdown(services, story),
-				findEntitiesByStoryId(pool, story.id),
+				findEntitiesByStoryId(pool, story.id, { maxSensitivityLevel }),
 			]);
 
 			return {
@@ -1011,12 +1065,16 @@ export async function getDocumentStories(id: string, logger?: Logger): Promise<D
 	return response;
 }
 
-export async function getDocumentObservability(id: string, logger?: Logger): Promise<DocumentObservabilityResponse> {
+export async function getDocumentObservability(
+	id: string,
+	logger?: Logger,
+	options?: RouteAccessOptions,
+): Promise<DocumentObservabilityResponse> {
 	const rootLogger = logger ?? createLogger();
-	return await buildDocumentObservabilityResponse(id, rootLogger);
+	return await buildDocumentObservabilityResponse(id, rootLogger, options);
 }
 
-export async function streamDocumentPdf(id: string, logger?: Logger): Promise<Response> {
+export async function streamDocumentPdf(id: string, logger?: Logger, options?: RouteAccessOptions): Promise<Response> {
 	const rootLogger = logger ?? createLogger();
 	const requestLogger = createRouteLogger(rootLogger, {
 		action: 'stream',
@@ -1026,7 +1084,7 @@ export async function streamDocumentPdf(id: string, logger?: Logger): Promise<Re
 	const { config, pool } = resolveContext();
 	const services = createServiceRegistry(config, requestLogger);
 	const startedAt = performance.now();
-	const source = await requireSource(pool, id);
+	const source = await requireSource(pool, id, resolveReadMaxSensitivity(config, options?.authPrincipal));
 	const artifact = buildPdfArtifact(source);
 	const buffer = await loadArtifactBytes(services, artifact, id, 'PDF');
 
@@ -1048,7 +1106,11 @@ export async function streamDocumentPdf(id: string, logger?: Logger): Promise<Re
 	});
 }
 
-export async function streamDocumentLayout(id: string, logger?: Logger): Promise<Response> {
+export async function streamDocumentLayout(
+	id: string,
+	logger?: Logger,
+	options?: RouteAccessOptions,
+): Promise<Response> {
 	const rootLogger = logger ?? createLogger();
 	const requestLogger = createRouteLogger(rootLogger, {
 		action: 'stream',
@@ -1058,7 +1120,7 @@ export async function streamDocumentLayout(id: string, logger?: Logger): Promise
 	const { config, pool } = resolveContext();
 	const services = createServiceRegistry(config, requestLogger);
 	const startedAt = performance.now();
-	const source = await requireSource(pool, id);
+	const source = await requireSource(pool, id, resolveReadMaxSensitivity(config, options?.authPrincipal));
 	const artifact = buildLayoutArtifact(source);
 	const buffer = await loadArtifactBytes(services, artifact, id, 'layout.md');
 
@@ -1079,7 +1141,11 @@ export async function streamDocumentLayout(id: string, logger?: Logger): Promise
 	});
 }
 
-export async function listDocumentPages(id: string, logger?: Logger): Promise<DocumentPagesResponse> {
+export async function listDocumentPages(
+	id: string,
+	logger?: Logger,
+	options?: RouteAccessOptions,
+): Promise<DocumentPagesResponse> {
 	const rootLogger = logger ?? createLogger();
 	const requestLogger = createRouteLogger(rootLogger, {
 		action: 'pages',
@@ -1089,7 +1155,7 @@ export async function listDocumentPages(id: string, logger?: Logger): Promise<Do
 	const { config, pool } = resolveContext();
 	const services = createServiceRegistry(config, requestLogger);
 	const startedAt = performance.now();
-	await requireSource(pool, id);
+	await requireSource(pool, id, resolveReadMaxSensitivity(config, options?.authPrincipal));
 	const pages = await listPageArtifacts(services, id);
 
 	const response: DocumentPagesResponse = {
@@ -1113,7 +1179,12 @@ export async function listDocumentPages(id: string, logger?: Logger): Promise<Do
 	return response;
 }
 
-export async function streamDocumentPage(id: string, pageNumber: number, logger?: Logger): Promise<Response> {
+export async function streamDocumentPage(
+	id: string,
+	pageNumber: number,
+	logger?: Logger,
+	options?: RouteAccessOptions,
+): Promise<Response> {
 	const rootLogger = logger ?? createLogger();
 	const requestLogger = createRouteLogger(rootLogger, {
 		action: 'stream',
@@ -1124,7 +1195,7 @@ export async function streamDocumentPage(id: string, pageNumber: number, logger?
 	const { config, pool } = resolveContext();
 	const services = createServiceRegistry(config, requestLogger);
 	const startedAt = performance.now();
-	const source = await requireSource(pool, id);
+	const source = await requireSource(pool, id, resolveReadMaxSensitivity(config, options?.authPrincipal));
 	const artifact = buildPageArtifact(source.id, pageNumber);
 	const buffer = await loadArtifactBytes(services, artifact, id, `page ${pageNumber}`);
 

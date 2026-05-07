@@ -73,6 +73,8 @@ export interface SourcePurgeEffects {
 	pipelineRunLinksDeleted: number;
 	documentQualityAssessmentsDeleted: number;
 	urlLifecycleRowsDeleted: number;
+	translatedDocumentsDeleted: number;
+	reviewArtifactsDeleted: number;
 	storiesDeleted: number;
 	chunksDeleted: number;
 	chunksUpdated: number;
@@ -80,6 +82,7 @@ export interface SourcePurgeEffects {
 	storyEntitiesUpdated: number;
 	entityEdgesDeleted: number;
 	entityEdgesUpdated: number;
+	conflictNodesDeleted: number;
 	knowledgeAssertionsSoftDeleted: number;
 	knowledgeAssertionsUpdated: number;
 	entitiesDeleted: number;

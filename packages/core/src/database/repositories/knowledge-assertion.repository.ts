@@ -14,6 +14,7 @@ import type {
 	ListKnowledgeAssertionsInput,
 	UpsertKnowledgeAssertionInput,
 } from './knowledge-assertion.types.js';
+import { upsertReviewableArtifact } from './review-workflow.repository.js';
 
 type Queryable = pg.Pool | pg.PoolClient;
 
@@ -138,6 +139,10 @@ function mapKnowledgeAssertionRow(row: KnowledgeAssertionRow): KnowledgeAssertio
 	};
 }
 
+function parseJsonValue(value: string): unknown {
+	return JSON.parse(value);
+}
+
 function listSuffix(
 	options: ListKnowledgeAssertionsInput | undefined,
 	startIndex: number,
@@ -216,7 +221,35 @@ export async function upsertKnowledgeAssertion(
 			sensitivityLevel,
 			stringifySensitivityMetadata(input.sensitivityMetadata, sensitivityLevel),
 		]);
-		return mapKnowledgeAssertionRow(result.rows[0]);
+		const assertion = mapKnowledgeAssertionRow(result.rows[0]);
+		if (assertion.classificationProvenance === 'llm_auto') {
+			await upsertReviewableArtifact(pool, {
+				artifactType: 'assertion_classification',
+				subjectId: assertion.id,
+				subjectTable: 'knowledge_assertions',
+				createdBy: 'llm_auto',
+				reviewStatus: 'pending',
+				currentValue: {
+					assertion_type: assertion.assertionType,
+					content: assertion.content,
+					confidence_metadata: mapConfidenceMetadataToDb(assertion.confidenceMetadata),
+					classification_provenance: assertion.classificationProvenance,
+					extracted_entity_ids: assertion.extractedEntityIds,
+					quality_metadata: assertion.qualityMetadata,
+				},
+				context: {
+					source_id: assertion.sourceId,
+					story_id: assertion.storyId,
+					provenance: parseJsonValue(stringifyArtifactProvenance(assertion.provenance)),
+					sensitivity_level: assertion.sensitivityLevel,
+					sensitivity_metadata: parseJsonValue(
+						stringifySensitivityMetadata(assertion.sensitivityMetadata, assertion.sensitivityLevel),
+					),
+				},
+				sourceId: assertion.sourceId,
+			});
+		}
+		return assertion;
 	} catch (error: unknown) {
 		if (error instanceof DatabaseError) {
 			throw error;

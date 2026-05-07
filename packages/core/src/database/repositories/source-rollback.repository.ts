@@ -4,6 +4,11 @@ import {
 	markAcquisitionContextsForSourceDeleted,
 	restoreAcquisitionContextsForSource,
 } from './ingest-provenance.repository.js';
+import {
+	purgeReviewArtifactsForSource,
+	restoreReviewArtifactsForSource,
+	softDeleteReviewArtifactsForSource,
+} from './review-workflow.repository.js';
 import type {
 	AuditLogEvent,
 	PurgeSourceInput,
@@ -15,6 +20,7 @@ import type {
 	SourcePurgeReport,
 	SourcePurgeSubsystemCount,
 } from './source-rollback.types.js';
+import { deleteTranslatedDocumentsForSource } from './translated-document.repository.js';
 
 type Queryable = pg.Pool | pg.PoolClient;
 
@@ -207,6 +213,7 @@ export async function softDeleteSource(pool: pg.Pool, input: SoftDeleteSourceInp
 			[input.sourceId, deletedAt],
 		);
 		await markAcquisitionContextsForSourceDeleted(client, input.sourceId, deletedAt);
+		await softDeleteReviewArtifactsForSource(client, input.sourceId, deletedAt);
 
 		const deletionResult = await client.query<SourceDeletionRow>(
 			`
@@ -286,6 +293,7 @@ export async function restoreSource(pool: pg.Pool, input: RestoreSourceInput): P
 		);
 		await restoreAcquisitionContextsForSource(client, input.sourceId, restoredAt);
 		const deletion = mapSourceDeletionRow(deletionRow);
+		await restoreReviewArtifactsForSource(client, input.sourceId, deletion.deletedAt);
 		await insertAuditEvent(client, {
 			eventType: 'source.rollback.restored',
 			artifactType: 'source',
@@ -400,6 +408,18 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 			'url_lifecycle',
 			sourceId,
 			'SELECT COUNT(*) AS count FROM url_lifecycle WHERE source_id = $1',
+		),
+		await countExclusiveAndShared(
+			pool,
+			'translated_documents',
+			sourceId,
+			'SELECT COUNT(*) AS count FROM translated_documents WHERE source_document_id = $1',
+		),
+		await countExclusiveAndShared(
+			pool,
+			'review_artifacts',
+			sourceId,
+			'SELECT COUNT(*) AS count FROM review_artifacts WHERE source_id = $1',
 		),
 		await countExclusiveAndShared(
 			pool,
@@ -572,6 +592,45 @@ export async function planSourcePurge(pool: Queryable, sourceId: string): Promis
 				WHERE affected.provenance_source_count > 0
 					AND (affected.source_owned OR affected.has_rollback_source)
 					AND NOT (affected.has_rollback_source AND affected.provenance_source_count = 1)
+			`,
+		),
+		await countExclusiveAndShared(
+			pool,
+			'conflict_nodes',
+			sourceId,
+			`
+				SELECT COUNT(*) AS count
+				FROM conflict_nodes cn
+				WHERE cn.deleted_at IS NULL
+					AND EXISTS (
+						SELECT 1
+						FROM conflict_assertions ca
+						WHERE ca.conflict_id = cn.id
+							AND ca.source_document_id = $1
+					)
+					AND NOT EXISTS (
+						SELECT 1
+						FROM conflict_assertions ca
+						WHERE ca.conflict_id = cn.id
+							AND ca.source_document_id <> $1
+					)
+			`,
+			`
+				SELECT COUNT(*) AS count
+				FROM conflict_nodes cn
+				WHERE cn.deleted_at IS NULL
+					AND EXISTS (
+						SELECT 1
+						FROM conflict_assertions ca
+						WHERE ca.conflict_id = cn.id
+							AND ca.source_document_id = $1
+					)
+					AND EXISTS (
+						SELECT 1
+						FROM conflict_assertions ca
+						WHERE ca.conflict_id = cn.id
+							AND ca.source_document_id <> $1
+					)
 			`,
 		),
 		await countExclusiveAndShared(
@@ -794,6 +853,8 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 			pipelineRunLinksDeleted: 0,
 			documentQualityAssessmentsDeleted: 0,
 			urlLifecycleRowsDeleted: 0,
+			translatedDocumentsDeleted: 0,
+			reviewArtifactsDeleted: 0,
 			storiesDeleted: 0,
 			chunksDeleted: 0,
 			chunksUpdated: 0,
@@ -801,6 +862,7 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 			storyEntitiesUpdated: 0,
 			entityEdgesDeleted: 0,
 			entityEdgesUpdated: 0,
+			conflictNodesDeleted: 0,
 			knowledgeAssertionsSoftDeleted: 0,
 			knowledgeAssertionsUpdated: 0,
 			entitiesDeleted: 0,
@@ -891,6 +953,26 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 		);
 		effects.knowledgeAssertionsSoftDeleted = softDeleteAssertions.rowCount ?? 0;
 
+		const deleteConflictNodes = await client.query(
+			`
+				DELETE FROM conflict_nodes cn
+				WHERE EXISTS (
+						SELECT 1
+						FROM conflict_assertions ca
+						WHERE ca.conflict_id = cn.id
+							AND ca.source_document_id = $1
+					)
+					AND NOT EXISTS (
+						SELECT 1
+						FROM conflict_assertions ca
+						WHERE ca.conflict_id = cn.id
+							AND ca.source_document_id <> $1
+					)
+			`,
+			[input.sourceId],
+		);
+		effects.conflictNodesDeleted = deleteConflictNodes.rowCount ?? 0;
+
 		const deleteChunks = await client.query(
 			`
 				DELETE FROM chunks c
@@ -943,6 +1025,8 @@ export async function purgeSource(pool: pg.Pool, input: PurgeSourceInput): Promi
 		effects.documentQualityAssessmentsDeleted = quality.rowCount ?? 0;
 		const urlLifecycle = await client.query('DELETE FROM url_lifecycle WHERE source_id = $1', [input.sourceId]);
 		effects.urlLifecycleRowsDeleted = urlLifecycle.rowCount ?? 0;
+		effects.translatedDocumentsDeleted = await deleteTranslatedDocumentsForSource(client, input.sourceId);
+		effects.reviewArtifactsDeleted = await purgeReviewArtifactsForSource(client, input.sourceId);
 		const stories = await client.query(
 			`
 				DELETE FROM stories s

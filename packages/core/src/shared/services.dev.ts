@@ -471,6 +471,23 @@ class DevLlmService implements LlmService {
 				),
 			);
 		}
+		// Detect source credibility profile schema by checking for source_type + dimensions.
+		else if (hasProperty('source_type') && hasProperty('dimensions')) {
+			this.logger.debug('DevLlmService: generateStructured — returning source credibility fixture');
+			const dimensionIds = extractEnumValues(options.schema, 'dimensions', 'id');
+			result = JSON.parse(
+				JSON.stringify({
+					source_type: 'other',
+					dimensions: dimensionIds.map((id, index) => ({
+						id,
+						score: Math.max(0, Math.min(1, 0.5 + index * 0.05)),
+						rationale: `Dev mode fixture rationale for ${id}.`,
+						evidence_refs: ['dev_mode_fixture'],
+						known_factors: [],
+					})),
+				}),
+			);
+		}
 		// Detect entity resolution schema by checking for 'same_entity' property
 		else if (hasProperty('same_entity')) {
 			this.logger.debug('DevLlmService: generateStructured — returning entity resolution fixture');
@@ -508,6 +525,19 @@ class DevLlmService implements LlmService {
 		else if (hasProperty('rankings')) {
 			this.logger.debug('DevLlmService: generateStructured — returning rerank fixture (empty rankings)');
 			result = JSON.parse(JSON.stringify({ rankings: [] }));
+		} else if (hasProperty('is_conflict')) {
+			this.logger.debug('DevLlmService: generateStructured — returning assertion conflict fixture');
+			result = JSON.parse(
+				JSON.stringify({
+					is_conflict: true,
+					conflict_type: 'factual',
+					severity: 'significant',
+					severity_rationale: 'Dev mode fixture treats the two assertion claims as meaningfully contradictory.',
+					confidence: 0.84,
+					claim_a: 'Dev mode fixture claim A.',
+					claim_b: 'Dev mode fixture claim B.',
+				}),
+			);
 		} else {
 			if (hasProperty('verdict')) {
 				this.logger.debug('DevLlmService: generateStructured — returning contradiction resolution fixture');
@@ -518,6 +548,11 @@ class DevLlmService implements LlmService {
 						confidence: 0.84,
 						explanation:
 							'Dev mode fixture selected claim A based on stronger source context and a more specific attribute statement.',
+						conflict_type: 'factual',
+						severity: 'significant',
+						severity_rationale: 'Dev mode fixture keeps contradiction severity significant.',
+						resolution_type: 'genuinely_contradictory',
+						evidence_refs: ['dev_mode_fixture'],
 					}),
 				);
 			} else {
@@ -536,7 +571,14 @@ class DevLlmService implements LlmService {
 		return result;
 	}
 
-	async generateText(_options: TextGenerateOptions): Promise<string> {
+	async generateText(options: TextGenerateOptions): Promise<string> {
+		if (options.prompt.includes('You are translating a Mulder source document for reading access.')) {
+			this.logger.debug('DevLlmService: generateText — returning translation fixture');
+			const targetMatch = options.prompt.match(/Target language:\s*([^\n]+)/i);
+			const targetLanguage = targetMatch?.[1]?.trim() ?? 'en';
+			return `# Dev Translation (${targetLanguage})\n\nTranslated fixture content.`;
+		}
+
 		this.logger.debug('DevLlmService: generateText called (returning empty string)');
 		return '';
 	}

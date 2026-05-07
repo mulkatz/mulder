@@ -17,7 +17,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache_2.0-green?style=flat-square" alt="License" /></a>
   <img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/GCP-native-4285F4?style=flat-square&logo=googlecloud&logoColor=white" alt="GCP" />
-  <img src="https://img.shields.io/badge/status-M10_provenance_complete-green?style=flat-square" alt="Status" />
+  <img src="https://img.shields.io/badge/status-M11_trust_layer_complete-green?style=flat-square" alt="Status" />
 </p>
 
 <p align="center">
@@ -32,7 +32,7 @@
 <table align="center">
 <tr><td>
 
-**Development Progress** &ensp; `105 / 131 steps`
+**Development Progress** &ensp; `110 / 131 steps`
 
 ```
 M1   Foundation       ██████████████████████████████ 11/11 ✓
@@ -48,7 +48,7 @@ M7.5 App              █████░░░░░░░░░░░░░░�
 M8   Operations       ██████████████████████████████  6/6  ✓
 M9   Multi-Format     ██████████████████████████████ 13/13 ✓
 M10  Provenance       ██████████████████████████████  9/9  ✓
-M11  Trust Layer      ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/5
+M11  Trust Layer      ██████████████████████████████  5/5  ✓
 M12  Discovery        ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/4
 M13  Observability    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/5
 M14  Research Agent   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0/8

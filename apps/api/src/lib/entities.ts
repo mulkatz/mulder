@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import {
+	type AccessPrincipal,
 	type CorroborationPresentationContext,
 	countEntities,
 	countProcessedSources,
@@ -25,8 +26,10 @@ import {
 	MulderError,
 	mergeEntities as mergeEntitiesRepository,
 	presentCorroborationScore,
+	resolveAccessPolicy,
 } from '@mulder/core';
 import type pg from 'pg';
+import type { AuthPrincipal } from '../middleware/auth.js';
 import type {
 	EntityAliasResponse,
 	EntityDetailResponse,
@@ -46,6 +49,10 @@ type CoreEntityEdge = EntityEdge;
 interface EntityContext {
 	config: MulderConfig;
 	pool: pg.Pool;
+}
+
+interface RouteAccessOptions {
+	authPrincipal?: AuthPrincipal;
 }
 
 let cachedContext: EntityContext | null = null;
@@ -81,6 +88,29 @@ function resolveContext(): EntityContext {
 	cachedConfigPath = configPath;
 
 	return cachedContext;
+}
+
+function mapAuthPrincipal(principal: AuthPrincipal | undefined): AccessPrincipal {
+	if (!principal) {
+		return { kind: 'service' };
+	}
+	if (principal.type === 'api_key') {
+		return { kind: 'api_key' };
+	}
+	return {
+		kind: 'browser_session',
+		browserRole: principal.role,
+	};
+}
+
+function resolveReadMaxSensitivity(config: MulderConfig, authPrincipal: AuthPrincipal | undefined) {
+	const policy = resolveAccessPolicy(config, mapAuthPrincipal(authPrincipal));
+	if (!policy.permissions.includes('read') && !policy.permissions.includes('admin')) {
+		throw new MulderError('The current principal cannot read entities', 'AUTH_FORBIDDEN', {
+			context: { principal_kind: policy.principalKind },
+		});
+	}
+	return policy.enabled ? policy.maxSensitivityLevel : undefined;
 }
 
 function mapEntity(entity: CoreEntity, corroborationContext: CorroborationPresentationContext): EntityResponse {
@@ -144,8 +174,12 @@ function mapEdge(edge: CoreEntityEdge): EntityEdgeResponse {
 	};
 }
 
-async function requireEntityById(pool: pg.Pool, id: string): Promise<CoreEntity> {
-	const entity = await findEntityById(pool, id);
+async function requireEntityById(
+	pool: pg.Pool,
+	id: string,
+	maxSensitivityLevel?: CoreEntity['sensitivityLevel'],
+): Promise<CoreEntity> {
+	const entity = await findEntityById(pool, id, { maxSensitivityLevel });
 	if (!entity) {
 		throw new DatabaseError(`Entity not found: ${id}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
 			context: { id },
@@ -163,7 +197,11 @@ function createRouteLogger(rootLogger: Logger, metadata: Record<string, string |
 	});
 }
 
-export async function listEntities(input: EntityListQuery, logger?: Logger): Promise<EntityListResponse> {
+export async function listEntities(
+	input: EntityListQuery,
+	logger?: Logger,
+	options?: RouteAccessOptions,
+): Promise<EntityListResponse> {
 	const rootLogger = logger ?? createLogger();
 	const { config, pool } = resolveContext();
 	const requestLogger = createRouteLogger(rootLogger, {
@@ -175,6 +213,7 @@ export async function listEntities(input: EntityListQuery, logger?: Logger): Pro
 		offset: input.offset,
 	});
 	const startedAt = performance.now();
+	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal);
 
 	const filter: EntityFilter = {
 		type: input.type,
@@ -182,6 +221,7 @@ export async function listEntities(input: EntityListQuery, logger?: Logger): Pro
 		taxonomyStatus: input.taxonomy_status,
 		limit: input.limit,
 		offset: input.offset,
+		maxSensitivityLevel,
 	};
 
 	const [count, entities, corroborationContext] = await Promise.all([
@@ -210,7 +250,11 @@ export async function listEntities(input: EntityListQuery, logger?: Logger): Pro
 	return response;
 }
 
-export async function getEntityDetail(id: string, logger?: Logger): Promise<EntityDetailResponse> {
+export async function getEntityDetail(
+	id: string,
+	logger?: Logger,
+	options?: RouteAccessOptions,
+): Promise<EntityDetailResponse> {
 	const rootLogger = logger ?? createLogger();
 	const { config, pool } = resolveContext();
 	const requestLogger = createRouteLogger(rootLogger, {
@@ -218,12 +262,13 @@ export async function getEntityDetail(id: string, logger?: Logger): Promise<Enti
 		entity_id: id,
 	});
 	const startedAt = performance.now();
+	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal);
 
-	const entity = await requireEntityById(pool, id);
+	const entity = await requireEntityById(pool, id, maxSensitivityLevel);
 	const [aliases, stories, mergedEntities, corroborationContext] = await Promise.all([
-		findAliasesByEntityId(pool, id),
-		findStoriesByEntityId(pool, id),
-		findEntitiesByCanonicalId(pool, id),
+		findAliasesByEntityId(pool, id, { maxSensitivityLevel }),
+		findStoriesByEntityId(pool, id, { maxSensitivityLevel }),
+		findEntitiesByCanonicalId(pool, id, { maxSensitivityLevel }),
 		loadCorroborationContext(pool, config),
 	]);
 
@@ -249,17 +294,22 @@ export async function getEntityDetail(id: string, logger?: Logger): Promise<Enti
 	return response;
 }
 
-export async function getEntityEdges(id: string, logger?: Logger): Promise<EntityEdgesResponse> {
+export async function getEntityEdges(
+	id: string,
+	logger?: Logger,
+	options?: RouteAccessOptions,
+): Promise<EntityEdgesResponse> {
 	const rootLogger = logger ?? createLogger();
-	const { pool } = resolveContext();
+	const { config, pool } = resolveContext();
 	const requestLogger = createRouteLogger(rootLogger, {
 		action: 'edges',
 		entity_id: id,
 	});
 	const startedAt = performance.now();
+	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal);
 
-	await requireEntityById(pool, id);
-	const edges = await findEdgesByEntityId(pool, id);
+	await requireEntityById(pool, id, maxSensitivityLevel);
+	const edges = await findEdgesByEntityId(pool, id, { maxSensitivityLevel });
 	const response: EntityEdgesResponse = {
 		data: edges.map(mapEdge),
 	};

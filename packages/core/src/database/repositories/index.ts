@@ -9,6 +9,15 @@
  * @see docs/specs/32_embedding_wrapper_semantic_chunker_chunk_repository.spec.md §4.5
  */
 
+export {
+	findAccessRoleById,
+	listAccessRoles,
+	upsertAccessRole,
+} from './access-role.repository.js';
+export type {
+	PersistedAccessRole,
+	UpsertAccessRoleInput,
+} from './access-role.types.js';
 export type { ArtifactProvenance, ArtifactProvenanceInput } from './artifact-provenance.js';
 export {
 	mapArtifactProvenanceFromDb,
@@ -79,6 +88,32 @@ export type {
 	CollectionVisibility,
 	ResolveCollectionForIngestInput,
 } from './collection.types.js';
+export {
+	createConflictNode,
+	deleteConflictNodesForStory,
+	findConflictNodeById,
+	findConflictNodeByLegacyEdgeId,
+	listConflictInvolvementBySource,
+	listConflictNodes,
+	listOpenConflictNodes,
+	resolveConflictNode,
+} from './conflict-node.repository.js';
+export type {
+	ConflictAssertion,
+	ConflictDetectionMethod,
+	ConflictInvolvementBySource,
+	ConflictNode,
+	ConflictNodeListOptions,
+	ConflictParticipantRole,
+	ConflictResolution,
+	ConflictResolutionStatus,
+	ConflictSeverity,
+	ConflictType,
+	CreateConflictAssertionInput,
+	CreateConflictNodeInput,
+	ResolutionType,
+	ResolveConflictNodeInput,
+} from './conflict-node.types.js';
 export type {
 	DocumentBlob,
 	DocumentBlobIntegrityStatus,
@@ -310,6 +345,41 @@ export type {
 	PipelineRunStatus,
 	UpsertPipelineRunSourceInput,
 } from './pipeline-run.types.js';
+export {
+	autoApproveDueReviewArtifacts,
+	findReviewableArtifactById,
+	findReviewableArtifactBySubject,
+	listReviewableArtifacts,
+	listReviewEvents,
+	listReviewQueueArtifacts,
+	listReviewQueues,
+	purgeReviewArtifactsForSource,
+	recordReviewEvent,
+	restoreReviewArtifactsForSource,
+	softDeleteReviewArtifactsForSource,
+	upsertReviewableArtifact,
+	upsertReviewQueue,
+} from './review-workflow.repository.js';
+export type {
+	AutoApproveDueReviewArtifactsOptions,
+	AutoApproveDueReviewArtifactsResult,
+	RecordReviewEventInput,
+	ReviewAction,
+	ReviewArtifactType,
+	ReviewableArtifact,
+	ReviewableArtifactListOptions,
+	ReviewConfidence,
+	ReviewCreatedBy,
+	ReviewEvent,
+	ReviewEventListOptions,
+	ReviewJsonObject,
+	ReviewQueue,
+	ReviewQueueArtifactListOptions,
+	ReviewQueueListOptions,
+	ReviewStatus,
+	UpsertReviewableArtifactInput,
+	UpsertReviewQueueInput,
+} from './review-workflow.types.js';
 export type { SourceReliabilityFilter } from './source.repository.js';
 export {
 	countScoredSources,
@@ -348,6 +418,21 @@ export type {
 	UpdateSourceInput,
 	UpsertSourceStepInput,
 } from './source.types.js';
+export {
+	findSourceCredibilityProfileBySourceId,
+	listSourceCredibilityProfiles,
+	upsertSourceCredibilityProfile,
+} from './source-credibility.repository.js';
+export type {
+	CredibilityDimension,
+	CredibilityProfileAuthor,
+	CredibilityReviewStatus,
+	CredibilitySourceType,
+	SourceCredibilityProfile,
+	SourceCredibilityProfileListOptions,
+	UpsertCredibilityDimensionInput,
+	UpsertSourceCredibilityProfileInput,
+} from './source-credibility.types.js';
 export {
 	findSourceDeletionForSource,
 	listAuditEventsForSource,
@@ -440,6 +525,21 @@ export type {
 	TaxonomySimilarityMatch,
 	UpdateTaxonomyEntryInput,
 } from './taxonomy.types.js';
+export {
+	createCurrentTranslatedDocument,
+	deleteTranslatedDocumentsForSource,
+	findCurrentTranslatedDocument,
+	listTranslatedDocumentsForSource,
+	markTranslatedDocumentsStaleForSource,
+} from './translated-document.repository.js';
+export type {
+	CreateCurrentTranslatedDocumentInput,
+	ListTranslatedDocumentsOptions,
+	TranslatedDocument,
+	TranslationOutputFormat,
+	TranslationPipelinePath,
+	TranslationStatus,
+} from './translated-document.types.js';
 export type {
 	RecordUrlHostLifecycleInput,
 	RecordUrlLifecycleFetchInput,

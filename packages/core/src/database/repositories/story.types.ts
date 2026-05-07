@@ -89,4 +89,5 @@ export interface StoryFilter {
 	limit?: number;
 	offset?: number;
 	includeDeleted?: boolean;
+	maxSensitivityLevel?: SensitivityLevel;
 }

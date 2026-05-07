@@ -26,5 +26,10 @@ Return a JSON object with:
 - `winning_claim`: `"A"`, `"B"`, or `"neither"`
 - `confidence`: number between 0 and 1
 - `explanation`: concise evidence-based reasoning
+- `conflict_type`: optional conflict type (`"factual"`, `"interpretive"`, `"taxonomic"`, `"temporal"`, `"spatial"`, or `"attributive"`)
+- `severity`: optional severity (`"minor"`, `"significant"`, or `"fundamental"`)
+- `severity_rationale`: optional concise reason for the severity
+- `resolution_type`: optional typed reason (`"different_vantage_point"`, `"different_time"`, `"measurement_error"`, `"source_unreliable"`, `"scope_difference"`, `"genuinely_contradictory"`, `"duplicate_misidentification"`, or `"other"`)
+- `evidence_refs`: optional list of evidence references
 
 {{ i18n.common.json_instruction }}

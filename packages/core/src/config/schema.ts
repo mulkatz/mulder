@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod';
+import { ACCESS_PERMISSIONS, DEFAULT_ACCESS_ROLE_CONFIGS } from '../shared/access-control.js';
 import { PII_TYPES, SENSITIVITY_LEVELS } from '../shared/sensitivity.js';
 
 /**
@@ -255,6 +256,14 @@ const documentQualitySchema = documentQualityObj.default(defaults(documentQualit
 // --- Access Control ---
 
 const piiTypeSchema = z.enum(PII_TYPES);
+const accessPermissionSchema = z.enum(ACCESS_PERMISSIONS);
+
+const accessRoleSchema = z.object({
+	id: z.string().min(1),
+	name: z.string().min(1),
+	max_sensitivity_level: sensitivityLevelSchema,
+	permissions: z.array(accessPermissionSchema).min(1),
+});
 
 const accessControlSensitivitySchema = z.object({
 	levels: z.array(sensitivityLevelSchema).default([...SENSITIVITY_LEVELS]),
@@ -267,6 +276,10 @@ const accessControlSensitivitySchema = z.object({
 const accessControlRbacSchema = z.object({
 	roles_source: z.string().min(1).default('config/roles.yaml'),
 	default_role: z.string().min(1).default('analyst'),
+	roles: z
+		.array(accessRoleSchema)
+		.min(1)
+		.default([...DEFAULT_ACCESS_ROLE_CONFIGS]),
 });
 
 const accessControlExternalQueryGateSchema = z.object({
@@ -293,6 +306,150 @@ const sourceRollbackObj = z.object({
 	notify_on_purge: z.boolean().default(true),
 });
 const sourceRollbackSchema = sourceRollbackObj.default(defaults(sourceRollbackObj));
+
+// --- Credibility ---
+
+const credibilityDimensionSchema = z.object({
+	id: z.string().min(1),
+	label: z.string().min(1),
+});
+
+const credibilityDimensionsSchema = z
+	.array(credibilityDimensionSchema)
+	.min(1)
+	.superRefine((dimensions, ctx) => {
+		const seen = new Map<string, number>();
+		for (let i = 0; i < dimensions.length; i++) {
+			const trimmedId = dimensions[i].id.trim();
+			const firstIndex = seen.get(trimmedId);
+			if (firstIndex !== undefined) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: [i, 'id'],
+					message: `Duplicate credibility dimension id "${trimmedId}" also appears at index ${firstIndex}`,
+					params: { customCode: 'duplicate_credibility_dimension_id' },
+				});
+				continue;
+			}
+			seen.set(trimmedId, i);
+		}
+	});
+
+const credibilityObj = z.object({
+	enabled: z.boolean().default(true),
+	dimensions: credibilityDimensionsSchema.default([
+		{ id: 'institutional_authority', label: 'Institutional authority' },
+		{ id: 'domain_track_record', label: 'Domain track record' },
+		{ id: 'conflict_of_interest', label: 'Conflict of interest' },
+		{ id: 'transparency', label: 'Transparency / verifiability' },
+		{ id: 'consistency', label: 'Internal consistency over time' },
+	]),
+	auto_profile_on_ingest: z.boolean().default(true),
+	require_human_review: z.boolean().default(true),
+	display_in_reports: z.boolean().default(true),
+	agent_instruction: z.enum(['weight_but_never_exclude']).default('weight_but_never_exclude'),
+});
+const credibilitySchema = credibilityObj.default(defaults(credibilityObj));
+
+// --- Contradiction Management ---
+
+const conflictTypeSchema = z.enum(['factual', 'interpretive', 'taxonomic', 'temporal', 'spatial', 'attributive']);
+const conflictSeveritySchema = z.enum(['minor', 'significant', 'fundamental']);
+const contradictionReviewDepthSchema = z.enum(['single_review']);
+
+const contradictionManagementDetectionObj = z.object({
+	pipeline: z.boolean().default(true),
+	agent: z.boolean().default(false),
+	human_reported: z.boolean().default(false),
+	embedding_similarity_band: z
+		.tuple([z.number().min(0).max(1), z.number().min(0).max(1)])
+		.default([0.3, 0.8])
+		.refine(([lower, upper]) => lower < upper, {
+			message: 'embedding_similarity_band lower bound must be less than upper bound',
+		}),
+	require_shared_entity: z.boolean().default(true),
+	llm_confirmation: z.boolean().default(true),
+	llm_engine: z.string().min(1).default('gemini-2.5-pro'),
+	min_confidence: z.number().min(0).max(1).default(0.7),
+	max_candidates_per_story: z.number().int().nonnegative().default(25),
+});
+
+const contradictionManagementReviewObj = z.object({
+	conflict_detection: contradictionReviewDepthSchema.default('single_review'),
+	resolution: contradictionReviewDepthSchema.default('single_review'),
+});
+
+const contradictionManagementMetricsObj = z.object({
+	track_contradiction_density: z.boolean().default(true),
+	track_resolution_rate: z.boolean().default(true),
+	feed_credibility_profiles: z.boolean().default(true),
+});
+
+const contradictionManagementObj = z.object({
+	enabled: z.boolean().default(true),
+	conflict_types: z
+		.array(conflictTypeSchema)
+		.min(1)
+		.default(['factual', 'interpretive', 'taxonomic', 'temporal', 'spatial', 'attributive']),
+	severity_levels: z.array(conflictSeveritySchema).min(1).default(['minor', 'significant', 'fundamental']),
+	detection: contradictionManagementDetectionObj.default(defaults(contradictionManagementDetectionObj)),
+	auto_severity_assessment: z.boolean().default(true),
+	review: contradictionManagementReviewObj.default(defaults(contradictionManagementReviewObj)),
+	metrics: contradictionManagementMetricsObj.default(defaults(contradictionManagementMetricsObj)),
+});
+const contradictionManagementSchema = contradictionManagementObj.default(defaults(contradictionManagementObj));
+
+// --- Review Workflow ---
+
+const reviewWorkflowDepthSchema = z.enum(['spot_check', 'single_review', 'double_review']);
+
+const reviewWorkflowArtifactTypeSchema = z.object({
+	review_depth: reviewWorkflowDepthSchema,
+	spot_check_percentage: z.number().int().min(0).max(100).optional(),
+	auto_approve_after_hours: z.number().positive().int().nullable().default(null),
+	auto_approve_min_confidence: z.number().min(0).max(1).optional(),
+	escalation_reviewer: z.string().min(1).nullable().optional(),
+});
+
+const reviewWorkflowMetricsSchema = z.object({
+	track_accuracy: z.boolean().default(true),
+	auto_adjust_depth: z.boolean().default(false),
+	accuracy_threshold_for_upgrade: z.number().min(0).max(1).default(0.7),
+	accuracy_threshold_for_downgrade: z.number().min(0).max(1).default(0.95),
+});
+
+const reviewWorkflowArtifactTypesSchema = z.object({
+	assertion_classification: reviewWorkflowArtifactTypeSchema.default({
+		review_depth: 'spot_check',
+		spot_check_percentage: 20,
+		auto_approve_after_hours: 168,
+		auto_approve_min_confidence: 0.9,
+	}),
+	credibility_profile: reviewWorkflowArtifactTypeSchema.default({
+		review_depth: 'double_review',
+		auto_approve_after_hours: null,
+		escalation_reviewer: null,
+	}),
+	taxonomy_mapping: reviewWorkflowArtifactTypeSchema.default({
+		review_depth: 'single_review',
+		auto_approve_after_hours: 336,
+	}),
+	similar_case_link: reviewWorkflowArtifactTypeSchema.default({
+		review_depth: 'single_review',
+		auto_approve_after_hours: 168,
+	}),
+	agent_finding: reviewWorkflowArtifactTypeSchema.default({
+		review_depth: 'single_review',
+		auto_approve_after_hours: null,
+	}),
+});
+
+const reviewWorkflowObj = z.object({
+	enabled: z.boolean().default(true),
+	artifact_types: reviewWorkflowArtifactTypesSchema.default(defaults(reviewWorkflowArtifactTypesSchema)),
+	metrics: reviewWorkflowMetricsSchema.default(defaults(reviewWorkflowMetricsSchema)),
+});
+const reviewWorkflowSchema = reviewWorkflowObj.default(defaults(reviewWorkflowObj));
 
 // --- Enrichment ---
 
@@ -445,6 +602,24 @@ const groundingObj = z.object({
 });
 const groundingSchema = groundingObj.default(defaults(groundingObj));
 
+// --- Translation ---
+
+const translationOutputFormatSchema = z.enum(['markdown', 'html']);
+
+const translationObj = z.object({
+	enabled: z.boolean().default(true),
+	default_target_language: z.string().min(1).default('en'),
+	supported_languages: z
+		.array(z.string().min(1))
+		.min(1)
+		.default(['de', 'en', 'fr', 'es', 'pt', 'ru', 'zh', 'ja', 'pl', 'cs']),
+	engine: z.string().min(1).default('gemini-2.5-flash'),
+	output_format: translationOutputFormatSchema.default('markdown'),
+	cache_enabled: z.boolean().default(true),
+	max_document_length_tokens: z.number().positive().int().default(500000),
+});
+const translationSchema = translationObj.default(defaults(translationObj));
+
 // --- Analysis (v2.0) ---
 
 const analysisObj = z.object({
@@ -566,6 +741,9 @@ const baseMulderConfigSchema = z.object({
 	document_quality: documentQualitySchema,
 	access_control: accessControlSchema,
 	source_rollback: sourceRollbackSchema,
+	credibility: credibilitySchema,
+	contradiction_management: contradictionManagementSchema,
+	review_workflow: reviewWorkflowSchema,
 	enrichment: enrichmentSchema,
 	taxonomy: taxonomySchema,
 	entity_resolution: entityResolutionSchema,
@@ -574,6 +752,7 @@ const baseMulderConfigSchema = z.object({
 	embedding: embeddingSchema,
 	retrieval: retrievalSchema,
 	grounding: groundingSchema,
+	translation: translationSchema,
 	analysis: analysisSchema,
 	thresholds: thresholdsSchema,
 	pipeline: pipelineSchema,
@@ -626,6 +805,7 @@ export const mulderConfigSchema = baseMulderConfigSchema.superRefine((data, ctx)
 
 // Export section schemas for reuse
 export {
+	accessControlRbacSchema,
 	accessControlSchema,
 	accessControlSensitivitySchema,
 	analysisSchema,
@@ -633,6 +813,12 @@ export {
 	apiSchema,
 	assertionClassificationSchema,
 	cloudSqlSchema,
+	contradictionManagementDetectionObj,
+	contradictionManagementMetricsObj,
+	contradictionManagementReviewObj,
+	contradictionManagementSchema,
+	credibilityDimensionSchema,
+	credibilitySchema,
 	deduplicationSchema,
 	documentAiSchema,
 	documentQualitySchema,
@@ -652,11 +838,18 @@ export {
 	projectSchema,
 	relationshipSchema,
 	retrievalSchema,
+	reviewWorkflowArtifactTypeSchema,
+	reviewWorkflowArtifactTypesSchema,
+	reviewWorkflowDepthSchema,
+	reviewWorkflowMetricsSchema,
+	reviewWorkflowSchema,
 	safetySchema,
 	sourceRollbackSchema,
 	storageSchema,
 	taxonomySchema,
 	thresholdsSchema,
+	translationOutputFormatSchema,
+	translationSchema,
 	vertexSchema,
 	visualIntelligenceSchema,
 };

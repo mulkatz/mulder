@@ -5,6 +5,7 @@
 
 import type { z } from 'zod';
 import type {
+	accessControlRbacSchema,
 	accessControlSchema,
 	accessControlSensitivitySchema,
 	analysisSchema,
@@ -12,6 +13,9 @@ import type {
 	apiSchema,
 	assertionClassificationSchema,
 	cloudSqlSchema,
+	contradictionManagementSchema,
+	credibilityDimensionSchema,
+	credibilitySchema,
 	deduplicationSchema,
 	documentAiSchema,
 	documentQualitySchema,
@@ -31,11 +35,17 @@ import type {
 	projectSchema,
 	relationshipSchema,
 	retrievalSchema,
+	reviewWorkflowArtifactTypeSchema,
+	reviewWorkflowDepthSchema,
+	reviewWorkflowMetricsSchema,
+	reviewWorkflowSchema,
 	safetySchema,
 	sourceRollbackSchema,
 	storageSchema,
 	taxonomySchema,
 	thresholdsSchema,
+	translationOutputFormatSchema,
+	translationSchema,
 	vertexSchema,
 	visualIntelligenceSchema,
 } from './schema.js';
@@ -44,6 +54,7 @@ import type {
 
 export type ProjectConfig = z.infer<typeof projectSchema>;
 export type AccessControlConfig = z.infer<typeof accessControlSchema>;
+export type AccessControlRbacConfig = z.infer<typeof accessControlRbacSchema>;
 export type AccessControlSensitivityConfig = z.infer<typeof accessControlSensitivitySchema>;
 export type ApiConfig = z.infer<typeof apiSchema>;
 export type ApiAuthKeyConfig = ApiConfig['auth']['api_keys'][number];
@@ -63,7 +74,13 @@ export type DeduplicationConfig = z.infer<typeof deduplicationSchema>;
 export type DocumentQualityConfig = z.infer<typeof documentQualitySchema>;
 export type EmbeddingConfig = z.infer<typeof embeddingSchema>;
 export type RetrievalConfig = z.infer<typeof retrievalSchema>;
+export type ReviewWorkflowConfig = z.infer<typeof reviewWorkflowSchema>;
+export type ReviewWorkflowArtifactTypeConfig = z.infer<typeof reviewWorkflowArtifactTypeSchema>;
+export type ReviewWorkflowDepthConfig = z.infer<typeof reviewWorkflowDepthSchema>;
+export type ReviewWorkflowMetricsConfig = z.infer<typeof reviewWorkflowMetricsSchema>;
 export type GroundingConfig = z.infer<typeof groundingSchema>;
+export type TranslationConfig = z.infer<typeof translationSchema>;
+export type TranslationOutputFormatConfig = z.infer<typeof translationOutputFormatSchema>;
 export type IngestProvenanceConfig = z.infer<typeof ingestProvenanceSchema>;
 export type AnalysisConfig = z.infer<typeof analysisSchema>;
 export type TaxonomyConfig = z.infer<typeof taxonomySchema>;
@@ -71,6 +88,9 @@ export type ThresholdsConfig = z.infer<typeof thresholdsSchema>;
 export type PipelineConfig = z.infer<typeof pipelineSchema>;
 export type SafetyConfig = z.infer<typeof safetySchema>;
 export type SourceRollbackConfig = z.infer<typeof sourceRollbackSchema>;
+export type CredibilityConfig = z.infer<typeof credibilitySchema>;
+export type CredibilityDimensionConfig = z.infer<typeof credibilityDimensionSchema>;
+export type ContradictionManagementConfig = z.infer<typeof contradictionManagementSchema>;
 export type VertexConfig = z.infer<typeof vertexSchema>;
 export type VisualIntelligenceConfig = z.infer<typeof visualIntelligenceSchema>;
 export type PatternDiscoveryConfig = z.infer<typeof patternDiscoverySchema>;

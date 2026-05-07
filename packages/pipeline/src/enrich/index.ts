@@ -14,6 +14,7 @@
 import { performance } from 'node:perf_hooks';
 import type {
 	DocumentQualityAssessment,
+	KnowledgeAssertion,
 	Logger,
 	MulderConfig,
 	SensitivityLevel,
@@ -24,6 +25,7 @@ import type {
 import {
 	createChildLogger,
 	defaultSensitivityMetadata,
+	deleteConflictNodesForStory,
 	deleteEdgesByStoryId,
 	deleteKnowledgeAssertionsForStory,
 	deleteStoryEntitiesByStoryId,
@@ -51,6 +53,8 @@ import {
 } from '@mulder/core';
 import { normalizeTaxonomy } from '@mulder/taxonomy';
 import type pg from 'pg';
+import { detectAssertionConflicts } from './conflicts.js';
+import { generateSourceCredibilityProfileDraft } from './credibility.js';
 import { resolveEntity } from './resolution.js';
 import { generateExtractionSchema, getExtractionResponseSchema } from './schema.js';
 import type {
@@ -61,6 +65,10 @@ import type {
 	ExtractionResponse,
 } from './types.js';
 
+export type { AssertionConflictDetectionResult } from './conflicts.js';
+export { detectAssertionConflicts } from './conflicts.js';
+export type { CredibilityProfileGenerationResult, CredibilityProfileGenerationStatus } from './credibility.js';
+export { generateSourceCredibilityProfileDraft } from './credibility.js';
 export { resolveEntity } from './resolution.js';
 export type {
 	ResolutionCandidate,
@@ -295,11 +303,15 @@ function mergeExtractionResponses(responses: ExtractionResponse[]): ExtractionRe
  * Deletes story_entities and entity_edges, resets story status to segmented.
  */
 async function forceCleanupStory(storyId: string, pool: pg.Pool, logger: Logger): Promise<void> {
+	const deletedConflicts = await deleteConflictNodesForStory(pool, storyId);
 	const deletedAssertions = await deleteKnowledgeAssertionsForStory(pool, storyId);
 	const deletedLinks = await deleteStoryEntitiesByStoryId(pool, storyId);
 	const deletedEdges = await deleteEdgesByStoryId(pool, storyId);
 	await updateStoryStatus(pool, storyId, 'segmented');
-	logger.debug({ storyId, deletedAssertions, deletedLinks, deletedEdges }, 'Force cleanup complete for story');
+	logger.debug(
+		{ storyId, deletedConflicts, deletedAssertions, deletedLinks, deletedEdges },
+		'Force cleanup complete for story',
+	);
 }
 
 /**
@@ -678,6 +690,7 @@ export async function execute(
 
 	// 13. Persist classified assertions after resolved entity IDs are known.
 	let assertionsPersisted = 0;
+	const persistedAssertions: KnowledgeAssertion[] = [];
 
 	if (assertionClassificationEnabled) {
 		for (const assertion of extraction.assertions ?? []) {
@@ -690,7 +703,7 @@ export async function execute(
 				const sensitivityMetadata = sensitivityAutoDetectionEnabled
 					? detectedSensitivityMetadata(assertion.sensitivity, defaultSensitivityLevel)
 					: defaultSensitivity;
-				await upsertKnowledgeAssertion(pool, {
+				const persistedAssertion = await upsertKnowledgeAssertion(pool, {
 					sourceId: story.sourceId,
 					storyId: input.storyId,
 					assertionType: assertion.assertion_type,
@@ -704,6 +717,7 @@ export async function execute(
 					sensitivityLevel: sensitivityMetadata.level,
 					sensitivityMetadata,
 				});
+				persistedAssertions.push(persistedAssertion);
 				assertionsPersisted++;
 			} catch (cause: unknown) {
 				const message = cause instanceof Error ? cause.message : String(cause);
@@ -715,6 +729,19 @@ export async function execute(
 			}
 		}
 	}
+
+	const conflictDetectionResult =
+		persistedAssertions.length > 0
+			? await detectAssertionConflicts({
+					storyId: input.storyId,
+					assertions: persistedAssertions,
+					config,
+					services,
+					pool,
+					logger: log,
+				})
+			: { candidatesExamined: 0, conflictsCreated: 0, skipped: 0, failures: 0, errors: [] };
+	errors.push(...conflictDetectionResult.errors);
 
 	// 14. Determine overall status
 	const entitiesExtracted = sortedEntities.length;
@@ -728,17 +755,47 @@ export async function execute(
 	}
 
 	// 15. Update story status + source step
+	let credibilityProfileCreated = false;
+	let credibilityProfileStatus: EnrichmentData['credibilityProfileStatus'] = 'skipped';
+
 	if (status !== 'failed') {
 		if (sensitivityConfig.propagation === 'upward') {
 			await updateStorySensitivityFromArtifacts(pool, input.storyId);
 			await updateSourceSensitivityFromArtifacts(pool, story.sourceId);
 		}
 		await updateStoryStatus(pool, input.storyId, 'enriched');
+
+		const credibilityResult = await generateSourceCredibilityProfileDraft({
+			sourceId: story.sourceId,
+			config: config.credibility,
+			services,
+			pool,
+			logger: log,
+		});
+		credibilityProfileCreated = credibilityResult.created;
+		credibilityProfileStatus = credibilityResult.status;
+
+		let credibilityErrorMessage: string | undefined;
+		if (credibilityResult.status === 'failed') {
+			credibilityErrorMessage = `Source credibility draft generation failed: ${
+				credibilityResult.reason ?? 'unknown error'
+			}`;
+			errors.push({
+				code: ENRICH_ERROR_CODES.ENRICH_LLM_FAILED,
+				message: credibilityErrorMessage,
+			});
+			log.warn(
+				{ sourceId: story.sourceId, reason: credibilityResult.reason },
+				'Source credibility draft generation failed non-fatally',
+			);
+		}
+
 		await upsertSourceStep(pool, {
 			sourceId: story.sourceId,
 			stepName: STEP_NAME,
-			status: 'completed',
+			status: credibilityResult.status === 'failed' ? 'partial' : 'completed',
 			configHash: stepConfigHash,
+			errorMessage: credibilityErrorMessage,
 		});
 	} else {
 		await upsertSourceStep(pool, {
@@ -758,6 +815,9 @@ export async function execute(
 			entitiesResolved,
 			relationshipsCreated,
 			assertionsPersisted,
+			conflictsCreated: conflictDetectionResult.conflictsCreated,
+			credibilityProfileCreated,
+			credibilityProfileStatus,
 		})
 		.catch(() => {
 			// Silently swallow — Firestore is best-effort observability
@@ -770,8 +830,14 @@ export async function execute(
 		entitiesResolved,
 		relationshipsCreated,
 		assertionsPersisted,
+		conflictCandidatesExamined: conflictDetectionResult.candidatesExamined,
+		conflictsCreated: conflictDetectionResult.conflictsCreated,
+		conflictDetectionsSkipped: conflictDetectionResult.skipped,
+		conflictDetectionFailures: conflictDetectionResult.failures,
 		taxonomyEntriesAdded,
 		taxonomyLinked,
+		credibilityProfileCreated,
+		credibilityProfileStatus,
 		chunksUsed: textChunks.length,
 	};
 
@@ -782,8 +848,12 @@ export async function execute(
 			entitiesResolved,
 			relationshipsCreated,
 			assertionsPersisted,
+			conflictsCreated: conflictDetectionResult.conflictsCreated,
+			conflictDetectionFailures: conflictDetectionResult.failures,
 			taxonomyEntriesAdded,
 			taxonomyLinked,
+			credibilityProfileCreated,
+			credibilityProfileStatus,
 			chunksUsed: textChunks.length,
 			errors: errors.length,
 			duration_ms: durationMs,

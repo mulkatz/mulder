@@ -41,6 +41,9 @@ export {
 	generateQuestions,
 } from './embed/index.js';
 export type {
+	AssertionConflictDetectionResult,
+	CredibilityProfileGenerationResult,
+	CredibilityProfileGenerationStatus,
 	EnrichInput,
 	EnrichmentData,
 	EnrichResult,
@@ -55,9 +58,11 @@ export type {
 	ResolveEntityOptions,
 } from './enrich/index.js';
 export {
+	detectAssertionConflicts,
 	execute as executeEnrich,
 	forceCleanupSource as forceCleanupEnrichSource,
 	generateExtractionSchema,
+	generateSourceCredibilityProfileDraft,
 	getEntityTypeNames,
 	getExtractionResponseSchema,
 	resolveEntity,
@@ -218,5 +223,7 @@ export type {
 export { executeReprocess, planReprocess } from './reprocess/index.js';
 export type { SegmentationData, SegmentedStory, SegmentInput, SegmentResult } from './segment/index.js';
 export { execute as executeSegment } from './segment/index.js';
+export type { TranslateData, TranslateInput, TranslateResult, TranslationOutcome } from './translate/index.js';
+export { execute as executeTranslate } from './translate/index.js';
 export type { UrlLifecycleStatusResult, UrlRefetchInput, UrlRefetchResult } from './url-lifecycle/index.js';
 export { getUrlLifecycleStatus, refetchUrlSource } from './url-lifecycle/index.js';

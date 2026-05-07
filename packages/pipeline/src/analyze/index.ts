@@ -10,11 +10,15 @@
 
 import { performance } from 'node:perf_hooks';
 import type {
+	ConflictNode,
+	ConflictSeverity,
+	ConflictType,
 	CreateEvidenceChainInput,
 	Entity,
 	EntityEdge,
 	Logger,
 	MulderConfig,
+	ResolutionType,
 	Services,
 	Source,
 	StepError,
@@ -24,14 +28,17 @@ import {
 	ANALYZE_ERROR_CODES,
 	AnalyzeError,
 	createChildLogger,
+	createConflictNode,
 	createEvidenceChains,
 	deleteEvidenceChainsByThesis,
+	findConflictNodeByLegacyEdgeId,
 	findEdgesByType,
 	findEntityById,
 	findSourceById,
 	findStoryById,
 	renderPrompt,
 	replaceSpatioTemporalClustersSnapshot,
+	resolveConflictNode,
 	updateEdge,
 	updateSource,
 } from '@mulder/core';
@@ -96,6 +103,22 @@ const contradictionResolutionSchema = z.object({
 	winning_claim: z.enum(['A', 'B', 'neither']),
 	confidence: z.number().min(0).max(1),
 	explanation: z.string().min(1),
+	conflict_type: z.enum(['factual', 'interpretive', 'taxonomic', 'temporal', 'spatial', 'attributive']).optional(),
+	severity: z.enum(['minor', 'significant', 'fundamental']).optional(),
+	severity_rationale: z.string().min(1).optional(),
+	resolution_type: z
+		.enum([
+			'different_vantage_point',
+			'different_time',
+			'measurement_error',
+			'source_unreliable',
+			'scope_difference',
+			'genuinely_contradictory',
+			'duplicate_misidentification',
+			'other',
+		])
+		.optional(),
+	evidence_refs: z.array(z.string().min(1)).optional(),
 });
 
 const contradictionResolutionSchemaV3 = z3.object({
@@ -103,6 +126,22 @@ const contradictionResolutionSchemaV3 = z3.object({
 	winning_claim: z3.enum(['A', 'B', 'neither']),
 	confidence: z3.number().min(0).max(1),
 	explanation: z3.string().min(1),
+	conflict_type: z3.enum(['factual', 'interpretive', 'taxonomic', 'temporal', 'spatial', 'attributive']).optional(),
+	severity: z3.enum(['minor', 'significant', 'fundamental']).optional(),
+	severity_rationale: z3.string().min(1).optional(),
+	resolution_type: z3
+		.enum([
+			'different_vantage_point',
+			'different_time',
+			'measurement_error',
+			'source_unreliable',
+			'scope_difference',
+			'genuinely_contradictory',
+			'duplicate_misidentification',
+			'other',
+		])
+		.optional(),
+	evidence_refs: z3.array(z3.string().min(1)).optional(),
 });
 
 const contradictionResolutionJsonSchema: Record<string, unknown> = zodToJsonSchema(contradictionResolutionSchemaV3, {
@@ -124,6 +163,11 @@ interface HydratedContradictionContext extends ContradictionAttributes {
 	storyB: Story;
 	sourceA: Source;
 	sourceB: Source;
+}
+
+interface LegacyAssertionParticipant {
+	assertionId: string;
+	content: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -376,6 +420,109 @@ function buildPrompt(context: HydratedContradictionContext, locale: string): str
 	});
 }
 
+async function findLegacyAssertionParticipants(
+	pool: pg.Pool | pg.PoolClient,
+	context: HydratedContradictionContext,
+): Promise<[LegacyAssertionParticipant, LegacyAssertionParticipant] | null> {
+	const result = await pool.query<LegacyAssertionParticipant>(
+		`
+			(
+				SELECT id AS "assertionId", content
+				FROM knowledge_assertions
+				WHERE story_id = $1
+					AND deleted_at IS NULL
+					AND (
+						extracted_entity_ids && ARRAY[$3]::uuid[]
+						OR content ILIKE '%' || $4 || '%'
+					)
+				ORDER BY
+					CASE WHEN content ILIKE '%' || $4 || '%' THEN 0 ELSE 1 END,
+					created_at ASC,
+					id ASC
+				LIMIT 1
+			)
+			UNION ALL
+			(
+				SELECT id AS "assertionId", content
+				FROM knowledge_assertions
+				WHERE story_id = $2
+					AND deleted_at IS NULL
+					AND (
+						extracted_entity_ids && ARRAY[$3]::uuid[]
+						OR content ILIKE '%' || $5 || '%'
+					)
+				ORDER BY
+					CASE WHEN content ILIKE '%' || $5 || '%' THEN 0 ELSE 1 END,
+					created_at ASC,
+					id ASC
+				LIMIT 1
+			)
+		`,
+		[context.storyA.id, context.storyB.id, context.entity.id, context.valueA, context.valueB],
+	);
+	if (result.rows.length < 2) return null;
+	if (result.rows[0].assertionId === result.rows[1].assertionId) return null;
+	return [result.rows[0], result.rows[1]];
+}
+
+function resolutionTypeForResponse(response: ContradictionResolutionResponse): ResolutionType {
+	if (response.resolution_type) return response.resolution_type;
+	return response.verdict === 'confirmed' ? 'genuinely_contradictory' : 'duplicate_misidentification';
+}
+
+function conflictTypeForResponse(response: ContradictionResolutionResponse): ConflictType {
+	return response.conflict_type ?? 'attributive';
+}
+
+function severityForResponse(response: ContradictionResolutionResponse): ConflictSeverity {
+	return response.severity ?? 'significant';
+}
+
+async function promoteLegacyContradictionToConflictNode(
+	pool: pg.Pool | pg.PoolClient,
+	context: HydratedContradictionContext,
+	response: ContradictionResolutionResponse,
+): Promise<ConflictNode | null> {
+	const existing = await findConflictNodeByLegacyEdgeId(pool, context.edge.id);
+	const participants = await findLegacyAssertionParticipants(pool, context);
+	if (!participants) {
+		return existing;
+	}
+
+	const conflictNode =
+		existing ??
+		(await createConflictNode(pool, {
+			conflictType: conflictTypeForResponse(response),
+			detectionMethod: 'statistical',
+			detectedBy: `analyze:${context.edge.id}`,
+			severity: severityForResponse(response),
+			severityRationale:
+				response.severity_rationale ??
+				`Legacy ${context.attribute} contradiction promoted from graph edge ${context.edge.id}.`,
+			confidence: response.confidence,
+			legacyEdgeId: context.edge.id,
+			assertions: [
+				{ assertionId: participants[0].assertionId, participantRole: 'claim_a', claim: participants[0].content },
+				{ assertionId: participants[1].assertionId, participantRole: 'claim_b', claim: participants[1].content },
+			],
+			provenance: {
+				sourceDocumentIds: [context.sourceA.id, context.sourceB.id],
+				extractionPipelineRun: null,
+				createdAt: new Date(),
+			},
+		}));
+
+	return resolveConflictNode(pool, {
+		conflictId: conflictNode.id,
+		resolutionType: resolutionTypeForResponse(response),
+		resolutionStatus: response.verdict === 'confirmed' ? 'confirmed_contradictory' : 'false_positive',
+		explanation: response.explanation,
+		resolvedBy: `analyze:${context.edge.id}`,
+		evidenceRefs: response.evidence_refs ?? [`entity_edges:${context.edge.id}`],
+		legacyEdgeId: context.edge.id,
+	});
+}
+
 async function resolveEdge(
 	context: HydratedContradictionContext,
 	config: MulderConfig,
@@ -404,8 +551,12 @@ async function resolveEdge(
 	}
 
 	const nextEdgeType = resolution.verdict === 'confirmed' ? 'CONFIRMED_CONTRADICTION' : 'DISMISSED_CONTRADICTION';
+	let conflictNode: ConflictNode | null = null;
+	const client = await pool.connect();
+	let transactionAction = `persist contradiction verdict for edge ${context.edge.id}`;
 	try {
-		await updateEdge(pool, context.edge.id, {
+		await client.query('BEGIN');
+		await updateEdge(client, context.edge.id, {
 			edgeType: nextEdgeType,
 			confidence: resolution.confidence,
 			analysis: {
@@ -423,15 +574,17 @@ async function resolveEdge(
 				resolvedAt: new Date().toISOString(),
 			},
 		});
+		transactionAction = `promote contradiction edge ${context.edge.id} to conflict node`;
+		conflictNode = await promoteLegacyContradictionToConflictNode(client, context, resolution);
+		await client.query('COMMIT');
 	} catch (cause: unknown) {
-		throw new AnalyzeError(
-			`Failed to persist contradiction verdict for edge ${context.edge.id}`,
-			ANALYZE_ERROR_CODES.ANALYZE_WRITE_FAILED,
-			{
-				cause,
-				context: { edgeId: context.edge.id },
-			},
-		);
+		await client.query('ROLLBACK').catch(() => {});
+		throw new AnalyzeError(`Failed to ${transactionAction}`, ANALYZE_ERROR_CODES.ANALYZE_WRITE_FAILED, {
+			cause,
+			context: { edgeId: context.edge.id },
+		});
+	} finally {
+		client.release();
 	}
 
 	return {
@@ -441,6 +594,8 @@ async function resolveEdge(
 		verdict: resolution.verdict,
 		winningClaim: resolution.winning_claim,
 		confidence: resolution.confidence,
+		conflictNodeId: conflictNode?.id ?? null,
+		conflictResolutionWritten: conflictNode?.latestResolution != null,
 	};
 }
 
@@ -451,6 +606,8 @@ function makeContradictionData(
 ): ContradictionAnalyzeData {
 	const confirmedCount = outcomes.filter((outcome) => outcome.verdict === 'confirmed').length;
 	const dismissedCount = outcomes.filter((outcome) => outcome.verdict === 'dismissed').length;
+	const conflictNodesLinked = outcomes.filter((outcome) => outcome.conflictNodeId !== null).length;
+	const conflictResolutionsWritten = outcomes.filter((outcome) => outcome.conflictResolutionWritten).length;
 
 	return {
 		mode: 'contradictions',
@@ -458,6 +615,8 @@ function makeContradictionData(
 		processedCount: outcomes.length,
 		confirmedCount,
 		dismissedCount,
+		conflictNodesLinked,
+		conflictResolutionsWritten,
 		failedCount,
 		outcomes,
 	};
@@ -698,6 +857,8 @@ async function executeContradictionsPass(
 			processedCount: data.processedCount,
 			confirmedCount: data.confirmedCount,
 			dismissedCount: data.dismissedCount,
+			conflictNodesLinked: data.conflictNodesLinked,
+			conflictResolutionsWritten: data.conflictResolutionsWritten,
 			failedCount: data.failedCount,
 			duration_ms: durationMs,
 		},

@@ -30,22 +30,26 @@ function readEntityListQuery(url: string): Record<string, string | undefined> {
 	};
 }
 
+function readRouteOptions(c: Context) {
+	return { authPrincipal: c.get('authPrincipal') };
+}
+
 export function registerEntityRoutes(app: Hono): void {
 	app.get('/api/entities', async (c) => {
 		const query = EntityListQuerySchema.parse(readEntityListQuery(c.req.url));
-		const response = await listEntities(query, c.get('requestContext')?.logger);
+		const response = await listEntities(query, c.get('requestContext')?.logger, readRouteOptions(c));
 		EntityListResponseSchema.parse(response);
 		return c.json(response, 200);
 	});
 
 	app.get('/api/entities/:id', async (c) => {
-		const response = await getEntityDetail(c.req.param('id'), c.get('requestContext')?.logger);
+		const response = await getEntityDetail(c.req.param('id'), c.get('requestContext')?.logger, readRouteOptions(c));
 		EntityDetailResponseSchema.parse(response);
 		return c.json(response, 200);
 	});
 
 	app.get('/api/entities/:id/edges', async (c) => {
-		const response = await getEntityEdges(c.req.param('id'), c.get('requestContext')?.logger);
+		const response = await getEntityEdges(c.req.param('id'), c.get('requestContext')?.logger, readRouteOptions(c));
 		EntityEdgesResponseSchema.parse(response);
 		return c.json(response, 200);
 	});
