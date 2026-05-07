@@ -498,12 +498,12 @@ export async function discoverSimilarEntities(
 	const maxResults = options.maxResults ?? config.similar_case_discovery.max_results;
 	const topResults = results.slice(0, maxResults).map((result, index) => ({ ...result, overallRank: index + 1 }));
 	const shouldAutoDiscover = options.autoDiscover ?? false;
-	const shouldPersist = options.persistResults === true || shouldAutoDiscover;
+	const shouldPersistQueryResults = options.persistResults === true;
 	let persistedCount = 0;
 	let autoLinkCount = 0;
 
-	for (const result of topResults) {
-		if (shouldPersist) {
+	if (shouldPersistQueryResults) {
+		for (const result of topResults) {
 			result.cacheRecord = await upsertSimilarityResult(pool, {
 				sourceEntityId: source.id,
 				targetEntityId: result.entityId,
@@ -523,10 +523,33 @@ export async function discoverSimilarEntities(
 	}
 
 	const autoConfig = config.similar_case_discovery.auto_discovery;
+	const autoResults =
+		shouldAutoDiscover && autoConfig.enabled
+			? topResults
+					.filter((result) => result.weightedRankScore >= autoConfig.threshold)
+					.slice(0, autoConfig.max_auto_links)
+			: [];
+	if (shouldAutoDiscover && autoConfig.enabled && !shouldPersistQueryResults) {
+		for (const result of autoResults) {
+			result.cacheRecord = await upsertSimilarityResult(pool, {
+				sourceEntityId: source.id,
+				targetEntityId: result.entityId,
+				core: result.core,
+				domain: result.domain,
+				explanation: result.explanation,
+				sharedEntityIds: result.sharedEntityIds,
+				keyDifferences: result.keyDifferences,
+				rankPosition: result.overallRank,
+				autoDiscovered: true,
+				autoDiscoveryMetadata: { weighted_rank_score: result.weightedRankScore },
+				sensitivityLevel: result.sensitivityLevel,
+				sensitivityMetadata: result.sensitivityMetadata,
+			});
+			persistedCount++;
+		}
+	}
+
 	if (shouldAutoDiscover && autoConfig.enabled && autoConfig.create_graph_edge) {
-		const autoResults = topResults
-			.filter((result) => result.weightedRankScore >= autoConfig.threshold)
-			.slice(0, autoConfig.max_auto_links);
 		for (const result of autoResults) {
 			result.graphEdgeId = await persistAutoEdge(pool, source, result);
 			autoLinkCount++;
@@ -536,9 +559,10 @@ export async function discoverSimilarEntities(
 		}
 	}
 
-	const cachedResults = shouldPersist
-		? await listSimilarEntities(pool, { entityId: source.id, limit: maxResults })
-		: [];
+	const cachedResults =
+		shouldPersistQueryResults || autoResults.length > 0
+			? await listSimilarEntities(pool, { entityId: source.id, limit: maxResults })
+			: [];
 	return {
 		entityId: source.id,
 		candidatesScored: candidates.length,

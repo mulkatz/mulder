@@ -973,7 +973,14 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 	return { rule: 'no affected tests mapped', selectedFiles: [] };
 }
 
-function resolveDocsOnlyHeadRule(file) {
+function resolveDocsOnlyHeadRule(file, discoveredByPath) {
+	const selected = new Set();
+	const specMatch = file.match(/^docs\/specs\/(\d+)_.*\.spec\.md$/);
+	if (specMatch) {
+		addDocSpecTestsToSet(selected, discoveredByPath, file);
+		return { rule: `docs spec ${specMatch[1]}`, selectedFiles: [...selected].sort((a, b) => a.localeCompare(b)) };
+	}
+
 	return {
 		rule: isDocsOnlyHeadFile(file) ? 'head docs-only change (build/lint only)' : 'no affected tests mapped',
 		selectedFiles: [],
@@ -1004,7 +1011,7 @@ function buildAffectedPlan(baseRef, explicitChangedFiles = null) {
 	for (const file of changed) {
 		const result =
 			changeSelection.changeScope === 'head-docs-only'
-				? resolveDocsOnlyHeadRule(file)
+				? resolveDocsOnlyHeadRule(file, discoveredByPath)
 				: resolveAffectedRule(file, discoveredByPath, lanes);
 		for (const selectedFile of result.selectedFiles) selected.add(selectedFile);
 		rules.push({ changedFile: file, rule: result.rule, selectedFiles: result.selectedFiles });
