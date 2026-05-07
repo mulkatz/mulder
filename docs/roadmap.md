@@ -313,7 +313,7 @@ Builds the trust infrastructure. Depends on M10 foundations (provenance, asserti
 | 🟢 | L2 | Contradiction management — ConflictNode entities, severity, resolution | §A9 |
 | 🟢 | L3 | Review workflow infrastructure — ReviewableArtifact, queues, events | §A13 |
 | 🟢 | L4 | Translation service — two paths, caching | §A7 |
-| 🟡 | L5 | RBAC implementation — roles, permissions, sensitivity-based filtering | §A5.3 |
+| 🟢 | L5 | RBAC implementation — roles, permissions, sensitivity-based filtering | §A5.3 |
 
 **Also read for all M11 steps:** §A3 (assertion types), §A5 (sensitivity)
 
