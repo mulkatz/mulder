@@ -709,7 +709,6 @@ async function upsertExternalCorrelation(
 			contributing_entity_ids = EXCLUDED.contributing_entity_ids,
 			interpretation_caveat = EXCLUDED.interpretation_caveat,
 			caveats = EXCLUDED.caveats,
-			review_status = EXCLUDED.review_status,
 			provenance = EXCLUDED.provenance,
 			sensitivity_level = EXCLUDED.sensitivity_level,
 			sensitivity_metadata = EXCLUDED.sensitivity_metadata,

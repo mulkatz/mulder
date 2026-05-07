@@ -116,6 +116,7 @@ interface ExternalCorrelationBuildResult {
 	inputs: CreateExternalCorrelationInput[];
 	summaries: ExternalCorrelationSummary[];
 	warnings: string[];
+	evaluatedSeriesCount: number;
 }
 
 function readString(value: unknown): string | null {
@@ -820,8 +821,9 @@ async function buildExternalCorrelationInputs(
 	const inputs: CreateExternalCorrelationInput[] = [];
 	const summaries: ExternalCorrelationSummary[] = [];
 	const warnings: string[] = [];
+	let evaluatedSeriesCount = 0;
 	if (!config.enabled || !externalConfig.enabled || externalConfig.series.length === 0) {
-		return { inputs, summaries, warnings };
+		return { inputs, summaries, warnings, evaluatedSeriesCount };
 	}
 
 	for (const series of externalConfig.series) {
@@ -861,6 +863,7 @@ async function buildExternalCorrelationInputs(
 			warnings.push(`${label}: skipped external series with fewer than ${externalConfig.min_data_points} data points.`);
 			continue;
 		}
+		evaluatedSeriesCount += 1;
 
 		for (const method of externalConfig.methods) {
 			const computed = computeCorrelation(
@@ -917,7 +920,7 @@ async function buildExternalCorrelationInputs(
 			});
 		}
 	}
-	return { inputs, summaries, warnings };
+	return { inputs, summaries, warnings, evaluatedSeriesCount };
 }
 
 function hotspotGroupKey(latitude: number, longitude: number): string {
@@ -1132,9 +1135,12 @@ export async function detectTemporalPatterns(
 		anomalies: anomalies.candidates.map((candidate) => candidate.input),
 		hotspots: hotspots.map((candidate) => candidate.input),
 	});
-	const externalCorrelationSnapshot = await replaceExternalCorrelationSnapshot(pool, {
-		correlations: externalCorrelations.inputs,
-	});
+	const externalCorrelationSnapshot =
+		externalCorrelations.evaluatedSeriesCount > 0
+			? await replaceExternalCorrelationSnapshot(pool, {
+					correlations: externalCorrelations.inputs,
+				})
+			: { correlations: [] };
 	const warnings: string[] = [];
 	if (anomalies.comparisonCount > anomalies.boundedComparisonCount && anomalies.boundedComparisonCount > 0) {
 		warnings.push('Temporal anomaly comparisons were bounded by configured max region/window limits.');

@@ -133,6 +133,29 @@ function externalCorrelationConfig(): import('@mulder/core').MulderConfig {
 	return config;
 }
 
+function externalCorrelationInput(
+	entityId: string,
+	overrides?: Partial<import('@mulder/core').CreateExternalCorrelationInput>,
+): import('@mulder/core').CreateExternalCorrelationInput {
+	return {
+		internalSeriesKey: 'entities:region=spec116-zone:category=all',
+		externalSourceId: 'spec116-source',
+		externalSeriesId: 'preserved-series',
+		method: 'spearman',
+		coefficient: 0.7,
+		pValue: 0.04,
+		lagDays: 0,
+		timeStart: new Date('2026-02-01T00:00:00Z'),
+		timeEnd: new Date('2026-02-02T00:00:00Z'),
+		dataPointCount: 1,
+		contributingEntityIds: [entityId],
+		provenance: provenance([entityId]),
+		sensitivityLevel: 'internal',
+		sensitivityMetadata: sensitivityMetadata('internal'),
+		...overrides,
+	};
+}
+
 beforeAll(async () => {
 	coreModule = await import(CORE_DIST);
 	pipelineModule = await import(PIPELINE_DIST);
@@ -350,24 +373,7 @@ describe('Spec 116: External Correlation Plugins', () => {
 	it.skipIf(!pgAvailable)('QA-05: weak-signal caveat and review state are mandatory', async () => {
 		const entityId = await createEventFixture({ label: 'caveat', isoDate: '2026-02-01' });
 		const snapshot = await coreModule.replaceExternalCorrelationSnapshot(pool, {
-			correlations: [
-				{
-					internalSeriesKey: 'entities:region=spec116-zone:category=all',
-					externalSourceId: 'spec116-source',
-					externalSeriesId: 'caveat-series',
-					method: 'spearman',
-					coefficient: 0.7,
-					pValue: 0.04,
-					lagDays: 0,
-					timeStart: new Date('2026-02-01T00:00:00Z'),
-					timeEnd: new Date('2026-02-02T00:00:00Z'),
-					dataPointCount: 1,
-					contributingEntityIds: [entityId],
-					provenance: provenance([entityId]),
-					sensitivityLevel: 'internal',
-					sensitivityMetadata: sensitivityMetadata('internal'),
-				},
-			],
+			correlations: [externalCorrelationInput(entityId, { externalSeriesId: 'caveat-series' })],
 		});
 		const stored = await coreModule.findExternalCorrelation(pool, snapshot.correlations[0].id);
 
@@ -377,7 +383,92 @@ describe('Spec 116: External Correlation Plugins', () => {
 		expect(stored?.caveats).toContain(CORRELATION_CAVEAT);
 	});
 
-	it.skipIf(!pgAvailable)('QA-06: sensitivity filtering hides over-sensitive correlations', async () => {
+	it.skipIf(!pgAvailable)(
+		'QA-06: external snapshot remains active when no external correlation run occurs',
+		async () => {
+			const entityId = await createEventFixture({ label: 'preserve', isoDate: '2026-02-01' });
+			const initial = await coreModule.replaceExternalCorrelationSnapshot(pool, {
+				correlations: [externalCorrelationInput(entityId)],
+			});
+			const correlationId = initial.correlations[0].id;
+
+			const scenarios: Array<{
+				name: string;
+				configure(config: import('@mulder/core').MulderConfig): void;
+			}> = [
+				{
+					name: 'disabled',
+					configure(config) {
+						config.temporal_pattern_detection.external_correlation.enabled = false;
+					},
+				},
+				{
+					name: 'empty',
+					configure(config) {
+						config.temporal_pattern_detection.external_correlation.enabled = true;
+						config.temporal_pattern_detection.external_correlation.series = [];
+					},
+				},
+				{
+					name: 'missing-plugin',
+					configure(config) {
+						config.temporal_pattern_detection.external_correlation = {
+							...externalCorrelationConfig().temporal_pattern_detection.external_correlation,
+							series: [
+								{
+									source_id: 'spec116-source',
+									series_id: 'missing',
+									plugin_id: 'spec116-missing-plugin',
+									enabled: true,
+									region_key: 'spec116-zone',
+									time_start: '2026-02-01',
+									time_end: '2026-02-02',
+									filters: {},
+								},
+							],
+						};
+					},
+				},
+			];
+
+			for (const scenario of scenarios) {
+				const config = cloneConfig();
+				config.temporal_pattern_detection.enabled = true;
+				config.temporal_pattern_detection.anomaly_detection.enabled = false;
+				config.temporal_pattern_detection.hotspot_clustering.enabled = false;
+				scenario.configure(config);
+
+				const result = await pipelineModule.detectTemporalPatterns(pool, config);
+				const active = await coreModule.listExternalCorrelations(pool);
+
+				expect(result.status, scenario.name).toBe('success');
+				expect(result.data.persistedExternalCorrelationCount, scenario.name).toBe(0);
+				expect(
+					active.map((correlation) => correlation.id),
+					scenario.name,
+				).toContain(correlationId);
+			}
+		},
+	);
+
+	it.skipIf(!pgAvailable)('QA-07: external correlation recompute preserves non-pending review status', async () => {
+		const entityId = await createEventFixture({ label: 'review-preserve', isoDate: '2026-02-01' });
+		const correlationId = randomUUID();
+		await coreModule.replaceExternalCorrelationSnapshot(pool, {
+			correlations: [externalCorrelationInput(entityId, { id: correlationId, reviewStatus: 'approved' })],
+		});
+
+		const recomputed = await coreModule.replaceExternalCorrelationSnapshot(pool, {
+			correlations: [externalCorrelationInput(entityId, { id: correlationId, coefficient: 0.65, pValue: 0.08 })],
+		});
+		const stored = await coreModule.findExternalCorrelation(pool, correlationId);
+
+		expect(recomputed.correlations[0].reviewStatus).toBe('approved');
+		expect(stored?.reviewStatus).toBe('approved');
+		expect(stored?.coefficient).toBeCloseTo(0.65, 8);
+	});
+
+	it.skipIf(!pgAvailable)('QA-08: sensitivity filtering hides over-sensitive correlations', async () => {
 		const restrictedEntityIds = await seedDailyCounts({ regionKey: 'restricted-zone', sensitivityLevel: 'restricted' });
 		const snapshot = await coreModule.replaceExternalCorrelationSnapshot(pool, {
 			correlations: [
@@ -413,7 +504,7 @@ describe('Spec 116: External Correlation Plugins', () => {
 		).not.toBeNull();
 	});
 
-	it('QA-07: affected-test mapping stays scoped for N4 files', () => {
+	it('QA-09: affected-test mapping stays scoped for N4 files', () => {
 		const result = spawnSync(
 			process.execPath,
 			[
