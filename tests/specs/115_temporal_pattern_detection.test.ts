@@ -190,7 +190,10 @@ async function createEventFixture(args: {
 	return entity.id;
 }
 
-async function seedSignificantAnomalyFixture(): Promise<string[]> {
+async function seedSignificantAnomalyFixture(options?: {
+	categoryRefs?: Array<Record<string, string>>;
+}): Promise<string[]> {
+	const categoryRefs = options?.categoryRefs ?? [SPEC_CATEGORY_ATTR_REF];
 	for (let year = 2021; year <= 2023; year += 1) {
 		for (let month = 1; month <= 12; month += 1) {
 			await createEventFixture({
@@ -198,7 +201,7 @@ async function seedSignificantAnomalyFixture(): Promise<string[]> {
 				isoDate: `${year}-${String(month).padStart(2, '0')}-12`,
 				regionKey: 'alpha-zone',
 				reportingIntensity: 1,
-				categoryRefs: [SPEC_CATEGORY_ATTR_REF],
+				categoryRefs,
 			});
 		}
 	}
@@ -219,7 +222,7 @@ async function seedSignificantAnomalyFixture(): Promise<string[]> {
 				isoDate: `2024-01-${String(index + 1).padStart(2, '0')}`,
 				regionKey: 'alpha-zone',
 				reportingIntensity: 2,
-				categoryRefs: [SPEC_CATEGORY_ATTR_REF],
+				categoryRefs,
 			}),
 		);
 	}
@@ -622,7 +625,104 @@ describe('Spec 115: Temporal Pattern Detection', () => {
 		).not.toBeNull();
 	});
 
-	it.skipIf(!pgAvailable)('QA-07: Bias warnings and dominant category metadata are preserved', async () => {
+	it.skipIf(!pgAvailable)('QA-07: Categoryless snapshots persist SQL NULL category refs', async () => {
+		const entityId = await createEventFixture({
+			label: 'categoryless-snapshot',
+			isoDate: '2024-03-01',
+			regionKey: 'categoryless-zone',
+		});
+		const anomalyId = randomUUID();
+		const hotspotId = randomUUID();
+
+		const snapshot = await coreModule.replaceTemporalPatternSnapshot(pool, {
+			anomalies: [
+				{
+					id: anomalyId,
+					regionKey: 'categoryless-zone',
+					timeStart: new Date('2024-03-01T00:00:00Z'),
+					timeEnd: new Date('2024-04-01T00:00:00Z'),
+					entityCount: 5,
+					baselineRate: 1,
+					observedRate: 5,
+					rawSignificance: 0.01,
+					comparisonCount: 3,
+					correctedSignificance: 0.03,
+					significanceThreshold: 0.05,
+					peakDate: new Date('2024-03-15T00:00:00Z'),
+					regionGeojson: { type: 'FeatureCollection', features: [] },
+					contributingEntityIds: [entityId],
+					caveats: [GENERIC_CAVEAT],
+					provenance: provenance([entityId]),
+					sensitivityLevel: 'internal',
+					sensitivityMetadata: sensitivityMetadata('internal'),
+				},
+			],
+			hotspots: [
+				{
+					id: hotspotId,
+					regionKey: 'categoryless-zone',
+					centroidLat: 52.5,
+					centroidLng: 13.4,
+					radiusKm: 10,
+					timeStart: new Date('2024-03-01T00:00:00Z'),
+					timeEnd: new Date('2024-04-01T00:00:00Z'),
+					entityCount: 5,
+					density: 0.4,
+					persistence: 'transient',
+					dominantCategoryRef: null,
+					contributingEntityIds: [entityId],
+					caveats: [GENERIC_CAVEAT],
+					provenance: provenance([entityId]),
+					sensitivityLevel: 'internal',
+					sensitivityMetadata: sensitivityMetadata('internal'),
+				},
+			],
+		});
+
+		expect(snapshot.anomalies[0].dominantCategoryRef).toBeNull();
+		expect(snapshot.hotspots[0].dominantCategoryRef).toBeNull();
+		expect((await coreModule.findTemporalAnomalyCluster(pool, anomalyId))?.dominantCategoryRef).toBeNull();
+		expect((await coreModule.findSpatiotemporalHotspotCluster(pool, hotspotId))?.dominantCategoryRef).toBeNull();
+
+		const anomalyCategory = await pool.query<{ dominant_category_ref: unknown }>(
+			'SELECT dominant_category_ref FROM temporal_anomaly_clusters WHERE id = $1;',
+			[anomalyId],
+		);
+		const hotspotCategory = await pool.query<{ dominant_category_ref: unknown }>(
+			'SELECT dominant_category_ref FROM spatiotemporal_hotspot_clusters WHERE id = $1;',
+			[hotspotId],
+		);
+		expect(anomalyCategory.rows[0]?.dominant_category_ref).toBeNull();
+		expect(hotspotCategory.rows[0]?.dominant_category_ref).toBeNull();
+	});
+
+	it.skipIf(!pgAvailable)('QA-08: Category-constrained known patterns do not annotate categoryless anomalies', async () => {
+		await seedSignificantAnomalyFixture({ categoryRefs: [] });
+		const config = tunedTemporalConfig({ hotspots: false });
+		config.temporal_pattern_detection.anomaly_detection.known_patterns = [
+			{
+				id: 'spec115-category-constrained',
+				region_key: 'alpha-zone',
+				category_ref: {
+					taxonomy_id: SPEC_CATEGORY_REF.taxonomyId,
+					category_id: SPEC_CATEGORY_REF.categoryId,
+				},
+				time_start: '2024-01-01',
+				time_end: '2024-02-01',
+			},
+		];
+
+		const result = await pipelineModule.detectTemporalPatterns(pool, config);
+		const anomalies = await coreModule.listTemporalAnomalyClusters(pool);
+
+		expect(result.status).toBe('success');
+		expect(anomalies).toHaveLength(1);
+		expect(anomalies[0].dominantCategoryRef).toBeNull();
+		expect(anomalies[0].knownPatternMatch).toBeNull();
+		expect(result.snapshot.anomalies[0]?.knownPatternMatch).toBeNull();
+	});
+
+	it.skipIf(!pgAvailable)('QA-09: Bias warnings and dominant category metadata are preserved', async () => {
 		await seedSignificantAnomalyFixture();
 		const config = tunedTemporalConfig({ hotspots: false });
 

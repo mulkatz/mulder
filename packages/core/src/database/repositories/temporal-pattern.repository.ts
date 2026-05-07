@@ -175,8 +175,8 @@ function categoryRefFromDb(value: unknown): ClassificationCategoryRef | null {
 	return categoryRef(categoryId, taxonomyId);
 }
 
-function categoryRefToDb(value: ClassificationCategoryRef | null | undefined): string {
-	if (!value) return 'null';
+function categoryRefToDb(value: ClassificationCategoryRef | null | undefined): string | null {
+	if (!value) return null;
 	return JSON.stringify({
 		category_id: value.categoryId,
 		taxonomy_id: value.taxonomyId ?? null,

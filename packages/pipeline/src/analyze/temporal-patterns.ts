@@ -359,7 +359,8 @@ function knownPatternMatch(
 ): string | null {
 	for (const pattern of patterns) {
 		if (pattern.region_key && pattern.region_key !== regionKey) continue;
-		if (pattern.category_ref && categoryRef) {
+		if (pattern.category_ref) {
+			if (!categoryRef) continue;
 			if (pattern.category_ref.category_id !== categoryRef.categoryId) continue;
 			if (pattern.category_ref.taxonomy_id && pattern.category_ref.taxonomy_id !== categoryRef.taxonomyId) continue;
 		}
