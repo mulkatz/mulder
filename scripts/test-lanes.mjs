@@ -928,6 +928,13 @@ function resolveAffectedRule(file, discoveredByPath, lanes) {
 	return { rule: 'no affected tests mapped', selectedFiles: [] };
 }
 
+function resolveDocsOnlyHeadRule(file) {
+	return {
+		rule: isDocsOnlyHeadFile(file) ? 'head docs-only change (build/lint only)' : 'no affected tests mapped',
+		selectedFiles: [],
+	};
+}
+
 function laneNameForFile(relativePath, lanes) {
 	for (const [laneName, lane] of Object.entries(lanes)) {
 		if (lane.files.some((file) => file.relativePath === relativePath)) {
@@ -950,7 +957,10 @@ function buildAffectedPlan(baseRef, explicitChangedFiles = null) {
 	const rules = [];
 
 	for (const file of changed) {
-		const result = resolveAffectedRule(file, discoveredByPath, lanes);
+		const result =
+			changeSelection.changeScope === 'head-docs-only'
+				? resolveDocsOnlyHeadRule(file)
+				: resolveAffectedRule(file, discoveredByPath, lanes);
 		for (const selectedFile of result.selectedFiles) selected.add(selectedFile);
 		rules.push({ changedFile: file, rule: result.rule, selectedFiles: result.selectedFiles });
 	}

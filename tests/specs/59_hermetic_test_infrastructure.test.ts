@@ -15,6 +15,7 @@ const TEST_LANES_SCRIPT = resolve(ROOT, 'scripts/test-lanes.mjs');
 const PACKAGE_JSON = resolve(ROOT, 'package.json');
 
 type AffectedPlan = {
+	changeScope: string;
 	totalFiles: number;
 	lanes: Record<string, { count: number; files: string[]; totalWeight: number }>;
 	files: Array<{ relativePath: string; lane: string; weight: number }>;
@@ -46,12 +47,16 @@ function runVitest(args: string[], env?: Record<string, string>): { stdout: stri
 	};
 }
 
-function runTestLanes(args: string[]): { stdout: string; stderr: string; exitCode: number } {
+function runTestLanes(
+	args: string[],
+	env?: Record<string, string>,
+): { stdout: string; stderr: string; exitCode: number } {
 	const result = spawnSync('node', [TEST_LANES_SCRIPT, ...args], {
 		cwd: ROOT,
 		encoding: 'utf-8',
 		timeout: 60_000,
 		stdio: ['pipe', 'pipe', 'pipe'],
+		env: { ...process.env, ...env },
 	});
 
 	return {
@@ -70,6 +75,16 @@ function affectedPlanForFiles(changedFiles: string[]): AffectedPlan {
 
 function affectedPlanFor(changedFile: string): AffectedPlan {
 	return affectedPlanForFiles([changedFile]);
+}
+
+function affectedHeadPlanForFiles(changedFiles: string[]): AffectedPlan {
+	const result = runTestLanes(['affected-plan', 'origin/main', '--json'], {
+		MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: 'true',
+		MULDER_TEST_AFFECTED_HEAD_CHANGED_FILES: changedFiles.join('\n'),
+		MULDER_TEST_SKIP_HEALTH_SPEC_IN_AFFECTED: 'true',
+	});
+	expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
+	return JSON.parse(result.stdout) as AffectedPlan;
 }
 
 function resetSchemaToMissing(): void {
@@ -310,6 +325,17 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		expect(plan.lanes.heavy.count).toBe(0);
 	});
 
+	it('QA-05e6: docs-only PR head commits do not select DB or schema lanes', () => {
+		const plan = affectedHeadPlanForFiles(['docs/specs/111_rbac_implementation.spec.md', 'docs/roadmap.md']);
+
+		expect(plan.changeScope).toBe('head-docs-only');
+		expect(plan.totalFiles).toBe(0);
+		expect(plan.lanes.schema.count).toBe(0);
+		expect(plan.lanes.db.count).toBe(0);
+		expect(plan.lanes.heavy.count).toBe(0);
+		expect(plan.rules.every((rule) => rule.rule === 'head docs-only change (build/lint only)')).toBe(true);
+	});
+
 	it('QA-05f: affected lane shards pass cleanly when their selected shard is empty', () => {
 		const emptyDbShard = runTestLanes([
 			'affected-lane',
@@ -383,5 +409,37 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		} finally {
 			rmSync(storageRoot, { recursive: true, force: true });
 		}
+	});
+
+	it('QA-07: test runner defaults fresh checkouts to the shipped example config', () => {
+		const env = { ...process.env };
+		delete env.MULDER_CONFIG;
+		const result = spawnSync(
+			'node',
+			[
+				'scripts/test-runner.mjs',
+				'run',
+				'qa59-config',
+				'--',
+				'node',
+				'--input-type=module',
+				'-e',
+				[
+					'const config = process.env.MULDER_CONFIG;',
+					"if (!config || !config.endsWith('mulder.config.example.yaml')) throw new Error('unexpected config ' + config);",
+				].join(' '),
+			],
+			{
+				cwd: ROOT,
+				encoding: 'utf-8',
+				timeout: 60_000,
+				stdio: ['pipe', 'pipe', 'pipe'],
+				env,
+			},
+		);
+
+		expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+		expect(result.stdout).toContain('test-runner: config=');
+		expect(result.stdout).toContain('mulder.config.example.yaml');
 	});
 });

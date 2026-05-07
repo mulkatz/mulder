@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import pg from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
 import { ensureSchema, MULDER_TEST_TABLES, truncateExistingTables } from '../lib/schema.js';
 
@@ -205,6 +205,11 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+	if (!pgAvailable) return;
+	cleanTables();
+});
+
+afterEach(() => {
 	if (!pgAvailable) return;
 	cleanTables();
 });

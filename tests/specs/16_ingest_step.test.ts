@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
+import { truncateExistingTables } from '../lib/schema.js';
 import { cleanStorageDirSince, type StorageSnapshot, snapshotStorageDir, testStoragePath } from '../lib/storage.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -53,7 +54,7 @@ function runCli(
 }
 
 function cleanSourceData(): void {
-	db.runSql('DELETE FROM source_steps; DELETE FROM sources; DELETE FROM document_blobs;');
+	truncateExistingTables(['document_blobs', 'source_steps', 'sources']);
 }
 
 /**
