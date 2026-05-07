@@ -582,17 +582,26 @@ export type {
 	UpdateTaxonomyEntryInput,
 } from './taxonomy.types.js';
 export {
+	findExternalCorrelation,
 	findSpatiotemporalHotspotCluster,
 	findTemporalAnomalyCluster,
+	listExternalCorrelations,
 	listSpatiotemporalHotspotClusters,
 	listTemporalAnomalyClusters,
 	loadTemporalPatternEntityEvents,
+	replaceExternalCorrelationSnapshot,
 	replaceTemporalPatternSnapshot,
 } from './temporal-pattern.repository.js';
 export type {
+	CreateExternalCorrelationInput,
 	CreateSpatiotemporalHotspotClusterInput,
 	CreateTemporalAnomalyClusterInput,
+	ExternalCorrelation,
+	ExternalCorrelationListOptions,
+	ExternalCorrelationMethod,
 	HotspotPersistence,
+	ReplaceExternalCorrelationSnapshotInput,
+	ReplaceExternalCorrelationSnapshotResult,
 	ReplaceTemporalPatternSnapshotInput,
 	ReplaceTemporalPatternSnapshotResult,
 	SpatiotemporalHotspotCluster,

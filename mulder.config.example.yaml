@@ -372,6 +372,13 @@ temporal_pattern_detection:
     temporal_granularity: "year"
     persistence_threshold_years: 5
     max_clusters: 100
+  external_correlation:
+    enabled: true
+    series: []                        # Configure plugin_id/source_id/series_id entries for local deterministic plugins
+    methods: ["spearman", "cross_correlation"]
+    min_data_points: 30
+    max_lag_days: 90
+    always_include_caveat: true
   reporting_bias:
     correction_enabled: true
     correction_field: null            # Configure an ontology attribute such as observation intensity

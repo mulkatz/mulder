@@ -779,11 +779,39 @@ const temporalReportingBiasObj = z.object({
 });
 const temporalReportingBiasSchema = temporalReportingBiasObj.default(defaults(temporalReportingBiasObj));
 
+const temporalExternalCorrelationMethodSchema = z.enum(['spearman', 'cross_correlation']);
+
+const temporalExternalCorrelationSeriesSchema = z.object({
+	source_id: z.string().min(1),
+	series_id: z.string().min(1),
+	plugin_id: z.string().min(1),
+	enabled: z.boolean().default(true),
+	label: z.string().min(1).optional(),
+	time_start: z.string().min(1).optional(),
+	time_end: z.string().min(1).optional(),
+	region_key: z.string().min(1).optional(),
+	category_ref: temporalPatternCategoryRefSchema.optional(),
+	filters: z.record(z.string(), z.unknown()).default({}),
+});
+
+const temporalExternalCorrelationObj = z.object({
+	enabled: z.boolean().default(true),
+	series: z.array(temporalExternalCorrelationSeriesSchema).default([]),
+	methods: z.array(temporalExternalCorrelationMethodSchema).nonempty().default(['spearman', 'cross_correlation']),
+	min_data_points: z.number().positive().int().default(30),
+	max_lag_days: z.number().nonnegative().int().default(90),
+	always_include_caveat: z.boolean().default(true),
+});
+const temporalExternalCorrelationSchema = temporalExternalCorrelationObj.default(
+	defaults(temporalExternalCorrelationObj),
+);
+
 const temporalPatternDetectionObj = z.object({
 	enabled: z.boolean().default(true),
 	schedule: z.enum(['manual', 'daily', 'weekly', 'monthly']).default('weekly'),
 	anomaly_detection: temporalAnomalyDetectionSchema,
 	hotspot_clustering: temporalHotspotClusteringSchema,
+	external_correlation: temporalExternalCorrelationSchema,
 	reporting_bias: temporalReportingBiasSchema,
 });
 const temporalPatternDetectionSchema = temporalPatternDetectionObj.default(defaults(temporalPatternDetectionObj));
@@ -1013,6 +1041,9 @@ export {
 	taxonomyHarmonizationTaxonomyRefSchema,
 	taxonomySchema,
 	temporalAnomalyDetectionSchema,
+	temporalExternalCorrelationMethodSchema,
+	temporalExternalCorrelationSchema,
+	temporalExternalCorrelationSeriesSchema,
 	temporalHotspotClusteringSchema,
 	temporalPatternCategoryRefSchema,
 	temporalPatternDetectionSchema,

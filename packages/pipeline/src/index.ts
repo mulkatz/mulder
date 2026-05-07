@@ -11,6 +11,15 @@ export type {
 	EvidenceChainsAnalyzeData,
 	EvidenceChainsAvailability,
 	EvidenceChainThesisOutcome,
+	ExternalCorrelationSummary,
+	ExternalDataFetchRequest,
+	ExternalDataFetchResult,
+	ExternalDataPoint,
+	ExternalDataSourceKind,
+	ExternalDataSourcePlugin,
+	ExternalDataUpdateFrequency,
+	ExternalEvent,
+	ExternalStaticDataset,
 	FullAnalyzeData,
 	ReliabilityAnalyzeData,
 	SimilarEntityDiscoveryOptions,
@@ -31,9 +40,14 @@ export type {
 	WinningClaim,
 } from './analyze/index.js';
 export {
+	clearExternalDataSourcePlugins,
+	createStaticExternalDataSourcePlugin,
 	detectTemporalPatterns,
 	discoverSimilarEntities,
+	ExternalDataSourceRegistry,
 	execute as executeAnalyze,
+	getExternalDataSourceRegistry,
+	registerExternalDataSourcePlugin,
 	scoreTaxonomyMappingSimilarity,
 } from './analyze/index.js';
 export type {

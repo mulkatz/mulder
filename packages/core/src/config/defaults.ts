@@ -111,6 +111,14 @@ const temporalPatternDetectionDefaults: TemporalPatternDetectionConfig = {
 		persistence_threshold_years: 5,
 		max_clusters: 100,
 	},
+	external_correlation: {
+		enabled: true,
+		series: [],
+		methods: ['spearman', 'cross_correlation'],
+		min_data_points: 30,
+		max_lag_days: 90,
+		always_include_caveat: true,
+	},
 	reporting_bias: {
 		correction_enabled: true,
 		correction_field: null,

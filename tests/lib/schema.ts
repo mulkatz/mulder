@@ -26,6 +26,7 @@ const CLI = resolve(ROOT, 'apps/cli/dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
 
 export const MULDER_TEST_TABLES = [
+	'external_correlations',
 	'spatiotemporal_hotspot_clusters',
 	'temporal_anomaly_clusters',
 	'translated_documents',

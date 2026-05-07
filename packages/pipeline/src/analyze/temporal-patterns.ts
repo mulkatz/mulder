@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto';
 import type {
 	ArtifactProvenanceInput,
 	ClassificationCategoryRef,
+	CreateExternalCorrelationInput,
 	CreateSpatiotemporalHotspotClusterInput,
 	CreateTemporalAnomalyClusterInput,
+	ExternalCorrelationMethod,
 	HotspotPersistence,
 	MulderConfig,
 	SensitivityLevel,
@@ -16,10 +18,14 @@ import {
 	loadTemporalPatternEntityEvents,
 	mergeSensitivityMetadata,
 	mostRestrictiveSensitivityLevel,
+	replaceExternalCorrelationSnapshot,
 	replaceTemporalPatternSnapshot,
 } from '@mulder/core';
 import type pg from 'pg';
+import type { ExternalDataFetchResult, ExternalDataPoint, ExternalDataSourceRegistry } from './external-correlation.js';
+import { getExternalDataSourceRegistry } from './external-correlation.js';
 import type {
+	ExternalCorrelationSummary,
 	TemporalPatternAnalyzeData,
 	TemporalPatternAnomalySummary,
 	TemporalPatternDetectionResult,
@@ -27,6 +33,7 @@ import type {
 } from './types.js';
 
 const WEAK_SIGNAL_CAVEAT = 'Patterns are hypothesis starters, not causal evidence.';
+const CORRELATION_CAVEAT = 'Correlation ≠ Causation';
 const EARTH_RADIUS_KM = 6371;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -74,6 +81,42 @@ interface HotspotCandidate {
 interface HotspotInputWithSummary {
 	input: CreateSpatiotemporalHotspotClusterInput;
 	summary: TemporalPatternHotspotSummary;
+}
+
+interface InternalCorrelationBucket {
+	value: number;
+	events: NormalizedEvent[];
+}
+
+interface InternalCorrelationSeries {
+	key: string;
+	points: Map<string, InternalCorrelationBucket>;
+	events: NormalizedEvent[];
+}
+
+interface AlignedCorrelationPoint {
+	internalValue: number;
+	externalValue: number;
+	dateKey: string;
+	events: NormalizedEvent[];
+}
+
+interface CorrelationComputation {
+	method: ExternalCorrelationMethod;
+	coefficient: number;
+	pValue: number;
+	lagDays: number;
+	timeStart: Date;
+	timeEnd: Date;
+	dataPointCount: number;
+	events: NormalizedEvent[];
+}
+
+interface ExternalCorrelationBuildResult {
+	inputs: CreateExternalCorrelationInput[];
+	summaries: ExternalCorrelationSummary[];
+	warnings: string[];
+	evaluatedSeriesCount: number;
 }
 
 function readString(value: unknown): string | null {
@@ -589,6 +632,297 @@ function deterministicUuid(key: string): string {
 	return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-${variant}${hash.slice(18, 20)}-${hash.slice(20, 32)}`;
 }
 
+function dateFromOptionalConfig(value: string | undefined): Date | undefined {
+	return value ? (parseIsoDate(value) ?? undefined) : undefined;
+}
+
+function eventMatchesCategory(event: NormalizedEvent, ref: ClassificationCategoryRef | undefined): boolean {
+	if (!ref) return true;
+	return event.categoryRefs.some(
+		(candidate) =>
+			candidate.categoryId === ref.categoryId && (!ref.taxonomyId || candidate.taxonomyId === ref.taxonomyId),
+	);
+}
+
+function configCategoryRef(
+	ref: MulderConfig['temporal_pattern_detection']['external_correlation']['series'][number]['category_ref'],
+): ClassificationCategoryRef | undefined {
+	return ref ? { categoryId: ref.category_id, taxonomyId: ref.taxonomy_id } : undefined;
+}
+
+function buildInternalCorrelationSeries(
+	events: readonly NormalizedEvent[],
+	series: MulderConfig['temporal_pattern_detection']['external_correlation']['series'][number],
+	config: MulderConfig['temporal_pattern_detection'],
+): InternalCorrelationSeries {
+	const timeStart = dateFromOptionalConfig(series.time_start);
+	const timeEnd = dateFromOptionalConfig(series.time_end);
+	const categoryRef = configCategoryRef(series.category_ref);
+	const filtered = events.filter((event) => {
+		if (timeStart && event.occurredAt.getTime() < timeStart.getTime()) return false;
+		if (timeEnd && event.occurredAt.getTime() > timeEnd.getTime()) return false;
+		if (series.region_key && readRegionKey(event, config.anomaly_detection.region_grid) !== series.region_key)
+			return false;
+		if (!eventMatchesCategory(event, categoryRef)) return false;
+		return true;
+	});
+	const points = new Map<string, InternalCorrelationBucket>();
+	for (const event of filtered) {
+		const dateKey = isoDay(startOfUtcDay(event.occurredAt));
+		const existing = points.get(dateKey) ?? { value: 0, events: [] };
+		existing.value += 1;
+		existing.events.push(event);
+		points.set(dateKey, existing);
+	}
+	const categoryKey = categoryRef ? `${categoryRef.taxonomyId ?? ''}:${categoryRef.categoryId}` : 'all';
+	const regionKey = series.region_key ?? 'all';
+	return {
+		key: `entities:region=${regionKey}:category=${categoryKey}`,
+		points,
+		events: filtered,
+	};
+}
+
+function normalizeExternalPoints(
+	points: readonly ExternalDataPoint[],
+	label: string,
+): { points: Map<string, number>; warnings: string[] } {
+	const normalized = new Map<string, number>();
+	const warnings: string[] = [];
+	let dropped = 0;
+	for (const point of points) {
+		const date = point.date instanceof Date ? point.date : parseIsoDate(String(point.date));
+		if (!date || !Number.isFinite(point.value)) {
+			dropped++;
+			continue;
+		}
+		const key = isoDay(startOfUtcDay(date));
+		normalized.set(key, point.value);
+	}
+	if (dropped > 0) {
+		warnings.push(`${label}: dropped ${dropped} invalid external data point(s).`);
+	}
+	return { points: normalized, warnings };
+}
+
+function shiftedDateKey(dateKey: string, lagDays: number): string {
+	const date = parseIsoDate(dateKey) ?? new Date(`${dateKey}T00:00:00.000Z`);
+	return isoDay(new Date(date.getTime() + lagDays * DAY_MS));
+}
+
+function alignSeries(
+	internal: InternalCorrelationSeries,
+	external: ReadonlyMap<string, number>,
+	lagDays: number,
+): AlignedCorrelationPoint[] {
+	const aligned: AlignedCorrelationPoint[] = [];
+	for (const [dateKey, bucket] of [...internal.points.entries()].sort((left, right) =>
+		left[0].localeCompare(right[0]),
+	)) {
+		const externalValue = external.get(shiftedDateKey(dateKey, lagDays));
+		if (externalValue === undefined) continue;
+		aligned.push({ internalValue: bucket.value, externalValue, dateKey, events: bucket.events });
+	}
+	return aligned;
+}
+
+function averageRanks(values: readonly number[]): number[] {
+	const indexed = values
+		.map((value, index) => ({ value, index }))
+		.sort((left, right) => left.value - right.value || left.index - right.index);
+	const ranks = Array(values.length).fill(0) as number[];
+	let cursor = 0;
+	while (cursor < indexed.length) {
+		let end = cursor + 1;
+		while (end < indexed.length && indexed[end].value === indexed[cursor].value) end++;
+		const rank = (cursor + 1 + end) / 2;
+		for (let i = cursor; i < end; i++) ranks[indexed[i].index] = rank;
+		cursor = end;
+	}
+	return ranks;
+}
+
+function pearson(left: readonly number[], right: readonly number[]): number {
+	if (left.length !== right.length || left.length < 2) return 0;
+	const leftMean = left.reduce((total, value) => total + value, 0) / left.length;
+	const rightMean = right.reduce((total, value) => total + value, 0) / right.length;
+	let numerator = 0;
+	let leftDenominator = 0;
+	let rightDenominator = 0;
+	for (let i = 0; i < left.length; i++) {
+		const leftDelta = left[i] - leftMean;
+		const rightDelta = right[i] - rightMean;
+		numerator += leftDelta * rightDelta;
+		leftDenominator += leftDelta * leftDelta;
+		rightDenominator += rightDelta * rightDelta;
+	}
+	const denominator = Math.sqrt(leftDenominator * rightDenominator);
+	return denominator === 0 ? 0 : Math.max(-1, Math.min(1, numerator / denominator));
+}
+
+function spearman(left: readonly number[], right: readonly number[]): number {
+	return pearson(averageRanks(left), averageRanks(right));
+}
+
+function pValueApprox(coefficient: number, dataPointCount: number): number {
+	if (dataPointCount < 3) return 1;
+	const bounded = Math.max(-0.999999, Math.min(0.999999, coefficient));
+	const tScore = Math.abs(bounded) * Math.sqrt((dataPointCount - 2) / Math.max(0.000001, 1 - bounded * bounded));
+	return Math.max(0, Math.min(1, 2 * normalUpperTail(tScore)));
+}
+
+function computeCorrelation(
+	method: ExternalCorrelationMethod,
+	internal: InternalCorrelationSeries,
+	external: ReadonlyMap<string, number>,
+	minDataPoints: number,
+	maxLagDays: number,
+): CorrelationComputation | null {
+	const lags = method === 'cross_correlation' ? [...Array(maxLagDays + 1).keys()] : [0];
+	let best: CorrelationComputation | null = null;
+	for (const lagDays of lags) {
+		const aligned = alignSeries(internal, external, lagDays);
+		if (aligned.length < minDataPoints) continue;
+		const left = aligned.map((point) => point.internalValue);
+		const right = aligned.map((point) => point.externalValue);
+		const coefficient = method === 'spearman' ? spearman(left, right) : pearson(left, right);
+		const pValue = pValueApprox(coefficient, aligned.length);
+		const eventById = new Map<string, NormalizedEvent>();
+		for (const point of aligned) {
+			for (const event of point.events) eventById.set(event.entityId, event);
+		}
+		const dates = aligned.map((point) => parseIsoDate(point.dateKey) ?? new Date(`${point.dateKey}T00:00:00.000Z`));
+		const candidate: CorrelationComputation = {
+			method,
+			coefficient,
+			pValue,
+			lagDays,
+			timeStart: new Date(Math.min(...dates.map((date) => date.getTime()))),
+			timeEnd: new Date(Math.max(...dates.map((date) => date.getTime())) + DAY_MS),
+			dataPointCount: aligned.length,
+			events: [...eventById.values()].sort((leftEvent, rightEvent) =>
+				leftEvent.entityId.localeCompare(rightEvent.entityId),
+			),
+		};
+		if (!best || Math.abs(candidate.coefficient) > Math.abs(best.coefficient) || candidate.lagDays < best.lagDays) {
+			best = candidate;
+		}
+	}
+	return best;
+}
+
+async function buildExternalCorrelationInputs(
+	events: readonly NormalizedEvent[],
+	config: MulderConfig['temporal_pattern_detection'],
+	computedAt: Date,
+	registry: ExternalDataSourceRegistry,
+): Promise<ExternalCorrelationBuildResult> {
+	const externalConfig = config.external_correlation;
+	const inputs: CreateExternalCorrelationInput[] = [];
+	const summaries: ExternalCorrelationSummary[] = [];
+	const warnings: string[] = [];
+	let evaluatedSeriesCount = 0;
+	if (!config.enabled || !externalConfig.enabled || externalConfig.series.length === 0) {
+		return { inputs, summaries, warnings, evaluatedSeriesCount };
+	}
+
+	for (const series of externalConfig.series) {
+		const label = `${series.plugin_id}/${series.source_id}/${series.series_id}`;
+		if (!series.enabled) {
+			warnings.push(`${label}: skipped disabled external series.`);
+			continue;
+		}
+		const plugin = registry.get(series.plugin_id);
+		if (!plugin) {
+			warnings.push(`${label}: skipped missing external data source plugin.`);
+			continue;
+		}
+		const internal = buildInternalCorrelationSeries(events, series, config);
+		if (internal.points.size < externalConfig.min_data_points) {
+			warnings.push(`${label}: skipped internal series with fewer than ${externalConfig.min_data_points} data points.`);
+			continue;
+		}
+
+		let fetched: ExternalDataFetchResult;
+		try {
+			fetched = await plugin.fetch({
+				sourceId: series.source_id,
+				seriesId: series.series_id,
+				series,
+				timeStart: dateFromOptionalConfig(series.time_start),
+				timeEnd: dateFromOptionalConfig(series.time_end),
+			});
+		} catch {
+			warnings.push(`${label}: skipped after plugin fetch failed.`);
+			continue;
+		}
+		warnings.push(...(fetched.warnings ?? []).map((warning) => `${label}: ${warning}`));
+		const external = normalizeExternalPoints(fetched.points, label);
+		warnings.push(...external.warnings);
+		if (external.points.size < externalConfig.min_data_points) {
+			warnings.push(`${label}: skipped external series with fewer than ${externalConfig.min_data_points} data points.`);
+			continue;
+		}
+		evaluatedSeriesCount += 1;
+
+		for (const method of externalConfig.methods) {
+			const computed = computeCorrelation(
+				method,
+				internal,
+				external.points,
+				externalConfig.min_data_points,
+				externalConfig.max_lag_days,
+			);
+			if (!computed) {
+				warnings.push(`${label}: skipped ${method} because aligned data points were below threshold.`);
+				continue;
+			}
+			const sensitivity = mergeSensitivity(computed.events);
+			const contributingEntityIds = computed.events
+				.map((event) => event.entityId)
+				.sort((left, right) => left.localeCompare(right));
+			const id = deterministicUuid(
+				`external-correlation:${internal.key}:${series.source_id}:${series.series_id}:${method}:${computed.timeStart.toISOString()}:${computed.timeEnd.toISOString()}:${computed.lagDays}`,
+			);
+			inputs.push({
+				id,
+				internalSeriesKey: internal.key,
+				externalSourceId: series.source_id,
+				externalSeriesId: series.series_id,
+				method,
+				coefficient: computed.coefficient,
+				pValue: computed.pValue,
+				lagDays: computed.lagDays,
+				timeStart: computed.timeStart,
+				timeEnd: computed.timeEnd,
+				dataPointCount: computed.dataPointCount,
+				contributingEntityIds,
+				interpretationCaveat: CORRELATION_CAVEAT,
+				caveats: externalConfig.always_include_caveat ? [CORRELATION_CAVEAT] : [],
+				provenance: mergeProvenance(computed.events),
+				sensitivityLevel: sensitivity.sensitivityLevel,
+				sensitivityMetadata: sensitivity.sensitivityMetadata,
+				computedAt,
+			});
+			summaries.push({
+				internalSeriesKey: internal.key,
+				externalSourceId: series.source_id,
+				externalSeriesId: series.series_id,
+				method,
+				coefficient: computed.coefficient,
+				pValue: computed.pValue,
+				lagDays: computed.lagDays,
+				timeStart: computed.timeStart,
+				timeEnd: computed.timeEnd,
+				dataPointCount: computed.dataPointCount,
+				contributingEntityIds,
+				interpretationCaveat: CORRELATION_CAVEAT,
+			});
+		}
+	}
+	return { inputs, summaries, warnings, evaluatedSeriesCount };
+}
+
 function hotspotGroupKey(latitude: number, longitude: number): string {
 	return `hotspot:${Math.round(latitude)}:${Math.round(longitude)}`;
 }
@@ -755,20 +1089,24 @@ function makeSkippedResult(reason: string): TemporalPatternDetectionResult {
 			anomalyComparisonCount: 0,
 			anomalyCount: 0,
 			hotspotCount: 0,
+			externalCorrelationCount: 0,
 			persistedAnomalyCount: 0,
 			persistedHotspotCount: 0,
+			persistedExternalCorrelationCount: 0,
 			warnings: [reason],
 			caveat: WEAK_SIGNAL_CAVEAT,
 			anomalies: [],
 			hotspots: [],
+			externalCorrelations: [],
 		},
-		snapshot: { anomalies: [], hotspots: [] },
+		snapshot: { anomalies: [], hotspots: [], externalCorrelations: [] },
 	};
 }
 
 export async function detectTemporalPatterns(
 	pool: pg.Pool,
 	config: MulderConfig,
+	options?: { externalDataSourceRegistry?: ExternalDataSourceRegistry },
 ): Promise<TemporalPatternDetectionResult> {
 	if (!config.temporal_pattern_detection.enabled) {
 		return makeSkippedResult('temporal pattern detection is disabled in the active configuration');
@@ -787,10 +1125,22 @@ export async function detectTemporalPatterns(
 
 	const anomalies = buildAnomalyCandidates(events, config.temporal_pattern_detection, computedAt);
 	const hotspots = buildHotspotCandidates(events, config.temporal_pattern_detection, computedAt);
+	const externalCorrelations = await buildExternalCorrelationInputs(
+		events,
+		config.temporal_pattern_detection,
+		computedAt,
+		options?.externalDataSourceRegistry ?? getExternalDataSourceRegistry(),
+	);
 	const snapshot = await replaceTemporalPatternSnapshot(pool, {
 		anomalies: anomalies.candidates.map((candidate) => candidate.input),
 		hotspots: hotspots.map((candidate) => candidate.input),
 	});
+	const externalCorrelationSnapshot =
+		externalCorrelations.inputs.length > 0
+			? await replaceExternalCorrelationSnapshot(pool, {
+					correlations: externalCorrelations.inputs,
+				})
+			: { correlations: [] };
 	const warnings: string[] = [];
 	if (anomalies.comparisonCount > anomalies.boundedComparisonCount && anomalies.boundedComparisonCount > 0) {
 		warnings.push('Temporal anomaly comparisons were bounded by configured max region/window limits.');
@@ -798,6 +1148,7 @@ export async function detectTemporalPatterns(
 	if (events.length === 0) {
 		warnings.push('No timestamp-bearing entity events were available for temporal pattern detection.');
 	}
+	warnings.push(...externalCorrelations.warnings);
 
 	const data: TemporalPatternAnalyzeData = {
 		mode: 'temporal-patterns',
@@ -807,17 +1158,20 @@ export async function detectTemporalPatterns(
 		anomalyComparisonCount: anomalies.comparisonCount,
 		anomalyCount: anomalies.candidates.length,
 		hotspotCount: hotspots.length,
+		externalCorrelationCount: externalCorrelations.summaries.length,
 		persistedAnomalyCount: snapshot.anomalies.length,
 		persistedHotspotCount: snapshot.hotspots.length,
+		persistedExternalCorrelationCount: externalCorrelationSnapshot.correlations.length,
 		warnings,
 		caveat: WEAK_SIGNAL_CAVEAT,
 		anomalies: anomalies.candidates.map((candidate) => candidate.summary),
 		hotspots: hotspots.map((candidate) => candidate.summary),
+		externalCorrelations: externalCorrelations.summaries,
 	};
 
 	return {
 		status: 'success',
 		data,
-		snapshot,
+		snapshot: { ...snapshot, externalCorrelations: externalCorrelationSnapshot.correlations },
 	};
 }
