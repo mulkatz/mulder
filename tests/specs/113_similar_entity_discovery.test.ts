@@ -531,6 +531,43 @@ describe('Spec 113: Similar Entity Discovery', () => {
 		expect(edge.rows[0].provenance.source_document_ids?.sort()).toEqual([sourceAId, sourceHighId].sort());
 	});
 
+	it.skipIf(!pgAvailable)('marks only bounded auto-discovery rows when query persistence is enabled', async () => {
+		const entityA = await createEntityFixture('Spec 113 Query Persist Auto A', {
+			attributes: { date: '2020-01-01' },
+		});
+		const high = await createEntityFixture('Spec 113 Query Persist Auto High', {
+			attributes: { date: '2020-01-01' },
+		});
+		const low = await createEntityFixture('Spec 113 Query Persist Auto Low', {
+			attributes: { date: '1900-01-01' },
+		});
+		const config = cloneConfig();
+		config.similar_case_discovery.max_results = 2;
+		config.similar_case_discovery.auto_discovery.threshold = 0;
+		config.similar_case_discovery.auto_discovery.max_auto_links = 1;
+		config.similar_case_discovery.auto_discovery.create_graph_edge = false;
+
+		const result = await pipelineModule.discoverSimilarEntities(pool, config, {
+			entityId: entityA.id,
+			candidateIds: [high.id, low.id],
+			maxResults: 2,
+			persistResults: true,
+			autoDiscover: true,
+			explanation: 'Query-persisted auto-discovery explanation',
+		});
+
+		expect(result.persistedCount).toBe(2);
+		expect(result.autoLinkCount).toBe(0);
+		expect(result.results.map((item) => item.entityId)).toEqual([high.id, low.id]);
+		const highCache = await coreModule.findSimilarityByPair(pool, entityA.id, high.id);
+		const lowCache = await coreModule.findSimilarityByPair(pool, entityA.id, low.id);
+		expect(highCache?.autoDiscovered).toBe(true);
+		expect(highCache?.autoDiscoveryMetadata).toMatchObject({ max_auto_links: 1 });
+		expect(lowCache?.autoDiscovered).toBe(false);
+		expect(lowCache?.autoDiscoveryMetadata).toEqual({});
+		expect(result.cachedResults.map((item) => item.entityId).sort()).toEqual([high.id, low.id].sort());
+	});
+
 	it.skipIf(!pgAvailable)('QA-06: Sensitivity filtering hides over-sensitive links', async () => {
 		const entityA = await createEntityFixture('Spec 113 Filter A');
 		const internal = await createEntityFixture('Spec 113 Filter Internal');
@@ -563,6 +600,40 @@ describe('Spec 113: Similar Entity Discovery', () => {
 		expect(adminResults.map((result) => result.entityId).sort()).toEqual(
 			[confidential.id, internal.id, restricted.id].sort(),
 		);
+	});
+
+	it.skipIf(!pgAvailable)('filters cached discovery reloads by the requested sensitivity level', async () => {
+		const entityA = await createEntityFixture('Spec 113 Cached Filter A', {
+			attributes: { date: '2020-01-01' },
+		});
+		const internal = await createEntityFixture('Spec 113 Cached Filter Internal', {
+			attributes: { date: '2020-01-01' },
+		});
+		const restricted = await createEntityFixture('Spec 113 Cached Filter Restricted', {
+			attributes: { date: '2020-01-01' },
+			sensitivityLevel: 'restricted',
+			sensitivityMetadata: sensitivityMetadata('restricted'),
+		});
+		await upsertSimilarity(entityA.id, restricted.id, {
+			sensitivityLevel: 'restricted',
+			sensitivityMetadata: sensitivityMetadata('restricted'),
+		});
+		const config = cloneConfig();
+
+		const result = await pipelineModule.discoverSimilarEntities(pool, config, {
+			entityId: entityA.id,
+			candidateIds: [internal.id],
+			maxResults: 10,
+			persistResults: true,
+			autoDiscover: false,
+			maxSensitivityLevel: 'internal',
+			explanation: 'Internal cached reload explanation',
+		});
+
+		expect(result.results.map((item) => item.entityId)).toEqual([internal.id]);
+		expect(result.cachedResults.map((item) => item.entityId)).toEqual([internal.id]);
+		expect(result.cachedResults).toHaveLength(1);
+		expect(result.cachedResults[0].sensitivityLevel).toBe('internal');
 	});
 
 	it.skipIf(!pgAvailable)('QA-07: Review artifact registration is observable', async () => {

@@ -693,11 +693,20 @@ export async function discoverSimilarEntities(
 	const topResults = results.slice(0, maxResults).map((result, index) => ({ ...result, overallRank: index + 1 }));
 	const shouldAutoDiscover = options.autoDiscover ?? false;
 	const shouldPersistQueryResults = options.persistResults === true;
+	const autoConfig = config.similar_case_discovery.auto_discovery;
+	const autoResults =
+		shouldAutoDiscover && autoConfig.enabled
+			? topResults
+					.filter((result) => result.weightedRankScore >= autoConfig.threshold)
+					.slice(0, autoConfig.max_auto_links)
+			: [];
+	const autoResultIds = new Set(autoResults.map((result) => result.entityId));
 	let persistedCount = 0;
 	let autoLinkCount = 0;
 
 	if (shouldPersistQueryResults) {
 		for (const result of topResults) {
+			const autoDiscovered = autoResultIds.has(result.entityId);
 			result.cacheRecord = await upsertSimilarityResult(pool, {
 				sourceEntityId: source.id,
 				targetEntityId: result.entityId,
@@ -707,8 +716,8 @@ export async function discoverSimilarEntities(
 				sharedEntityIds: result.sharedEntityIds,
 				keyDifferences: result.keyDifferences,
 				rankPosition: result.overallRank,
-				autoDiscovered: shouldAutoDiscover,
-				autoDiscoveryMetadata: shouldAutoDiscover ? autoDiscoveryMetadata(config) : {},
+				autoDiscovered,
+				autoDiscoveryMetadata: autoDiscovered ? autoDiscoveryMetadata(config) : {},
 				provenance: result.provenance,
 				sensitivityLevel: result.sensitivityLevel,
 				sensitivityMetadata: result.sensitivityMetadata,
@@ -717,13 +726,6 @@ export async function discoverSimilarEntities(
 		}
 	}
 
-	const autoConfig = config.similar_case_discovery.auto_discovery;
-	const autoResults =
-		shouldAutoDiscover && autoConfig.enabled
-			? topResults
-					.filter((result) => result.weightedRankScore >= autoConfig.threshold)
-					.slice(0, autoConfig.max_auto_links)
-			: [];
 	if (shouldAutoDiscover && autoConfig.enabled && !shouldPersistQueryResults) {
 		for (const result of autoResults) {
 			result.cacheRecord = await upsertSimilarityResult(pool, {
@@ -757,7 +759,11 @@ export async function discoverSimilarEntities(
 
 	const cachedResults =
 		shouldPersistQueryResults || autoResults.length > 0
-			? await listSimilarEntities(pool, { entityId: source.id, limit: maxResults })
+			? await listSimilarEntities(pool, {
+					entityId: source.id,
+					limit: maxResults,
+					maxSensitivityLevel: options.maxSensitivityLevel,
+				})
 			: [];
 	return {
 		entityId: source.id,
