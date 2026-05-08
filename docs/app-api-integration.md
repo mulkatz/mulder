@@ -1,9 +1,11 @@
 # Mulder App API Integration Notes
 
 **Status:** Active implementation reference for `apps/app`
-**Related:** [`app-design-strategy.md`](./app-design-strategy.md), [`app-deployment.md`](./app-deployment.md), [`api-architecture.md`](./api-architecture.md)
+**Related:** [`app-design-strategy.md`](./app-design-strategy.md), [`app-deployment.md`](./app-deployment.md), [`api-architecture.md`](./api-architecture.md), [`api-parity-matrix.md`](./api-parity-matrix.md)
 
 This document is the active API integration reference for the Mulder app. It is not a visual or interaction-design reference. The app must continue to follow the cleaner, research-first direction in `docs/app-design-strategy.md`.
+
+Use [`api-parity-matrix.md`](./api-parity-matrix.md) as the source of truth for whether a capability is app-ready, partially exposed over HTTP, backend-only, CLI/operator-only, or future work.
 
 ## Integration Posture
 

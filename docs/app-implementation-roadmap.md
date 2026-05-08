@@ -181,6 +181,8 @@ Important distinction:
 
 The app should not guess at backend shape. For each new route, define or confirm the HTTP contract first.
 
+Use [`api-parity-matrix.md`](./api-parity-matrix.md) before activating any app capability. It distinguishes app-ready HTTP contracts from backend-only, CLI/operator-only, partial, and future surfaces.
+
 Existing mounted contracts the app can continue to use:
 
 - auth/session/login/logout/invite acceptance

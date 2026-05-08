@@ -2,6 +2,8 @@
 
 Companion to `roadmap.md` M7 (H1–H11). Covers framework choice, API structure, the shipped middleware stack, and key trade-offs.
 
+**Runtime parity note:** This document preserves the M7 architecture direction. The exact current inventory of mounted HTTP routes, CLI-only capabilities, backend-only capabilities, and app-ready contracts is tracked in [`api-parity-matrix.md`](./api-parity-matrix.md). If a route sketch or CLI remote-mode note below is not represented as mounted in that matrix, treat it as design intent or partial future work rather than a shipped runtime guarantee.
+
 ---
 
 ## 1. Framework: Hono
