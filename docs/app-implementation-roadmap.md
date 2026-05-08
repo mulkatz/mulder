@@ -76,10 +76,10 @@ Current app strengths:
 
 Current app limitations:
 
-- many M11/M12 capabilities exist in backend packages but are not mounted as app HTTP read models
+- many M12 capabilities still exist only in backend packages without app HTTP read models
 - translation UI is prepared, and source-level HTTP contracts now exist; visible request UX still waits for smoke-tested polling/content switching
-- claims/assertions do not yet have source/story offsets for passage-level linking
-- Review Queue is still disabled, even though M11 created the backend review workflow primitives
+- claims/assertions now have list/detail/source/story HTTP routes, but do not yet have source/story offsets for passage-level linking
+- Review Queue is still disabled, even though M11 review HTTP routes now exist, because the UX must present human decisions rather than raw artifact rows
 - Discovery features from M12 are not yet visible in the app
 - Add Sources is still disabled because the app needs a careful provenance-first ingest UX, not just a file picker
 
@@ -276,7 +276,7 @@ Work:
 - Keep story markdown safe through `react-markdown` without raw HTML.
 - Improve story/entity annotation interactions.
 - Prepare but do not fake claim/evidence spans until offsets exist.
-- Bind translation controls to a real contract only after M11 translation HTTP endpoints exist; until then show honest unavailable state.
+- Bind translation controls to the source-level translation contract only after request/poll/content-switching UX is designed and smoke-tested.
 
 Acceptance:
 
@@ -312,7 +312,7 @@ Work:
 
 - Activate `Review Queue` under Workspace.
 - Show review tasks grouped by source credibility, assertion classification, conflict nodes, conflict resolutions, and similar-case links.
-- Provide approve/reject/correct/contest style actions only after the review action API exists.
+- Provide approve/reject/correct/contest style actions only inside a content-first review UI that uses the mounted review action API safely.
 - Link every review item back to source/story/evidence context.
 - Add reviewer notes and event history where supported.
 
@@ -369,7 +369,7 @@ Purpose: expose M10/M11 trust without overwhelming readers.
 
 Work:
 
-- Activate Source Quality once source credibility/provenance contracts exist.
+- Activate Source Quality once the existing source credibility/provenance contracts are shaped into a usable researcher-facing panel.
 - Show provenance, custody, authenticity, quality routing, sensitivity, rollback state, and credibility dimensions.
 - Add source-level trust panels to Source Reader and All Sources.
 - Keep raw processing details secondary.
@@ -486,7 +486,7 @@ The next implementation work should be:
 
 1. Update capability states and docs for M10/M11/M12 reality.
 2. Implement the app-only PDF pane in Source Reader.
-3. Define the minimum M11 HTTP contracts for review queue and translation.
+3. Use the mounted M11 HTTP contracts to design Review Queue and translation UX without exposing raw implementation details.
 4. Build Search as the first new active route after Source Reader, because search results can now land on `/sources/:id`.
 5. Build Review Queue before broad Discovery screens, because M11 review state is the control layer for trust.
 

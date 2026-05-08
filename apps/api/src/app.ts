@@ -9,13 +9,16 @@ import { createRequestContextMiddleware } from './middleware/request-context.js'
 import { createRequestIdMiddleware } from './middleware/request-id.js';
 import { createSecureHeadersMiddleware } from './middleware/secure-headers.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerClaimRoutes } from './routes/claims.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEntityRoutes } from './routes/entities.js';
 import { registerEvidenceRoutes } from './routes/evidence.js';
 import { registerHealthRoute } from './routes/health.js';
 import { registerJobRoutes } from './routes/jobs.js';
 import { registerPipelineRoutes } from './routes/pipeline.js';
+import { registerReviewRoutes } from './routes/review.js';
 import { registerSearchRoute } from './routes/search.js';
+import { registerSourceInsightRoutes } from './routes/source-insights.js';
 import { registerStatusRoute } from './routes/status.js';
 import { registerTranslationRoutes } from './routes/translations.js';
 import { registerUploadRoutes } from './routes/uploads.js';
@@ -74,12 +77,15 @@ export function createApp(options: AppOptions = {}): OpenAPIHono {
 	registerEntityRoutes(app);
 	registerEvidenceRoutes(app);
 	registerDocumentRoutes(app);
+	registerSourceInsightRoutes(app);
+	registerClaimRoutes(app);
 	registerJobRoutes(app);
 	registerPipelineRoutes(app);
 	registerUploadRoutes(app);
 	registerSearchRoute(app);
 	registerStatusRoute(app);
 	registerTranslationRoutes(app);
+	registerReviewRoutes(app);
 
 	app.doc('/api/openapi.json', {
 		openapi: '3.0.0',

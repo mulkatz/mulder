@@ -94,9 +94,21 @@ These endpoints are the first candidates for `apps/app` because they already rep
 | Documents | `GET /api/documents/:id/pages/:pageNumber` | Page image stream. |
 | Documents | `GET /api/documents/:id/stories` | Story list and story metadata. |
 | Documents | `GET /api/documents/:id/observability` | Document processing timeline/read model. |
+| Source Quality | `GET /api/documents/:id/quality` | Document-quality assessment history and latest assessment. |
+| Source Credibility | `GET /api/documents/:id/credibility` | Source credibility profile detail when available. |
+| Source Credibility | `GET /api/source-credibility` | Source credibility profile lists. |
+| Claims | `GET /api/claims` | First-class assertion/claim list with filters. |
+| Claims | `GET /api/claims/:claimId` | Claim detail. |
+| Claims | `GET /api/documents/:id/claims` | Document-scoped claims. |
+| Claims | `GET /api/stories/:storyId/claims` | Story-scoped claims. |
 | Translations | `GET /api/documents/:id/translations` | Source-level translation list/status and cached content. |
 | Translations | `POST /api/documents/:id/translations` | Source-level cache hit or async translation job request. |
 | Translations | `GET /api/translations/:translationId` | Translation detail with translated content. |
+| Review | `GET /api/review/queues` | Active review queue summaries. |
+| Review | `GET /api/review/queues/:queueKey/artifacts` | Paginated review artifacts for a queue. |
+| Review | `GET /api/review/artifacts/:artifactId` | Review artifact detail. |
+| Review | `GET /api/review/artifacts/:artifactId/events` | Review event history. |
+| Review | `POST /api/review/artifacts/:artifactId/actions` | Immutable review action/event recording. |
 | Search | `POST /api/search` | Hybrid retrieval, citations, and trace data. |
 | Entities | `GET /api/entities` | Entity list with filters. |
 | Entities | `GET /api/entities/:id` | Entity detail, aliases, related stories. |
@@ -129,6 +141,18 @@ This mapping captures the app's hook-per-contract shape.
 | PDF pane URL | `GET /api/documents/:id/pdf` | Source reader original-document pane. |
 | `useDocumentStories` | `GET /api/documents/:id/stories` | Source inspector and source reader story workspace. |
 | `useDocumentObservability` | `GET /api/documents/:id/observability` | Source inspector and secondary processing-background panel. |
+| `useDocumentQuality` | `GET /api/documents/:id/quality` | Source quality and reader trust panels. |
+| `useDocumentCredibility` | `GET /api/documents/:id/credibility` | Reader/source trust context. |
+| `useSourceCredibility` | `GET /api/source-credibility` | Future Source Quality route. |
+| `useClaims` | `GET /api/claims` | Claims & Evidence / Claim Registry preparation. |
+| `useClaim` | `GET /api/claims/:claimId` | Claim inspector preparation. |
+| `useDocumentClaims` | `GET /api/documents/:id/claims` | Reader/source claim panels after offsets UX is designed. |
+| `useStoryClaims` | `GET /api/stories/:storyId/claims` | Story-level claim panels after offsets UX is designed. |
+| `useReviewQueues` | `GET /api/review/queues` | Future Review Queue route. |
+| `useReviewQueueArtifacts` | `GET /api/review/queues/:queueKey/artifacts` | Queue artifact list. |
+| `useReviewArtifact` | `GET /api/review/artifacts/:artifactId` | Review inspector. |
+| `useReviewArtifactEvents` | `GET /api/review/artifacts/:artifactId/events` | Review history panel. |
+| `useRecordReviewAction` | `POST /api/review/artifacts/:artifactId/actions` | Future review action submission. |
 | `useEntities` | `GET /api/entities` | Entities list. |
 | `useEntity` | `GET /api/entities/:id` | Entity inspector/profile. |
 | `useEntityEdges` | `GET /api/entities/:id/edges` | Entity-local graph context. |
@@ -147,12 +171,12 @@ These gaps should be visible in the app capability registry instead of hidden be
 | Capability | Current issue |
 | --- | --- |
 | Analysis run facade | Jobs exist, but app-shaped run summaries, artifacts, step timings, and retry affordances are still partial. |
-| Evidence claims | Summary and contradictions exist, but first-class claim records, review decisions, and assertion history need an app contract. |
+| Evidence claims | Claim routes now exist, but claim/review UI and passage offsets are still missing. |
 | Source detail | `GET /api/documents/:id` now exposes stable readiness, provenance summary, quality, language, sensitivity, collection, credibility, and links without requiring processing background data. Custody-chain detail still needs a dedicated provenance inspector. |
 | Provenance-first ingest | M10 provenance, document quality, sensitivity/RBAC, custody, rollback, and collections exist in the backend. Product Add Sources remains gated until the app captures and displays those concepts as part of the ingest workflow. |
 | Persistent translation | Source-level translation routes now exist, and app hooks are prepared. The visible reader control remains disabled until the request, polling, and translated-content switching UX is designed and smoke-tested. |
-| Review queues | M11 review workflow repositories exist, but the app needs HTTP contracts for queues, queue artifacts, artifact detail, and review actions before activating Review Queue. |
-| Credibility profiles | M11 source credibility exists, but Source Quality and reader trust panels need source credibility read models. |
+| Review queues | Review HTTP contracts now exist, but Review Queue still needs content-first UX, localized states, and permission-aware empty/error handling before activation. |
+| Credibility profiles | Source credibility read models now exist, but Source Quality and reader trust panels still need UI design and smoke coverage. |
 | RBAC management | M11 RBAC filters reads, but member/role/policy management is still only partially represented in app contracts. |
 | M12 discovery | Similarity, classification harmonization, temporal patterns, and external correlations exist, but the app needs read models that link discoveries back to sources, stories, entities, and review artifacts. |
 | Graph aggregate | Entity-local edges exist, but product graph views need an aggregate or batched graph read model. |

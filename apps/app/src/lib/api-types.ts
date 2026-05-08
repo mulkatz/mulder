@@ -331,6 +331,191 @@ export interface CreateTranslationRequest {
 	refresh?: boolean;
 }
 
+export type AssertionType = 'observation' | 'interpretation' | 'hypothesis';
+export type ClassificationProvenance = 'llm_auto' | 'human_reviewed' | 'author_explicit';
+
+export interface ClaimRecord {
+	id: string;
+	source_id: string;
+	story_id: string;
+	assertion_type: AssertionType;
+	content: string;
+	confidence_metadata: {
+		witness_count: number | null;
+		measurement_based: boolean;
+		contemporaneous: boolean;
+		corroborated: boolean;
+		peer_reviewed: boolean;
+		author_is_interpreter: boolean;
+	};
+	classification_provenance: ClassificationProvenance;
+	extracted_entity_ids: string[];
+	provenance: Record<string, unknown>;
+	quality_metadata: Record<string, unknown> | null;
+	sensitivity_level: SensitivityLevel;
+	sensitivity_metadata: Record<string, unknown>;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ClaimListResponse {
+	data: ClaimRecord[];
+	meta: { count: number; limit: number; offset: number };
+}
+
+export interface ClaimDetailResponse {
+	data: ClaimRecord;
+}
+
+export type ReviewStatus = 'pending' | 'approved' | 'auto_approved' | 'corrected' | 'contested' | 'rejected';
+export type ReviewAction = 'approve' | 'correct' | 'reject' | 'comment' | 'escalate';
+export type ReviewConfidence = 'certain' | 'likely' | 'uncertain';
+export type ReviewArtifactType =
+	| 'assertion_classification'
+	| 'credibility_profile'
+	| 'taxonomy_mapping'
+	| 'similar_case_link'
+	| 'agent_finding'
+	| 'conflict_node'
+	| 'conflict_resolution';
+
+export interface ReviewQueueRecord {
+	queue_key: string;
+	name: string;
+	artifact_types: ReviewArtifactType[];
+	assignees: string[];
+	priority_rules: Record<string, unknown>;
+	active: boolean;
+	pending_count: number;
+	oldest_pending: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ReviewArtifactRecord {
+	artifact_id: string;
+	artifact_type: ReviewArtifactType;
+	subject_id: string;
+	subject_table: string;
+	created_by: 'llm_auto' | 'human' | 'agent';
+	review_status: ReviewStatus;
+	current_value: Record<string, unknown>;
+	context: Record<string, unknown>;
+	source_id: string | null;
+	priority: number;
+	due_at: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ReviewEventRecord {
+	event_id: string;
+	artifact_id: string;
+	reviewer_id: string;
+	action: ReviewAction;
+	previous_value: unknown | null;
+	new_value: unknown | null;
+	confidence: ReviewConfidence;
+	rationale: string | null;
+	tags: string[];
+	created_at: string;
+}
+
+export interface ReviewQueueListResponse {
+	data: ReviewQueueRecord[];
+}
+
+export interface ReviewArtifactListResponse {
+	data: ReviewArtifactRecord[];
+	meta: { count: number; limit: number; offset: number };
+}
+
+export interface ReviewArtifactDetailResponse {
+	data: ReviewArtifactRecord;
+}
+
+export interface ReviewEventListResponse {
+	data: ReviewEventRecord[];
+	meta: { count: number; limit: number; offset: number };
+}
+
+export interface ReviewActionRequest {
+	action: ReviewAction;
+	new_value?: unknown;
+	confidence?: ReviewConfidence;
+	rationale?: string;
+	tags?: string[];
+}
+
+export interface ReviewActionResponse {
+	data: {
+		artifact: ReviewArtifactRecord;
+		event: ReviewEventRecord;
+	};
+}
+
+export interface DocumentQualityAssessmentRecord {
+	id: string;
+	source_id: string;
+	assessed_at: string;
+	assessment_method: 'automated' | 'human';
+	overall_quality: 'high' | 'medium' | 'low' | 'unusable';
+	processable: boolean;
+	recommended_path:
+		| 'standard'
+		| 'enhanced_ocr'
+		| 'visual_extraction'
+		| 'handwriting_recognition'
+		| 'manual_transcription_required'
+		| 'skip';
+	dimensions: Record<string, unknown>;
+	signals: Record<string, unknown>;
+	created_at: string;
+}
+
+export interface DocumentQualityResponse {
+	data: {
+		latest: DocumentQualityAssessmentRecord | null;
+		assessments: DocumentQualityAssessmentRecord[];
+	};
+}
+
+export interface CredibilityProfileRecord {
+	profile_id: string;
+	source_id: string;
+	source_name: string;
+	source_type: 'government' | 'academic' | 'journalist' | 'witness' | 'organization' | 'anonymous' | 'other';
+	profile_author: 'llm_auto' | 'human' | 'hybrid';
+	last_reviewed: string | null;
+	review_status: 'draft' | 'reviewed' | 'contested';
+	provenance: Record<string, unknown>;
+	sensitivity_level: SensitivityLevel;
+	sensitivity_metadata: Record<string, unknown>;
+	dimensions: {
+		id: string;
+		profile_id: string;
+		dimension_id: string;
+		label: string;
+		score: number;
+		rationale: string;
+		evidence_refs: string[];
+		known_factors: string[];
+		created_at: string;
+		updated_at: string;
+	}[];
+	created_at: string;
+	updated_at: string;
+}
+
+export interface DocumentCredibilityResponse {
+	data: CredibilityProfileRecord | null;
+}
+
+export interface SourceCredibilityListResponse {
+	data: CredibilityProfileRecord[];
+	meta: { count: number; limit: number; offset: number };
+}
+
 export interface EvidenceSummaryResponse {
 	data: {
 		entities: {

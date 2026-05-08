@@ -100,7 +100,7 @@ export const capabilities = {
 	},
 	'evidence.claims': {
 		id: 'evidence.claims',
-		state: 'backend-no-http-contract',
+		state: 'mounted-api',
 	},
 	'evidence.reliability': {
 		id: 'evidence.reliability',
@@ -180,11 +180,11 @@ export const capabilities = {
 	},
 	'm11.reviewWorkflow': {
 		id: 'm11.reviewWorkflow',
-		state: 'backend-no-http-contract',
+		state: 'mounted-api',
 	},
 	'm11.credibility': {
 		id: 'm11.credibility',
-		state: 'backend-no-http-contract',
+		state: 'mounted-api',
 	},
 	'm11.rbac': {
 		id: 'm11.rbac',

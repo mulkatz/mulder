@@ -485,16 +485,16 @@ These are important for the app workbench:
 | --- | --- | --- |
 | Analysis run list/detail | Mounted partial: jobs exist, app-shaped runs do not | Add `/api/analysis-runs` facade or enrich `/api/jobs` with stable run grouping, progress, artifacts, parameters, and source status |
 | Run artifacts and params | Mounted partial: payload exists but is not normalized for UI | Expose a stable artifact/parameter read model rather than parsing job payloads in components |
-| Evidence claims | Missing app facade needed: contradictions exist, claims are not first-class | Add `/api/evidence/claims` with claim text, source support, confidence, contradiction state, and review state |
-| Evidence review actions | Missing | Add confirm, dismiss, watch, resolve, and annotate actions with optimistic-safe contracts |
+| Evidence claims | First-class claim routes now exist, but offsets and review-focused UI are still missing | Use claim list/detail/source/story routes, and wait for stable text offsets before passage-level links |
+| Evidence review actions | Review action route now exists for artifacts | Build content-first review UI before exposing artifact actions to normal researchers |
 | Graph aggregate | Mounted partial: per-entity edges only | Add `/api/graph` or `/api/entities/edges?entity_ids=...` for graph surfaces beyond one entity |
 | Global stories | Mounted partial: document-scoped stories exist | Add `/api/stories` and `/api/stories/:id` or keep story access intentionally document-scoped |
 | Taxonomy management | CLI/package-only; some docs mention target routes, but routes are not mounted | Add list/export/bootstrap/rebootstrap routes only if taxonomy becomes a browser workflow |
 | Ground/analyze orchestration | CLI/standalone and package capability; not first-class API/worker steps | Decide whether these become queued API steps; if yes, update pipeline step types, worker job types, chaining, retry, and tests |
 | M10 provenance/trust | Product gated: backend foundations exist, app ingest UX is not safe yet | Do not present real archive ingest as product-ready until provenance, custody, quality, sensitivity/RBAC, assertions, and rollback are represented in the app workflow |
 | M11 translation | Source-level HTTP contract exists | Keep reader translation controls honest until request/poll/content-switching UX is designed and smoke-tested |
-| M11 review workflow | Backend exists, no app HTTP contract | Add queue/artifact/action routes before activating Review Queue |
-| M11 credibility | Backend exists, no app HTTP contract | Add source credibility read models before activating Source Quality trust panels |
+| M11 review workflow | Queue/artifact/event/action HTTP contracts exist | Keep Review Queue disabled until it presents human decisions rather than raw artifact rows |
+| M11 credibility | Source credibility read models exist | Build Source Quality and reader trust panels with clear permission/unavailable states |
 | M12 discovery | Backend exists, no app HTTP contract | Add app read models for similarity, classification mappings, temporal patterns, and external correlations before showing discovery routes |
 | Cost estimates | CLI/package-only | Add estimate endpoints for upload, pipeline run, and reprocess before showing actionable cost controls |
 | Activity feed | Missing aggregate: jobs and document observability exist separately | Add cross-system activity endpoint when users need one timeline across documents, runs, reviews, and errors |

@@ -64,9 +64,21 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 | Documents | `GET` | `/api/documents/:id/pages/:num` | HTTP ready for page image stream. |
 | Documents | `GET` | `/api/documents/:id/stories` | HTTP ready for document-scoped stories. |
 | Documents | `GET` | `/api/documents/:id/observability` | HTTP ready for secondary processing background. |
+| Source Quality | `GET` | `/api/documents/:id/quality` | HTTP ready for document-quality assessment history and latest assessment. |
+| Source Credibility | `GET` | `/api/documents/:id/credibility` | HTTP ready for source credibility profile detail when available. |
+| Source Credibility | `GET` | `/api/source-credibility` | HTTP ready for credibility profile lists. |
+| Claims | `GET` | `/api/claims` | HTTP ready for first-class assertion/claim list with filters. |
+| Claims | `GET` | `/api/claims/:claimId` | HTTP ready for claim detail. |
+| Claims | `GET` | `/api/documents/:id/claims` | HTTP ready for document-scoped claims. |
+| Claims | `GET` | `/api/stories/:storyId/claims` | HTTP ready for story-scoped claims. |
 | Translations | `GET` | `/api/documents/:id/translations` | HTTP ready for source-level translation list/status. |
 | Translations | `POST` | `/api/documents/:id/translations` | HTTP ready for source-level cache hit or async translation job. |
 | Translations | `GET` | `/api/translations/:translationId` | HTTP ready for translated content detail. |
+| Review | `GET` | `/api/review/queues` | HTTP ready for active review queue summaries. |
+| Review | `GET` | `/api/review/queues/:queueKey/artifacts` | HTTP ready for paginated queue artifacts. |
+| Review | `GET` | `/api/review/artifacts/:artifactId` | HTTP ready for review artifact detail. |
+| Review | `GET` | `/api/review/artifacts/:artifactId/events` | HTTP ready for review event history. |
+| Review | `POST` | `/api/review/artifacts/:artifactId/actions` | HTTP ready for immutable review action/event recording. |
 | Search | `POST` | `/api/search` | HTTP ready. App route still pending product UI activation. |
 | Entities | `GET` | `/api/entities` | HTTP ready for entity list/search. |
 | Entities | `GET` | `/api/entities/:id` | HTTP ready for entity detail. |
@@ -85,7 +97,7 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 | Capability | CLI/core status | HTTP status | App status | Gap |
 | --- | --- | --- | --- | --- |
 | Workspace pulse | `status` CLI and status repositories exist. | `GET /api/status` is mounted. | Active on Research Desk. | Needs richer product usage/cost/health model later. |
-| Review queue | M11 review workflow repository exists. | No review HTTP routes. | Disabled. | Need queue list, artifact list/detail, and review action routes. |
+| Review queue | M11 review workflow repository exists. | Review queue/artifact/event/action routes are mounted. | Disabled until Review Queue UI slice. | Need content-first UI, EN/DE copy, and empty/error/forbidden states before activation. |
 | Watchlist | No clear stable product contract found. | No route. | Disabled. | Define product object before implementing. |
 | Research agent | Future product decision. | No route. | Disabled. | Needs agent safety, permissions, audit, and external-query gating. |
 
@@ -118,10 +130,10 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 | --- | --- | --- | --- | --- |
 | Evidence summary | Analyze/evidence repositories exist. | `GET /api/evidence/summary` is mounted. | Active in Research Desk/Evidence. | Good high-level surface. |
 | Contradictions | Analyze conflict/contradiction logic exists. M11 conflict nodes also exist. | `GET /api/evidence/contradictions` is mounted. | Active but limited. | Need M11 conflict-node/review contracts for richer workflow. |
-| Source reliability | Evidence/source reliability and M11 credibility profile work exist. | `GET /api/evidence/reliability/sources` is mounted. | Partial. | Need source credibility profile route/read model. |
+| Source reliability | Evidence/source reliability and M11 credibility profile work exist. | `GET /api/evidence/reliability/sources`, `GET /api/documents/:id/credibility`, and `GET /api/source-credibility` are mounted. | Partial. | Need Source Quality/reader trust UI before broad activation. |
 | Evidence chains | Evidence-chain repository exists. | `GET /api/evidence/chains` is mounted. | Future drilldown. | Need reader/story anchors before deep UI. |
 | Spatio-temporal clusters | M6/M12 cluster data exists. | `GET /api/evidence/clusters` is mounted. | Future drilldown. | Need caveats and source/story links for research UI. |
-| First-class claims/assertions | M10 `knowledge_assertions` repository exists. | No first-class claims/assertions HTTP routes. | Claims & Evidence stays partial. | Need claim list/detail/history/review routes and stable text offsets. |
+| First-class claims/assertions | M10 `knowledge_assertions` repository exists. | Claim list/detail/source/story routes are mounted. | Claims & Evidence stays partial. | Need review/status UI and stable text offsets before passage-click anchors. |
 | Citation/claim anchors | Assertions exist, but offsets are not exposed as stable reader anchors. | No anchor fields/routes. | Not implemented. | Do not show clickable claim spans until offsets exist. |
 
 ### Knowledge Base
@@ -131,7 +143,7 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 | Entities | `entity list/show/merge/aliases` CLI and repositories exist. | Entity list/detail/edges/merge routes exist. | Entity routes mostly disabled until product UI slice. | Alias add/remove is CLI-only; product UI needs review/permissions. |
 | Relationships | Edge repository and graph step exist. | Entity-local edges route exists. | Partial. | Need aggregate/batched graph read model for Knowledge Map. |
 | Knowledge Map | Graph step and repositories exist. | No graph aggregate route. | Disabled. | Need scoped graph query/read model with pagination/limits. |
-| Claim Registry | Knowledge assertions exist. | No claims/assertions routes. | Disabled. | Same gap as first-class claims. |
+| Claim Registry | Knowledge assertions exist. | Claim list/detail/source/story routes are mounted. | Disabled until Knowledge Base UI slice. | Need registry UI and offsets/citation anchors later. |
 | Taxonomy | `taxonomy bootstrap/re-bootstrap/show/export/curate/merge` CLI and taxonomy repository exist. | No taxonomy routes are mounted. | Disabled. | Need taxonomy list/export/curation routes if productized. |
 | Stories | Story repository exists. | Document-scoped stories exist only. | Partial through reader. | Need global story list/detail routes for registry-style UI. |
 
@@ -147,8 +159,8 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 
 | Capability | CLI/core status | HTTP status | App status | Gap |
 | --- | --- | --- | --- | --- |
-| Review queues | M11 review workflow repository exists. | No review HTTP routes. | Review Queue disabled. | Need queue summaries, artifact lists, artifact detail, review actions. |
-| Credibility profiles | M11 source credibility repository exists. | No dedicated credibility/profile route. | Source Quality disabled/partial. | Need direct sensitivity/provenance policy before exposure. |
+| Review queues | M11 review workflow repository exists. | Review queue/artifact/event/action routes are mounted. | Review Queue disabled until content-first UI slice. | Need UX that presents tasks as human decisions, not artifact rows. |
+| Credibility profiles | M11 source credibility repository exists. | Document credibility and source credibility list routes are mounted. | Source Quality disabled/partial. | Need reader/source quality panels and permission-aware unavailable states. |
 | RBAC filtering | Access-role repository and sensitivity filters exist. | Document/entity routes pass browser principals into filters. Auth invite/session routes exist. | Partial. | Need members, roles, policy management, access audit surfaces. |
 | Hidden/forbidden content | Core can filter by sensitivity. | Route behavior exists where wired. | Partial states exist. | App needs consistent copy when content is hidden by permissions. |
 
@@ -216,29 +228,28 @@ request/poll/content-switching UX and verify the worker path against a real
 local source. Story-level translation can come later if persistence and offsets
 need it.
 
-### P1: Review and credibility contracts
+### P1: Review, quality, credibility, and claims contracts
 
-Recommended minimal routes:
+The minimal contracts are now mounted:
 
 - `GET /api/review/queues`
-- `GET /api/review/queues/:id/artifacts`
-- `GET /api/review/artifacts/:id`
-- `POST /api/review/artifacts/:id/actions`
+- `GET /api/review/queues/:queueKey/artifacts`
+- `GET /api/review/artifacts/:artifactId`
+- `GET /api/review/artifacts/:artifactId/events`
+- `POST /api/review/artifacts/:artifactId/actions`
+- `GET /api/documents/:id/quality`
 - `GET /api/documents/:id/credibility`
-- `GET /api/source-quality`
-
-These should preserve sensitivity/provenance rules before becoming active app UI.
-
-### P1: First-class claims/assertions
-
-Recommended minimal routes:
-
+- `GET /api/source-credibility`
 - `GET /api/claims`
-- `GET /api/claims/:id`
+- `GET /api/claims/:claimId`
 - `GET /api/documents/:id/claims`
-- `GET /api/stories/:id/claims`
+- `GET /api/stories/:storyId/claims`
 
-Do not include passage-click UI until the response includes stable source/story
+The app can prepare hooks against these routes, but visible route activation
+still needs content-first UX, localized copy, and honest empty/error/forbidden
+states.
+
+Do not include passage-click UI until claim responses include stable source/story
 text offsets.
 
 ### P2: Search UI activation
