@@ -339,7 +339,7 @@ The reader should be story-first without losing the original:
 - Users can switch to Original-only or Story-only when one side needs focus.
 - Smaller screens should hide split mode and keep Original/Story switching usable instead of pretending that dense comparison work is mobile-first.
 - The story pane should become a living document: entities, contradictions, evidence signals, citations, source reliability, and future claim anchors should appear as contextual annotations as real API contracts expose them.
-- Translation controls should be designed from the beginning, but translation must remain clearly prepare-only until the M11 translation contract exists. No generated or fake translation should appear in the app.
+- Translation controls should be designed from the beginning, but translation must remain clearly disabled until the mounted source-level translation contract has request, polling, and content-switching UX. No generated or fake translation should appear in the app.
 - Technical processing details belong in a secondary "Processing background" disclosure so the reading experience remains content-led.
 
 Inline annotation policy:
@@ -489,13 +489,13 @@ These are important for the app workbench:
 | Evidence review actions | Review action route now exists for artifacts | Build content-first review UI before exposing artifact actions to normal researchers |
 | Graph aggregate | Mounted partial: per-entity edges only | Add `/api/graph` or `/api/entities/edges?entity_ids=...` for graph surfaces beyond one entity |
 | Global stories | Mounted partial: document-scoped stories exist | Add `/api/stories` and `/api/stories/:id` or keep story access intentionally document-scoped |
-| Taxonomy management | CLI/package-only; some docs mention target routes, but routes are not mounted | Add list/export/bootstrap/rebootstrap routes only if taxonomy becomes a browser workflow |
+| Taxonomy management | Mounted partial: list/export routes exist; bootstrap/merge/rebootstrap remain CLI/operator-only | Add browser curation routes only if taxonomy becomes a product workflow |
 | Ground/analyze orchestration | CLI/standalone and package capability; not first-class API/worker steps | Decide whether these become queued API steps; if yes, update pipeline step types, worker job types, chaining, retry, and tests |
 | M10 provenance/trust | Product gated: backend foundations exist, app ingest UX is not safe yet | Do not present real archive ingest as product-ready until provenance, custody, quality, sensitivity/RBAC, assertions, and rollback are represented in the app workflow |
 | M11 translation | Source-level HTTP contract exists | Keep reader translation controls honest until request/poll/content-switching UX is designed and smoke-tested |
 | M11 review workflow | Queue/artifact/event/action HTTP contracts exist | Keep Review Queue disabled until it presents human decisions rather than raw artifact rows |
 | M11 credibility | Source credibility read models exist | Build Source Quality and reader trust panels with clear permission/unavailable states |
-| M12 discovery | Backend exists, no app HTTP contract | Add app read models for similarity, classification mappings, temporal patterns, and external correlations before showing discovery routes |
+| M12 discovery | Caveated HTTP read models exist | Add content-first UI that links leads back to sources, stories, entities, and review state before showing discovery routes |
 | Cost estimates | CLI/package-only | Add estimate endpoints for upload, pipeline run, and reprocess before showing actionable cost controls |
 | Activity feed | Missing aggregate: jobs and document observability exist separately | Add cross-system activity endpoint when users need one timeline across documents, runs, reviews, and errors |
 | Export workflows | CLI/package-only | Add export job routes or signed artifact routes before exposing export as a primary browser action |
@@ -546,20 +546,20 @@ Use it to control:
 
 ### Phase 3: Close Backend Gaps in Product Order
 
-Prioritize API additions that unlock complete workflows:
+Prioritize product gaps that unlock complete workflows:
 
 1. Analysis run facade.
-2. Evidence claim and review facade.
-3. Source Reader happy path and app-controlled PDF rendering.
-4. Search, once results can land on real source/story destinations.
-5. M11 review, translation, and credibility contracts.
-6. M12 discovery read models with explicit caveats.
-4. Global stories or intentionally document-scoped story endpoints.
-5. Graph aggregate endpoint.
-6. Ground/analyze orchestration decision.
-7. Taxonomy API, if taxonomy is meant to be browser-managed.
-8. Cost estimate API.
-9. Export and reprocess endpoints.
+2. Source Reader happy path and app-controlled PDF rendering.
+3. Search, once results can land on real source/story destinations.
+4. M11 review, translation, and credibility UX on the mounted contracts.
+5. M12 discovery UI on caveated read models.
+6. Evidence claim registry and review workflows once offsets and review states are product-shaped.
+7. Global stories or intentionally document-scoped story endpoints.
+8. Graph aggregate endpoint.
+9. Ground/analyze orchestration decision.
+10. Browser taxonomy curation, if taxonomy becomes a product workflow.
+11. Cost estimate API.
+12. Export and reprocess endpoints.
 
 ### Phase 4: Expand Workbench Modules
 

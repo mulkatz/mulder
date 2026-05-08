@@ -69,6 +69,7 @@ export const resources = {
 				watching: 'Watching',
 				contradicted: 'Contradicted',
 				failed: 'Failed',
+				skipped: 'Skipped',
 				dead_letter: 'Dead letter',
 				missing: 'Missing',
 				mounted_api: 'Mounted API',
@@ -120,7 +121,8 @@ export const resources = {
 				documents_viewer:
 					'PDF, layout, pages, stories, and observability exist, but archive ingest is gated by M10 trust work.',
 				sources_add: 'Upload routes exist, but real source ingest is gated by provenance and trust work.',
-				evidence_claims: 'First-class claims, assertions, and review actions need an app API contract.',
+				evidence_claims:
+					'Claim, assertion, and review action contracts are mounted; richer claim registry and review workflows still need content-first UI states.',
 				evidence_contradictions: 'GET /api/evidence/contradictions is available.',
 				evidence_summary: 'GET /api/evidence/summary is available.',
 				evidence_reliability: 'GET /api/evidence/reliability/sources is available.',
@@ -130,7 +132,8 @@ export const resources = {
 				entities_list: 'GET /api/entities is available.',
 				relationships_list: 'Entity-local relationships exist, but a dedicated relationship list is not mounted yet.',
 				graph_aggregate: 'Entity-local edges exist; aggregate graph read models are still needed.',
-				taxonomy_manage: 'Taxonomy capabilities exist outside the browser and need app contracts before UI use.',
+				taxonomy_manage:
+					'Taxonomy list and export routes are mounted; browser curation, bootstrap, and merge workflows remain operator-only until product UX exists.',
 				stories_list: 'Document-scoped stories exist; a global stories surface needs an app read model.',
 				activity_feed: 'No cross-system activity stream is mounted yet.',
 				operations_recovery: 'Pipeline retry exists, but broader recovery and rollback flows need UI-safe contracts.',
@@ -143,15 +146,20 @@ export const resources = {
 				m10_provenance:
 					'M10 trust foundations exist; product ingest is gated until provenance, custody, quality, sensitivity/RBAC, and rollback are represented in the app.',
 				m11_translation:
-					'M11 translation storage exists, but the app needs HTTP contracts before translations can run.',
-				m11_reviewWorkflow: 'M11 review workflow exists, but queues and review actions need app HTTP contracts.',
-				m11_credibility: 'M11 credibility profiles exist, but source credibility needs an app HTTP contract.',
+					'Source-level translation contracts are mounted; reader translation stays disabled until request, polling, and content switching UX is connected.',
+				m11_reviewWorkflow:
+					'Review queues and actions are mounted; Review Queue waits for content-first UX and permission-aware states.',
+				m11_credibility:
+					'Source credibility contracts are mounted; source quality and trust panels still need product UI.',
 				m11_rbac: 'M11 RBAC filters reads, but member and policy management are still partial in the app.',
-				m12_similarity: 'M12 similarity exists, but similar-case links need an app HTTP contract.',
+				m12_similarity:
+					'Similar-case links are mounted; Discovery UI waits for source, entity, and review landing flows.',
 				m12_classificationHarmonization:
-					'M12 classification harmonization exists, but mappings need an app HTTP contract.',
-				m12_temporalPatterns: 'M12 temporal patterns exist, but pattern lists need an app HTTP contract.',
-				m12_externalCorrelations: 'M12 external correlations exist, but correlation results need an app HTTP contract.',
+					'Classification mappings are mounted; Discovery UI waits for reviewable knowledge-base flows.',
+				m12_temporalPatterns:
+					'Temporal patterns are mounted; Discovery UI waits for source, entity, and review context.',
+				m12_externalCorrelations:
+					'External correlations are mounted; Discovery UI waits for source context and caveat handling.',
 			},
 			navigation: {
 				brandSubtitle: 'research workspace',
@@ -365,9 +373,10 @@ export const resources = {
 				targetLanguage: 'Target',
 				translate: 'Translate',
 				translationPrepareOnly:
-					'Persistent on-demand translation is planned. It will be cached when the translation contract exists.',
+					'Persistent on-demand translation is planned. It will use the mounted source translation contract once request and content switching UX is connected.',
 				translationDisabledTooltip: 'Translation is not connected yet.',
-				translationNotConnected: 'Translation is designed here, but the M11 translation service is not connected yet.',
+				translationNotConnected:
+					'Translation controls are prepared here, but request, polling, and content switching are not connected in the reader yet.',
 				noAnnotationSelectedTitle: 'No annotation selected',
 				noAnnotationSelectedBody: 'Select a highlighted entity in the story to inspect linked context.',
 				corroboration: 'Corroboration',
@@ -596,6 +605,7 @@ export const resources = {
 				watching: 'Beobachtet',
 				contradicted: 'Widerspruch',
 				failed: 'Fehlgeschlagen',
+				skipped: 'Übersprungen',
 				dead_letter: 'Nicht zustellbar',
 				missing: 'Fehlt',
 				mounted_api: 'Schnittstelle aktiv',
@@ -649,7 +659,8 @@ export const resources = {
 					'PDF, Layout, Seiten, Erzählstränge und Beobachtungsdaten existieren, aber echte Archivaufnahme ist durch M10-Vertrauensarbeit blockiert.',
 				sources_add:
 					'Routen zum Hochladen existieren, aber echte Quellenaufnahme ist durch Herkunfts- und Vertrauensarbeit blockiert.',
-				evidence_claims: 'Aussagen, Zusicherungen und Prüfaktionen brauchen einen Vertrag der Anwendungsschnittstelle.',
+				evidence_claims:
+					'Verträge für Aussagen, Zusicherungen und Prüfaktionen sind verfügbar; umfangreichere Register- und Prüfabläufe brauchen noch inhaltsorientierte Zustände in der Oberfläche.',
 				evidence_contradictions: 'Die Route GET /api/evidence/contradictions ist verfügbar.',
 				evidence_summary: 'Die Route GET /api/evidence/summary ist verfügbar.',
 				evidence_reliability: 'Die Route GET /api/evidence/reliability/sources ist verfügbar.',
@@ -661,7 +672,7 @@ export const resources = {
 					'Entitätsbezogene Beziehungen existieren; eine eigene Beziehungsliste ist noch nicht verfügbar.',
 				graph_aggregate: 'Entitätsbezogene Kanten existieren; zusammengeführte Graph-Ansichten fehlen noch.',
 				taxonomy_manage:
-					'Taxonomie-Funktionen existieren außerhalb des Browsers und brauchen Anwendungsverträge vor der Nutzung in der Bedienoberfläche.',
+					'Taxonomie-Liste und Export sind verfügbar; Pflege, Initialisierung und Zusammenführung bleiben operatorgeführt, bis eine Produktoberfläche dafür existiert.',
 				stories_list:
 					'Dokumentbezogene Erzählstränge existieren; eine globale Erzählstrang-Ansicht braucht eine Anwendungsansicht.',
 				activity_feed: 'Es gibt noch keinen systemweiten Aktivitätsverlauf.',
@@ -677,20 +688,21 @@ export const resources = {
 				m10_provenance:
 					'Die M10-Vertrauensgrundlagen existieren; produktive Quellenaufnahme bleibt gesperrt, bis Herkunftsnachweise, Verwahrungskette, Qualität, Schutzstufen, rollenbasierte Zugriffe und Zurücksetzen in der Anwendung abgebildet sind.',
 				m11_translation:
-					'Die M11-Übersetzungsspeicherung existiert, benötigt aber Schnittstellenverträge, bevor Übersetzungen in der Anwendung laufen.',
+					'Quellenbezogene Übersetzungsschnittstellen sind aktiv; Übersetzung im Leser bleibt deaktiviert, bis Anfrage, Statusabfrage und Inhaltswechsel angebunden sind.',
 				m11_reviewWorkflow:
-					'Die M11-Prüfabläufe existieren, aber Wartelisten und Prüfaktionen benötigen Schnittstellenverträge.',
+					'Prüflisten und Prüfaktionen sind über Schnittstellen erreichbar; die Prüfliste wartet auf inhaltsorientierte Bedienung und berechtigungssichere Zustände.',
 				m11_credibility:
-					'Die M11-Glaubwürdigkeitsprofile existieren, benötigen aber einen Schnittstellenvertrag für Quellenvertrauen.',
+					'Schnittstellen für Quellenvertrauen sind aktiv; Qualitäts- und Vertrauensansichten brauchen noch eine Produktoberfläche.',
 				m11_rbac:
 					'M11-Rollenrechte filtern Lesezugriffe, aber Mitglieder- und Regelverwaltung sind in der Anwendung noch teilweise.',
 				m12_similarity:
-					'Die M12-Ähnlichkeitssuche existiert, aber ähnliche Fälle benötigen einen Schnittstellenvertrag.',
+					'Ähnliche Fälle sind über eine Schnittstelle abrufbar; die Entdeckungsansicht wartet auf gute Zielseiten zu Quellen, Entitäten und Prüfung.',
 				m12_classificationHarmonization:
-					'Die M12-Klassifikationsabstimmung existiert, aber Zuordnungen benötigen einen Schnittstellenvertrag.',
-				m12_temporalPatterns: 'Die M12-Zeitmuster existieren, aber Musterlisten benötigen einen Schnittstellenvertrag.',
+					'Klassifikationszuordnungen sind über eine Schnittstelle abrufbar; die Bedienung wartet auf prüfbare Wissensansichten.',
+				m12_temporalPatterns:
+					'Zeitmuster sind über eine Schnittstelle abrufbar; die Entdeckungsansicht wartet auf klare Quellen- und Prüfungskontexte.',
 				m12_externalCorrelations:
-					'Die M12-Außenkorrelationen existieren, aber Korrelationsergebnisse benötigen einen Schnittstellenvertrag.',
+					'Außenkorrelationen sind über eine Schnittstelle abrufbar; die Entdeckungsansicht wartet auf Quellenkontext und klare Warnhinweise.',
 			},
 			navigation: {
 				brandSubtitle: 'Recherche-Arbeitsbereich',
@@ -908,10 +920,10 @@ export const resources = {
 				targetLanguage: 'Ziel',
 				translate: 'Übersetzen',
 				translationPrepareOnly:
-					'Dauerhafte Übersetzung auf Abruf ist vorgesehen. Sie wird zwischengespeichert, sobald der Übersetzungsvertrag existiert.',
+					'Dauerhafte Übersetzung auf Abruf ist vorgesehen. Sie nutzt die aktive Quellenübersetzung, sobald Anfrage und Inhaltswechsel angebunden sind.',
 				translationDisabledTooltip: 'Übersetzung ist noch nicht angebunden.',
 				translationNotConnected:
-					'Die Übersetzung ist hier vorbereitet, aber der M11-Übersetzungsdienst ist noch nicht angebunden.',
+					'Die Übersetzung ist hier vorbereitet, aber Anfrage, Statusabfrage und Inhaltswechsel sind im Reader noch nicht angebunden.',
 				noAnnotationSelectedTitle: 'Keine Markierung ausgewählt',
 				noAnnotationSelectedBody:
 					'Wähle eine hervorgehobene Entität im Erzählstrang aus, um verknüpften Kontext zu prüfen.',

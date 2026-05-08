@@ -133,7 +133,7 @@ Many sources will not be in the user's native language. Source reading must supp
 - split view
 - original-only and story-only modes
 - target language selection
-- persisted on-demand translation once the M11 translation contract is exposed through HTTP
+- persisted on-demand translation once the mounted source-level translation contract has request, polling, and content-switching UX
 - clear distinction between original, extracted, translated, and machine-generated content
 
 ### Living Documents
@@ -256,7 +256,7 @@ Work:
   - package/CLI only
   - repository exists but no HTTP route
   - not implemented
-- For M11/M12, identify the smallest read-only HTTP routes needed before UI activation.
+- For M11/M12, verify the mounted read models and identify the smallest permission-aware UI states needed before activation.
 - Write route specs before implementing screens.
 
 Acceptance:
@@ -390,8 +390,8 @@ Work:
 - Activate Entities route using existing `GET /api/entities`.
 - Build entity detail with related stories and local graph edges.
 - Add Relationships once an app-friendly relationship list exists.
-- Add Claim Registry once claim/assertion API exists.
-- Add Taxonomy only after browser-safe taxonomy contracts exist.
+- Add Claim Registry once claim/assertion review UX and offset constraints are ready.
+- Add Taxonomy after browser-safe taxonomy management UX is defined; list/export contracts already exist.
 - Add Knowledge Map after graph aggregate/batch endpoint exists.
 
 Acceptance:

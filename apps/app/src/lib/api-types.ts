@@ -226,7 +226,7 @@ export interface DocumentObservabilityResponse {
 			page_count: number | null;
 			steps: {
 				step: string;
-				status: 'pending' | 'completed' | 'failed' | 'partial';
+				status: 'pending' | 'completed' | 'failed' | 'partial' | 'skipped';
 				completed_at: string | null;
 				error_message: string | null;
 			}[];
