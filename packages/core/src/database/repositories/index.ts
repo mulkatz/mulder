@@ -64,6 +64,7 @@ export type {
 	VectorSearchResult,
 } from './chunk.types.js';
 export {
+	countTaxonomyMappings,
 	findClassificationCategory,
 	findClassificationTaxonomy,
 	findTaxonomyMapping,
@@ -401,6 +402,7 @@ export type {
 	ReviewAction,
 	ReviewArtifactType,
 	ReviewableArtifact,
+	ReviewableArtifactFindOptions,
 	ReviewableArtifactListOptions,
 	ReviewConfidence,
 	ReviewCreatedBy,
@@ -415,6 +417,7 @@ export type {
 	UpsertReviewQueueInput,
 } from './review-workflow.types.js';
 export {
+	countSimilarEntities,
 	deleteSimilarityResultsForEntity,
 	findSimilarityByPair,
 	listSimilarEntities,
@@ -475,6 +478,7 @@ export type {
 	UpsertSourceStepInput,
 } from './source.types.js';
 export {
+	countSourceCredibilityProfiles,
 	findSourceCredibilityProfileBySourceId,
 	listSourceCredibilityProfiles,
 	upsertSourceCredibilityProfile,
@@ -582,6 +586,9 @@ export type {
 	UpdateTaxonomyEntryInput,
 } from './taxonomy.types.js';
 export {
+	countExternalCorrelations,
+	countSpatiotemporalHotspotClusters,
+	countTemporalAnomalyClusters,
 	findExternalCorrelation,
 	findSpatiotemporalHotspotCluster,
 	findTemporalAnomalyCluster,

@@ -139,15 +139,15 @@ Recommended sidebar grouping:
 | Group | Area | Purpose | Contract state |
 | --- | --- | --- | --- |
 | Workspace | Research Desk | Review needs, source health, new findings, open questions, and next research steps | Mounted partial: `/api/status`, jobs, evidence read models |
-| Workspace | Review Queue | Human review assignments for claims, contradictions, and source issues | Documented target; needs claim/review facade |
+| Workspace | Review Queue | Human review assignments for claims, contradictions, and source issues | Mounted API; needs content-first app route |
 | Workspace | Watchlist | Saved research areas, watched claims, sources, entities, or queries | Documented target |
 | Workspace | Research Agent | Assisted research workflows and autonomous follow-up | Future milestone: M14 |
 | Search | Search | Hybrid retrieval across sources, claims, citations, entities, and stories | Mounted API; trace depth is partial |
 | Sources | All Sources | Source archive list, source readiness, and entry point into the source reader | Mounted API; active route `/sources` |
 | Sources | Add Sources | Upload and ingest entry point | Upload routes exist; product use gated by M10 provenance/trust |
 | Sources | Archive | Future archive organization beyond the active all-sources list and reader | Documented target |
-| Sources | Source Quality | Provenance, custody, quality, sensitivity/RBAC, rollback, credibility | Future milestone: M10/M11 |
-| Findings | Claims & Evidence | Active review workflow for claims, contradictions, confidence, citations, and source support | Mounted partial; first-class claims and review actions need a facade |
+| Sources | Source Quality | Provenance, custody, quality, sensitivity/RBAC, rollback, credibility | Mounted partial; needs reader/source-quality UI |
+| Findings | Claims & Evidence | Active review workflow for claims, contradictions, confidence, citations, and source support | Mounted partial; claim/review routes exist, offsets still missing |
 | Findings | Contradictions | Contradiction-focused review | Mounted API, future dedicated route |
 | Findings | Source Reliability | Source reliability review | Mounted API, future dedicated route |
 | Findings | Evidence Chains | Thesis/evidence-chain review | Mounted API, future dedicated route |
@@ -155,8 +155,8 @@ Recommended sidebar grouping:
 | Knowledge Base | Entities | Entity search, profiles, aliases, merges | Mounted API |
 | Knowledge Base | Relationships | Relationship list and relationship review | Mounted partial |
 | Knowledge Base | Knowledge Map | Graph-backed exploration | Mounted partial; aggregate graph endpoint or batch edge query needed |
-| Knowledge Base | Claim Registry | Structured list of claim records as knowledge objects | Missing app facade |
-| Knowledge Base | Taxonomy | Taxonomy list, bootstrap, export, and rebootstrap if browser-managed | CLI/package-only |
+| Knowledge Base | Claim Registry | Structured list of claim records as knowledge objects | Mounted API; needs Knowledge Base UI |
+| Knowledge Base | Taxonomy | Taxonomy list, export, and future browser curation if needed | Mounted partial; bootstrap/merge remain CLI/operator-only |
 | Knowledge Base | Stories | Extracted narratives and story-level reading | Mounted partial; global story endpoint decision needed |
 | Operations | Processing | Background processing, job history, artifacts, failures, retries | Jobs mounted; app-shaped run facade needed |
 | Operations | Activity | Cross-system event stream | Missing aggregate |
@@ -339,7 +339,7 @@ The reader should be story-first without losing the original:
 - Users can switch to Original-only or Story-only when one side needs focus.
 - Smaller screens should hide split mode and keep Original/Story switching usable instead of pretending that dense comparison work is mobile-first.
 - The story pane should become a living document: entities, contradictions, evidence signals, citations, source reliability, and future claim anchors should appear as contextual annotations as real API contracts expose them.
-- Translation controls should be designed from the beginning, but translation must remain clearly prepare-only until the M11 translation contract exists. No generated or fake translation should appear in the app.
+- Translation controls should be designed from the beginning, but translation must remain clearly disabled until the mounted source-level translation contract has request, polling, and content-switching UX. No generated or fake translation should appear in the app.
 - Technical processing details belong in a secondary "Processing background" disclosure so the reading experience remains content-led.
 
 Inline annotation policy:
@@ -364,7 +364,7 @@ Confidence, reliability, degraded search, missing citations, and partial data sh
 
 ### Treat Provenance as a Product Gate
 
-Trust is not only a visual treatment. Before Mulder is productized for real archive ingest, the product needs the M10 provenance and trust foundation or an explicit temporary waiver.
+Trust is not only a visual treatment. M10 now provides the provenance and trust foundation, but the app must still represent it before real archive ingest is productized for users.
 
 The UI should reserve space for:
 
@@ -377,7 +377,7 @@ The UI should reserve space for:
 - Sensitivity and access-control signals.
 - Source rollback or deletion status.
 
-Until those backend contracts exist, the app can support development ingest and design exploration, but it should not imply archive-grade provenance, compliance, or review safety. This is a hard product boundary for a serious research system.
+Until those concepts are captured and displayed in the Add Sources workflow, the app can support development ingest and design exploration, but it should not imply archive-grade provenance, compliance, or review safety. This is a hard product boundary for a serious research system.
 
 ### Do Not Fake Capability
 
@@ -432,13 +432,15 @@ Use explicit states instead of broad labels like "mostly available":
 type CapabilityState =
 	| 'mounted-api'
 	| 'mounted-partial'
+	| 'backend-no-http-contract'
 	| 'cli-or-package-only'
+	| 'product-gated'
 	| 'documented-target'
 	| 'future-milestone'
 	| 'missing';
 ```
 
-For `mounted-api` and `mounted-partial`, the default path must be real API data. For `documented-target`, `future-milestone`, and `missing` capabilities, the app should show unavailable or planned states rather than silently substituting checked-in static data.
+For `mounted-api` and `mounted-partial`, the default path must be real API data. For `backend-no-http-contract`, backend/package capability exists but browser-safe app contracts still need to be mounted. For `product-gated`, the backend may exist but the app must keep the feature disabled until the product workflow is safe enough to expose. For `documented-target`, `future-milestone`, and `missing` capabilities, the app should show unavailable or planned states rather than silently substituting checked-in static data.
 
 ### Mounted API Coverage
 
@@ -483,13 +485,17 @@ These are important for the app workbench:
 | --- | --- | --- |
 | Analysis run list/detail | Mounted partial: jobs exist, app-shaped runs do not | Add `/api/analysis-runs` facade or enrich `/api/jobs` with stable run grouping, progress, artifacts, parameters, and source status |
 | Run artifacts and params | Mounted partial: payload exists but is not normalized for UI | Expose a stable artifact/parameter read model rather than parsing job payloads in components |
-| Evidence claims | Missing app facade needed: contradictions exist, claims are not first-class | Add `/api/evidence/claims` with claim text, source support, confidence, contradiction state, and review state |
-| Evidence review actions | Missing | Add confirm, dismiss, watch, resolve, and annotate actions with optimistic-safe contracts |
+| Evidence claims | First-class claim routes now exist, but offsets and review-focused UI are still missing | Use claim list/detail/source/story routes, and wait for stable text offsets before passage-level links |
+| Evidence review actions | Review action route now exists for artifacts | Build content-first review UI before exposing artifact actions to normal researchers |
 | Graph aggregate | Mounted partial: per-entity edges only | Add `/api/graph` or `/api/entities/edges?entity_ids=...` for graph surfaces beyond one entity |
 | Global stories | Mounted partial: document-scoped stories exist | Add `/api/stories` and `/api/stories/:id` or keep story access intentionally document-scoped |
-| Taxonomy management | CLI/package-only; some docs mention target routes, but routes are not mounted | Add list/export/bootstrap/rebootstrap routes only if taxonomy becomes a browser workflow |
+| Taxonomy management | Mounted partial: list/export routes exist; bootstrap/merge/rebootstrap remain CLI/operator-only | Add browser curation routes only if taxonomy becomes a product workflow |
 | Ground/analyze orchestration | CLI/standalone and package capability; not first-class API/worker steps | Decide whether these become queued API steps; if yes, update pipeline step types, worker job types, chaining, retry, and tests |
-| M10 provenance/trust | Future milestone | Do not present real archive ingest as product-ready until provenance, custody, quality, sensitivity/RBAC, assertions, and rollback contracts exist |
+| M10 provenance/trust | Product gated: backend foundations exist, app ingest UX is not safe yet | Do not present real archive ingest as product-ready until provenance, custody, quality, sensitivity/RBAC, assertions, and rollback are represented in the app workflow |
+| M11 translation | Source-level HTTP contract exists | Keep reader translation controls honest until request/poll/content-switching UX is designed and smoke-tested |
+| M11 review workflow | Queue/artifact/event/action HTTP contracts exist | Keep Review Queue disabled until it presents human decisions rather than raw artifact rows |
+| M11 credibility | Source credibility read models exist | Build Source Quality and reader trust panels with clear permission/unavailable states |
+| M12 discovery | Caveated HTTP read models exist | Add content-first UI that links leads back to sources, stories, entities, and review state before showing discovery routes |
 | Cost estimates | CLI/package-only | Add estimate endpoints for upload, pipeline run, and reprocess before showing actionable cost controls |
 | Activity feed | Missing aggregate: jobs and document observability exist separately | Add cross-system activity endpoint when users need one timeline across documents, runs, reviews, and errors |
 | Export workflows | CLI/package-only | Add export job routes or signed artifact routes before exposing export as a primary browser action |
@@ -522,7 +528,9 @@ Introduce a small capability map:
 type CapabilityState =
 	| 'mounted-api'
 	| 'mounted-partial'
+	| 'backend-no-http-contract'
 	| 'cli-or-package-only'
+	| 'product-gated'
 	| 'documented-target'
 	| 'future-milestone'
 	| 'missing';
@@ -538,17 +546,20 @@ Use it to control:
 
 ### Phase 3: Close Backend Gaps in Product Order
 
-Prioritize API additions that unlock complete workflows:
+Prioritize product gaps that unlock complete workflows:
 
 1. Analysis run facade.
-2. Evidence claim and review facade.
-3. M10 provenance/trust contracts before real archive ingest.
-4. Global stories or intentionally document-scoped story endpoints.
-5. Graph aggregate endpoint.
-6. Ground/analyze orchestration decision.
-7. Taxonomy API, if taxonomy is meant to be browser-managed.
-8. Cost estimate API.
-9. Export and reprocess endpoints.
+2. Source Reader happy path and app-controlled PDF rendering.
+3. Search, once results can land on real source/story destinations.
+4. M11 review, translation, and credibility UX on the mounted contracts.
+5. M12 discovery UI on caveated read models.
+6. Evidence claim registry and review workflows once offsets and review states are product-shaped.
+7. Global stories or intentionally document-scoped story endpoints.
+8. Graph aggregate endpoint.
+9. Ground/analyze orchestration decision.
+10. Browser taxonomy curation, if taxonomy becomes a product workflow.
+11. Cost estimate API.
+12. Export and reprocess endpoints.
 
 ### Phase 4: Expand Workbench Modules
 

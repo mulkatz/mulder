@@ -87,6 +87,11 @@ export interface ReviewableArtifactListOptions {
 	offset?: number;
 }
 
+export interface ReviewableArtifactFindOptions {
+	includeDeleted?: boolean;
+	maxSensitivityLevel?: SensitivityLevel;
+}
+
 export interface RecordReviewEventInput {
 	artifactId: string;
 	reviewerId: string;
@@ -96,11 +101,13 @@ export interface RecordReviewEventInput {
 	rationale?: string | null;
 	tags?: readonly string[];
 	createdAt?: Date | string;
+	maxSensitivityLevel?: SensitivityLevel;
 }
 
 export interface ReviewEventListOptions {
 	action?: ReviewAction;
 	reviewerId?: string;
+	maxSensitivityLevel?: SensitivityLevel;
 	limit?: number;
 	offset?: number;
 }
@@ -116,6 +123,7 @@ export interface UpsertReviewQueueInput {
 
 export interface ReviewQueueListOptions {
 	activeOnly?: boolean;
+	maxSensitivityLevel?: SensitivityLevel;
 }
 
 export interface ReviewQueueArtifactListOptions {

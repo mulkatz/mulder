@@ -37,14 +37,57 @@ describe('Spec 82: API surface documentation alignment', () => {
 	it('QA-01: /doc and /reference are not public middleware exceptions', async () => {
 		const app = createApp({ config: TEST_API_CONFIG });
 
+		const openapi = await app.request('http://localhost/api/openapi.json');
 		const doc = await app.request('http://localhost/doc');
 		const reference = await app.request('http://localhost/reference');
 
+		expect(openapi.status).toBe(200);
 		expect(doc.status).toBe(401);
 		expect(reference.status).toBe(401);
 	});
 
-	it('QA-02: config example does not advertise an explorer key', () => {
+	it('QA-02: OpenAPI JSON is mounted for product routes only', async () => {
+		const app = createApp({ config: TEST_API_CONFIG });
+
+		const response = await app.request('http://localhost/api/openapi.json');
+		const contract = (await response.json()) as {
+			openapi: string;
+			paths: Record<string, unknown>;
+		};
+
+		expect(contract.openapi).toBe('3.0.0');
+		expect(contract.paths).toHaveProperty('/api/health');
+		expect(contract.paths).toHaveProperty('/api/status');
+		expect(contract.paths).toHaveProperty('/api/documents');
+		expect(contract.paths).toHaveProperty('/api/documents/{id}');
+		expect(contract.paths).toHaveProperty('/api/documents/{id}/quality');
+		expect(contract.paths).toHaveProperty('/api/documents/{id}/credibility');
+		expect(contract.paths).toHaveProperty('/api/documents/{id}/claims');
+		expect(contract.paths).toHaveProperty('/api/documents/{id}/translations');
+		expect(contract.paths).toHaveProperty('/api/translations/{translationId}');
+		expect(contract.paths).toHaveProperty('/api/review/queues');
+		expect(contract.paths).toHaveProperty('/api/review/queues/{queueKey}/artifacts');
+		expect(contract.paths).toHaveProperty('/api/review/artifacts/{artifactId}');
+		expect(contract.paths).toHaveProperty('/api/review/artifacts/{artifactId}/events');
+		expect(contract.paths).toHaveProperty('/api/review/artifacts/{artifactId}/actions');
+		expect(contract.paths).toHaveProperty('/api/claims');
+		expect(contract.paths).toHaveProperty('/api/claims/{claimId}');
+		expect(contract.paths).toHaveProperty('/api/stories/{storyId}/claims');
+		expect(contract.paths).toHaveProperty('/api/source-credibility');
+		expect(contract.paths).toHaveProperty('/api/collections');
+		expect(contract.paths).toHaveProperty('/api/collections/{collectionId}');
+		expect(contract.paths).toHaveProperty('/api/taxonomy');
+		expect(contract.paths).toHaveProperty('/api/taxonomy/export');
+		expect(contract.paths).toHaveProperty('/api/discovery/similar-entities');
+		expect(contract.paths).toHaveProperty('/api/discovery/temporal-patterns');
+		expect(contract.paths).toHaveProperty('/api/discovery/classification-mappings');
+		expect(contract.paths).toHaveProperty('/api/discovery/external-correlations');
+		expect(contract.paths).toHaveProperty('/api/search');
+		expect(contract.paths).not.toHaveProperty('/doc');
+		expect(contract.paths).not.toHaveProperty('/reference');
+	});
+
+	it('QA-03: config example does not advertise an explorer key', () => {
 		const config = readFileSync(resolve(ROOT, 'mulder.config.example.yaml'), 'utf8');
 
 		expect(config).not.toContain('explorer:');
@@ -52,10 +95,10 @@ describe('Spec 82: API surface documentation alignment', () => {
 		expect(config).toContain('browser:');
 	});
 
-	it('QA-03: API architecture marks OpenAPI and Scalar as future work', () => {
+	it('QA-04: API architecture documents OpenAPI JSON without promising an explorer', () => {
 		const docs = readFileSync(resolve(ROOT, 'docs/api-architecture.md'), 'utf8');
 
-		expect(docs).toContain('M7 does not mount `/doc` or `/reference`');
+		expect(docs).toContain('GET /api/openapi.json');
 		expect(docs).toContain('No API explorer is mounted');
 		expect(docs).not.toContain('Accessible at `/reference`');
 		expect(docs).not.toContain('spec served automatically at /doc');

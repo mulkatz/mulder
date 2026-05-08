@@ -23,8 +23,9 @@ export type SourceStepJobType = 'quality' | 'extract' | 'segment';
 export type StoryStepJobType = 'enrich' | 'embed' | 'graph';
 export type StepScopedJobType = SourceStepJobType | StoryStepJobType;
 export type UploadFinalizeJobType = 'document_upload_finalize';
+export type TranslateJobType = 'translate';
 export type LegacyWorkerJobType = 'pipeline_run';
-export type SupportedJobType = StepScopedJobType | UploadFinalizeJobType;
+export type SupportedJobType = StepScopedJobType | UploadFinalizeJobType | TranslateJobType;
 export type WorkerJobType = SupportedJobType | LegacyWorkerJobType;
 export type WorkerPipelineStepName = StepScopedJobType;
 
@@ -72,6 +73,15 @@ export interface DocumentUploadFinalizeJobPayload {
 	declaredSizeBytes?: number;
 }
 
+export interface TranslateJobPayload {
+	sourceId: string;
+	targetLanguage: string;
+	sourceLanguage?: string;
+	pipelinePath?: 'full' | 'translation_only';
+	outputFormat?: 'markdown' | 'html';
+	refresh?: boolean;
+}
+
 export type LegacyPipelineRunJobPayload = PipelineRunJobPayload;
 
 export type WorkerJobPayloadMap = {
@@ -82,6 +92,7 @@ export type WorkerJobPayloadMap = {
 	embed: StoryStepJobPayload;
 	graph: StoryStepJobPayload;
 	document_upload_finalize: DocumentUploadFinalizeJobPayload;
+	translate: TranslateJobPayload;
 	pipeline_run: LegacyPipelineRunJobPayload;
 };
 
@@ -220,7 +231,8 @@ export function isSupportedJobType(type: string): type is SupportedJobType {
 		type === 'enrich' ||
 		type === 'embed' ||
 		type === 'graph' ||
-		type === 'document_upload_finalize'
+		type === 'document_upload_finalize' ||
+		type === 'translate'
 	);
 }
 
@@ -462,6 +474,56 @@ function parseDocumentUploadFinalizePayload(jobId: string, payload: unknown): Do
 	return parsed;
 }
 
+function parseTranslatePayload(jobId: string, payload: unknown): TranslateJobPayload {
+	if (!isRecord(payload)) {
+		throw invalidPayload(jobId, 'translate', `Job ${jobId} payload must be an object`, { field: 'payload' });
+	}
+
+	const sourceId = readStringField(payload, 'sourceId', 'source_id');
+	const targetLanguage = readStringField(payload, 'targetLanguage', 'target_language');
+	if (!sourceId || !targetLanguage) {
+		throw invalidPayload(jobId, 'translate', 'translate jobs require sourceId and targetLanguage', {
+			field: 'payload',
+		});
+	}
+
+	const parsed: TranslateJobPayload = { sourceId, targetLanguage };
+
+	const sourceLanguage = readStringField(payload, 'sourceLanguage', 'source_language');
+	if (sourceLanguage) {
+		parsed.sourceLanguage = sourceLanguage;
+	}
+
+	const pipelinePath = readStringField(payload, 'pipelinePath', 'pipeline_path');
+	if (pipelinePath) {
+		if (pipelinePath !== 'full' && pipelinePath !== 'translation_only') {
+			throw invalidPayload(jobId, 'translate', 'translate jobs require a valid pipelinePath', {
+				field: 'pipelinePath',
+				value: pipelinePath,
+			});
+		}
+		parsed.pipelinePath = pipelinePath;
+	}
+
+	const outputFormat = readStringField(payload, 'outputFormat', 'output_format');
+	if (outputFormat) {
+		if (outputFormat !== 'markdown' && outputFormat !== 'html') {
+			throw invalidPayload(jobId, 'translate', 'translate jobs require a valid outputFormat', {
+				field: 'outputFormat',
+				value: outputFormat,
+			});
+		}
+		parsed.outputFormat = outputFormat;
+	}
+
+	const refresh = asBoolean(payload.refresh);
+	if (refresh !== undefined) {
+		parsed.refresh = refresh;
+	}
+
+	return parsed;
+}
+
 export function parseWorkerJobPayload(
 	jobId: string,
 	jobType: SourceStepJobType,
@@ -473,6 +535,7 @@ export function parseWorkerJobPayload(
 	jobType: UploadFinalizeJobType,
 	payload: unknown,
 ): DocumentUploadFinalizeJobPayload;
+export function parseWorkerJobPayload(jobId: string, jobType: TranslateJobType, payload: unknown): TranslateJobPayload;
 export function parseWorkerJobPayload(
 	jobId: string,
 	jobType: LegacyWorkerJobType,
@@ -493,6 +556,10 @@ export function parseWorkerJobPayload(
 
 	if (jobType === 'document_upload_finalize') {
 		return parseDocumentUploadFinalizePayload(jobId, payload);
+	}
+
+	if (jobType === 'translate') {
+		return parseTranslatePayload(jobId, payload);
 	}
 
 	return parsePipelineRunPayload(jobId, payload);
@@ -547,6 +614,12 @@ export function parseWorkerJobEnvelope(job: Job): WorkerJobEnvelope {
 				...job,
 				type: 'document_upload_finalize',
 				payload: parseWorkerJobPayload(job.id, 'document_upload_finalize', job.payload),
+			};
+		case 'translate':
+			return {
+				...job,
+				type: 'translate',
+				payload: parseWorkerJobPayload(job.id, 'translate', job.payload),
 			};
 		case 'pipeline_run':
 			return {

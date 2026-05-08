@@ -2,17 +2,18 @@ import type { AppLocale } from '@/i18n/resources';
 
 export type TranslationStatus = 'not-connected';
 
-export interface StoryTranslationRequest {
+export interface SourceTranslationRequest {
 	sourceId: string;
-	storyId: string;
+	sourceLanguage?: string | null;
 	targetLanguage: AppLocale;
+	refresh?: boolean;
 }
 
-export interface StoryTranslationResult {
+export interface SourceTranslationResult {
 	status: TranslationStatus;
 }
 
-export async function requestStoryTranslation(_request: StoryTranslationRequest): Promise<StoryTranslationResult> {
-	// TODO(M11 translation): call the persisted on-demand translation API when the contract exists.
+export async function requestSourceTranslation(_request: SourceTranslationRequest): Promise<SourceTranslationResult> {
+	// TODO(translation API): call the persisted on-demand source translation API when the HTTP contract exists.
 	return { status: 'not-connected' };
 }

@@ -96,6 +96,73 @@ export interface DocumentListResponse {
 	meta: { count: number; limit: number; offset: number };
 }
 
+export type SensitivityLevel = 'public' | 'internal' | 'restricted' | 'confidential';
+
+export interface DocumentDetailRecord extends DocumentRecord {
+	reader_link: string;
+	provenance: {
+		context_id: string;
+		channel: string;
+		submitted_at: string;
+		submitted_by_type: string;
+		collection_id: string | null;
+		authenticity_status: string;
+		authenticity_notes: string | null;
+		submission_notes: string | null;
+	} | null;
+	original_source: {
+		source_type: string;
+		description: string;
+		source_date: string | null;
+		author: string | null;
+		language: string;
+		institution: string | null;
+		foia_reference: string | null;
+	} | null;
+	source_language: string | null;
+	sensitivity: {
+		level: SensitivityLevel;
+		metadata: Record<string, unknown>;
+	};
+	quality: {
+		id: string;
+		assessed_at: string;
+		assessment_method: string;
+		overall_quality: string;
+		processable: boolean;
+		recommended_path: string;
+		text_readability_score: number | null;
+		language: string | null;
+		language_confidence: number | null;
+	} | null;
+	collection: {
+		id: string;
+		name: string;
+		description: string;
+		type: string;
+		visibility: string;
+		tags: string[];
+		document_count: number;
+		total_size_bytes: number;
+		languages: string[];
+		date_range: { earliest: string | null; latest: string | null };
+	} | null;
+	credibility: {
+		profile_id: string;
+		source_type: string;
+		profile_author: string;
+		review_status: string;
+		last_reviewed: string | null;
+		dimension_count: number;
+		average_score: number | null;
+		sensitivity_level: SensitivityLevel;
+	} | null;
+}
+
+export interface DocumentDetailResponse {
+	data: DocumentDetailRecord;
+}
+
 export type SourceStatus = DocumentRecord['status'];
 
 export interface EntityRecord {
@@ -159,7 +226,7 @@ export interface DocumentObservabilityResponse {
 			page_count: number | null;
 			steps: {
 				step: string;
-				status: 'pending' | 'completed' | 'failed' | 'partial';
+				status: 'pending' | 'completed' | 'failed' | 'partial' | 'skipped';
 				completed_at: string | null;
 				error_message: string | null;
 			}[];
@@ -216,6 +283,449 @@ export interface DocumentObservabilityResponse {
 			details: Record<string, unknown>;
 		}[];
 	};
+}
+
+export type TranslationStatus = 'current' | 'stale';
+export type TranslationPipelinePath = 'full' | 'translation_only';
+export type TranslationOutputFormat = 'markdown' | 'html';
+
+export interface TranslationRecord {
+	id: string;
+	source_document_id: string;
+	source_language: string;
+	target_language: string;
+	translation_engine: string;
+	translation_date: string;
+	content: string;
+	content_hash: string;
+	status: TranslationStatus;
+	pipeline_path: TranslationPipelinePath;
+	output_format: TranslationOutputFormat;
+	sensitivity_level: SensitivityLevel;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface TranslationListResponse {
+	data: TranslationRecord[];
+	meta: { count: number; limit: number; offset: number };
+}
+
+export interface TranslationDetailResponse {
+	data: TranslationRecord;
+}
+
+export interface TranslationAcceptedResponse {
+	data: {
+		job_id: string;
+		status: 'pending';
+	};
+	links: { status: string };
+}
+
+export interface CreateTranslationRequest {
+	target_language: string;
+	source_language?: string;
+	pipeline_path?: TranslationPipelinePath;
+	output_format?: TranslationOutputFormat;
+	refresh?: boolean;
+}
+
+export type AssertionType = 'observation' | 'interpretation' | 'hypothesis';
+export type ClassificationProvenance = 'llm_auto' | 'human_reviewed' | 'author_explicit';
+
+export interface ClaimRecord {
+	id: string;
+	source_id: string;
+	story_id: string;
+	assertion_type: AssertionType;
+	content: string;
+	confidence_metadata: {
+		witness_count: number | null;
+		measurement_based: boolean;
+		contemporaneous: boolean;
+		corroborated: boolean;
+		peer_reviewed: boolean;
+		author_is_interpreter: boolean;
+	};
+	classification_provenance: ClassificationProvenance;
+	extracted_entity_ids: string[];
+	provenance: Record<string, unknown>;
+	quality_metadata: Record<string, unknown> | null;
+	sensitivity_level: SensitivityLevel;
+	sensitivity_metadata: Record<string, unknown>;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ClaimListResponse {
+	data: ClaimRecord[];
+	meta: { count: number; limit: number; offset: number };
+}
+
+export interface ClaimDetailResponse {
+	data: ClaimRecord;
+}
+
+export type ReviewStatus = 'pending' | 'approved' | 'auto_approved' | 'corrected' | 'contested' | 'rejected';
+export type ReviewAction = 'approve' | 'correct' | 'reject' | 'comment' | 'escalate';
+export type ReviewConfidence = 'certain' | 'likely' | 'uncertain';
+export type ReviewArtifactType =
+	| 'assertion_classification'
+	| 'credibility_profile'
+	| 'taxonomy_mapping'
+	| 'similar_case_link'
+	| 'agent_finding'
+	| 'conflict_node'
+	| 'conflict_resolution';
+
+export interface ReviewQueueRecord {
+	queue_key: string;
+	name: string;
+	artifact_types: ReviewArtifactType[];
+	assignees: string[];
+	priority_rules: Record<string, unknown>;
+	active: boolean;
+	pending_count: number;
+	oldest_pending: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ReviewArtifactRecord {
+	artifact_id: string;
+	artifact_type: ReviewArtifactType;
+	subject_id: string;
+	subject_table: string;
+	created_by: 'llm_auto' | 'human' | 'agent';
+	review_status: ReviewStatus;
+	current_value: Record<string, unknown>;
+	context: Record<string, unknown>;
+	source_id: string | null;
+	priority: number;
+	due_at: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ReviewEventRecord {
+	event_id: string;
+	artifact_id: string;
+	reviewer_id: string;
+	action: ReviewAction;
+	previous_value: unknown | null;
+	new_value: unknown | null;
+	confidence: ReviewConfidence;
+	rationale: string | null;
+	tags: string[];
+	created_at: string;
+}
+
+export interface ReviewQueueListResponse {
+	data: ReviewQueueRecord[];
+}
+
+export interface ReviewArtifactListResponse {
+	data: ReviewArtifactRecord[];
+	meta: { count: number; limit: number; offset: number };
+}
+
+export interface ReviewArtifactDetailResponse {
+	data: ReviewArtifactRecord;
+}
+
+export interface ReviewEventListResponse {
+	data: ReviewEventRecord[];
+	meta: { count: number; limit: number; offset: number };
+}
+
+export interface ReviewActionRequest {
+	action: ReviewAction;
+	new_value?: unknown;
+	confidence?: ReviewConfidence;
+	rationale?: string;
+	tags?: string[];
+}
+
+export interface ReviewActionResponse {
+	data: {
+		artifact: ReviewArtifactRecord;
+		event: ReviewEventRecord;
+	};
+}
+
+export interface DocumentQualityAssessmentRecord {
+	id: string;
+	source_id: string;
+	assessed_at: string;
+	assessment_method: 'automated' | 'human';
+	overall_quality: 'high' | 'medium' | 'low' | 'unusable';
+	processable: boolean;
+	recommended_path:
+		| 'standard'
+		| 'enhanced_ocr'
+		| 'visual_extraction'
+		| 'handwriting_recognition'
+		| 'manual_transcription_required'
+		| 'skip';
+	dimensions: Record<string, unknown>;
+	signals: Record<string, unknown>;
+	created_at: string;
+}
+
+export interface DocumentQualityResponse {
+	data: {
+		latest: DocumentQualityAssessmentRecord | null;
+		assessments: DocumentQualityAssessmentRecord[];
+	};
+}
+
+export interface CredibilityProfileRecord {
+	profile_id: string;
+	source_id: string;
+	source_name: string;
+	source_type: 'government' | 'academic' | 'journalist' | 'witness' | 'organization' | 'anonymous' | 'other';
+	profile_author: 'llm_auto' | 'human' | 'hybrid';
+	last_reviewed: string | null;
+	review_status: 'draft' | 'reviewed' | 'contested';
+	provenance: Record<string, unknown>;
+	sensitivity_level: SensitivityLevel;
+	sensitivity_metadata: Record<string, unknown>;
+	dimensions: {
+		id: string;
+		profile_id: string;
+		dimension_id: string;
+		label: string;
+		score: number;
+		rationale: string;
+		evidence_refs: string[];
+		known_factors: string[];
+		created_at: string;
+		updated_at: string;
+	}[];
+	created_at: string;
+	updated_at: string;
+}
+
+export interface DocumentCredibilityResponse {
+	data: CredibilityProfileRecord | null;
+}
+
+export interface SourceCredibilityListResponse {
+	data: CredibilityProfileRecord[];
+	meta: { count: number; limit: number; offset: number };
+}
+
+export type CollectionType = 'archive_mirror' | 'thematic' | 'import_batch' | 'curated' | 'other';
+export type CollectionVisibility = 'private' | 'team' | 'public';
+
+export interface CollectionRecord {
+	collection_id: string;
+	name: string;
+	description: string;
+	type: CollectionType;
+	archive_id: string | null;
+	created_by: string;
+	visibility: CollectionVisibility;
+	tags: string[];
+	defaults: {
+		sensitivity_level: SensitivityLevel;
+		default_language: string;
+		credibility_profile_id: string | null;
+	};
+	created_at: string;
+	updated_at: string;
+	document_count: number;
+	total_size_bytes: number;
+	languages: string[];
+	date_range: { earliest: string | null; latest: string | null };
+}
+
+export interface CollectionListResponse {
+	data: CollectionRecord[];
+	meta: { count: number; limit: number; offset: number };
+}
+
+export interface CollectionDetailResponse {
+	data: CollectionRecord;
+}
+
+export interface CreateCollectionRequest {
+	name: string;
+	description?: string;
+	type?: CollectionType;
+	visibility?: CollectionVisibility;
+	tags?: string[];
+	defaults?: {
+		sensitivity_level?: SensitivityLevel;
+		default_language?: string;
+		credibility_profile_id?: string | null;
+	};
+}
+
+export interface PatchCollectionRequest {
+	name?: string;
+	description?: string;
+	visibility?: CollectionVisibility;
+	tags?: string[];
+	defaults?: {
+		sensitivity_level?: SensitivityLevel;
+		default_language?: string;
+		credibility_profile_id?: string | null;
+	};
+}
+
+export type TaxonomyStatus = 'auto' | 'confirmed' | 'rejected';
+
+export interface TaxonomyEntryRecord {
+	id: string;
+	canonical_name: string;
+	entity_type: string;
+	category: string | null;
+	status: TaxonomyStatus;
+	aliases: string[];
+	created_at: string;
+	updated_at: string;
+}
+
+export interface TaxonomyListResponse {
+	data: TaxonomyEntryRecord[];
+	meta: { count: number; limit: number; offset: number };
+}
+
+export type DiscoveryReviewStatus = 'pending' | 'approved' | 'auto_approved' | 'corrected' | 'contested' | 'rejected';
+export type TaxonomyMappingType = 'equivalent' | 'broader' | 'narrower' | 'overlapping' | 'related';
+
+export interface SimilarEntityRecord {
+	entity_id: string;
+	entity_title: string;
+	overall_rank: number;
+	core: Record<string, { status: 'scored' | 'insufficient_data'; score: number | null; reason: string | null }>;
+	domain: {
+		id: string;
+		label: string;
+		source: 'taxonomy_mapping' | 'attribute_comparison' | 'custom_scorer';
+		config_ref: string;
+		score: number | null;
+		status: 'scored' | 'insufficient_data';
+		reason: string | null;
+		metadata: Record<string, unknown>;
+	}[];
+	explanation: string;
+	shared_entity_ids: string[];
+	key_differences: string[];
+	provenance: Record<string, unknown>;
+	sensitivity_level: SensitivityLevel;
+	sensitivity_metadata: Record<string, unknown>;
+	review_status: DiscoveryReviewStatus;
+	auto_discovered: boolean;
+}
+
+export interface TaxonomyMappingRecord {
+	id: string;
+	source_taxonomy_id: string;
+	source_category_id: string;
+	target_taxonomy_id: string;
+	target_category_id: string;
+	mapping_type: TaxonomyMappingType;
+	confidence: number;
+	conditions: string | null;
+	rationale: string;
+	mapping_author: 'llm_auto' | 'human' | 'hybrid';
+	review_status: 'draft' | 'reviewed' | 'contested';
+	provenance: Record<string, unknown>;
+	sensitivity_level: SensitivityLevel;
+	sensitivity_metadata: Record<string, unknown>;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface DiscoverySignalRecord {
+	id: string;
+	time_start: string;
+	time_end: string;
+	signal_strength: 'weak';
+	caveats: string[];
+	review_status: 'pending' | 'approved' | 'rejected' | 'contested';
+	provenance: Record<string, unknown>;
+	sensitivity_level: SensitivityLevel;
+	sensitivity_metadata: Record<string, unknown>;
+	computed_at: string;
+}
+
+export interface TemporalPatternRecord extends DiscoverySignalRecord {
+	region_key: string;
+	entity_count: number;
+}
+
+export interface TemporalAnomalyRecord extends TemporalPatternRecord {
+	region_geojson: Record<string, unknown> | null;
+	anomaly_type: 'frequency_spike' | 'frequency_changepoint';
+	baseline_rate: number;
+	observed_rate: number;
+	raw_significance: number;
+	comparison_count: number;
+	corrected_significance: number;
+	significance_threshold: number;
+	peak_date: string;
+	dominant_category_ref: { taxonomy_id: string | null; category_id: string } | null;
+	contributing_entity_ids: string[];
+	known_pattern_match: string | null;
+	bias_warning: string | null;
+}
+
+export interface SpatiotemporalHotspotRecord extends TemporalPatternRecord {
+	hotspot_type: 'density_cluster';
+	centroid_lat: number;
+	centroid_lng: number;
+	radius_km: number;
+	density: number;
+	persistence: 'transient' | 'recurring' | 'permanent';
+	recurrence_pattern: string | null;
+	related_cluster_ids: string[];
+	contributing_entity_ids: string[];
+	dominant_category_ref: { taxonomy_id: string | null; category_id: string } | null;
+	bias_warning: string | null;
+}
+
+export interface ExternalCorrelationRecord extends DiscoverySignalRecord {
+	internal_series_key: string;
+	external_source_id: string;
+	external_series_id: string;
+	method: 'spearman' | 'cross_correlation';
+	coefficient: number;
+	p_value: number;
+	lag_days: number;
+	data_point_count: number;
+	contributing_entity_ids: string[];
+	interpretation_caveat: string;
+}
+
+export interface SimilarEntityListResponse {
+	data: SimilarEntityRecord[];
+	meta: { count: number; limit: number; offset: number };
+	caveats: string[];
+}
+
+export interface ClassificationMappingListResponse {
+	data: TaxonomyMappingRecord[];
+	meta: { count: number; limit: number; offset: number };
+	caveats: string[];
+}
+
+export interface TemporalPatternListResponse {
+	data: {
+		anomalies: TemporalAnomalyRecord[];
+		hotspots: SpatiotemporalHotspotRecord[];
+	};
+	meta: { count: number; limit: number; offset: number };
+	caveats: string[];
+}
+
+export interface ExternalCorrelationListResponse {
+	data: ExternalCorrelationRecord[];
+	meta: { count: number; limit: number; offset: number };
+	caveats: string[];
 }
 
 export interface EvidenceSummaryResponse {

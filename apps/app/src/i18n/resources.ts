@@ -69,10 +69,13 @@ export const resources = {
 				watching: 'Watching',
 				contradicted: 'Contradicted',
 				failed: 'Failed',
+				skipped: 'Skipped',
 				dead_letter: 'Dead letter',
 				missing: 'Missing',
 				mounted_api: 'Mounted API',
 				mounted_partial: 'Mounted partial',
+				backend_no_http_contract: 'Backend ready',
+				product_gated: 'Product gated',
 				future_milestone: 'Future milestone',
 				unverified: 'Unverified',
 				partial: 'Partial',
@@ -104,6 +107,8 @@ export const resources = {
 				partial: 'partial',
 				gap: 'gap',
 				soon: 'soon',
+				backend: 'backend',
+				gated: 'gated',
 			},
 			capabilities: {
 				status_overview: 'GET /api/status is available.',
@@ -116,7 +121,8 @@ export const resources = {
 				documents_viewer:
 					'PDF, layout, pages, stories, and observability exist, but archive ingest is gated by M10 trust work.',
 				sources_add: 'Upload routes exist, but real source ingest is gated by provenance and trust work.',
-				evidence_claims: 'First-class claims, assertions, and review actions need an app API contract.',
+				evidence_claims:
+					'Claim, assertion, and review action contracts are mounted; richer claim registry and review workflows still need content-first UI states.',
 				evidence_contradictions: 'GET /api/evidence/contradictions is available.',
 				evidence_summary: 'GET /api/evidence/summary is available.',
 				evidence_reliability: 'GET /api/evidence/reliability/sources is available.',
@@ -126,7 +132,8 @@ export const resources = {
 				entities_list: 'GET /api/entities is available.',
 				relationships_list: 'Entity-local relationships exist, but a dedicated relationship list is not mounted yet.',
 				graph_aggregate: 'Entity-local edges exist; aggregate graph read models are still needed.',
-				taxonomy_manage: 'Taxonomy capabilities exist outside the browser and need app contracts before UI use.',
+				taxonomy_manage:
+					'Taxonomy list and export routes are mounted; browser curation, bootstrap, and merge workflows remain operator-only until product UX exists.',
 				stories_list: 'Document-scoped stories exist; a global stories surface needs an app read model.',
 				activity_feed: 'No cross-system activity stream is mounted yet.',
 				operations_recovery: 'Pipeline retry exists, but broader recovery and rollback flows need UI-safe contracts.',
@@ -136,7 +143,23 @@ export const resources = {
 				admin_members: 'Invitations exist, but full member and access management is future app work.',
 				admin_policies: 'Workspace policy management is future app work.',
 				admin_integrations: 'Integration settings are future app work.',
-				m10_provenance: 'Real source ingest is gated by provenance, custody, quality, sensitivity/RBAC, and rollback.',
+				m10_provenance:
+					'M10 trust foundations exist; product ingest is gated until provenance, custody, quality, sensitivity/RBAC, and rollback are represented in the app.',
+				m11_translation:
+					'Source-level translation contracts are mounted; reader translation stays disabled until request, polling, and content switching UX is connected.',
+				m11_reviewWorkflow:
+					'Review queues and actions are mounted; Review Queue waits for content-first UX and permission-aware states.',
+				m11_credibility:
+					'Source credibility contracts are mounted; source quality and trust panels still need product UI.',
+				m11_rbac: 'M11 RBAC filters reads, but member and policy management are still partial in the app.',
+				m12_similarity:
+					'Similar-case links are mounted; Discovery UI waits for source, entity, and review landing flows.',
+				m12_classificationHarmonization:
+					'Classification mappings are mounted; Discovery UI waits for reviewable knowledge-base flows.',
+				m12_temporalPatterns:
+					'Temporal patterns are mounted; Discovery UI waits for source, entity, and review context.',
+				m12_externalCorrelations:
+					'External correlations are mounted; Discovery UI waits for source context and caveat handling.',
 			},
 			navigation: {
 				brandSubtitle: 'research workspace',
@@ -327,8 +350,20 @@ export const resources = {
 				pagesUnavailable: 'Pages unavailable',
 				pageCount: '{{count}} pages',
 				pdfTitle: 'Original PDF',
+				pdfLoadingTitle: 'Loading original PDF',
 				pdfUnavailableTitle: 'Original PDF unavailable',
 				pdfUnavailableBody: 'The original document could not be rendered in the reader.',
+				pdfErrorTitle: 'Original PDF could not be loaded',
+				pdfRenderLoadingTitle: 'Preparing PDF renderer',
+				pdfRenderErrorTitle: 'PDF render failed',
+				pdfRenderErrorBody: 'The PDF was loaded, but the reader could not render the page.',
+				pdfPageLoadingTitle: 'Rendering page',
+				previousPage: 'Previous page',
+				nextPage: 'Next page',
+				pageInputLabel: 'PDF page number',
+				zoomIn: 'Zoom in',
+				zoomOut: 'Zoom out',
+				resetZoom: 'Reset zoom',
 				layoutPreview: 'Extracted text preview',
 				layoutLoadingTitle: 'Loading extracted text',
 				layoutUnavailableTitle: 'Extracted text unavailable',
@@ -338,8 +373,10 @@ export const resources = {
 				targetLanguage: 'Target',
 				translate: 'Translate',
 				translationPrepareOnly:
-					'Persistent on-demand translation is planned. It will be cached when the translation contract exists.',
-				translationNotConnected: 'Translation is designed here, but the M11 translation service is not connected yet.',
+					'Persistent on-demand translation is planned. It will use the mounted source translation contract once request and content switching UX is connected.',
+				translationDisabledTooltip: 'Translation is not connected yet.',
+				translationNotConnected:
+					'Translation controls are prepared here, but request, polling, and content switching are not connected in the reader yet.',
 				noAnnotationSelectedTitle: 'No annotation selected',
 				noAnnotationSelectedBody: 'Select a highlighted entity in the story to inspect linked context.',
 				corroboration: 'Corroboration',
@@ -568,10 +605,13 @@ export const resources = {
 				watching: 'Beobachtet',
 				contradicted: 'Widerspruch',
 				failed: 'Fehlgeschlagen',
+				skipped: 'Übersprungen',
 				dead_letter: 'Nicht zustellbar',
 				missing: 'Fehlt',
 				mounted_api: 'Schnittstelle aktiv',
 				mounted_partial: 'Teilweise aktiv',
+				backend_no_http_contract: 'Dienst bereit',
+				product_gated: 'Produktseitig gesperrt',
 				future_milestone: 'Späterer Meilenstein',
 				unverified: 'Ungeprüft',
 				partial: 'Teilweise',
@@ -603,6 +643,8 @@ export const resources = {
 				partial: 'teilweise',
 				gap: 'lücke',
 				soon: 'bald',
+				backend: 'dienst',
+				gated: 'gesperrt',
 			},
 			capabilities: {
 				status_overview: 'Die Route GET /api/status ist verfügbar.',
@@ -617,7 +659,8 @@ export const resources = {
 					'PDF, Layout, Seiten, Erzählstränge und Beobachtungsdaten existieren, aber echte Archivaufnahme ist durch M10-Vertrauensarbeit blockiert.',
 				sources_add:
 					'Routen zum Hochladen existieren, aber echte Quellenaufnahme ist durch Herkunfts- und Vertrauensarbeit blockiert.',
-				evidence_claims: 'Aussagen, Zusicherungen und Prüfaktionen brauchen einen Vertrag der Anwendungsschnittstelle.',
+				evidence_claims:
+					'Verträge für Aussagen, Zusicherungen und Prüfaktionen sind verfügbar; umfangreichere Register- und Prüfabläufe brauchen noch inhaltsorientierte Zustände in der Oberfläche.',
 				evidence_contradictions: 'Die Route GET /api/evidence/contradictions ist verfügbar.',
 				evidence_summary: 'Die Route GET /api/evidence/summary ist verfügbar.',
 				evidence_reliability: 'Die Route GET /api/evidence/reliability/sources ist verfügbar.',
@@ -629,7 +672,7 @@ export const resources = {
 					'Entitätsbezogene Beziehungen existieren; eine eigene Beziehungsliste ist noch nicht verfügbar.',
 				graph_aggregate: 'Entitätsbezogene Kanten existieren; zusammengeführte Graph-Ansichten fehlen noch.',
 				taxonomy_manage:
-					'Taxonomie-Funktionen existieren außerhalb des Browsers und brauchen Anwendungsverträge vor der Nutzung in der Bedienoberfläche.',
+					'Taxonomie-Liste und Export sind verfügbar; Pflege, Initialisierung und Zusammenführung bleiben operatorgeführt, bis eine Produktoberfläche dafür existiert.',
 				stories_list:
 					'Dokumentbezogene Erzählstränge existieren; eine globale Erzählstrang-Ansicht braucht eine Anwendungsansicht.',
 				activity_feed: 'Es gibt noch keinen systemweiten Aktivitätsverlauf.',
@@ -643,7 +686,23 @@ export const resources = {
 				admin_policies: 'Die Richtlinienverwaltung des Arbeitsbereichs ist spätere Anwendungsarbeit.',
 				admin_integrations: 'Integrationseinstellungen sind spätere Anwendungsarbeit.',
 				m10_provenance:
-					'Echte Quellenaufnahme ist durch Herkunftsnachweise, Verwahrungskette, Qualität, Schutzstufen, rollenbasierte Zugriffe und Zurücksetzen blockiert.',
+					'Die M10-Vertrauensgrundlagen existieren; produktive Quellenaufnahme bleibt gesperrt, bis Herkunftsnachweise, Verwahrungskette, Qualität, Schutzstufen, rollenbasierte Zugriffe und Zurücksetzen in der Anwendung abgebildet sind.',
+				m11_translation:
+					'Quellenbezogene Übersetzungsschnittstellen sind aktiv; Übersetzung im Leser bleibt deaktiviert, bis Anfrage, Statusabfrage und Inhaltswechsel angebunden sind.',
+				m11_reviewWorkflow:
+					'Prüflisten und Prüfaktionen sind über Schnittstellen erreichbar; die Prüfliste wartet auf inhaltsorientierte Bedienung und berechtigungssichere Zustände.',
+				m11_credibility:
+					'Schnittstellen für Quellenvertrauen sind aktiv; Qualitäts- und Vertrauensansichten brauchen noch eine Produktoberfläche.',
+				m11_rbac:
+					'M11-Rollenrechte filtern Lesezugriffe, aber Mitglieder- und Regelverwaltung sind in der Anwendung noch teilweise.',
+				m12_similarity:
+					'Ähnliche Fälle sind über eine Schnittstelle abrufbar; die Entdeckungsansicht wartet auf gute Zielseiten zu Quellen, Entitäten und Prüfung.',
+				m12_classificationHarmonization:
+					'Klassifikationszuordnungen sind über eine Schnittstelle abrufbar; die Bedienung wartet auf prüfbare Wissensansichten.',
+				m12_temporalPatterns:
+					'Zeitmuster sind über eine Schnittstelle abrufbar; die Entdeckungsansicht wartet auf klare Quellen- und Prüfungskontexte.',
+				m12_externalCorrelations:
+					'Außenkorrelationen sind über eine Schnittstelle abrufbar; die Entdeckungsansicht wartet auf Quellenkontext und klare Warnhinweise.',
 			},
 			navigation: {
 				brandSubtitle: 'Recherche-Arbeitsbereich',
@@ -838,8 +897,20 @@ export const resources = {
 				pagesUnavailable: 'Seiten nicht verfügbar',
 				pageCount: '{{count}} Seiten',
 				pdfTitle: 'Original-PDF',
+				pdfLoadingTitle: 'Original-PDF wird geladen',
 				pdfUnavailableTitle: 'Original-PDF nicht verfügbar',
 				pdfUnavailableBody: 'Das Originaldokument konnte in der Leseansicht nicht dargestellt werden.',
+				pdfErrorTitle: 'Original-PDF konnte nicht geladen werden',
+				pdfRenderLoadingTitle: 'PDF-Darstellung wird vorbereitet',
+				pdfRenderErrorTitle: 'PDF-Darstellung fehlgeschlagen',
+				pdfRenderErrorBody: 'Die PDF wurde geladen, aber die Leseansicht konnte die Seite nicht darstellen.',
+				pdfPageLoadingTitle: 'Seite wird dargestellt',
+				previousPage: 'Vorherige Seite',
+				nextPage: 'Nächste Seite',
+				pageInputLabel: 'PDF-Seitennummer',
+				zoomIn: 'Vergrößern',
+				zoomOut: 'Verkleinern',
+				resetZoom: 'Zoom zurücksetzen',
 				layoutPreview: 'Vorschau des extrahierten Textes',
 				layoutLoadingTitle: 'Extrahierter Text wird geladen',
 				layoutUnavailableTitle: 'Extrahierter Text nicht verfügbar',
@@ -849,9 +920,10 @@ export const resources = {
 				targetLanguage: 'Ziel',
 				translate: 'Übersetzen',
 				translationPrepareOnly:
-					'Dauerhafte Übersetzung auf Abruf ist vorgesehen. Sie wird zwischengespeichert, sobald der Übersetzungsvertrag existiert.',
+					'Dauerhafte Übersetzung auf Abruf ist vorgesehen. Sie nutzt die aktive Quellenübersetzung, sobald Anfrage und Inhaltswechsel angebunden sind.',
+				translationDisabledTooltip: 'Übersetzung ist noch nicht angebunden.',
 				translationNotConnected:
-					'Die Übersetzung ist hier vorbereitet, aber der M11-Übersetzungsdienst ist noch nicht angebunden.',
+					'Die Übersetzung ist hier vorbereitet, aber Anfrage, Statusabfrage und Inhaltswechsel sind im Reader noch nicht angebunden.',
 				noAnnotationSelectedTitle: 'Keine Markierung ausgewählt',
 				noAnnotationSelectedBody:
 					'Wähle eine hervorgehobene Entität im Erzählstrang aus, um verknüpften Kontext zu prüfen.',

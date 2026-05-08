@@ -14,6 +14,8 @@ const toneByStatus: Record<string, string> = {
 	missing: 'bg-danger-soft text-danger border-danger/20',
 	'mounted-api': 'bg-success-soft text-success border-success/20',
 	'mounted-partial': 'bg-warning-soft text-warning border-warning/20',
+	'backend-no-http-contract': 'bg-info-soft text-info border-info/20',
+	'product-gated': 'bg-warning-soft text-warning border-warning/20',
 	'future-milestone': 'bg-field text-text-muted border-border',
 	unverified: 'bg-field text-text-muted border-border',
 	partial: 'bg-warning-soft text-warning border-warning/20',

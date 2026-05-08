@@ -1,5 +1,5 @@
 import { type ApiConfig, MulderError } from '@mulder/core';
-import type { Context, Hono } from 'hono';
+import type { Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import {
 	acceptInvitation,
@@ -17,6 +17,15 @@ import {
 	CreateInvitationResponseSchema,
 	LoginRequestSchema,
 } from './auth.schemas.js';
+import {
+	type ApiApp,
+	AUTH_SECURITY,
+	COMMON_ERROR_RESPONSES,
+	emptyResponse,
+	jsonRequestBody,
+	jsonResponse,
+	registerOpenApiRoute,
+} from './openapi.js';
 
 async function readJsonBody(c: Context): Promise<unknown> {
 	try {
@@ -76,62 +85,137 @@ function requireInviteCreator(c: Context): AuthPrincipal {
 	throw new MulderError('Only owners and admins can create invitations', 'AUTH_FORBIDDEN');
 }
 
-export function registerAuthRoutes(app: Hono, apiConfig: ApiConfig): void {
-	app.post('/api/auth/login', async (c) => {
-		const body = LoginRequestSchema.parse(await readJsonBody(c));
-		const { token, session } = await loginWithPassword(body.email, body.password, apiConfig);
-		setSessionCookie(c, token, apiConfig);
-		const response = sessionResponse(session);
-		AuthSessionResponseSchema.parse(response);
-		return c.json(response, 200);
-	});
-
-	app.post('/api/auth/logout', async (c) => {
-		const cookie = getBrowserAuthCookieSettings(apiConfig);
-		const token = getCookie(c, cookie.name);
-		if (token) {
-			await logoutSession(token, apiConfig);
-		}
-		clearSessionCookie(c, apiConfig);
-		return c.body(null, 204);
-	});
-
-	app.get('/api/auth/session', async (c) => {
-		const cookie = getBrowserAuthCookieSettings(apiConfig);
-		const token = getCookie(c, cookie.name);
-		const response = sessionResponse(token ? await validateSessionToken(token, apiConfig) : null);
-		AuthSessionResponseSchema.parse(response);
-		return c.json(response, 200);
-	});
-
-	app.post('/api/auth/invitations/accept', async (c) => {
-		const body = AcceptInvitationRequestSchema.parse(await readJsonBody(c));
-		const { token, session } = await acceptInvitation(body.token, body.password, apiConfig);
-		setSessionCookie(c, token, apiConfig);
-		const response = sessionResponse(session);
-		AuthSessionResponseSchema.parse(response);
-		return c.json(response, 200);
-	});
-
-	app.post('/api/auth/invitations', async (c) => {
-		const principal = requireInviteCreator(c);
-		const body = CreateInvitationRequestSchema.parse(await readJsonBody(c));
-		const invitation = await createInvitation({
-			email: body.email,
-			role: body.role,
-			invitedByUserId: principal.type === 'session' ? principal.userId : null,
-			apiConfig,
-			logger: c.get('requestContext')?.logger,
-		});
-		const response = {
-			data: {
-				id: invitation.id,
-				email: invitation.email,
-				role: invitation.role,
-				expires_at: invitation.expiresAt.toISOString(),
+export function registerAuthRoutes(app: ApiApp, apiConfig: ApiConfig): void {
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'post',
+			path: '/api/auth/login',
+			operationId: 'login',
+			tags: ['Auth'],
+			request: {
+				body: jsonRequestBody(LoginRequestSchema, 'Login request'),
 			},
-		};
-		CreateInvitationResponseSchema.parse(response);
-		return c.json(response, 201);
-	});
+			responses: {
+				200: jsonResponse(AuthSessionResponseSchema, 'Authenticated session'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const body = LoginRequestSchema.parse(await readJsonBody(c));
+			const { token, session } = await loginWithPassword(body.email, body.password, apiConfig);
+			setSessionCookie(c, token, apiConfig);
+			const response = sessionResponse(session);
+			AuthSessionResponseSchema.parse(response);
+			return c.json(response, 200);
+		},
+	);
+
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'post',
+			path: '/api/auth/logout',
+			operationId: 'logout',
+			tags: ['Auth'],
+			responses: {
+				204: emptyResponse('Session cleared'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const cookie = getBrowserAuthCookieSettings(apiConfig);
+			const token = getCookie(c, cookie.name);
+			if (token) {
+				await logoutSession(token, apiConfig);
+			}
+			clearSessionCookie(c, apiConfig);
+			return c.body(null, 204);
+		},
+	);
+
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'get',
+			path: '/api/auth/session',
+			operationId: 'getSession',
+			tags: ['Auth'],
+			responses: {
+				200: jsonResponse(AuthSessionResponseSchema, 'Current browser session'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const cookie = getBrowserAuthCookieSettings(apiConfig);
+			const token = getCookie(c, cookie.name);
+			const response = sessionResponse(token ? await validateSessionToken(token, apiConfig) : null);
+			AuthSessionResponseSchema.parse(response);
+			return c.json(response, 200);
+		},
+	);
+
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'post',
+			path: '/api/auth/invitations/accept',
+			operationId: 'acceptInvitation',
+			tags: ['Auth'],
+			request: {
+				body: jsonRequestBody(AcceptInvitationRequestSchema, 'Invitation acceptance request'),
+			},
+			responses: {
+				200: jsonResponse(AuthSessionResponseSchema, 'Authenticated session'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const body = AcceptInvitationRequestSchema.parse(await readJsonBody(c));
+			const { token, session } = await acceptInvitation(body.token, body.password, apiConfig);
+			setSessionCookie(c, token, apiConfig);
+			const response = sessionResponse(session);
+			AuthSessionResponseSchema.parse(response);
+			return c.json(response, 200);
+		},
+	);
+
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'post',
+			path: '/api/auth/invitations',
+			operationId: 'createInvitation',
+			tags: ['Auth'],
+			security: AUTH_SECURITY,
+			request: {
+				body: jsonRequestBody(CreateInvitationRequestSchema, 'Invitation creation request'),
+			},
+			responses: {
+				201: jsonResponse(CreateInvitationResponseSchema, 'Created invitation'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const principal = requireInviteCreator(c);
+			const body = CreateInvitationRequestSchema.parse(await readJsonBody(c));
+			const invitation = await createInvitation({
+				email: body.email,
+				role: body.role,
+				invitedByUserId: principal.type === 'session' ? principal.userId : null,
+				apiConfig,
+				logger: c.get('requestContext')?.logger,
+			});
+			const response = {
+				data: {
+					id: invitation.id,
+					email: invitation.email,
+					role: invitation.role,
+					expires_at: invitation.expiresAt.toISOString(),
+				},
+			};
+			CreateInvitationResponseSchema.parse(response);
+			return c.json(response, 201);
+		},
+	);
 }

@@ -9,6 +9,7 @@ import type {
 	ReviewAction,
 	ReviewArtifactType,
 	ReviewableArtifact,
+	ReviewableArtifactFindOptions,
 	ReviewableArtifactListOptions,
 	ReviewConfidence,
 	ReviewCreatedBy,
@@ -275,13 +276,21 @@ export async function upsertReviewableArtifact(
 export async function findReviewableArtifactById(
 	pool: Queryable,
 	artifactId: string,
+	options?: ReviewableArtifactFindOptions,
 ): Promise<ReviewableArtifact | null> {
 	try {
-		return (await readArtifacts(pool, 'WHERE artifact_id = $1', [artifactId]))[0] ?? null;
+		const params: unknown[] = [artifactId];
+		const filters = ['artifact_id = $1'];
+		if (!options?.includeDeleted) filters.push('deleted_at IS NULL');
+		if (options?.maxSensitivityLevel) {
+			params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+			filters.push(`COALESCE(NULLIF(context->>'sensitivity_level', ''), 'internal') = ANY($${params.length})`);
+		}
+		return (await readArtifacts(pool, `WHERE ${filters.join(' AND ')}`, params))[0] ?? null;
 	} catch (cause: unknown) {
 		throw new DatabaseError('Failed to find reviewable artifact by ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause,
-			context: { artifactId },
+			context: { artifactId, options },
 		});
 	}
 }
@@ -383,9 +392,17 @@ async function recordEventInTransaction(
 	}
 	if (input.action === 'correct') normalizeObject(input.newValue, 'newValue');
 
+	const artifactFilters = ['artifact_id = $1', 'deleted_at IS NULL'];
+	const artifactParams: unknown[] = [input.artifactId];
+	if (input.maxSensitivityLevel) {
+		artifactParams.push(allowedSensitivityLevelsForMax(input.maxSensitivityLevel));
+		artifactFilters.push(
+			`COALESCE(NULLIF(context->>'sensitivity_level', ''), 'internal') = ANY($${artifactParams.length})`,
+		);
+	}
 	const artifactResult = await client.query<ReviewArtifactRow>(
-		'SELECT * FROM review_artifacts WHERE artifact_id = $1 AND deleted_at IS NULL FOR UPDATE',
-		[input.artifactId],
+		`SELECT * FROM review_artifacts WHERE ${artifactFilters.join(' AND ')} FOR UPDATE`,
+		artifactParams,
 	);
 	const artifactRow = artifactResult.rows[0];
 	if (!artifactRow) fail('Review artifact not found', { artifactId: input.artifactId });
@@ -489,16 +506,20 @@ export async function listReviewEvents(
 	artifactId: string,
 	options?: ReviewEventListOptions,
 ): Promise<ReviewEvent[]> {
-	const filters = ['artifact_id = $1'];
+	const filters = ['re.artifact_id = $1', 'ra.deleted_at IS NULL'];
 	const params: unknown[] = [artifactId];
+	if (options?.maxSensitivityLevel) {
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		filters.push(`COALESCE(NULLIF(ra.context->>'sensitivity_level', ''), 'internal') = ANY($${params.length})`);
+	}
 	if (options?.action) {
 		assertEnum(options.action, ACTIONS, 'action');
 		params.push(options.action);
-		filters.push(`action = $${params.length}`);
+		filters.push(`re.action = $${params.length}`);
 	}
 	if (options?.reviewerId) {
 		params.push(options.reviewerId);
-		filters.push(`reviewer_id = $${params.length}`);
+		filters.push(`re.reviewer_id = $${params.length}`);
 	}
 	const limit = options?.limit ?? 100;
 	const offset = options?.offset ?? 0;
@@ -506,10 +527,11 @@ export async function listReviewEvents(
 	try {
 		const result = await pool.query<ReviewEventRow>(
 			`
-				SELECT *
-				FROM review_events
+				SELECT re.*
+				FROM review_events re
+				JOIN review_artifacts ra ON ra.artifact_id = re.artifact_id
 				WHERE ${filters.join(' AND ')}
-				ORDER BY created_at ASC, event_id ASC
+				ORDER BY re.created_at ASC, re.event_id ASC
 				LIMIT $${params.length - 1} OFFSET $${params.length}
 			`,
 			params,
@@ -565,23 +587,34 @@ export async function upsertReviewQueue(pool: Queryable, input: UpsertReviewQueu
 
 export async function listReviewQueues(pool: Queryable, options?: ReviewQueueListOptions): Promise<ReviewQueue[]> {
 	const where = (options?.activeOnly ?? true) ? 'WHERE rq.active' : '';
+	const joinFilters = [
+		'ra.artifact_type = ANY(rq.artifact_types)',
+		'ra.deleted_at IS NULL',
+		`(
+			(rq.queue_key = 'contested_artifacts' AND ra.review_status = 'contested')
+			OR (rq.queue_key <> 'contested_artifacts' AND ra.review_status = 'pending')
+		)`,
+	];
+	const params: unknown[] = [];
+	if (options?.maxSensitivityLevel) {
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		joinFilters.push(`COALESCE(NULLIF(ra.context->>'sensitivity_level', ''), 'internal') = ANY($${params.length})`);
+	}
 	try {
-		const result = await pool.query<ReviewQueueRow>(`
-			SELECT
-				rq.*,
-				COUNT(ra.artifact_id) AS pending_count,
-				MIN(COALESCE(ra.due_at, ra.created_at)) AS oldest_pending
-			FROM review_queues rq
-			LEFT JOIN review_artifacts ra ON ra.artifact_type = ANY(rq.artifact_types)
-				AND ra.deleted_at IS NULL
-				AND (
-					(rq.queue_key = 'contested_artifacts' AND ra.review_status = 'contested')
-					OR (rq.queue_key <> 'contested_artifacts' AND ra.review_status = 'pending')
-				)
-			${where}
-			GROUP BY rq.queue_key
-			ORDER BY rq.name ASC, rq.queue_key ASC
-		`);
+		const result = await pool.query<ReviewQueueRow>(
+			`
+				SELECT
+					rq.*,
+					COUNT(ra.artifact_id) AS pending_count,
+					MIN(COALESCE(ra.due_at, ra.created_at)) AS oldest_pending
+				FROM review_queues rq
+				LEFT JOIN review_artifacts ra ON ${joinFilters.join('\n\t\t\t\t\tAND ')}
+				${where}
+				GROUP BY rq.queue_key
+				ORDER BY rq.name ASC, rq.queue_key ASC
+			`,
+			params,
+		);
 		return result.rows.map(mapQueueRow);
 	} catch (cause: unknown) {
 		throw new DatabaseError('Failed to list review queues', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {

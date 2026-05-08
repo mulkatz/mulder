@@ -47,6 +47,7 @@ import {
 	executePipelineRun,
 	executeQuality,
 	executeSegment,
+	executeTranslate,
 	getCrossFormatDedupKey,
 	getStorageExtensionForDetection,
 	isSupportedEmailMediaType,
@@ -756,6 +757,17 @@ export const dispatchJob: WorkerDispatchFn = async (job, context) => {
 		}
 		case 'document_upload_finalize': {
 			return await finalizeUploadedDocument({ config, services, pool, log }, job.payload);
+		}
+		case 'translate': {
+			const result = await executeTranslate(job.payload, config, services, pool, log);
+			assertStepSucceeded(job, 'translate', result.status);
+			return {
+				translation_id: result.data.translationId,
+				outcome: result.data.outcome,
+				source_id: result.data.sourceId,
+				target_language: result.data.targetLanguage,
+				output_format: result.data.outputFormat,
+			};
 		}
 		case 'pipeline_run': {
 			const runOptions: PipelineRunOptions = {

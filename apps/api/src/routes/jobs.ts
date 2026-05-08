@@ -1,4 +1,3 @@
-import type { Hono } from 'hono';
 import { getJobStatusById, listRecentJobs } from '../lib/job-status.js';
 import {
 	JobDetailParamsSchema,
@@ -6,6 +5,7 @@ import {
 	JobListQuerySchema,
 	JobListResponseSchema,
 } from './jobs.schemas.js';
+import { type ApiApp, AUTH_SECURITY, COMMON_ERROR_RESPONSES, jsonResponse, registerOpenApiRoute } from './openapi.js';
 
 function readJobListQuery(url: string): Record<string, string | undefined> {
 	const searchParams = new URL(url).searchParams;
@@ -17,18 +17,52 @@ function readJobListQuery(url: string): Record<string, string | undefined> {
 	};
 }
 
-export function registerJobRoutes(app: Hono): void {
-	app.get('/api/jobs', async (c) => {
-		const query = JobListQuerySchema.parse(readJobListQuery(c.req.url));
-		const response = await listRecentJobs(query);
-		JobListResponseSchema.parse(response);
-		return c.json(response, 200);
-	});
+export function registerJobRoutes(app: ApiApp): void {
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'get',
+			path: '/api/jobs',
+			operationId: 'listJobs',
+			tags: ['Jobs'],
+			security: AUTH_SECURITY,
+			request: {
+				query: JobListQuerySchema,
+			},
+			responses: {
+				200: jsonResponse(JobListResponseSchema, 'Recent jobs'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const query = JobListQuerySchema.parse(readJobListQuery(c.req.url));
+			const response = await listRecentJobs(query);
+			JobListResponseSchema.parse(response);
+			return c.json(response, 200);
+		},
+	);
 
-	app.get('/api/jobs/:id', async (c) => {
-		const { id } = JobDetailParamsSchema.parse({ id: c.req.param('id') });
-		const response = await getJobStatusById(id);
-		JobDetailResponseSchema.parse(response);
-		return c.json(response, 200);
-	});
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'get',
+			path: '/api/jobs/{id}',
+			operationId: 'getJob',
+			tags: ['Jobs'],
+			security: AUTH_SECURITY,
+			request: {
+				params: JobDetailParamsSchema,
+			},
+			responses: {
+				200: jsonResponse(JobDetailResponseSchema, 'Job detail'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const { id } = JobDetailParamsSchema.parse({ id: c.req.param('id') });
+			const response = await getJobStatusById(id);
+			JobDetailResponseSchema.parse(response);
+			return c.json(response, 200);
+		},
+	);
 }

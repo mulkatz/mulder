@@ -42,6 +42,82 @@ export const DocumentListItemSchema = z.object({
 	links: DocumentLinksSchema,
 });
 
+export const DocumentSensitivitySummarySchema = z.object({
+	level: z.enum(['public', 'internal', 'restricted', 'confidential']),
+	metadata: z.record(z.string(), z.unknown()),
+});
+
+export const DocumentProvenanceSummarySchema = z.object({
+	context_id: z.string().uuid(),
+	channel: z.string(),
+	submitted_at: z.string(),
+	submitted_by_type: z.string(),
+	collection_id: z.string().uuid().nullable(),
+	authenticity_status: z.string(),
+	authenticity_notes: z.string().nullable(),
+	submission_notes: z.string().nullable(),
+});
+
+export const DocumentOriginalSourceSummarySchema = z.object({
+	source_type: z.string(),
+	description: z.string(),
+	source_date: z.string().nullable(),
+	author: z.string().nullable(),
+	language: z.string(),
+	institution: z.string().nullable(),
+	foia_reference: z.string().nullable(),
+});
+
+export const DocumentQualitySummarySchema = z.object({
+	id: z.string().uuid(),
+	assessed_at: z.string(),
+	assessment_method: z.string(),
+	overall_quality: z.string(),
+	processable: z.boolean(),
+	recommended_path: z.string(),
+	text_readability_score: z.number().nullable(),
+	language: z.string().nullable(),
+	language_confidence: z.number().nullable(),
+});
+
+export const DocumentCollectionSummarySchema = z.object({
+	id: z.string().uuid(),
+	name: z.string(),
+	description: z.string(),
+	type: z.string(),
+	visibility: z.string(),
+	tags: z.array(z.string()),
+	document_count: z.number().int().nonnegative(),
+	total_size_bytes: z.number().int().nonnegative(),
+	languages: z.array(z.string()),
+	date_range: z.object({
+		earliest: z.string().nullable(),
+		latest: z.string().nullable(),
+	}),
+});
+
+export const DocumentCredibilitySummarySchema = z.object({
+	profile_id: z.string().uuid(),
+	source_type: z.string(),
+	profile_author: z.string(),
+	review_status: z.string(),
+	last_reviewed: z.string().nullable(),
+	dimension_count: z.number().int().nonnegative(),
+	average_score: z.number().nullable(),
+	sensitivity_level: z.enum(['public', 'internal', 'restricted', 'confidential']),
+});
+
+export const DocumentDetailItemSchema = DocumentListItemSchema.extend({
+	reader_link: z.string().min(1),
+	provenance: DocumentProvenanceSummarySchema.nullable(),
+	original_source: DocumentOriginalSourceSummarySchema.nullable(),
+	source_language: z.string().nullable(),
+	sensitivity: DocumentSensitivitySummarySchema,
+	quality: DocumentQualitySummarySchema.nullable(),
+	collection: DocumentCollectionSummarySchema.nullable(),
+	credibility: DocumentCredibilitySummarySchema.nullable(),
+});
+
 export const DocumentListResponseSchema = z.object({
 	data: z.array(DocumentListItemSchema),
 	meta: z.object({
@@ -49,6 +125,10 @@ export const DocumentListResponseSchema = z.object({
 		limit: z.number().int().positive(),
 		offset: z.number().int().nonnegative(),
 	}),
+});
+
+export const DocumentDetailResponseSchema = z.object({
+	data: DocumentDetailItemSchema,
 });
 
 export const DocumentPageSchema = z.object({
@@ -204,6 +284,7 @@ export const DocumentArtifactSchema = z.object({
 export type DocumentListQuery = z.infer<typeof DocumentListQuerySchema>;
 export type DocumentListResponse = z.infer<typeof DocumentListResponseSchema>;
 export type DocumentListItem = z.infer<typeof DocumentListItemSchema>;
+export type DocumentDetailResponse = z.infer<typeof DocumentDetailResponseSchema>;
 export type DocumentPagesResponse = z.infer<typeof DocumentPagesResponseSchema>;
 export type DocumentPageItem = z.infer<typeof DocumentPageSchema>;
 export type DocumentStoriesResponse = z.infer<typeof DocumentStoriesResponseSchema>;

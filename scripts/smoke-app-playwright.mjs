@@ -21,7 +21,6 @@ const appUrl = normalizeBaseUrl(readOption('app-url') ?? process.env.MULDER_APP_
 const email = readOption('email') ?? process.env.MULDER_SMOKE_EMAIL;
 const password = readOption('password') ?? process.env.MULDER_SMOKE_PASSWORD;
 const configuredSourceId = readOption('source-id') ?? process.env.MULDER_SMOKE_SOURCE_ID;
-const sourceId = configuredSourceId ?? '00000000-0000-4000-8000-000000000301';
 const headless = (process.env.MULDER_PLAYWRIGHT_HEADLESS ?? 'true') !== 'false';
 
 if (!email || !password) {
@@ -47,10 +46,6 @@ const consoleErrors = [];
 
 function isExpectedConsoleError(text) {
 	if (/status of 401 \(Unauthorized\)/.test(text)) {
-		return true;
-	}
-
-	if (!configuredSourceId && (/status of 404/.test(text) || /X-Frame-Options.*deny/i.test(text))) {
 		return true;
 	}
 
@@ -83,6 +78,44 @@ async function visit(route, viewport) {
 	await expectNoBrokenText(route);
 }
 
+async function expectReaderHappyPath(sourceId) {
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await page.goto('/sources');
+	await page.waitForLoadState('networkidle');
+	await expectNoBrokenText('/sources');
+
+	await page.goto(`/sources/${sourceId}`);
+	await page.waitForLoadState('networkidle');
+	await expectNoBrokenText('/sources/:id');
+
+	await page.getByRole('button', { name: /original/i }).click();
+	await expectNoBrokenText('/sources/:id original');
+
+	const iframeCount = await page.locator('iframe').count();
+	if (iframeCount !== 0) {
+		throw new Error('Reader original pane must not render an iframe');
+	}
+
+	const renderedCanvasCount = await page.locator('canvas').count();
+	const pdfErrorCount = await page
+		.getByText(/Original PDF unavailable|Original PDF could not be loaded|PDF render failed/i)
+		.count();
+	if (renderedCanvasCount === 0 && pdfErrorCount === 0) {
+		throw new Error('Reader original pane showed neither a rendered PDF canvas nor an honest PDF error state');
+	}
+
+	await page.getByRole('button', { name: /story/i }).click();
+	await expectNoBrokenText('/sources/:id story');
+
+	await page.setViewportSize({ width: 390, height: 860 });
+	await page.goto(`/sources/${sourceId}`);
+	await page.waitForLoadState('networkidle');
+	const splitButtonCount = await page.getByRole('button', { name: /split/i }).count();
+	if (splitButtonCount !== 0) {
+		throw new Error('Split mode should be hidden on mobile-width reader');
+	}
+}
+
 try {
 	await page.addInitScript(() => {
 		try {
@@ -104,7 +137,7 @@ try {
 		{ width: 1024, height: 900 },
 		{ width: 390, height: 860 },
 	];
-	const routes = ['/', '/sources', `/sources/${sourceId}`, '/evidence', '/runs'];
+	const routes = ['/', '/sources', '/evidence', '/runs'];
 
 	for (const viewport of viewports) {
 		for (const route of routes) {
@@ -112,20 +145,8 @@ try {
 		}
 	}
 
-	await page.setViewportSize({ width: 1440, height: 1000 });
-	await page.goto(`/sources/${sourceId}`);
-	await page.waitForLoadState('networkidle');
-	await page.getByRole('button', { name: /original/i }).click();
-	await expectNoBrokenText('/sources/:id original');
-	await page.getByRole('button', { name: /story/i }).click();
-	await expectNoBrokenText('/sources/:id story');
-
-	await page.setViewportSize({ width: 390, height: 860 });
-	await page.goto(`/sources/${sourceId}`);
-	await page.waitForLoadState('networkidle');
-	const splitButtonCount = await page.getByRole('button', { name: /split/i }).count();
-	if (splitButtonCount !== 0) {
-		throw new Error('Split mode should be hidden on mobile-width reader');
+	if (configuredSourceId) {
+		await expectReaderHappyPath(configuredSourceId);
 	}
 
 	if (pageErrors.length > 0) {
@@ -136,7 +157,9 @@ try {
 		throw new Error(`Unexpected console errors:\n${consoleErrors.join('\n')}`);
 	}
 
-	console.log(`app_smoke ok: ${routes.length} routes x ${viewports.length} viewports`);
+	console.log(
+		`app_smoke ok: ${routes.length} routes x ${viewports.length} viewports${configuredSourceId ? ' + reader source' : ''}`,
+	);
 } finally {
 	await browser.close();
 }

@@ -886,6 +886,29 @@ export async function listTaxonomyMappings(
 	}
 }
 
+export async function countTaxonomyMappings(pool: Queryable, options?: TaxonomyMappingListOptions): Promise<number> {
+	const filters: string[] = [];
+	const params: unknown[] = [];
+	addMappingListFilters(filters, params, options);
+	const where = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+	try {
+		const result = await pool.query<{ count: string }>(
+			`
+				SELECT COUNT(*) AS count
+				FROM taxonomy_mappings
+				${where}
+			`,
+			params,
+		);
+		return Number.parseInt(result.rows[0]?.count ?? '0', 10) || 0;
+	} catch (cause: unknown) {
+		throw new DatabaseError('Failed to count taxonomy mappings', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause,
+			context: { options },
+		});
+	}
+}
+
 export async function resolveTaxonomyMappings(
 	pool: Queryable,
 	options: ResolveTaxonomyMappingsOptions,

@@ -11,14 +11,18 @@ import {
 	type Entity,
 	findAllSources,
 	findEntitiesByStoryId,
+	findLatestDocumentQualityAssessment,
 	findLatestPipelineRunSourceForSource,
+	findOriginalSourceForContext,
 	findPipelineRunById,
 	findSourceById,
+	findSourceCredibilityProfileBySourceId,
 	findSourceSteps,
 	findStoriesBySourceId,
 	getQueryPool,
 	type Job,
 	type Logger,
+	listAcquisitionContextsForSource,
 	loadConfig,
 	type MulderConfig,
 	MulderError,
@@ -31,11 +35,13 @@ import {
 	type SourceFilter,
 	type SourceStep,
 	type Story,
+	summarizeCollection,
 } from '@mulder/core';
 import type pg from 'pg';
 import type { AuthPrincipal } from '../middleware/auth.js';
 import type {
 	DocumentArtifact,
+	DocumentDetailResponse,
 	DocumentListItem,
 	DocumentListQuery,
 	DocumentListResponse,
@@ -46,6 +52,7 @@ import type {
 	DocumentStoryResponse,
 } from '../routes/documents.schemas.js';
 import { PIPELINE_STEP_VALUES } from '../routes/pipeline.schemas.js';
+import { unknownToJsonRecord } from './json-record.js';
 
 interface DocumentContext {
 	config: MulderConfig;
@@ -152,6 +159,155 @@ function mapSourceToDocument(source: Source, layoutAvailable: boolean, pageImage
 		updated_at: toIsoString(source.updatedAt),
 		links: buildDocumentLinks(source.id),
 	};
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+	return unknownToJsonRecord(value);
+}
+
+function mapSourceSensitivity(source: Source): DocumentDetailResponse['data']['sensitivity'] {
+	return {
+		level: source.sensitivityLevel ?? 'internal',
+		metadata: readRecord(source.sensitivityMetadata),
+	};
+}
+
+function mapAcquisitionSummary(
+	acquisition: Awaited<ReturnType<typeof listAcquisitionContextsForSource>>[number] | null,
+): DocumentDetailResponse['data']['provenance'] {
+	if (!acquisition) {
+		return null;
+	}
+
+	return {
+		context_id: acquisition.contextId,
+		channel: acquisition.channel,
+		submitted_at: acquisition.submittedAt.toISOString(),
+		submitted_by_type: acquisition.submittedBy.type,
+		collection_id: acquisition.collectionId,
+		authenticity_status: acquisition.authenticityStatus,
+		authenticity_notes: acquisition.authenticityNotes,
+		submission_notes: acquisition.submissionNotes,
+	};
+}
+
+function selectPrimaryAcquisition(
+	acquisitions: Awaited<ReturnType<typeof listAcquisitionContextsForSource>>,
+): Awaited<ReturnType<typeof listAcquisitionContextsForSource>>[number] | null {
+	let fallback: Awaited<ReturnType<typeof listAcquisitionContextsForSource>>[number] | null = null;
+	let active: Awaited<ReturnType<typeof listAcquisitionContextsForSource>>[number] | null = null;
+	for (const acquisition of acquisitions) {
+		fallback = acquisition;
+		if (acquisition.status === 'active' || acquisition.status === 'restored') {
+			active = acquisition;
+		}
+	}
+	return active ?? fallback;
+}
+
+function mapOriginalSourceSummary(
+	originalSource: Awaited<ReturnType<typeof findOriginalSourceForContext>>,
+): DocumentDetailResponse['data']['original_source'] {
+	if (!originalSource) {
+		return null;
+	}
+
+	return {
+		source_type: originalSource.sourceType,
+		description: originalSource.sourceDescription,
+		source_date: toIsoStringOrNull(originalSource.sourceDate),
+		author: originalSource.sourceAuthor,
+		language: originalSource.sourceLanguage,
+		institution: originalSource.sourceInstitution,
+		foia_reference: originalSource.foiaReference,
+	};
+}
+
+function mapQualitySummary(
+	quality: Awaited<ReturnType<typeof findLatestDocumentQualityAssessment>>,
+): DocumentDetailResponse['data']['quality'] {
+	if (!quality) {
+		return null;
+	}
+
+	return {
+		id: quality.id,
+		assessed_at: quality.assessedAt.toISOString(),
+		assessment_method: quality.assessmentMethod,
+		overall_quality: quality.overallQuality,
+		processable: quality.processable,
+		recommended_path: quality.recommendedPath,
+		text_readability_score: quality.dimensions.textReadability.score,
+		language: quality.dimensions.languageDetection.primaryLanguage,
+		language_confidence: quality.dimensions.languageDetection.confidence,
+	};
+}
+
+function mapCollectionSummary(
+	collection: Awaited<ReturnType<typeof summarizeCollection>>,
+): DocumentDetailResponse['data']['collection'] {
+	if (!collection) {
+		return null;
+	}
+
+	return {
+		id: collection.collectionId,
+		name: collection.name,
+		description: collection.description,
+		type: collection.type,
+		visibility: collection.visibility,
+		tags: collection.tags,
+		document_count: collection.documentCount,
+		total_size_bytes: collection.totalSizeBytes,
+		languages: collection.languages,
+		date_range: {
+			earliest: toIsoStringOrNull(collection.dateRange.earliest),
+			latest: toIsoStringOrNull(collection.dateRange.latest),
+		},
+	};
+}
+
+function mapCredibilitySummary(
+	credibility: Awaited<ReturnType<typeof findSourceCredibilityProfileBySourceId>>,
+): DocumentDetailResponse['data']['credibility'] {
+	if (!credibility) {
+		return null;
+	}
+
+	const dimensionCount = credibility.dimensions.length;
+	const averageScore =
+		dimensionCount > 0
+			? credibility.dimensions.reduce((total, dimension) => total + dimension.score, 0) / dimensionCount
+			: null;
+
+	return {
+		profile_id: credibility.profileId,
+		source_type: credibility.sourceType,
+		profile_author: credibility.profileAuthor,
+		review_status: credibility.reviewStatus,
+		last_reviewed: toIsoStringOrNull(credibility.lastReviewed),
+		dimension_count: dimensionCount,
+		average_score: averageScore,
+		sensitivity_level: credibility.sensitivityLevel,
+	};
+}
+
+function readSourceMetadataLanguage(source: Source): string | null {
+	const metadataLanguage =
+		source.metadata.language ?? source.metadata.source_language ?? source.metadata.original_language;
+	return typeof metadataLanguage === 'string' && metadataLanguage.trim().length > 0 ? metadataLanguage : null;
+}
+
+function resolveSourceLanguage(input: {
+	originalSource: Awaited<ReturnType<typeof findOriginalSourceForContext>>;
+	quality: Awaited<ReturnType<typeof findLatestDocumentQualityAssessment>>;
+	source: Source;
+}): string | null {
+	return (
+		input.originalSource?.sourceLanguage ??
+		input.quality?.dimensions.languageDetection.primaryLanguage ??
+		readSourceMetadataLanguage(input.source)
+	);
 }
 
 function mapEntityForDocument(
@@ -981,6 +1137,58 @@ export async function listDocuments(
 ): Promise<DocumentListResponse> {
 	const rootLogger = logger ?? createLogger();
 	return await buildDocumentListResponse(input, rootLogger, options);
+}
+
+export async function getDocumentDetail(
+	id: string,
+	logger?: Logger,
+	options?: RouteAccessOptions,
+): Promise<DocumentDetailResponse> {
+	const rootLogger = logger ?? createLogger();
+	const requestLogger = createRouteLogger(rootLogger, {
+		action: 'detail',
+		source_id: id,
+	});
+	const { config, pool } = resolveContext();
+	const services = createServiceRegistry(config, requestLogger);
+	const startedAt = performance.now();
+	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal);
+	const source = await requireSource(pool, id, maxSensitivityLevel);
+	const [layoutAvailable, pageImageCount, acquisitions, quality, credibility] = await Promise.all([
+		services.storage.exists(buildLayoutPath(source.id)),
+		countPageArtifacts(services, source.id),
+		listAcquisitionContextsForSource(pool, source.id),
+		findLatestDocumentQualityAssessment(pool, source.id),
+		findSourceCredibilityProfileBySourceId(pool, source.id, { maxSensitivityLevel }),
+	]);
+	const acquisition = selectPrimaryAcquisition(acquisitions);
+	const [originalSource, collection] = await Promise.all([
+		acquisition ? findOriginalSourceForContext(pool, acquisition.contextId) : Promise.resolve(null),
+		acquisition?.collectionId ? summarizeCollection(pool, acquisition.collectionId) : Promise.resolve(null),
+	]);
+	const document = mapSourceToDocument(source, layoutAvailable, pageImageCount);
+	const response: DocumentDetailResponse = {
+		data: {
+			...document,
+			reader_link: `/sources/${source.id}`,
+			provenance: mapAcquisitionSummary(acquisition),
+			original_source: mapOriginalSourceSummary(originalSource),
+			source_language: resolveSourceLanguage({ originalSource, quality, source }),
+			sensitivity: mapSourceSensitivity(source),
+			quality: mapQualitySummary(quality),
+			collection: mapCollectionSummary(collection),
+			credibility: mapCredibilitySummary(credibility),
+		},
+	};
+
+	requestLogger.info(
+		{
+			duration_ms: Math.round(performance.now() - startedAt),
+		},
+		'document detail request completed',
+	);
+
+	return response;
 }
 
 async function loadStoryMarkdown(services: Services, story: Story): Promise<string> {
