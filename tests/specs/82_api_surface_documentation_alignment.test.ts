@@ -60,6 +60,8 @@ describe('Spec 82: API surface documentation alignment', () => {
 		expect(contract.paths).toHaveProperty('/api/status');
 		expect(contract.paths).toHaveProperty('/api/documents');
 		expect(contract.paths).toHaveProperty('/api/documents/{id}');
+		expect(contract.paths).toHaveProperty('/api/documents/{id}/translations');
+		expect(contract.paths).toHaveProperty('/api/translations/{translationId}');
 		expect(contract.paths).toHaveProperty('/api/search');
 		expect(contract.paths).not.toHaveProperty('/doc');
 		expect(contract.paths).not.toHaveProperty('/reference');

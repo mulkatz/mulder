@@ -64,6 +64,9 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 | Documents | `GET` | `/api/documents/:id/pages/:num` | HTTP ready for page image stream. |
 | Documents | `GET` | `/api/documents/:id/stories` | HTTP ready for document-scoped stories. |
 | Documents | `GET` | `/api/documents/:id/observability` | HTTP ready for secondary processing background. |
+| Translations | `GET` | `/api/documents/:id/translations` | HTTP ready for source-level translation list/status. |
+| Translations | `POST` | `/api/documents/:id/translations` | HTTP ready for source-level cache hit or async translation job. |
+| Translations | `GET` | `/api/translations/:translationId` | HTTP ready for translated content detail. |
 | Search | `POST` | `/api/search` | HTTP ready. App route still pending product UI activation. |
 | Entities | `GET` | `/api/entities` | HTTP ready for entity list/search. |
 | Entities | `GET` | `/api/entities/:id` | HTTP ready for entity detail. |
@@ -136,8 +139,8 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 
 | Capability | CLI/core status | HTTP status | App status | Gap |
 | --- | --- | --- | --- | --- |
-| Translate source/story | `translate` CLI, translation service, and `translated_documents` repository exist. | No translation HTTP routes. | Reader controls are visible but disabled/stubbed. | Need list/request/status/fetch translation routes before activation. |
-| Translation cache | Repository stores current/stale cached translations. | No browser route. | Not active. | App needs status and cached-content read models. |
+| Translate source/story | `translate` CLI, translation service, and `translated_documents` repository exist. | Source-level translation routes are mounted. | Hooks prepared; reader controls remain disabled until product UX is wired. | Story-level translation can come later if persistence and offsets need it. |
+| Translation cache | Repository stores current/stale cached translations. | List/detail routes expose current/stale translated content. | Not active in visible UI yet. | Add request/poll/content-switching UX and real-source smoke coverage. |
 | Multilingual labels | App i18n exists. | Not API-dependent. | Active. | Continue EN/DE guardrails for all UI copy. |
 
 ### Review, Credibility, RBAC
@@ -202,14 +205,15 @@ the highest product gaps in app order.
 
 ### P1: Translation HTTP contract
 
-Recommended minimal routes:
+The source-level routes are now mounted:
 
 - `GET /api/documents/:id/translations`
 - `POST /api/documents/:id/translations`
 - `GET /api/translations/:translationId`
 
-The app translation control is intentionally disabled until these source-level
-routes exist. Story-level translation can come later if persistence and offsets
+The app translation control is still intentionally disabled until we design the
+request/poll/content-switching UX and verify the worker path against a real
+local source. Story-level translation can come later if persistence and offsets
 need it.
 
 ### P1: Review and credibility contracts

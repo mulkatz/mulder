@@ -94,6 +94,9 @@ These endpoints are the first candidates for `apps/app` because they already rep
 | Documents | `GET /api/documents/:id/pages/:pageNumber` | Page image stream. |
 | Documents | `GET /api/documents/:id/stories` | Story list and story metadata. |
 | Documents | `GET /api/documents/:id/observability` | Document processing timeline/read model. |
+| Translations | `GET /api/documents/:id/translations` | Source-level translation list/status and cached content. |
+| Translations | `POST /api/documents/:id/translations` | Source-level cache hit or async translation job request. |
+| Translations | `GET /api/translations/:translationId` | Translation detail with translated content. |
 | Search | `POST /api/search` | Hybrid retrieval, citations, and trace data. |
 | Entities | `GET /api/entities` | Entity list with filters. |
 | Entities | `GET /api/entities/:id` | Entity detail, aliases, related stories. |
@@ -147,7 +150,7 @@ These gaps should be visible in the app capability registry instead of hidden be
 | Evidence claims | Summary and contradictions exist, but first-class claim records, review decisions, and assertion history need an app contract. |
 | Source detail | `GET /api/documents/:id` now exposes stable readiness, provenance summary, quality, language, sensitivity, collection, credibility, and links without requiring processing background data. Custody-chain detail still needs a dedicated provenance inspector. |
 | Provenance-first ingest | M10 provenance, document quality, sensitivity/RBAC, custody, rollback, and collections exist in the backend. Product Add Sources remains gated until the app captures and displays those concepts as part of the ingest workflow. |
-| Persistent translation | M11 translation storage exists, but the app still needs source-level browser-safe routes for current translations, translation requests, translation status, and translated content before reader translation can run. The reader control is disabled until then. |
+| Persistent translation | Source-level translation routes now exist, and app hooks are prepared. The visible reader control remains disabled until the request, polling, and translated-content switching UX is designed and smoke-tested. |
 | Review queues | M11 review workflow repositories exist, but the app needs HTTP contracts for queues, queue artifacts, artifact detail, and review actions before activating Review Queue. |
 | Credibility profiles | M11 source credibility exists, but Source Quality and reader trust panels need source credibility read models. |
 | RBAC management | M11 RBAC filters reads, but member/role/policy management is still only partially represented in app contracts. |

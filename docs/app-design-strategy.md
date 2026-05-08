@@ -492,7 +492,7 @@ These are important for the app workbench:
 | Taxonomy management | CLI/package-only; some docs mention target routes, but routes are not mounted | Add list/export/bootstrap/rebootstrap routes only if taxonomy becomes a browser workflow |
 | Ground/analyze orchestration | CLI/standalone and package capability; not first-class API/worker steps | Decide whether these become queued API steps; if yes, update pipeline step types, worker job types, chaining, retry, and tests |
 | M10 provenance/trust | Product gated: backend foundations exist, app ingest UX is not safe yet | Do not present real archive ingest as product-ready until provenance, custody, quality, sensitivity/RBAC, assertions, and rollback are represented in the app workflow |
-| M11 translation | Backend exists, no app HTTP contract | Keep reader translation controls honest until current translations, request translation, status, and translated-content routes exist |
+| M11 translation | Source-level HTTP contract exists | Keep reader translation controls honest until request/poll/content-switching UX is designed and smoke-tested |
 | M11 review workflow | Backend exists, no app HTTP contract | Add queue/artifact/action routes before activating Review Queue |
 | M11 credibility | Backend exists, no app HTTP contract | Add source credibility read models before activating Source Quality trust panels |
 | M12 discovery | Backend exists, no app HTTP contract | Add app read models for similarity, classification mappings, temporal patterns, and external correlations before showing discovery routes |

@@ -176,7 +176,7 @@ export const capabilities = {
 	},
 	'm11.translation': {
 		id: 'm11.translation',
-		state: 'backend-no-http-contract',
+		state: 'mounted-api',
 	},
 	'm11.reviewWorkflow': {
 		id: 'm11.reviewWorkflow',

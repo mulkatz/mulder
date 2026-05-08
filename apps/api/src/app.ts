@@ -17,6 +17,7 @@ import { registerJobRoutes } from './routes/jobs.js';
 import { registerPipelineRoutes } from './routes/pipeline.js';
 import { registerSearchRoute } from './routes/search.js';
 import { registerStatusRoute } from './routes/status.js';
+import { registerTranslationRoutes } from './routes/translations.js';
 import { registerUploadRoutes } from './routes/uploads.js';
 
 export interface AppOptions {
@@ -78,6 +79,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono {
 	registerUploadRoutes(app);
 	registerSearchRoute(app);
 	registerStatusRoute(app);
+	registerTranslationRoutes(app);
 
 	app.doc('/api/openapi.json', {
 		openapi: '3.0.0',

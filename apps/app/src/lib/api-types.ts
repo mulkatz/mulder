@@ -285,6 +285,52 @@ export interface DocumentObservabilityResponse {
 	};
 }
 
+export type TranslationStatus = 'current' | 'stale';
+export type TranslationPipelinePath = 'full' | 'translation_only';
+export type TranslationOutputFormat = 'markdown' | 'html';
+
+export interface TranslationRecord {
+	id: string;
+	source_document_id: string;
+	source_language: string;
+	target_language: string;
+	translation_engine: string;
+	translation_date: string;
+	content: string;
+	content_hash: string;
+	status: TranslationStatus;
+	pipeline_path: TranslationPipelinePath;
+	output_format: TranslationOutputFormat;
+	sensitivity_level: SensitivityLevel;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface TranslationListResponse {
+	data: TranslationRecord[];
+	meta: { count: number; limit: number; offset: number };
+}
+
+export interface TranslationDetailResponse {
+	data: TranslationRecord;
+}
+
+export interface TranslationAcceptedResponse {
+	data: {
+		job_id: string;
+		status: 'pending';
+	};
+	links: { status: string };
+}
+
+export interface CreateTranslationRequest {
+	target_language: string;
+	source_language?: string;
+	pipeline_path?: TranslationPipelinePath;
+	output_format?: TranslationOutputFormat;
+	refresh?: boolean;
+}
+
 export interface EvidenceSummaryResponse {
 	data: {
 		entities: {

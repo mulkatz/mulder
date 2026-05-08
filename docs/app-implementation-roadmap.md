@@ -77,7 +77,7 @@ Current app strengths:
 Current app limitations:
 
 - many M11/M12 capabilities exist in backend packages but are not mounted as app HTTP read models
-- translation UI is prepared, but not bound to a real app contract
+- translation UI is prepared, and source-level HTTP contracts now exist; visible request UX still waits for smoke-tested polling/content switching
 - claims/assertions do not yet have source/story offsets for passage-level linking
 - Review Queue is still disabled, even though M11 created the backend review workflow primitives
 - Discovery features from M12 are not yet visible in the app
