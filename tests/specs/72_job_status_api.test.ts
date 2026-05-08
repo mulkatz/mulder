@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../lib/db.js';
+import { truncateMulderTables } from '../lib/schema.js';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const CORE_DIR = resolve(ROOT, 'packages/core');
@@ -56,11 +57,7 @@ function runCli(args: string[], opts?: { timeout?: number }): { stdout: string; 
 }
 
 function cleanState(): void {
-	db.runSql(
-		['DELETE FROM jobs', 'DELETE FROM pipeline_run_sources', 'DELETE FROM pipeline_runs', 'DELETE FROM sources'].join(
-			'; ',
-		),
-	);
+	truncateMulderTables();
 }
 
 function seedJobProgressState(input: {

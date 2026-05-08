@@ -12,6 +12,9 @@ export type {
 	EvidenceChainThesisOutcome,
 	FullAnalyzeData,
 	ReliabilityAnalyzeData,
+	SimilarEntityDiscoveryOptions,
+	SimilarEntityDiscoveryResult,
+	SimilarEntityScore,
 	SingleAnalyzeData,
 	SourceReliabilityOutcome,
 	SpatioTemporalAnalyzeData,
@@ -20,4 +23,4 @@ export type {
 	SpatioTemporalEvent,
 	WinningClaim,
 } from '@mulder/pipeline';
-export { executeAnalyze } from '@mulder/pipeline';
+export { discoverSimilarEntities, executeAnalyze } from '@mulder/pipeline';

@@ -64,6 +64,40 @@ export type {
 	VectorSearchResult,
 } from './chunk.types.js';
 export {
+	findClassificationCategory,
+	findClassificationTaxonomy,
+	findTaxonomyMapping,
+	listClassificationCategories,
+	listClassificationTaxonomies,
+	listTaxonomyMappings,
+	resolveTaxonomyMappings,
+	upsertClassificationCategory,
+	upsertClassificationTaxonomy,
+	upsertTaxonomyMapping,
+} from './classification-harmonization.repository.js';
+export type {
+	ClassificationCategory,
+	ClassificationCategoryListOptions,
+	ClassificationCategoryRef,
+	ClassificationCategoryStatus,
+	ClassificationTaxonomy,
+	ClassificationTaxonomyListOptions,
+	ClassificationTaxonomyStatus,
+	ResolveTaxonomyMappingsOptions,
+	TaxonomyMapping,
+	TaxonomyMappingAuthor,
+	TaxonomyMappingDirection,
+	TaxonomyMappingListOptions,
+	TaxonomyMappingReviewStatus,
+	TaxonomyMappingSimilarityEvidence,
+	TaxonomyMappingSimilarityScore,
+	TaxonomyMappingType,
+	TaxonomyMappingView,
+	UpsertClassificationCategoryInput,
+	UpsertClassificationTaxonomyInput,
+	UpsertTaxonomyMappingInput,
+} from './classification-harmonization.types.js';
+export {
 	addCollectionTags,
 	createCollection,
 	findCollectionById,
@@ -380,6 +414,28 @@ export type {
 	UpsertReviewableArtifactInput,
 	UpsertReviewQueueInput,
 } from './review-workflow.types.js';
+export {
+	deleteSimilarityResultsForEntity,
+	findSimilarityByPair,
+	listSimilarEntities,
+	normalizeSharedEntityIds,
+	upsertSimilarityResult,
+} from './similarity.repository.js';
+export type {
+	AutoDiscoveryResult,
+	CoreSimilarityDimensions,
+	DeleteSimilarityResultsForEntityOptions,
+	DomainSimilarityDimension,
+	ListSimilarEntitiesOptions,
+	SimilarityCacheRecord,
+	SimilarityCoreDimension,
+	SimilarityDimensionScore,
+	SimilarityDomainDimensionSource,
+	SimilarityPairOptions,
+	SimilarityResult,
+	SimilarityScoreStatus,
+	UpsertSimilarityResultInput,
+} from './similarity.types.js';
 export type { SourceReliabilityFilter } from './source.repository.js';
 export {
 	countScoredSources,
@@ -525,6 +581,41 @@ export type {
 	TaxonomySimilarityMatch,
 	UpdateTaxonomyEntryInput,
 } from './taxonomy.types.js';
+export {
+	findExternalCorrelation,
+	findSpatiotemporalHotspotCluster,
+	findTemporalAnomalyCluster,
+	listExternalCorrelations,
+	listSpatiotemporalHotspotClusters,
+	listTemporalAnomalyClusters,
+	loadTemporalPatternEntityEvents,
+	replaceExternalCorrelationSnapshot,
+	replaceTemporalPatternSnapshot,
+} from './temporal-pattern.repository.js';
+export type {
+	CreateExternalCorrelationInput,
+	CreateSpatiotemporalHotspotClusterInput,
+	CreateTemporalAnomalyClusterInput,
+	ExternalCorrelation,
+	ExternalCorrelationListOptions,
+	ExternalCorrelationMethod,
+	HotspotPersistence,
+	ReplaceExternalCorrelationSnapshotInput,
+	ReplaceExternalCorrelationSnapshotResult,
+	ReplaceTemporalPatternSnapshotInput,
+	ReplaceTemporalPatternSnapshotResult,
+	SpatiotemporalHotspotCluster,
+	SpatiotemporalHotspotClusterListOptions,
+	SpatiotemporalHotspotType,
+	TemporalAnomalyCluster,
+	TemporalAnomalyClusterListOptions,
+	TemporalAnomalyType,
+	TemporalPatternEntityEvent,
+	TemporalPatternFindOptions,
+	TemporalPatternListOptions,
+	TemporalPatternReviewStatus,
+	TemporalPatternSignalStrength,
+} from './temporal-pattern.types.js';
 export {
 	createCurrentTranslatedDocument,
 	deleteTranslatedDocumentsForSource,

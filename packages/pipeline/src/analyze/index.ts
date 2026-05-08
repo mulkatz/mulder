@@ -73,6 +73,27 @@ import type {
 } from './types.js';
 
 export type {
+	ExternalDataFetchRequest,
+	ExternalDataFetchResult,
+	ExternalDataPoint,
+	ExternalDataSource,
+	ExternalDataSourceKind,
+	ExternalDataSourcePlugin,
+	ExternalDataSourceType,
+	ExternalDataUpdateFrequency,
+	ExternalEvent,
+	ExternalStaticDataset,
+} from './external-correlation.js';
+export {
+	clearExternalDataSourcePlugins,
+	createStaticExternalDataSourcePlugin,
+	ExternalDataSourceRegistry,
+	getExternalDataSourceRegistry,
+	registerExternalDataSourcePlugin,
+} from './external-correlation.js';
+export { discoverSimilarEntities, scoreTaxonomyMappingSimilarity } from './similarity.js';
+export { detectTemporalPatterns } from './temporal-patterns.js';
+export type {
 	AnalyzeData,
 	AnalyzeInput,
 	AnalyzePassName,
@@ -85,14 +106,24 @@ export type {
 	EvidenceChainsAnalyzeData,
 	EvidenceChainsAvailability,
 	EvidenceChainThesisOutcome,
+	ExternalCorrelationSummary,
 	FullAnalyzeData,
 	ReliabilityAnalyzeData,
+	SimilarEntityDiscoveryOptions,
+	SimilarEntityDiscoveryResult,
+	SimilarEntityScore,
 	SingleAnalyzeData,
 	SourceReliabilityOutcome,
 	SpatioTemporalAnalyzeData,
 	SpatioTemporalCluster,
 	SpatioTemporalClusterType,
 	SpatioTemporalEvent,
+	TaxonomyMappingSimilarityInput,
+	TaxonomyMappingSimilarityResult,
+	TemporalPatternAnalyzeData,
+	TemporalPatternAnomalySummary,
+	TemporalPatternDetectionResult,
+	TemporalPatternHotspotSummary,
 	WinningClaim,
 } from './types.js';
 

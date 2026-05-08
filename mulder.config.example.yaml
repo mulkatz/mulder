@@ -216,6 +216,21 @@ enrichment:
   model: "gemini-2.5-flash"
   max_story_tokens: 15000            # Pre-chunk fallback if story exceeds this
 
+# --- Taxonomy ---
+taxonomy:
+  normalization_threshold: 0.4
+  harmonization:
+    enabled: true
+    taxonomies: []                   # Add configured taxonomy refs: { id, source, version, language, status }
+    auto_mapping:
+      enabled: false                 # Storage/review boundary only; no automatic LLM generation by default
+      engine: "gemini-2.5-pro"
+      require_human_review: true
+      min_confidence_for_auto_link: 0.70
+    extraction:
+      detect_classification_refs: true
+      detect_implicit_classifications: true
+
 # --- Entity Resolution ---
 entity_resolution:
   strategies:
@@ -275,6 +290,34 @@ retrieval:
       max_hops: 2                     # Recursive CTE depth limit
       supernode_threshold: 100        # Skip entities with more source mentions than this
 
+# --- Similar Case Discovery ---
+similar_case_discovery:
+  enabled: true
+  max_results: 10
+  candidate_retrieval:
+    vector_top_k: 100                 # Bounded broad candidate set
+    geo_radius_km: null               # null = no geo filter at retrieval
+    temporal_window_years: null       # null = no temporal filter at retrieval
+  scoring:
+    core_dimensions: ["semantic", "structural", "geospatial", "temporal"]
+    weights:
+      semantic: 0.25
+      structural: 0.20
+      geospatial: 0.15
+      temporal: 0.10
+    domain_dimensions: []             # Add generic ontology attribute comparisons here
+  explanation:
+    enabled: true
+    engine: "deterministic"           # No paid LLM calls in M12-N1
+    max_tokens: 200
+  auto_discovery:
+    enabled: true
+    trigger: "on_ingest"
+    threshold: 0.60
+    create_graph_edge: true
+    edge_type: "SIMILAR_TO"
+    max_auto_links: 10
+
 # --- Web Grounding (v2.0) ---
 grounding:
   enabled: false                      # Enable for v2.0
@@ -305,6 +348,46 @@ analysis:
     - "Factory output in Munich"
   spatio_temporal: true
   cluster_window_days: 30
+
+# --- Temporal Pattern Detection (internal weak signals) ---
+temporal_pattern_detection:
+  enabled: true
+  schedule: "weekly"                  # Metadata only; no scheduler side effects in N3
+  anomaly_detection:
+    enabled: true
+    min_entities: 5
+    significance_threshold: 0.05
+    baseline_window_years: 10
+    granularity: "month"              # day | week | month | year
+    region_grid: "country"            # country | admin1 | hex_grid_100km
+    max_regions: 250
+    max_windows: 120
+    window_size_buckets: 1
+    known_patterns: []                # Optional generic pattern refs for annotation only
+    changepoint_detection:
+      enabled: true
+      threshold: 5
+      drift_allowance: 0.5
+      min_consecutive_windows: 2
+  hotspot_clustering:
+    enabled: true
+    algorithm: "dbscan"               # HDBSCAN is deferred; M12 implements deterministic DBSCAN
+    min_cluster_size: 3
+    radius_km: 100
+    temporal_granularity: "year"
+    persistence_threshold_years: 5
+    max_clusters: 100
+  external_correlation:
+    enabled: true
+    series: []                        # Configure plugin_id/source_id/series_id entries for local deterministic plugins
+    methods: ["spearman", "cross_correlation"]
+    min_data_points: 30
+    max_lag_days: 90
+    always_include_caveat: true
+  reporting_bias:
+    correction_enabled: true
+    correction_field: null            # Configure an ontology attribute such as observation intensity
+    elevated_threshold: 1.5
 
 # --- Sparse Graph Thresholds ---
 # Features degrade gracefully below these thresholds.

@@ -40,9 +40,28 @@ import type {
 	reviewWorkflowMetricsSchema,
 	reviewWorkflowSchema,
 	safetySchema,
+	similarCaseDiscoverySchema,
+	similarityDomainDimensionSchema,
 	sourceRollbackSchema,
 	storageSchema,
+	taxonomyHarmonizationAutoMappingSchema,
+	taxonomyHarmonizationExtractionSchema,
+	taxonomyHarmonizationSchema,
+	taxonomyHarmonizationStatusSchema,
+	taxonomyHarmonizationTaxonomyRefSchema,
 	taxonomySchema,
+	temporalAnomalyDetectionSchema,
+	temporalChangepointDetectionSchema,
+	temporalExternalCorrelationMethodSchema,
+	temporalExternalCorrelationSchema,
+	temporalExternalCorrelationSeriesSchema,
+	temporalHotspotClusteringSchema,
+	temporalPatternCategoryRefSchema,
+	temporalPatternDetectionSchema,
+	temporalPatternGranularitySchema,
+	temporalPatternKnownPatternSchema,
+	temporalPatternRegionGridSchema,
+	temporalReportingBiasSchema,
 	thresholdsSchema,
 	translationOutputFormatSchema,
 	translationSchema,
@@ -74,6 +93,8 @@ export type DeduplicationConfig = z.infer<typeof deduplicationSchema>;
 export type DocumentQualityConfig = z.infer<typeof documentQualitySchema>;
 export type EmbeddingConfig = z.infer<typeof embeddingSchema>;
 export type RetrievalConfig = z.infer<typeof retrievalSchema>;
+export type SimilarCaseDiscoveryConfig = z.infer<typeof similarCaseDiscoverySchema>;
+export type SimilarityDomainDimensionConfig = z.infer<typeof similarityDomainDimensionSchema>;
 export type ReviewWorkflowConfig = z.infer<typeof reviewWorkflowSchema>;
 export type ReviewWorkflowArtifactTypeConfig = z.infer<typeof reviewWorkflowArtifactTypeSchema>;
 export type ReviewWorkflowDepthConfig = z.infer<typeof reviewWorkflowDepthSchema>;
@@ -84,6 +105,23 @@ export type TranslationOutputFormatConfig = z.infer<typeof translationOutputForm
 export type IngestProvenanceConfig = z.infer<typeof ingestProvenanceSchema>;
 export type AnalysisConfig = z.infer<typeof analysisSchema>;
 export type TaxonomyConfig = z.infer<typeof taxonomySchema>;
+export type TaxonomyHarmonizationConfig = z.infer<typeof taxonomyHarmonizationSchema>;
+export type TaxonomyHarmonizationStatusConfig = z.infer<typeof taxonomyHarmonizationStatusSchema>;
+export type TaxonomyHarmonizationTaxonomyRefConfig = z.infer<typeof taxonomyHarmonizationTaxonomyRefSchema>;
+export type TaxonomyHarmonizationAutoMappingConfig = z.infer<typeof taxonomyHarmonizationAutoMappingSchema>;
+export type TaxonomyHarmonizationExtractionConfig = z.infer<typeof taxonomyHarmonizationExtractionSchema>;
+export type TemporalPatternDetectionConfig = z.infer<typeof temporalPatternDetectionSchema>;
+export type TemporalAnomalyDetectionConfig = z.infer<typeof temporalAnomalyDetectionSchema>;
+export type TemporalChangepointDetectionConfig = z.infer<typeof temporalChangepointDetectionSchema>;
+export type TemporalHotspotClusteringConfig = z.infer<typeof temporalHotspotClusteringSchema>;
+export type TemporalExternalCorrelationConfig = z.infer<typeof temporalExternalCorrelationSchema>;
+export type TemporalExternalCorrelationSeriesConfig = z.infer<typeof temporalExternalCorrelationSeriesSchema>;
+export type TemporalExternalCorrelationMethodConfig = z.infer<typeof temporalExternalCorrelationMethodSchema>;
+export type TemporalReportingBiasConfig = z.infer<typeof temporalReportingBiasSchema>;
+export type TemporalPatternGranularityConfig = z.infer<typeof temporalPatternGranularitySchema>;
+export type TemporalPatternRegionGridConfig = z.infer<typeof temporalPatternRegionGridSchema>;
+export type TemporalPatternCategoryRefConfig = z.infer<typeof temporalPatternCategoryRefSchema>;
+export type TemporalPatternKnownPatternConfig = z.infer<typeof temporalPatternKnownPatternSchema>;
 export type ThresholdsConfig = z.infer<typeof thresholdsSchema>;
 export type PipelineConfig = z.infer<typeof pipelineSchema>;
 export type SafetyConfig = z.infer<typeof safetySchema>;

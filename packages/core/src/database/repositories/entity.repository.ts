@@ -453,6 +453,10 @@ export async function findAllEntities(pool: pg.Pool, filter?: EntityFilter): Pro
 		paramIndex++;
 	}
 
+	if (filter?.canonicalOnly) {
+		conditions.push('(e.canonical_id IS NULL OR e.canonical_id = e.id)');
+	}
+
 	if (filter?.taxonomyStatus) {
 		conditions.push(`e.taxonomy_status = $${paramIndex}`);
 		params.push(filter.taxonomyStatus);

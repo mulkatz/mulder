@@ -472,8 +472,39 @@ const enrichmentSchema = enrichmentObj.default(defaults(enrichmentObj));
 
 // --- Taxonomy ---
 
+const taxonomyHarmonizationStatusSchema = z.enum(['active', 'inactive', 'draft', 'deprecated']);
+
+const taxonomyHarmonizationTaxonomyRefSchema = z.object({
+	id: z.string().min(1),
+	source: z.string().min(1).optional(),
+	version: z.string().min(1).optional(),
+	language: z.string().min(1).optional(),
+	status: taxonomyHarmonizationStatusSchema.default('active'),
+});
+
+const taxonomyHarmonizationAutoMappingSchema = z.object({
+	enabled: z.boolean().default(false),
+	engine: z.string().min(1).default('gemini-2.5-pro'),
+	require_human_review: z.boolean().default(true),
+	min_confidence_for_auto_link: z.number().min(0).max(1).default(0.7),
+});
+
+const taxonomyHarmonizationExtractionSchema = z.object({
+	detect_classification_refs: z.boolean().default(true),
+	detect_implicit_classifications: z.boolean().default(true),
+});
+
+const taxonomyHarmonizationObj = z.object({
+	enabled: z.boolean().default(true),
+	taxonomies: z.array(taxonomyHarmonizationTaxonomyRefSchema).default([]),
+	auto_mapping: taxonomyHarmonizationAutoMappingSchema.default(defaults(taxonomyHarmonizationAutoMappingSchema)),
+	extraction: taxonomyHarmonizationExtractionSchema.default(defaults(taxonomyHarmonizationExtractionSchema)),
+});
+const taxonomyHarmonizationSchema = taxonomyHarmonizationObj.default(defaults(taxonomyHarmonizationObj));
+
 const taxonomyObj = z.object({
 	normalization_threshold: z.number().min(0).max(1).default(0.4),
+	harmonization: taxonomyHarmonizationSchema,
 });
 const taxonomySchema = taxonomyObj.default(defaults(taxonomyObj));
 
@@ -590,6 +621,71 @@ const retrievalObj = z.object({
 });
 const retrievalSchema = retrievalObj.default(defaults(retrievalObj));
 
+// --- Similar Case Discovery ---
+
+const similarityCoreDimensionSchema = z.enum(['semantic', 'structural', 'geospatial', 'temporal']);
+
+const similarityDomainDimensionSchema = z.object({
+	id: z.string().min(1),
+	label: z.string().min(1),
+	source: z.enum(['taxonomy_mapping', 'attribute_comparison', 'custom_scorer']),
+	config_ref: z.string().min(1),
+	weight: z.number().min(0).max(1).optional(),
+	metadata: z.record(z.string(), z.unknown()).default({}),
+});
+
+const similarCaseCandidateRetrievalSchema = z.object({
+	vector_top_k: z.number().positive().int().default(100),
+	geo_radius_km: z.number().positive().nullable().default(null),
+	temporal_window_years: z.number().positive().nullable().default(null),
+});
+
+const similarCaseScoringSchema = z.object({
+	core_dimensions: z
+		.array(similarityCoreDimensionSchema)
+		.min(1)
+		.default(['semantic', 'structural', 'geospatial', 'temporal']),
+	weights: z
+		.object({
+			semantic: z.number().min(0).max(1).default(0.25),
+			structural: z.number().min(0).max(1).default(0.2),
+			geospatial: z.number().min(0).max(1).default(0.15),
+			temporal: z.number().min(0).max(1).default(0.1),
+		})
+		.default({
+			semantic: 0.25,
+			structural: 0.2,
+			geospatial: 0.15,
+			temporal: 0.1,
+		}),
+	domain_dimensions: z.array(similarityDomainDimensionSchema).default([]),
+});
+
+const similarCaseExplanationSchema = z.object({
+	enabled: z.boolean().default(true),
+	engine: z.string().min(1).default('deterministic'),
+	max_tokens: z.number().positive().int().default(200),
+});
+
+const similarCaseAutoDiscoverySchema = z.object({
+	enabled: z.boolean().default(true),
+	trigger: z.enum(['on_ingest', 'manual']).default('on_ingest'),
+	threshold: z.number().min(0).max(1).default(0.6),
+	create_graph_edge: z.boolean().default(true),
+	edge_type: z.literal('SIMILAR_TO').default('SIMILAR_TO'),
+	max_auto_links: z.number().positive().int().default(10),
+});
+
+const similarCaseDiscoveryObj = z.object({
+	enabled: z.boolean().default(true),
+	max_results: z.number().positive().int().default(10),
+	candidate_retrieval: similarCaseCandidateRetrievalSchema.default(defaults(similarCaseCandidateRetrievalSchema)),
+	scoring: similarCaseScoringSchema.default(defaults(similarCaseScoringSchema)),
+	explanation: similarCaseExplanationSchema.default(defaults(similarCaseExplanationSchema)),
+	auto_discovery: similarCaseAutoDiscoverySchema.default(defaults(similarCaseAutoDiscoverySchema)),
+});
+const similarCaseDiscoverySchema = similarCaseDiscoveryObj.default(defaults(similarCaseDiscoveryObj));
+
 // --- Grounding (v2.0) ---
 
 const groundingObj = z.object({
@@ -632,6 +728,104 @@ const analysisObj = z.object({
 	cluster_window_days: z.number().positive().int().default(30),
 });
 const analysisSchema = analysisObj.default(defaults(analysisObj));
+
+// --- Temporal Pattern Detection ---
+
+const temporalPatternGranularitySchema = z.enum(['day', 'week', 'month', 'year']);
+const temporalPatternRegionGridSchema = z.enum(['country', 'admin1', 'hex_grid_100km']);
+
+const temporalPatternCategoryRefSchema = z.object({
+	taxonomy_id: z.string().min(1).optional(),
+	category_id: z.string().min(1),
+});
+
+const temporalPatternKnownPatternSchema = z.object({
+	id: z.string().min(1),
+	region_key: z.string().min(1).optional(),
+	category_ref: temporalPatternCategoryRefSchema.optional(),
+	time_start: z.string().min(1).optional(),
+	time_end: z.string().min(1).optional(),
+});
+
+const temporalChangepointDetectionObj = z.object({
+	enabled: z.boolean().default(true),
+	threshold: z.number().positive().default(5),
+	drift_allowance: z.number().nonnegative().default(0.5),
+	min_consecutive_windows: z.number().positive().int().default(2),
+});
+const temporalChangepointDetectionSchema = temporalChangepointDetectionObj.default(
+	defaults(temporalChangepointDetectionObj),
+);
+
+const temporalAnomalyDetectionObj = z.object({
+	enabled: z.boolean().default(true),
+	min_entities: z.number().positive().int().default(5),
+	significance_threshold: z.number().min(0).max(1).default(0.05),
+	baseline_window_years: z.number().positive().int().default(10),
+	granularity: temporalPatternGranularitySchema.default('month'),
+	region_grid: temporalPatternRegionGridSchema.default('country'),
+	max_regions: z.number().positive().int().default(250),
+	max_windows: z.number().positive().int().default(120),
+	window_size_buckets: z.number().positive().int().default(1),
+	known_patterns: z.array(temporalPatternKnownPatternSchema).default([]),
+	changepoint_detection: temporalChangepointDetectionSchema,
+});
+const temporalAnomalyDetectionSchema = temporalAnomalyDetectionObj.default(defaults(temporalAnomalyDetectionObj));
+
+const temporalHotspotClusteringObj = z.object({
+	enabled: z.boolean().default(true),
+	algorithm: z.literal('dbscan').default('dbscan'),
+	min_cluster_size: z.number().positive().int().default(3),
+	radius_km: z.number().positive().default(100),
+	temporal_granularity: temporalPatternGranularitySchema.default('year'),
+	persistence_threshold_years: z.number().positive().int().default(5),
+	max_clusters: z.number().positive().int().default(100),
+});
+const temporalHotspotClusteringSchema = temporalHotspotClusteringObj.default(defaults(temporalHotspotClusteringObj));
+
+const temporalReportingBiasObj = z.object({
+	correction_enabled: z.boolean().default(true),
+	correction_field: z.string().min(1).nullable().default(null),
+	elevated_threshold: z.number().positive().default(1.5),
+});
+const temporalReportingBiasSchema = temporalReportingBiasObj.default(defaults(temporalReportingBiasObj));
+
+const temporalExternalCorrelationMethodSchema = z.enum(['spearman', 'cross_correlation']);
+
+const temporalExternalCorrelationSeriesSchema = z.object({
+	source_id: z.string().min(1),
+	series_id: z.string().min(1),
+	plugin_id: z.string().min(1),
+	enabled: z.boolean().default(true),
+	label: z.string().min(1).optional(),
+	time_start: z.string().min(1).optional(),
+	time_end: z.string().min(1).optional(),
+	region_key: z.string().min(1).optional(),
+	category_ref: temporalPatternCategoryRefSchema.optional(),
+	filters: z.record(z.string(), z.unknown()).default({}),
+});
+
+const temporalExternalCorrelationObj = z.object({
+	enabled: z.boolean().default(true),
+	series: z.array(temporalExternalCorrelationSeriesSchema).default([]),
+	methods: z.array(temporalExternalCorrelationMethodSchema).nonempty().default(['spearman', 'cross_correlation']),
+	min_data_points: z.number().positive().int().default(30),
+	max_lag_days: z.number().nonnegative().int().default(90),
+	always_include_caveat: z.literal(true).default(true),
+});
+const temporalExternalCorrelationSchema = temporalExternalCorrelationObj.default(
+	defaults(temporalExternalCorrelationObj),
+);
+
+const temporalPatternDetectionObj = z.object({
+	enabled: z.boolean().default(true),
+	schedule: z.enum(['manual', 'daily', 'weekly', 'monthly']).default('weekly'),
+	anomaly_detection: temporalAnomalyDetectionSchema,
+	hotspot_clustering: temporalHotspotClusteringSchema,
+	external_correlation: temporalExternalCorrelationSchema,
+	reporting_bias: temporalReportingBiasSchema,
+});
+const temporalPatternDetectionSchema = temporalPatternDetectionObj.default(defaults(temporalPatternDetectionObj));
 
 // --- Thresholds ---
 
@@ -751,9 +945,11 @@ const baseMulderConfigSchema = z.object({
 	graph: graphSchema,
 	embedding: embeddingSchema,
 	retrieval: retrievalSchema,
+	similar_case_discovery: similarCaseDiscoverySchema,
 	grounding: groundingSchema,
 	translation: translationSchema,
 	analysis: analysisSchema,
+	temporal_pattern_detection: temporalPatternDetectionSchema,
 	thresholds: thresholdsSchema,
 	pipeline: pipelineSchema,
 	safety: safetySchema,
@@ -844,9 +1040,29 @@ export {
 	reviewWorkflowMetricsSchema,
 	reviewWorkflowSchema,
 	safetySchema,
+	similarCaseDiscoverySchema,
+	similarityDomainDimensionSchema,
 	sourceRollbackSchema,
 	storageSchema,
+	taxonomyHarmonizationAutoMappingSchema,
+	taxonomyHarmonizationExtractionSchema,
+	taxonomyHarmonizationObj,
+	taxonomyHarmonizationSchema,
+	taxonomyHarmonizationStatusSchema,
+	taxonomyHarmonizationTaxonomyRefSchema,
 	taxonomySchema,
+	temporalAnomalyDetectionSchema,
+	temporalChangepointDetectionSchema,
+	temporalExternalCorrelationMethodSchema,
+	temporalExternalCorrelationSchema,
+	temporalExternalCorrelationSeriesSchema,
+	temporalHotspotClusteringSchema,
+	temporalPatternCategoryRefSchema,
+	temporalPatternDetectionSchema,
+	temporalPatternGranularitySchema,
+	temporalPatternKnownPatternSchema,
+	temporalPatternRegionGridSchema,
+	temporalReportingBiasSchema,
 	thresholdsSchema,
 	translationOutputFormatSchema,
 	translationSchema,

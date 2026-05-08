@@ -413,7 +413,9 @@ describe('Spec 78 — Selective Reprocessing', () => {
 
 		const tempConfig = resolve(ROOT, '.local', 'tmp-tests', 'spec78-qa06-config.yaml');
 		mkdirSync(resolve(tempConfig, '..'), { recursive: true });
-		writeConfigWithReplacements(tempConfig, (base) => `${base}\ntaxonomy:\n  normalization_threshold: 0.55\n`);
+		writeConfigWithReplacements(tempConfig, (base) =>
+			base.replace('normalization_threshold: 0.4', 'normalization_threshold: 0.55'),
+		);
 
 		const changedConfig = core.loadConfig(tempConfig);
 		const plan = await pipeline.planReprocess({}, changedConfig, pool);
@@ -446,10 +448,10 @@ describe('Spec 78 — Selective Reprocessing', () => {
 
 		const tempConfig = resolve(ROOT, '.local', 'tmp-tests', 'spec78-qa08-config.yaml');
 		mkdirSync(resolve(tempConfig, '..'), { recursive: true });
-		writeConfigWithReplacements(
-			tempConfig,
-			(base) =>
-				`${base.replace('chunk_size_tokens: 512', 'chunk_size_tokens: 384')}\ntaxonomy:\n  normalization_threshold: 0.55\n`,
+		writeConfigWithReplacements(tempConfig, (base) =>
+			base
+				.replace('chunk_size_tokens: 512', 'chunk_size_tokens: 384')
+				.replace('normalization_threshold: 0.4', 'normalization_threshold: 0.55'),
 		);
 
 		const changedConfig = core.loadConfig(tempConfig);

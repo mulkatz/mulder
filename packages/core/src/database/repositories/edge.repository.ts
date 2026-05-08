@@ -437,21 +437,33 @@ export async function findEdgesBetweenEntities(
 	pool: pg.Pool,
 	entityIdA: string,
 	entityIdB: string,
-	options?: { includeDeleted?: boolean },
+	options?: { includeDeleted?: boolean; maxSensitivityLevel?: EntityEdge['sensitivityLevel'] },
 ): Promise<EntityEdge[]> {
+	const conditions = [
+		`(
+      (ee.source_entity_id = $1 AND ee.target_entity_id = $2)
+      OR (ee.source_entity_id = $2 AND ee.target_entity_id = $1)
+    )`,
+	];
+	const params: unknown[] = [entityIdA, entityIdB];
+	let paramIndex = 3;
+	if (!options?.includeDeleted) {
+		conditions.push(edgeActiveSourceClause('ee'));
+	}
+	if (options?.maxSensitivityLevel) {
+		conditions.push(`ee.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		paramIndex++;
+	}
 	const sql = `
     SELECT ee.*
     FROM entity_edges ee
-    WHERE (
-      (ee.source_entity_id = $1 AND ee.target_entity_id = $2)
-      OR (ee.source_entity_id = $2 AND ee.target_entity_id = $1)
-    )
-      ${options?.includeDeleted ? '' : `AND ${edgeActiveSourceClause('ee')}`}
+    WHERE ${conditions.join(' AND ')}
     ORDER BY ee.created_at
   `;
 
 	try {
-		const result = await pool.query<EdgeRow>(sql, [entityIdA, entityIdB]);
+		const result = await pool.query<EdgeRow>(sql, params);
 		return result.rows.map(mapEdgeRow);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to find edges between entities', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
@@ -700,6 +712,13 @@ export async function updateEdge(pool: Queryable, id: string, input: UpdateEdgeI
 	if (input.analysis !== undefined) {
 		setClauses.push(`analysis = $${paramIndex}`);
 		params.push(input.analysis ? JSON.stringify(input.analysis) : null);
+		paramIndex++;
+	}
+
+	if (input.provenance !== undefined) {
+		const incomingRef = `$${paramIndex}::jsonb`;
+		setClauses.push(`provenance = ${mergeArtifactProvenanceSql('entity_edges.provenance', incomingRef)}`);
+		params.push(stringifyArtifactProvenance(input.provenance));
 		paramIndex++;
 	}
 

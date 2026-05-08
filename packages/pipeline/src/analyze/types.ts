@@ -5,7 +5,23 @@
  * @see docs/functional-spec.md §2.8
  */
 
-import type { StepError } from '@mulder/core';
+import type {
+	ArtifactProvenanceInput,
+	ClassificationCategoryRef,
+	CoreSimilarityDimensions,
+	DomainSimilarityDimension,
+	ExternalCorrelation,
+	ExternalCorrelationMethod,
+	HotspotPersistence,
+	ReplaceTemporalPatternSnapshotResult,
+	SensitivityLevel,
+	SensitivityMetadata,
+	SimilarityCacheRecord,
+	SimilarityResult,
+	StepError,
+	TaxonomyMappingReviewStatus,
+	TaxonomyMappingSimilarityScore,
+} from '@mulder/core';
 
 export interface AnalyzeInput {
 	full?: boolean;
@@ -154,6 +170,123 @@ export interface SpatioTemporalAnalyzeData {
 	spatioTemporalClusterCount: number;
 	clusters: SpatioTemporalCluster[];
 	warning: string | null;
+}
+
+export interface TemporalPatternAnomalySummary {
+	regionKey: string;
+	timeStart: Date;
+	timeEnd: Date;
+	entityCount: number;
+	baselineRate: number;
+	observedRate: number;
+	rawSignificance: number;
+	correctedSignificance: number;
+	contributingEntityIds: string[];
+}
+
+export interface TemporalPatternHotspotSummary {
+	regionKey: string;
+	centroidLat: number;
+	centroidLng: number;
+	timeStart: Date;
+	timeEnd: Date;
+	entityCount: number;
+	density: number;
+	persistence: HotspotPersistence;
+	contributingEntityIds: string[];
+}
+
+export interface ExternalCorrelationSummary {
+	internalSeriesKey: string;
+	externalSourceId: string;
+	externalSeriesId: string;
+	method: ExternalCorrelationMethod;
+	coefficient: number;
+	pValue: number;
+	lagDays: number;
+	timeStart: Date;
+	timeEnd: Date;
+	dataPointCount: number;
+	contributingEntityIds: string[];
+	interpretationCaveat: string;
+}
+
+export interface TemporalPatternAnalyzeData {
+	mode: 'temporal-patterns';
+	eventCount: number;
+	timestampEventCount: number;
+	geometryEventCount: number;
+	anomalyComparisonCount: number;
+	anomalyCount: number;
+	hotspotCount: number;
+	externalCorrelationCount: number;
+	persistedAnomalyCount: number;
+	persistedHotspotCount: number;
+	persistedExternalCorrelationCount: number;
+	warnings: string[];
+	caveat: string;
+	anomalies: TemporalPatternAnomalySummary[];
+	hotspots: TemporalPatternHotspotSummary[];
+	externalCorrelations: ExternalCorrelationSummary[];
+}
+
+export interface TemporalPatternDetectionResult {
+	status: 'success' | 'skipped';
+	data: TemporalPatternAnalyzeData;
+	snapshot: ReplaceTemporalPatternSnapshotResult & { externalCorrelations: ExternalCorrelation[] };
+}
+
+export interface SimilarEntityDiscoveryOptions {
+	entityId: string;
+	candidateIds?: string[];
+	maxResults?: number;
+	persistResults?: boolean;
+	autoDiscover?: boolean;
+	maxSensitivityLevel?: SensitivityLevel;
+	explanation?: string;
+}
+
+export interface TaxonomyMappingSimilarityInput {
+	sourceRefs: ClassificationCategoryRef[];
+	targetRefs: ClassificationCategoryRef[];
+	reviewStatus?: TaxonomyMappingReviewStatus | TaxonomyMappingReviewStatus[];
+	minConfidence?: number;
+	maxSensitivityLevel?: SensitivityLevel;
+}
+
+export type TaxonomyMappingSimilarityResult = TaxonomyMappingSimilarityScore;
+
+export interface SimilarEntityScore {
+	entityId: string;
+	entityTitle: string;
+	overallRank: number;
+	core: CoreSimilarityDimensions;
+	domain: DomainSimilarityDimension[];
+	explanation: string;
+	sharedEntityIds: string[];
+	keyDifferences: string[];
+	/**
+	 * Sort-only score used to rank candidates within a discovery run.
+	 * This is not evidence strength, is not persisted to similarity_cache, and
+	 * must not be surfaced as review/report trust metadata.
+	 */
+	weightedRankScore: number;
+	provenance: ArtifactProvenanceInput;
+	autoDiscoveryThreshold: number;
+	sensitivityLevel: SensitivityLevel;
+	sensitivityMetadata: SensitivityMetadata;
+	cacheRecord: SimilarityCacheRecord | null;
+	graphEdgeId: string | null;
+	reviewArtifactId: string | null;
+}
+
+export interface SimilarEntityDiscoveryResult {
+	entityId: string;
+	candidatesScored: number;
+	persistedCount: number;
+	autoLinkCount: number;
+	results: SimilarEntityScore[];
+	cachedResults: SimilarityResult[];
 }
 
 export type SingleAnalyzeData =

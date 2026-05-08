@@ -6,7 +6,7 @@
  */
 
 import { DEFAULT_ACCESS_ROLE_CONFIGS } from '../shared/access-control.js';
-import type { ApiConfig } from './types.js';
+import type { ApiConfig, SimilarCaseDiscoveryConfig, TaxonomyConfig, TemporalPatternDetectionConfig } from './types.js';
 
 const apiDefaults: ApiConfig = {
 	port: 8080,
@@ -33,6 +33,102 @@ const apiDefaults: ApiConfig = {
 		enrich_per_source_usd: 0.015,
 		embed_per_source_usd: 0.004,
 		graph_per_source_usd: 0.001,
+	},
+};
+
+const similarCaseDiscoveryDefaults: SimilarCaseDiscoveryConfig = {
+	enabled: true,
+	max_results: 10,
+	candidate_retrieval: {
+		vector_top_k: 100,
+		geo_radius_km: null,
+		temporal_window_years: null,
+	},
+	scoring: {
+		core_dimensions: ['semantic', 'structural', 'geospatial', 'temporal'],
+		weights: {
+			semantic: 0.25,
+			structural: 0.2,
+			geospatial: 0.15,
+			temporal: 0.1,
+		},
+		domain_dimensions: [],
+	},
+	explanation: {
+		enabled: true,
+		engine: 'deterministic',
+		max_tokens: 200,
+	},
+	auto_discovery: {
+		enabled: true,
+		trigger: 'on_ingest',
+		threshold: 0.6,
+		create_graph_edge: true,
+		edge_type: 'SIMILAR_TO',
+		max_auto_links: 10,
+	},
+};
+
+const taxonomyDefaults: TaxonomyConfig = {
+	normalization_threshold: 0.4,
+	harmonization: {
+		enabled: true,
+		taxonomies: [],
+		auto_mapping: {
+			enabled: false,
+			engine: 'gemini-2.5-pro',
+			require_human_review: true,
+			min_confidence_for_auto_link: 0.7,
+		},
+		extraction: {
+			detect_classification_refs: true,
+			detect_implicit_classifications: true,
+		},
+	},
+};
+
+const temporalPatternDetectionDefaults: TemporalPatternDetectionConfig = {
+	enabled: true,
+	schedule: 'weekly',
+	anomaly_detection: {
+		enabled: true,
+		min_entities: 5,
+		significance_threshold: 0.05,
+		baseline_window_years: 10,
+		granularity: 'month',
+		region_grid: 'country',
+		max_regions: 250,
+		max_windows: 120,
+		window_size_buckets: 1,
+		known_patterns: [],
+		changepoint_detection: {
+			enabled: true,
+			threshold: 5,
+			drift_allowance: 0.5,
+			min_consecutive_windows: 2,
+		},
+	},
+	hotspot_clustering: {
+		enabled: true,
+		algorithm: 'dbscan',
+		min_cluster_size: 3,
+		radius_km: 100,
+		temporal_granularity: 'year',
+		persistence_threshold_years: 5,
+		max_clusters: 100,
+	},
+	external_correlation: {
+		enabled: true,
+		series: [],
+		methods: ['spearman', 'cross_correlation'],
+		min_data_points: 30,
+		max_lag_days: 90,
+		always_include_caveat: true,
+	},
+	reporting_bias: {
+		correction_enabled: true,
+		correction_field: null,
+		elevated_threshold: 1.5,
 	},
 };
 
@@ -240,9 +336,7 @@ export const CONFIG_DEFAULTS = {
 		},
 	},
 
-	taxonomy: {
-		normalization_threshold: 0.4,
-	},
+	taxonomy: taxonomyDefaults,
 
 	entity_resolution: {
 		strategies: [
@@ -289,6 +383,8 @@ export const CONFIG_DEFAULTS = {
 		},
 	},
 
+	similar_case_discovery: similarCaseDiscoveryDefaults,
+
 	grounding: {
 		enabled: false,
 		mode: 'on_demand' as const,
@@ -317,6 +413,8 @@ export const CONFIG_DEFAULTS = {
 		spatio_temporal: true,
 		cluster_window_days: 30,
 	},
+
+	temporal_pattern_detection: temporalPatternDetectionDefaults,
 
 	thresholds: {
 		taxonomy_bootstrap: 25,
