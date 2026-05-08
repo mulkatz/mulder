@@ -867,6 +867,37 @@ export async function listTemporalAnomalyClusters(
 	}
 }
 
+export async function countTemporalAnomalyClusters(
+	pool: Queryable,
+	options?: TemporalAnomalyClusterListOptions,
+): Promise<number> {
+	const conditions: string[] = [];
+	const params: unknown[] = [];
+	appendListFilters(conditions, params, 'tac', options);
+	if (options?.anomalyType) {
+		params.push(options.anomalyType);
+		conditions.push(`tac.anomaly_type = $${params.length}`);
+	}
+	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+	try {
+		const result = await pool.query<{ count: string }>(
+			`
+				SELECT COUNT(*) AS count
+				FROM temporal_anomaly_clusters tac
+				${whereClause}
+			`,
+			params,
+		);
+		return Number.parseInt(result.rows[0]?.count ?? '0', 10) || 0;
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to count temporal anomaly clusters', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { options },
+		});
+	}
+}
+
 export async function listExternalCorrelations(
 	pool: Queryable,
 	options?: ExternalCorrelationListOptions,
@@ -923,6 +954,65 @@ export async function listExternalCorrelations(
 		return result.rows.map(mapExternalCorrelation);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to list external correlations', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { options },
+		});
+	}
+}
+
+export async function countExternalCorrelations(
+	pool: Queryable,
+	options?: ExternalCorrelationListOptions,
+): Promise<number> {
+	const conditions: string[] = [];
+	const params: unknown[] = [];
+	appendCommonFilters(conditions, params, 'ec', options);
+	if (options?.timeStart) {
+		params.push(options.timeStart);
+		conditions.push(`ec.time_end >= $${params.length}`);
+	}
+	if (options?.timeEnd) {
+		params.push(options.timeEnd);
+		conditions.push(`ec.time_start <= $${params.length}`);
+	}
+	if (options?.reviewStatus) {
+		params.push(Array.isArray(options.reviewStatus) ? [...options.reviewStatus] : [options.reviewStatus]);
+		conditions.push(`ec.review_status = ANY($${params.length})`);
+	}
+	if (options?.signalStrength) {
+		params.push(options.signalStrength);
+		conditions.push(`ec.signal_strength = $${params.length}`);
+	}
+	if (options?.internalSeriesKey) {
+		params.push(options.internalSeriesKey);
+		conditions.push(`ec.internal_series_key = $${params.length}`);
+	}
+	if (options?.externalSourceId) {
+		params.push(options.externalSourceId);
+		conditions.push(`ec.external_source_id = $${params.length}`);
+	}
+	if (options?.externalSeriesId) {
+		params.push(options.externalSeriesId);
+		conditions.push(`ec.external_series_id = $${params.length}`);
+	}
+	if (options?.method) {
+		params.push(Array.isArray(options.method) ? [...options.method] : [options.method]);
+		conditions.push(`ec.method = ANY($${params.length})`);
+	}
+	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+	try {
+		const result = await pool.query<{ count: string }>(
+			`
+				SELECT COUNT(*) AS count
+				FROM external_correlations ec
+				${whereClause}
+			`,
+			params,
+		);
+		return Number.parseInt(result.rows[0]?.count ?? '0', 10) || 0;
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to count external correlations', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause: error,
 			context: { options },
 		});
@@ -1012,6 +1102,41 @@ export async function listSpatiotemporalHotspotClusters(
 		return result.rows.map(mapSpatiotemporalHotspotCluster);
 	} catch (error: unknown) {
 		throw new DatabaseError('Failed to list spatiotemporal hotspot clusters', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { options },
+		});
+	}
+}
+
+export async function countSpatiotemporalHotspotClusters(
+	pool: Queryable,
+	options?: SpatiotemporalHotspotClusterListOptions,
+): Promise<number> {
+	const conditions: string[] = [];
+	const params: unknown[] = [];
+	appendListFilters(conditions, params, 'shc', options);
+	if (options?.hotspotType) {
+		params.push(options.hotspotType);
+		conditions.push(`shc.hotspot_type = $${params.length}`);
+	}
+	if (options?.persistence) {
+		params.push(Array.isArray(options.persistence) ? [...options.persistence] : [options.persistence]);
+		conditions.push(`shc.persistence = ANY($${params.length})`);
+	}
+	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+	try {
+		const result = await pool.query<{ count: string }>(
+			`
+				SELECT COUNT(*) AS count
+				FROM spatiotemporal_hotspot_clusters shc
+				${whereClause}
+			`,
+			params,
+		);
+		return Number.parseInt(result.rows[0]?.count ?? '0', 10) || 0;
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to count spatiotemporal hotspot clusters', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause: error,
 			context: { options },
 		});

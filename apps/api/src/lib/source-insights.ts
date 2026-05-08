@@ -1,4 +1,5 @@
 import {
+	countSourceCredibilityProfiles,
 	type DocumentQualityAssessment,
 	findLatestDocumentQualityAssessment,
 	findSourceById,
@@ -116,17 +117,23 @@ export async function listSourceCredibility(
 ): Promise<SourceCredibilityListResponse> {
 	const { config, pool } = resolveApiDataContext('source insights');
 	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal, 'source credibility');
-	const profiles = await listSourceCredibilityProfiles(pool, {
+	const filters = {
 		sourceType: query.source_type,
 		reviewStatus: query.review_status,
 		maxSensitivityLevel,
-		limit: query.limit,
-		offset: query.offset,
-	});
+	};
+	const [count, profiles] = await Promise.all([
+		countSourceCredibilityProfiles(pool, filters),
+		listSourceCredibilityProfiles(pool, {
+			...filters,
+			limit: query.limit,
+			offset: query.offset,
+		}),
+	]);
 	return {
 		data: profiles.map(mapCredibilityProfile),
 		meta: {
-			count: profiles.length,
+			count,
 			limit: query.limit,
 			offset: query.offset,
 		},

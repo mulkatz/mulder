@@ -27,6 +27,7 @@ import {
 	actorIdForPrincipal,
 	allowedSensitivity,
 	resolveApiDataContext,
+	resolvePermissionMaxSensitivity,
 	resolveReadMaxSensitivity,
 	toIsoString,
 } from './api-runtime.js';
@@ -126,6 +127,24 @@ async function countReviewEvents(artifactId: string): Promise<number> {
 	return Number.parseInt(result.rows[0]?.count ?? '0', 10) || 0;
 }
 
+function reviewArtifactNotFound(artifactId: string): MulderError {
+	return new MulderError(`Review artifact not found: ${artifactId}`, REVIEW_ARTIFACT_NOT_FOUND_CODE, {
+		context: { artifactId },
+	});
+}
+
+async function requireVisibleReviewArtifact(
+	pool: Parameters<typeof findReviewableArtifactById>[0],
+	artifactId: string,
+	maxSensitivityLevel: ReturnType<typeof resolveReadMaxSensitivity>,
+): Promise<ReviewableArtifact> {
+	const artifact = await findReviewableArtifactById(pool, artifactId, { maxSensitivityLevel });
+	if (!artifact) {
+		throw reviewArtifactNotFound(artifactId);
+	}
+	return artifact;
+}
+
 export async function listReviewQueueSummaries(options?: ReviewRouteOptions): Promise<ReviewQueueListResponse> {
 	const { config, pool } = resolveApiDataContext('review');
 	resolveReadMaxSensitivity(config, options?.authPrincipal, 'review queues');
@@ -160,13 +179,8 @@ export async function getReviewArtifact(
 	options?: ReviewRouteOptions,
 ): Promise<ReviewArtifactDetailResponse> {
 	const { config, pool } = resolveApiDataContext('review');
-	resolveReadMaxSensitivity(config, options?.authPrincipal, 'review artifacts');
-	const artifact = await findReviewableArtifactById(pool, artifactId);
-	if (!artifact) {
-		throw new MulderError(`Review artifact not found: ${artifactId}`, REVIEW_ARTIFACT_NOT_FOUND_CODE, {
-			context: { artifactId },
-		});
-	}
+	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal, 'review artifacts');
+	const artifact = await requireVisibleReviewArtifact(pool, artifactId, maxSensitivityLevel);
 	return { data: mapArtifact(artifact) };
 }
 
@@ -176,13 +190,8 @@ export async function listReviewArtifactEvents(
 	options?: ReviewRouteOptions,
 ): Promise<ReviewEventListResponse> {
 	const { config, pool } = resolveApiDataContext('review');
-	resolveReadMaxSensitivity(config, options?.authPrincipal, 'review events');
-	const artifact = await findReviewableArtifactById(pool, artifactId);
-	if (!artifact) {
-		throw new MulderError(`Review artifact not found: ${artifactId}`, REVIEW_ARTIFACT_NOT_FOUND_CODE, {
-			context: { artifactId },
-		});
-	}
+	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal, 'review events');
+	await requireVisibleReviewArtifact(pool, artifactId, maxSensitivityLevel);
 	const [count, events] = await Promise.all([
 		countReviewEvents(artifactId),
 		listReviewEvents(pool, artifactId, { limit: query.limit, offset: query.offset }),
@@ -199,7 +208,13 @@ export async function recordReviewAction(
 	options?: ReviewRouteOptions,
 ): Promise<ReviewActionResponse> {
 	const { config, pool } = resolveApiDataContext('review');
-	resolveReadMaxSensitivity(config, options?.authPrincipal, 'review artifacts');
+	const maxSensitivityLevel = resolvePermissionMaxSensitivity(
+		config,
+		options?.authPrincipal,
+		'review artifacts',
+		'review',
+	);
+	await requireVisibleReviewArtifact(pool, artifactId, maxSensitivityLevel);
 	const result = await recordReviewEvent(pool, {
 		artifactId,
 		reviewerId: actorIdForPrincipal(options?.authPrincipal),
@@ -208,6 +223,7 @@ export async function recordReviewAction(
 		confidence: input.confidence,
 		rationale: input.rationale,
 		tags: input.tags,
+		maxSensitivityLevel,
 	});
 	return {
 		data: {

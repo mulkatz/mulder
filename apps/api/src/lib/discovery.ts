@@ -1,5 +1,10 @@
 import {
 	type ArtifactProvenance,
+	countExternalCorrelations,
+	countSimilarEntities,
+	countSpatiotemporalHotspotClusters,
+	countTaxonomyMappings,
+	countTemporalAnomalyClusters,
 	type ExternalCorrelation,
 	findEntityById,
 	listExternalCorrelations,
@@ -199,16 +204,22 @@ export async function listSimilarEntityLeads(
 			context: { entity_id: query.entity_id },
 		});
 	}
-	const results = await listSimilarEntities(pool, {
+	const filters = {
 		entityId: query.entity_id,
-		limit: query.limit,
-		offset: query.offset,
 		maxSensitivityLevel,
-	});
+	};
+	const [count, results] = await Promise.all([
+		countSimilarEntities(pool, filters),
+		listSimilarEntities(pool, {
+			...filters,
+			limit: query.limit,
+			offset: query.offset,
+		}),
+	]);
 	return {
 		data: results.map(similarityToResponse),
 		meta: {
-			count: results.length,
+			count,
 			limit: query.limit,
 			offset: query.offset,
 		},
@@ -222,7 +233,7 @@ export async function listClassificationMappingLeads(
 ): Promise<ClassificationMappingListResponse> {
 	const { config, pool } = resolveApiDataContext('discovery');
 	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal, 'classification mappings');
-	const mappings = await listTaxonomyMappings(pool, {
+	const filters = {
 		taxonomyId: query.taxonomy_id,
 		categoryId: query.category_id,
 		sourceTaxonomyId: query.source_taxonomy_id,
@@ -233,13 +244,19 @@ export async function listClassificationMappingLeads(
 		reviewStatus: query.review_status,
 		minConfidence: query.min_confidence,
 		maxSensitivityLevel,
-		limit: query.limit,
-		offset: query.offset,
-	});
+	};
+	const [count, mappings] = await Promise.all([
+		countTaxonomyMappings(pool, filters),
+		listTaxonomyMappings(pool, {
+			...filters,
+			limit: query.limit,
+			offset: query.offset,
+		}),
+	]);
 	return {
 		data: mappings.map(taxonomyMappingToResponse),
 		meta: {
-			count: mappings.length,
+			count,
 			limit: query.limit,
 			offset: query.offset,
 		},
@@ -260,12 +277,12 @@ export async function listTemporalPatternLeads(
 		reviewStatus: query.review_status,
 		signalStrength: query.signal_strength,
 		maxSensitivityLevel,
-		limit: query.limit,
-		offset: query.offset,
 	};
-	const [anomalies, hotspots] = await Promise.all([
-		listTemporalAnomalyClusters(pool, common),
-		listSpatiotemporalHotspotClusters(pool, common),
+	const [anomalyCount, hotspotCount, anomalies, hotspots] = await Promise.all([
+		countTemporalAnomalyClusters(pool, common),
+		countSpatiotemporalHotspotClusters(pool, common),
+		listTemporalAnomalyClusters(pool, { ...common, limit: query.limit, offset: query.offset }),
+		listSpatiotemporalHotspotClusters(pool, { ...common, limit: query.limit, offset: query.offset }),
 	]);
 	return {
 		data: {
@@ -273,7 +290,7 @@ export async function listTemporalPatternLeads(
 			hotspots: hotspots.map(hotspotToResponse),
 		},
 		meta: {
-			count: anomalies.length + hotspots.length,
+			count: anomalyCount + hotspotCount,
 			limit: query.limit,
 			offset: query.offset,
 		},
@@ -287,7 +304,7 @@ export async function listExternalCorrelationLeads(
 ): Promise<ExternalCorrelationListResponse> {
 	const { config, pool } = resolveApiDataContext('discovery');
 	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal, 'external correlations');
-	const correlations = await listExternalCorrelations(pool, {
+	const filters = {
 		internalSeriesKey: query.internal_series_key,
 		externalSourceId: query.external_source_id,
 		externalSeriesId: query.external_series_id,
@@ -297,13 +314,19 @@ export async function listExternalCorrelationLeads(
 		reviewStatus: query.review_status,
 		signalStrength: query.signal_strength,
 		maxSensitivityLevel,
-		limit: query.limit,
-		offset: query.offset,
-	});
+	};
+	const [count, correlations] = await Promise.all([
+		countExternalCorrelations(pool, filters),
+		listExternalCorrelations(pool, {
+			...filters,
+			limit: query.limit,
+			offset: query.offset,
+		}),
+	]);
 	return {
 		data: correlations.map(externalCorrelationToResponse),
 		meta: {
-			count: correlations.length,
+			count,
 			limit: query.limit,
 			offset: query.offset,
 		},

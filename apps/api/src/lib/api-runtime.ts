@@ -1,9 +1,11 @@
 import {
+	type AccessPermission,
 	type AccessPrincipal,
 	allowedSensitivityLevelsForMax,
 	DATABASE_ERROR_CODES,
 	DatabaseError,
 	getQueryPool,
+	hasAccessPermission,
 	loadConfig,
 	type MulderConfig,
 	MulderError,
@@ -68,10 +70,19 @@ export function resolveReadMaxSensitivity(
 	authPrincipal: AuthPrincipal | undefined,
 	resourceName: string,
 ): SensitivityLevel | undefined {
+	return resolvePermissionMaxSensitivity(config, authPrincipal, resourceName, 'read');
+}
+
+export function resolvePermissionMaxSensitivity(
+	config: MulderConfig,
+	authPrincipal: AuthPrincipal | undefined,
+	resourceName: string,
+	permission: AccessPermission,
+): SensitivityLevel | undefined {
 	const policy = resolveAccessPolicy(config, mapAuthPrincipal(authPrincipal));
-	if (!policy.permissions.includes('read') && !policy.permissions.includes('admin')) {
-		throw new MulderError(`The current principal cannot read ${resourceName}`, 'AUTH_FORBIDDEN', {
-			context: { principal_kind: policy.principalKind, resource: resourceName },
+	if (!hasAccessPermission(policy, permission)) {
+		throw new MulderError(`The current principal cannot ${permission} ${resourceName}`, 'AUTH_FORBIDDEN', {
+			context: { permission, principal_kind: policy.principalKind, resource: resourceName },
 		});
 	}
 	return policy.enabled ? policy.maxSensitivityLevel : undefined;

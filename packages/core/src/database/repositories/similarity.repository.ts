@@ -302,6 +302,38 @@ export async function listSimilarEntities(
 	}
 }
 
+export async function countSimilarEntities(pool: Queryable, options: ListSimilarEntitiesOptions): Promise<number> {
+	const conditions = ['(sc.entity_id_a = $1 OR sc.entity_id_b = $1)'];
+	const params: unknown[] = [options.entityId];
+	let paramIndex = 2;
+	if (!options.includeDeleted) {
+		conditions.push('sc.deleted_at IS NULL');
+	}
+	if (options.maxSensitivityLevel) {
+		conditions.push(`sc.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		paramIndex++;
+	}
+
+	const sql = `
+		SELECT COUNT(*) AS count
+		FROM similarity_cache sc
+		JOIN entities other_entity
+			ON other_entity.id = CASE WHEN sc.entity_id_a = $1 THEN sc.entity_id_b ELSE sc.entity_id_a END
+		WHERE ${conditions.join(' AND ')}
+	`;
+
+	try {
+		const result = await pool.query<{ count: string }>(sql, params);
+		return Number.parseInt(result.rows[0]?.count ?? '0', 10) || 0;
+	} catch (error: unknown) {
+		throw new DatabaseError('Failed to count similar entities', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { entityId: options.entityId },
+		});
+	}
+}
+
 export async function deleteSimilarityResultsForEntity(pool: Queryable, entityId: string): Promise<number> {
 	try {
 		const result = await pool.query(

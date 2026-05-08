@@ -169,6 +169,7 @@ describe('Spec 118: collections, taxonomy, and discovery API routes', () => {
 		const app = createApp({ config: TEST_API_CONFIG });
 		const source = await createEntityFixture(pool, 'Source case');
 		const target = await createEntityFixture(pool, 'Target case');
+		const secondTarget = await createEntityFixture(pool, 'Second target case');
 		await upsertSimilarityResult(pool, {
 			sourceEntityId: source.id,
 			targetEntityId: target.id,
@@ -181,6 +182,20 @@ describe('Spec 118: collections, taxonomy, and discovery API routes', () => {
 			explanation: 'Shared attributes suggest a comparison.',
 			sharedEntityIds: [],
 			keyDifferences: ['Different time windows'],
+			reviewStatus: 'pending',
+		});
+		await upsertSimilarityResult(pool, {
+			sourceEntityId: source.id,
+			targetEntityId: secondTarget.id,
+			core: {
+				semantic: { status: 'scored', score: 0.62, reason: null },
+				structural: { status: 'insufficient_data', score: null, reason: 'missing_structure' },
+				geospatial: { status: 'insufficient_data', score: null, reason: 'missing_location' },
+				temporal: { status: 'insufficient_data', score: null, reason: 'missing_time' },
+			},
+			explanation: 'Secondary comparison lead.',
+			sharedEntityIds: [],
+			keyDifferences: ['Different source context'],
 			reviewStatus: 'pending',
 		});
 
@@ -206,6 +221,12 @@ describe('Spec 118: collections, taxonomy, and discovery API routes', () => {
 			code: 'B',
 			label: 'Category B',
 		});
+		const secondRightCategory = await upsertClassificationCategory(pool, {
+			id: `category-c-${randomUUID()}`,
+			taxonomyId: rightTaxonomy.id,
+			code: 'C',
+			label: 'Category C',
+		});
 		const mapping = await upsertTaxonomyMapping(pool, {
 			source: { taxonomyId: leftTaxonomy.id, categoryId: leftCategory.id },
 			target: { taxonomyId: rightTaxonomy.id, categoryId: rightCategory.id },
@@ -214,21 +235,30 @@ describe('Spec 118: collections, taxonomy, and discovery API routes', () => {
 			rationale: 'Comparable categories.',
 			reviewStatus: 'draft',
 		});
+		await upsertTaxonomyMapping(pool, {
+			source: { taxonomyId: leftTaxonomy.id, categoryId: leftCategory.id },
+			target: { taxonomyId: rightTaxonomy.id, categoryId: secondRightCategory.id },
+			mappingType: 'related',
+			confidence: 0.51,
+			rationale: 'Secondary comparable category.',
+			reviewStatus: 'draft',
+		});
 
 		const similarResponse = await app.request(
-			`http://localhost/api/discovery/similar-entities?entity_id=${source.id}`,
+			`http://localhost/api/discovery/similar-entities?entity_id=${source.id}&limit=1`,
 			{
 				headers: authorizedHeaders(),
 			},
 		);
 		expect(similarResponse.status).toBe(200);
 		expect(await readJson(similarResponse)).toMatchObject({
-			data: [{ entity_id: target.id, review_status: 'pending' }],
+			data: [expect.objectContaining({ review_status: 'pending' })],
+			meta: { count: 2, limit: 1, offset: 0 },
 			caveats: expect.arrayContaining(['Discovery results are research leads, not final proof.']),
 		});
 
 		const mappingsResponse = await app.request(
-			'http://localhost/api/discovery/classification-mappings?mapping_type=related',
+			'http://localhost/api/discovery/classification-mappings?mapping_type=related&limit=1',
 			{
 				headers: authorizedHeaders(),
 			},
@@ -236,6 +266,7 @@ describe('Spec 118: collections, taxonomy, and discovery API routes', () => {
 		expect(mappingsResponse.status).toBe(200);
 		expect(await readJson(mappingsResponse)).toMatchObject({
 			data: [{ id: mapping.id, mapping_type: 'related', review_status: 'draft' }],
+			meta: { count: 2, limit: 1, offset: 0 },
 			caveats: expect.arrayContaining(['Discovery results are research leads, not final proof.']),
 		});
 	});
@@ -259,6 +290,20 @@ describe('Spec 118: collections, taxonomy, and discovery API routes', () => {
 					correctedSignificance: 0.04,
 					significanceThreshold: 0.05,
 					peakDate: new Date('2026-01-03T00:00:00.000Z'),
+					contributingEntityIds: [entity.id],
+				},
+				{
+					regionKey: 'global',
+					timeStart: new Date('2026-01-08T00:00:00.000Z'),
+					timeEnd: new Date('2026-01-14T00:00:00.000Z'),
+					entityCount: 2,
+					baselineRate: 1,
+					observedRate: 2,
+					rawSignificance: 0.03,
+					comparisonCount: 2,
+					correctedSignificance: 0.05,
+					significanceThreshold: 0.05,
+					peakDate: new Date('2026-01-09T00:00:00.000Z'),
 					contributingEntityIds: [entity.id],
 				},
 			],
@@ -292,28 +337,46 @@ describe('Spec 118: collections, taxonomy, and discovery API routes', () => {
 					dataPointCount: 7,
 					contributingEntityIds: [entity.id],
 				},
+				{
+					internalSeriesKey: 'case-count',
+					externalSourceId: 'public-dataset',
+					externalSeriesId: 'series-b',
+					method: 'cross_correlation',
+					coefficient: 0.7,
+					pValue: 0.04,
+					lagDays: 1,
+					timeStart: start,
+					timeEnd: end,
+					dataPointCount: 7,
+					contributingEntityIds: [entity.id],
+				},
 			],
 		});
 
-		const patternsResponse = await app.request('http://localhost/api/discovery/temporal-patterns?region_key=global', {
-			headers: authorizedHeaders(),
-		});
+		const patternsResponse = await app.request(
+			'http://localhost/api/discovery/temporal-patterns?region_key=global&limit=1',
+			{
+				headers: authorizedHeaders(),
+			},
+		);
 		expect(patternsResponse.status).toBe(200);
 		expect(await readJson(patternsResponse)).toMatchObject({
 			data: {
 				anomalies: [{ region_key: 'global', signal_strength: 'weak' }],
 				hotspots: [{ region_key: 'global', persistence: 'transient' }],
 			},
+			meta: { count: 3, limit: 1, offset: 0 },
 			caveats: expect.arrayContaining(['Temporal and spatial patterns can reflect reporting bias or missing data.']),
 		});
 
 		const correlationsResponse = await app.request(
-			'http://localhost/api/discovery/external-correlations?external_source_id=public-dataset',
+			'http://localhost/api/discovery/external-correlations?external_source_id=public-dataset&limit=1',
 			{ headers: authorizedHeaders() },
 		);
 		expect(correlationsResponse.status).toBe(200);
 		expect(await readJson(correlationsResponse)).toMatchObject({
 			data: [{ external_source_id: 'public-dataset', method: 'spearman' }],
+			meta: { count: 2, limit: 1, offset: 0 },
 			caveats: expect.arrayContaining(['Correlation does not establish causation.']),
 		});
 	});

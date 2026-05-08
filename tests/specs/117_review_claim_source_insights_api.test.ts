@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createApp } from '@mulder/api';
 import {
 	createDocumentQualityAssessment,
@@ -36,8 +36,39 @@ function authorizedHeaders(): Record<string, string> {
 	};
 }
 
+function hashToken(token: string): string {
+	return createHash('sha256').update(`${TEST_API_CONFIG.auth.browser.session_secret}:${token}`).digest('hex');
+}
+
 async function readJson(response: Response): Promise<unknown> {
 	return await response.json();
+}
+
+async function seedInvitation(
+	pool: pg.Pool,
+	input: { email: string; token: string; role: 'admin' | 'member' | 'owner' },
+): Promise<void> {
+	await pool.query(
+		`
+			INSERT INTO api_invitations (email, role, token_hash, expires_at)
+			VALUES ($1, $2, $3, now() + interval '1 day')
+		`,
+		[input.email, input.role, hashToken(input.token)],
+	);
+}
+
+async function acceptInvitation(app: ReturnType<typeof createApp>, pool: pg.Pool, role: 'admin' | 'member') {
+	const token = `${role}-${randomUUID()}`;
+	await seedInvitation(pool, { email: `${role}-${randomUUID()}@example.test`, role, token });
+	const response = await app.request('http://localhost/api/auth/invitations/accept', {
+		body: JSON.stringify({ token, password: 'correct horse battery staple' }),
+		headers: { 'Content-Type': 'application/json' },
+		method: 'POST',
+	});
+	expect(response.status).toBe(200);
+	const setCookie = response.headers.get('set-cookie');
+	expect(setCookie).toContain('mulder_session=');
+	return setCookie?.split(';')[0] ?? '';
 }
 
 async function seedSource(pool: pg.Pool): Promise<string> {
@@ -192,6 +223,39 @@ describe('Spec 117: review, claims, and source insight API routes', () => {
 		});
 	});
 
+	it('returns total source credibility count for paginated lists', async () => {
+		const app = createApp({ config: TEST_API_CONFIG });
+		for (const label of ['Archive office', 'Field witness', 'Research group']) {
+			const sourceId = await seedSource(pool);
+			await upsertSourceCredibilityProfile(pool, {
+				sourceId,
+				sourceName: label,
+				sourceType: 'organization',
+				profileAuthor: 'llm_auto',
+				reviewStatus: 'draft',
+				dimensions: [
+					{
+						dimensionId: 'proximity',
+						label: 'Proximity',
+						score: 0.63,
+						rationale: 'Institutional source.',
+					},
+				],
+			});
+		}
+
+		const response = await app.request('http://localhost/api/source-credibility?review_status=draft&limit=1', {
+			headers: authorizedHeaders(),
+		});
+		expect(response.status).toBe(200);
+		const body = (await readJson(response)) as {
+			data: unknown[];
+			meta: { count: number; limit: number; offset: number };
+		};
+		expect(body.data).toHaveLength(1);
+		expect(body.meta).toEqual({ count: 3, limit: 1, offset: 0 });
+	});
+
 	it('lists first-class claims by global, source, story, and detail routes', async () => {
 		const app = createApp({ config: TEST_API_CONFIG });
 		const sourceId = await seedSource(pool);
@@ -299,6 +363,92 @@ describe('Spec 117: review, claims, and source insight API routes', () => {
 			data: [{ artifact_id: artifact.artifactId, action: 'comment' }],
 			meta: { count: 1 },
 		});
+	});
+
+	it('enforces review artifact sensitivity, deleted-state, and review permission on detail/events/actions', async () => {
+		const app = createApp({ config: TEST_API_CONFIG });
+		const sourceId = await seedSource(pool);
+		const memberCookie = await acceptInvitation(app, pool, 'member');
+		const adminCookie = await acceptInvitation(app, pool, 'admin');
+		const visible = await upsertReviewableArtifact(pool, {
+			artifactType: 'agent_finding',
+			subjectId: randomUUID(),
+			subjectTable: 'agent_findings',
+			currentValue: { title: 'Visible review' },
+			context: { sensitivity_level: 'internal' },
+			sourceId,
+			priority: 5,
+		});
+		const hidden = await upsertReviewableArtifact(pool, {
+			artifactType: 'agent_finding',
+			subjectId: randomUUID(),
+			subjectTable: 'agent_findings',
+			currentValue: { title: 'Hidden review' },
+			context: { sensitivity_level: 'confidential' },
+			sourceId,
+			priority: 4,
+		});
+		const deleted = await upsertReviewableArtifact(pool, {
+			artifactType: 'agent_finding',
+			subjectId: randomUUID(),
+			subjectTable: 'agent_findings',
+			currentValue: { title: 'Deleted review' },
+			context: { sensitivity_level: 'internal' },
+			sourceId,
+			priority: 3,
+		});
+		await pool.query('UPDATE review_artifacts SET deleted_at = now() WHERE artifact_id = $1', [deleted.artifactId]);
+
+		const listResponse = await app.request(
+			'http://localhost/api/review/queues/contested_artifacts/artifacts?review_status=pending',
+			{ headers: { Cookie: memberCookie } },
+		);
+		expect(listResponse.status).toBe(200);
+		const listBody = (await readJson(listResponse)) as {
+			data: { artifact_id: string }[];
+			meta: { count: number };
+		};
+		expect(listBody.data.map((item) => item.artifact_id)).toEqual([visible.artifactId]);
+		expect(listBody.meta.count).toBe(1);
+
+		const visibleDetail = await app.request(`http://localhost/api/review/artifacts/${visible.artifactId}`, {
+			headers: { Cookie: memberCookie },
+		});
+		expect(visibleDetail.status).toBe(200);
+
+		for (const path of [
+			`/api/review/artifacts/${hidden.artifactId}`,
+			`/api/review/artifacts/${hidden.artifactId}/events`,
+			`/api/review/artifacts/${deleted.artifactId}`,
+			`/api/review/artifacts/${deleted.artifactId}/events`,
+		]) {
+			const response = await app.request(`http://localhost${path}`, { headers: { Cookie: memberCookie } });
+			expect(response.status).toBe(404);
+			expect(await readJson(response)).toMatchObject({ error: { code: 'REVIEW_ARTIFACT_NOT_FOUND' } });
+		}
+
+		const deniedAction = await app.request(`http://localhost/api/review/artifacts/${visible.artifactId}/actions`, {
+			body: JSON.stringify({ action: 'comment', rationale: 'Read-only member should not review' }),
+			headers: { Cookie: memberCookie, 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+		expect(deniedAction.status).toBe(403);
+		expect(await readJson(deniedAction)).toMatchObject({ error: { code: 'AUTH_FORBIDDEN' } });
+
+		const adminHiddenAction = await app.request(`http://localhost/api/review/artifacts/${hidden.artifactId}/actions`, {
+			body: JSON.stringify({ action: 'comment', rationale: 'Admin can review confidential artifact' }),
+			headers: { Cookie: adminCookie, 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+		expect(adminHiddenAction.status).toBe(200);
+
+		const deletedAction = await app.request(`http://localhost/api/review/artifacts/${deleted.artifactId}/actions`, {
+			body: JSON.stringify({ action: 'comment', rationale: 'Deleted artifact should stay hidden' }),
+			headers: { Cookie: adminCookie, 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+		expect(deletedAction.status).toBe(404);
+		expect(await readJson(deletedAction)).toMatchObject({ error: { code: 'REVIEW_ARTIFACT_NOT_FOUND' } });
 	});
 
 	it('protects the new product routes and validates params', async () => {

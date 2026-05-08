@@ -253,6 +253,51 @@ export async function listSourceCredibilityProfiles(
 	}
 }
 
+export async function countSourceCredibilityProfiles(
+	pool: Queryable,
+	options?: Omit<SourceCredibilityProfileListOptions, 'limit' | 'offset'>,
+): Promise<number> {
+	const params: unknown[] = [];
+	const filters: string[] = [];
+	if (options?.sourceType) {
+		assertEnum(options.sourceType, SOURCE_TYPES, 'sourceType');
+		params.push(options.sourceType);
+		filters.push(`p.source_type = $${params.length}`);
+	}
+	if (options?.reviewStatus) {
+		assertEnum(options.reviewStatus, STATUSES, 'reviewStatus');
+		params.push(options.reviewStatus);
+		filters.push(`p.review_status = $${params.length}`);
+	}
+	if (options?.maxSensitivityLevel) {
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		filters.push(`p.sensitivity_level = ANY($${params.length})`);
+		filters.push(`s.sensitivity_level = ANY($${params.length})`);
+	}
+	const where = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+	try {
+		const result = await pool.query<{ count: string }>(
+			`
+				SELECT COUNT(DISTINCT p.profile_id) AS count
+				FROM source_credibility_profiles p
+				JOIN sources s ON s.id = p.source_id
+				${where}
+			`,
+			params,
+		);
+		return Number.parseInt(result.rows[0]?.count ?? '0', 10) || 0;
+	} catch (cause: unknown) {
+		throw new DatabaseError('Failed to count source credibility profiles', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause,
+			context: {
+				sourceType: options?.sourceType,
+				reviewStatus: options?.reviewStatus,
+				maxSensitivityLevel: options?.maxSensitivityLevel,
+			},
+		});
+	}
+}
+
 async function readSourceTrust(client: Queryable, sourceId: string): Promise<SourceTrustRow> {
 	const result = await client.query<SourceTrustRow>(
 		'SELECT id, sensitivity_level, sensitivity_metadata, created_at FROM sources WHERE id = $1',

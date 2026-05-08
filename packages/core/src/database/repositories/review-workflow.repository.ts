@@ -9,6 +9,7 @@ import type {
 	ReviewAction,
 	ReviewArtifactType,
 	ReviewableArtifact,
+	ReviewableArtifactFindOptions,
 	ReviewableArtifactListOptions,
 	ReviewConfidence,
 	ReviewCreatedBy,
@@ -275,13 +276,21 @@ export async function upsertReviewableArtifact(
 export async function findReviewableArtifactById(
 	pool: Queryable,
 	artifactId: string,
+	options?: ReviewableArtifactFindOptions,
 ): Promise<ReviewableArtifact | null> {
 	try {
-		return (await readArtifacts(pool, 'WHERE artifact_id = $1', [artifactId]))[0] ?? null;
+		const params: unknown[] = [artifactId];
+		const filters = ['artifact_id = $1'];
+		if (!options?.includeDeleted) filters.push('deleted_at IS NULL');
+		if (options?.maxSensitivityLevel) {
+			params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+			filters.push(`COALESCE(NULLIF(context->>'sensitivity_level', ''), 'internal') = ANY($${params.length})`);
+		}
+		return (await readArtifacts(pool, `WHERE ${filters.join(' AND ')}`, params))[0] ?? null;
 	} catch (cause: unknown) {
 		throw new DatabaseError('Failed to find reviewable artifact by ID', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
 			cause,
-			context: { artifactId },
+			context: { artifactId, options },
 		});
 	}
 }
@@ -383,9 +392,17 @@ async function recordEventInTransaction(
 	}
 	if (input.action === 'correct') normalizeObject(input.newValue, 'newValue');
 
+	const artifactFilters = ['artifact_id = $1', 'deleted_at IS NULL'];
+	const artifactParams: unknown[] = [input.artifactId];
+	if (input.maxSensitivityLevel) {
+		artifactParams.push(allowedSensitivityLevelsForMax(input.maxSensitivityLevel));
+		artifactFilters.push(
+			`COALESCE(NULLIF(context->>'sensitivity_level', ''), 'internal') = ANY($${artifactParams.length})`,
+		);
+	}
 	const artifactResult = await client.query<ReviewArtifactRow>(
-		'SELECT * FROM review_artifacts WHERE artifact_id = $1 AND deleted_at IS NULL FOR UPDATE',
-		[input.artifactId],
+		`SELECT * FROM review_artifacts WHERE ${artifactFilters.join(' AND ')} FOR UPDATE`,
+		artifactParams,
 	);
 	const artifactRow = artifactResult.rows[0];
 	if (!artifactRow) fail('Review artifact not found', { artifactId: input.artifactId });
