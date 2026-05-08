@@ -2,15 +2,23 @@ import type { TFunction } from 'i18next';
 import {
 	ArrowLeft,
 	BookOpen,
+	ChevronLeft,
+	ChevronRight,
 	FileText,
 	Languages,
 	PanelLeft,
 	PanelRight,
+	RefreshCcw,
 	SplitSquareHorizontal,
 	Workflow,
+	ZoomIn,
+	ZoomOut,
 } from 'lucide-react';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { CodeBlock } from '@/components/CodeBlock';
@@ -20,20 +28,26 @@ import { StateNotice } from '@/components/StateNotice';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Toolbar } from '@/components/Toolbar';
 import { requestStoryTranslation } from '@/features/documents/translation';
+import { useDocument } from '@/features/documents/useDocument';
 import { useDocumentLayout } from '@/features/documents/useDocumentLayout';
 import { useDocumentObservability } from '@/features/documents/useDocumentObservability';
 import { useDocumentPages } from '@/features/documents/useDocumentPages';
+import { useDocumentPdf } from '@/features/documents/useDocumentPdf';
 import { useDocumentStories } from '@/features/documents/useDocumentStories';
 import { useContradictions } from '@/features/evidence/useContradictions';
 import { type AppLocale, locales } from '@/i18n/resources';
-import { buildApiUrl } from '@/lib/api-client';
 import type { ContradictionRecord, DocumentStoryRecord, EntityRecord } from '@/lib/api-types';
 import { cn } from '@/lib/cn';
 import { getErrorMessage, isApiUnavailableError } from '@/lib/query-state';
 
+pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+
 type ReaderViewMode = 'split' | 'original' | 'story';
 
 const READER_MODE_STORAGE_KEY = 'mulder.reader.viewMode';
+const PDF_MIN_ZOOM = 0.7;
+const PDF_MAX_ZOOM = 2.25;
+const PDF_ZOOM_STEP = 0.15;
 
 function readInitialReaderMode(): ReaderViewMode {
 	if (typeof window === 'undefined') return 'split';
@@ -54,6 +68,50 @@ function useCompactReader() {
 	}, []);
 
 	return isCompact;
+}
+
+function useElementWidth<T extends HTMLElement>() {
+	const ref = useRef<T | null>(null);
+	const [width, setWidth] = useState(0);
+
+	useEffect(() => {
+		const element = ref.current;
+		if (!element || typeof ResizeObserver === 'undefined') return;
+		const observer = new ResizeObserver((entries) => {
+			const entry = entries[0];
+			if (entry) {
+				setWidth(entry.contentRect.width);
+			}
+		});
+		observer.observe(element);
+		return () => observer.disconnect();
+	}, []);
+
+	return [ref, width] as const;
+}
+
+function useObjectUrl(blob?: Blob) {
+	const [url, setUrl] = useState<string | undefined>();
+
+	useEffect(() => {
+		if (!blob) {
+			setUrl(undefined);
+			return;
+		}
+		const nextUrl = URL.createObjectURL(blob);
+		setUrl(nextUrl);
+		return () => URL.revokeObjectURL(nextUrl);
+	}, [blob]);
+
+	return url;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+	return Math.min(Math.max(value, min), max);
+}
+
+function clampPage(value: number, pageCount: number) {
+	return clampNumber(Math.round(value), 1, Math.max(pageCount, 1));
 }
 
 function formatPageRange(start: number | null, end: number | null, t: TFunction) {
@@ -255,10 +313,37 @@ function OriginalPane({
 	story?: DocumentStoryRecord;
 }) {
 	const { t } = useTranslation();
-	const pageHash = story?.page_start ? `#page=${story.page_start}` : '';
-	const pdfUrl = buildApiUrl(`/api/documents/${sourceId}/pdf${pageHash}`);
-	const [failedPdfUrl, setFailedPdfUrl] = useState<string | null>(null);
-	const pdfFailed = failedPdfUrl === pdfUrl;
+	const pdfQuery = useDocumentPdf(sourceId);
+	const pdfUrl = useObjectUrl(pdfQuery.data);
+	const [viewerRef, viewerWidth] = useElementWidth<HTMLDivElement>();
+	const [pageNumber, setPageNumber] = useState(story?.page_start ?? 1);
+	const [pageInput, setPageInput] = useState(String(story?.page_start ?? 1));
+	const [pdfPageCount, setPdfPageCount] = useState<number | undefined>();
+	const [zoom, setZoom] = useState(1);
+	const effectivePageCount = pdfPageCount ?? pageCount ?? 1;
+	const requestedStoryPage = story?.page_start ?? 1;
+	const pageWidth = viewerWidth > 0 ? Math.max(280, Math.floor((viewerWidth - 32) * zoom)) : undefined;
+
+	useEffect(() => {
+		const nextPage = clampPage(requestedStoryPage, effectivePageCount);
+		setPageNumber(nextPage);
+		setPageInput(String(nextPage));
+	}, [effectivePageCount, requestedStoryPage]);
+
+	function updatePage(nextPage: number) {
+		const clampedPage = clampPage(nextPage, effectivePageCount);
+		setPageNumber(clampedPage);
+		setPageInput(String(clampedPage));
+	}
+
+	function commitPageInput() {
+		const parsed = Number.parseInt(pageInput, 10);
+		updatePage(Number.isFinite(parsed) ? parsed : pageNumber);
+	}
+
+	function updateZoom(nextZoom: number) {
+		setZoom(clampNumber(nextZoom, PDF_MIN_ZOOM, PDF_MAX_ZOOM));
+	}
 
 	return (
 		<section className="panel flex min-h-[640px] min-w-0 flex-col overflow-hidden">
@@ -267,29 +352,139 @@ function OriginalPane({
 					<FileText className="size-4 text-accent" />
 					<h2 className="font-medium text-text">{t('reader.originalDocument')}</h2>
 				</div>
-				<span className="ml-auto text-xs text-text-subtle">
-					{pagesIsLoading
-						? t('reader.pagesLoading')
-						: pagesError
-							? t('reader.pagesUnavailable')
-							: t('reader.pageCount', { count: pageCount ?? 0 })}
-				</span>
+				<div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+					<span className="text-xs text-text-subtle">
+						{pagesIsLoading || pdfQuery.isLoading
+							? t('reader.pagesLoading')
+							: pagesError
+								? t('reader.pagesUnavailable')
+								: t('reader.pageCount', { count: pdfPageCount ?? pageCount ?? 0 })}
+					</span>
+					<div className="hidden items-center gap-1 rounded-md border border-border bg-field p-1 sm:flex">
+						<button
+							aria-label={t('reader.previousPage')}
+							className="inline-flex size-7 items-center justify-center rounded-sm text-text-muted transition-colors hover:bg-panel hover:text-text disabled:text-text-faint"
+							disabled={pageNumber <= 1}
+							onClick={() => updatePage(pageNumber - 1)}
+							title={t('reader.previousPage')}
+							type="button"
+						>
+							<ChevronLeft className="size-4" />
+						</button>
+						<label className="flex items-center gap-1 px-1 text-xs text-text-subtle">
+							<span className="sr-only">{t('reader.pageInputLabel')}</span>
+							<input
+								aria-label={t('reader.pageInputLabel')}
+								className="h-7 w-12 rounded-sm border border-border bg-panel px-1 text-center font-mono text-xs text-text outline-none focus:border-accent"
+								inputMode="numeric"
+								onBlur={commitPageInput}
+								onChange={(event) => setPageInput(event.target.value)}
+								onKeyDown={(event) => {
+									if (event.key === 'Enter') {
+										commitPageInput();
+										event.currentTarget.blur();
+									}
+								}}
+								value={pageInput}
+							/>
+							<span aria-hidden="true">/</span>
+							<span className="font-mono text-text-muted">{effectivePageCount}</span>
+						</label>
+						<button
+							aria-label={t('reader.nextPage')}
+							className="inline-flex size-7 items-center justify-center rounded-sm text-text-muted transition-colors hover:bg-panel hover:text-text disabled:text-text-faint"
+							disabled={pageNumber >= effectivePageCount}
+							onClick={() => updatePage(pageNumber + 1)}
+							title={t('reader.nextPage')}
+							type="button"
+						>
+							<ChevronRight className="size-4" />
+						</button>
+					</div>
+					<div className="hidden items-center gap-1 rounded-md border border-border bg-field p-1 md:flex">
+						<button
+							aria-label={t('reader.zoomOut')}
+							className="inline-flex size-7 items-center justify-center rounded-sm text-text-muted transition-colors hover:bg-panel hover:text-text disabled:text-text-faint"
+							disabled={zoom <= PDF_MIN_ZOOM}
+							onClick={() => updateZoom(zoom - PDF_ZOOM_STEP)}
+							title={t('reader.zoomOut')}
+							type="button"
+						>
+							<ZoomOut className="size-4" />
+						</button>
+						<button
+							aria-label={t('reader.resetZoom')}
+							className="inline-flex size-7 items-center justify-center rounded-sm text-text-muted transition-colors hover:bg-panel hover:text-text"
+							onClick={() => updateZoom(1)}
+							title={t('reader.resetZoom')}
+							type="button"
+						>
+							<RefreshCcw className="size-4" />
+						</button>
+						<button
+							aria-label={t('reader.zoomIn')}
+							className="inline-flex size-7 items-center justify-center rounded-sm text-text-muted transition-colors hover:bg-panel hover:text-text disabled:text-text-faint"
+							disabled={zoom >= PDF_MAX_ZOOM}
+							onClick={() => updateZoom(zoom + PDF_ZOOM_STEP)}
+							title={t('reader.zoomIn')}
+							type="button"
+						>
+							<ZoomIn className="size-4" />
+						</button>
+					</div>
+				</div>
 			</Toolbar>
 			<div className="grid min-h-0 flex-1 gap-3 p-3 xl:grid-rows-[minmax(420px,1fr)_220px]">
-				<div className="min-h-[420px] overflow-hidden rounded-md border border-border bg-panel-raised">
-					{pdfFailed ? (
-						<div className="p-3">
-							<StateNotice tone="error" title={t('reader.pdfUnavailableTitle')}>
-								{t('reader.pdfUnavailableBody')}
-							</StateNotice>
+				<div
+					className="min-h-[420px] overflow-auto rounded-md border border-border bg-panel-raised p-3"
+					ref={viewerRef}
+				>
+					{pdfQuery.isLoading ? <StateNotice tone="loading" title={t('reader.pdfLoadingTitle')} /> : null}
+					{pdfQuery.error ? (
+						<StateNotice
+							tone="error"
+							title={
+								isApiUnavailableError(pdfQuery.error) ? t('reader.pdfUnavailableTitle') : t('reader.pdfErrorTitle')
+							}
+						>
+							<p>{getErrorMessage(pdfQuery.error, t('reader.pdfUnavailableBody'))}</p>
+							<div>
+								<button
+									className="mt-3 inline-flex h-8 items-center rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
+									onClick={() => pdfQuery.refetch()}
+									type="button"
+								>
+									{t('common.retry')}
+								</button>
+							</div>
+						</StateNotice>
+					) : null}
+					{pdfUrl ? (
+						<div className="flex min-h-[400px] justify-center">
+							<Document
+								error={
+									<StateNotice tone="error" title={t('reader.pdfRenderErrorTitle')}>
+										{t('reader.pdfRenderErrorBody')}
+									</StateNotice>
+								}
+								file={pdfUrl}
+								loading={<StateNotice tone="loading" title={t('reader.pdfRenderLoadingTitle')} />}
+								onLoadSuccess={({ numPages }) => {
+									setPdfPageCount(numPages);
+									updatePage(pageNumber);
+								}}
+							>
+								<Page
+									className="overflow-hidden rounded-sm shadow-soft"
+									loading={<StateNotice tone="loading" title={t('reader.pdfPageLoadingTitle')} />}
+									pageNumber={pageNumber}
+									renderAnnotationLayer
+									renderTextLayer
+									width={pageWidth}
+								/>
+							</Document>
 						</div>
 					) : null}
-					<iframe
-						className={cn('h-full min-h-[420px] w-full', pdfFailed && 'hidden')}
-						onError={() => setFailedPdfUrl(pdfUrl)}
-						src={pdfUrl}
-						title={t('reader.pdfTitle')}
-					/>
 				</div>
 				<div className="min-h-0 overflow-hidden rounded-md border border-border bg-panel-raised">
 					<div className="border-b border-border px-3 py-2 text-xs font-medium text-text-subtle">
@@ -688,6 +883,7 @@ export function SourceReaderPage() {
 	const [selectedEntity, setSelectedEntity] = useState<EntityRecord | undefined>();
 	const [targetLanguage, setTargetLanguage] = useState<AppLocale>(i18n.language === 'de' ? 'de' : 'en');
 	const [translationRequested, setTranslationRequested] = useState(false);
+	const sourceQuery = useDocument(sourceId);
 	const storiesQuery = useDocumentStories(sourceId);
 	const layoutQuery = useDocumentLayout(sourceId);
 	const pagesQuery = useDocumentPages(sourceId);
@@ -695,7 +891,7 @@ export function SourceReaderPage() {
 	const contradictionsQuery = useContradictions({ status: 'all', limit: 100 });
 	const stories = storiesQuery.data?.data.stories ?? [];
 	const selectedStory = stories.find((story) => story.id === selectedStoryId) ?? stories[0];
-	const source = observabilityQuery.data?.data.source;
+	const source = sourceQuery.data?.data ?? observabilityQuery.data?.data.source;
 	const effectiveViewMode = isCompact && viewMode === 'split' ? 'story' : viewMode;
 	const pageCount = pagesQuery.data?.meta.count;
 	const storySignals = selectedStory

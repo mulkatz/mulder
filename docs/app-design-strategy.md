@@ -364,7 +364,7 @@ Confidence, reliability, degraded search, missing citations, and partial data sh
 
 ### Treat Provenance as a Product Gate
 
-Trust is not only a visual treatment. Before Mulder is productized for real archive ingest, the product needs the M10 provenance and trust foundation or an explicit temporary waiver.
+Trust is not only a visual treatment. M10 now provides the provenance and trust foundation, but the app must still represent it before real archive ingest is productized for users.
 
 The UI should reserve space for:
 
@@ -377,7 +377,7 @@ The UI should reserve space for:
 - Sensitivity and access-control signals.
 - Source rollback or deletion status.
 
-Until those backend contracts exist, the app can support development ingest and design exploration, but it should not imply archive-grade provenance, compliance, or review safety. This is a hard product boundary for a serious research system.
+Until those concepts are captured and displayed in the Add Sources workflow, the app can support development ingest and design exploration, but it should not imply archive-grade provenance, compliance, or review safety. This is a hard product boundary for a serious research system.
 
 ### Do Not Fake Capability
 
@@ -432,13 +432,15 @@ Use explicit states instead of broad labels like "mostly available":
 type CapabilityState =
 	| 'mounted-api'
 	| 'mounted-partial'
+	| 'backend-no-http-contract'
 	| 'cli-or-package-only'
+	| 'product-gated'
 	| 'documented-target'
 	| 'future-milestone'
 	| 'missing';
 ```
 
-For `mounted-api` and `mounted-partial`, the default path must be real API data. For `documented-target`, `future-milestone`, and `missing` capabilities, the app should show unavailable or planned states rather than silently substituting checked-in static data.
+For `mounted-api` and `mounted-partial`, the default path must be real API data. For `backend-no-http-contract`, backend/package capability exists but browser-safe app contracts still need to be mounted. For `product-gated`, the backend may exist but the app must keep the feature disabled until the product workflow is safe enough to expose. For `documented-target`, `future-milestone`, and `missing` capabilities, the app should show unavailable or planned states rather than silently substituting checked-in static data.
 
 ### Mounted API Coverage
 
@@ -489,7 +491,11 @@ These are important for the app workbench:
 | Global stories | Mounted partial: document-scoped stories exist | Add `/api/stories` and `/api/stories/:id` or keep story access intentionally document-scoped |
 | Taxonomy management | CLI/package-only; some docs mention target routes, but routes are not mounted | Add list/export/bootstrap/rebootstrap routes only if taxonomy becomes a browser workflow |
 | Ground/analyze orchestration | CLI/standalone and package capability; not first-class API/worker steps | Decide whether these become queued API steps; if yes, update pipeline step types, worker job types, chaining, retry, and tests |
-| M10 provenance/trust | Future milestone | Do not present real archive ingest as product-ready until provenance, custody, quality, sensitivity/RBAC, assertions, and rollback contracts exist |
+| M10 provenance/trust | Product gated: backend foundations exist, app ingest UX is not safe yet | Do not present real archive ingest as product-ready until provenance, custody, quality, sensitivity/RBAC, assertions, and rollback are represented in the app workflow |
+| M11 translation | Backend exists, no app HTTP contract | Keep reader translation controls honest until current translations, request translation, status, and translated-content routes exist |
+| M11 review workflow | Backend exists, no app HTTP contract | Add queue/artifact/action routes before activating Review Queue |
+| M11 credibility | Backend exists, no app HTTP contract | Add source credibility read models before activating Source Quality trust panels |
+| M12 discovery | Backend exists, no app HTTP contract | Add app read models for similarity, classification mappings, temporal patterns, and external correlations before showing discovery routes |
 | Cost estimates | CLI/package-only | Add estimate endpoints for upload, pipeline run, and reprocess before showing actionable cost controls |
 | Activity feed | Missing aggregate: jobs and document observability exist separately | Add cross-system activity endpoint when users need one timeline across documents, runs, reviews, and errors |
 | Export workflows | CLI/package-only | Add export job routes or signed artifact routes before exposing export as a primary browser action |
@@ -522,7 +528,9 @@ Introduce a small capability map:
 type CapabilityState =
 	| 'mounted-api'
 	| 'mounted-partial'
+	| 'backend-no-http-contract'
 	| 'cli-or-package-only'
+	| 'product-gated'
 	| 'documented-target'
 	| 'future-milestone'
 	| 'missing';
@@ -542,7 +550,10 @@ Prioritize API additions that unlock complete workflows:
 
 1. Analysis run facade.
 2. Evidence claim and review facade.
-3. M10 provenance/trust contracts before real archive ingest.
+3. Source Reader happy path and app-controlled PDF rendering.
+4. Search, once results can land on real source/story destinations.
+5. M11 review, translation, and credibility contracts.
+6. M12 discovery read models with explicit caveats.
 4. Global stories or intentionally document-scoped story endpoints.
 5. Graph aggregate endpoint.
 6. Ground/analyze orchestration decision.

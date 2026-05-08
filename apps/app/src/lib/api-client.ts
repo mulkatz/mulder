@@ -117,6 +117,36 @@ export async function apiFetchText(path: string, init?: RequestInit): Promise<st
 	return response.text();
 }
 
+export async function apiFetchBlob(path: string, init?: RequestInit): Promise<Blob> {
+	const headers = new Headers(init?.headers);
+	if (!headers.has('Accept')) {
+		headers.set('Accept', 'application/pdf, application/octet-stream');
+	}
+
+	let response: Response;
+	try {
+		response = await fetch(buildApiUrl(path), {
+			credentials: 'include',
+			...init,
+			headers,
+		});
+	} catch (error) {
+		throw toNetworkError(error);
+	}
+
+	if (!response.ok) {
+		const body = await parseErrorBody(response);
+		throw new ApiError(
+			response.status,
+			body.error?.code ?? 'UNKNOWN',
+			body.error?.message ?? response.statusText,
+			body.error?.details,
+		);
+	}
+
+	return response.blob();
+}
+
 export function buildApiUrl(path: string) {
 	if (/^https?:\/\//i.test(path)) {
 		return path;

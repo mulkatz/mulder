@@ -349,6 +349,29 @@ describe('Spec 76 — Document Retrieval Routes', () => {
 			},
 		});
 
+		const detailResponse = await app.request(`http://localhost/api/documents/${sourceA.id}`, {
+			headers: authorizedHeaders(),
+		});
+		expect(detailResponse.status).toBe(200);
+		expect(await readJson(detailResponse)).toEqual({
+			data: {
+				id: sourceA.id,
+				filename: 'case-file.pdf',
+				status: 'extracted',
+				page_count: 12,
+				has_native_text: true,
+				layout_available: true,
+				page_image_count: 2,
+				created_at: expect.any(String),
+				updated_at: expect.any(String),
+				links: {
+					pdf: `/api/documents/${sourceA.id}/pdf`,
+					layout: `/api/documents/${sourceA.id}/layout`,
+					pages: `/api/documents/${sourceA.id}/pages`,
+				},
+			},
+		});
+
 		const counts = await Promise.all([
 			pool.query('SELECT COUNT(*) FROM jobs'),
 			pool.query('SELECT COUNT(*) FROM pipeline_runs'),

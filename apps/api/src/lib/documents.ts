@@ -36,6 +36,7 @@ import type pg from 'pg';
 import type { AuthPrincipal } from '../middleware/auth.js';
 import type {
 	DocumentArtifact,
+	DocumentDetailResponse,
 	DocumentListItem,
 	DocumentListQuery,
 	DocumentListResponse,
@@ -981,6 +982,39 @@ export async function listDocuments(
 ): Promise<DocumentListResponse> {
 	const rootLogger = logger ?? createLogger();
 	return await buildDocumentListResponse(input, rootLogger, options);
+}
+
+export async function getDocumentDetail(
+	id: string,
+	logger?: Logger,
+	options?: RouteAccessOptions,
+): Promise<DocumentDetailResponse> {
+	const rootLogger = logger ?? createLogger();
+	const requestLogger = createRouteLogger(rootLogger, {
+		action: 'detail',
+		source_id: id,
+	});
+	const { config, pool } = resolveContext();
+	const services = createServiceRegistry(config, requestLogger);
+	const startedAt = performance.now();
+	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal);
+	const source = await requireSource(pool, id, maxSensitivityLevel);
+	const [layoutAvailable, pageImageCount] = await Promise.all([
+		services.storage.exists(buildLayoutPath(source.id)),
+		countPageArtifacts(services, source.id),
+	]);
+	const response: DocumentDetailResponse = {
+		data: mapSourceToDocument(source, layoutAvailable, pageImageCount),
+	};
+
+	requestLogger.info(
+		{
+			duration_ms: Math.round(performance.now() - startedAt),
+		},
+		'document detail request completed',
+	);
+
+	return response;
 }
 
 async function loadStoryMarkdown(services: Services, story: Story): Promise<string> {

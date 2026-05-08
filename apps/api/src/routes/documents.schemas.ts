@@ -51,6 +51,10 @@ export const DocumentListResponseSchema = z.object({
 	}),
 });
 
+export const DocumentDetailResponseSchema = z.object({
+	data: DocumentListItemSchema,
+});
+
 export const DocumentPageSchema = z.object({
 	page_number: z.number().int().positive(),
 	image_url: z.string().min(1),
@@ -204,6 +208,7 @@ export const DocumentArtifactSchema = z.object({
 export type DocumentListQuery = z.infer<typeof DocumentListQuerySchema>;
 export type DocumentListResponse = z.infer<typeof DocumentListResponseSchema>;
 export type DocumentListItem = z.infer<typeof DocumentListItemSchema>;
+export type DocumentDetailResponse = z.infer<typeof DocumentDetailResponseSchema>;
 export type DocumentPagesResponse = z.infer<typeof DocumentPagesResponseSchema>;
 export type DocumentPageItem = z.infer<typeof DocumentPageSchema>;
 export type DocumentStoriesResponse = z.infer<typeof DocumentStoriesResponseSchema>;

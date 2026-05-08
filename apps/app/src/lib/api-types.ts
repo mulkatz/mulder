@@ -96,6 +96,10 @@ export interface DocumentListResponse {
 	meta: { count: number; limit: number; offset: number };
 }
 
+export interface DocumentDetailResponse {
+	data: DocumentRecord;
+}
+
 export type SourceStatus = DocumentRecord['status'];
 
 export interface EntityRecord {

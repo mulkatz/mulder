@@ -85,6 +85,7 @@ These endpoints are the first candidates for `apps/app` because they already rep
 | Uploads | `PUT /api/uploads/documents/dev-upload` | Local/dev upload transport. Not a production product primitive. |
 | Uploads | `POST /api/uploads/documents/complete` | Finalizes upload and creates a job. |
 | Documents | `GET /api/documents` | Archive list and Overview corpus counts. |
+| Documents | `GET /api/documents/:id` | Source detail/readiness for reader headers and source-level states. |
 | Documents | `GET /api/documents/:id/pdf` | PDF document stream. |
 | Documents | `GET /api/documents/:id/layout` | Markdown layout text. |
 | Documents | `GET /api/documents/:id/pages` | Page image metadata. |
@@ -117,6 +118,7 @@ This mapping captures the app's hook-per-contract shape.
 | `useJobs` | `GET /api/jobs` | Operations/Analysis Runs table. |
 | `useJob` | `GET /api/jobs/:id` | Selected run inspector. |
 | `useDocuments` | `GET /api/documents` | Sources list, corpus counts, server-backed search/status filters, and pagination. |
+| `useDocument` | `GET /api/documents/:id` | Source reader detail/readiness without depending on processing observability. |
 | `useDocumentLayout` | `GET /api/documents/:id/layout` | Source reader extracted-text preview. |
 | `useDocumentPages` | `GET /api/documents/:id/pages` | Source reader page count and future page metadata. |
 | PDF pane URL | `GET /api/documents/:id/pdf` | Source reader original-document pane. |
@@ -141,22 +143,28 @@ These gaps should be visible in the app capability registry instead of hidden be
 | --- | --- |
 | Analysis run facade | Jobs exist, but app-shaped run summaries, artifacts, step timings, and retry affordances are still partial. |
 | Evidence claims | Summary and contradictions exist, but first-class claim records, review decisions, and assertion history need an app contract. |
-| Provenance and trust gate | M10 provenance, document quality, sensitivity/RBAC, custody, rollback, and source credibility are release gates for real archive ingest. |
+| Source detail | The reader currently uses list rows plus observability. A `GET /api/documents/:id` source-detail route should expose stable readiness, provenance summary, quality, language, sensitivity, and links without requiring processing background data. |
+| Provenance-first ingest | M10 provenance, document quality, sensitivity/RBAC, custody, rollback, and collections exist in the backend. Product Add Sources remains gated until the app captures and displays those concepts as part of the ingest workflow. |
+| Persistent translation | M11 translation storage exists, but the app still needs browser-safe routes for current translations, translation requests, translation status, and translated content before reader translation can run. |
+| Review queues | M11 review workflow repositories exist, but the app needs HTTP contracts for queues, queue artifacts, artifact detail, and review actions before activating Review Queue. |
+| Credibility profiles | M11 source credibility exists, but Source Quality and reader trust panels need source credibility read models. |
+| RBAC management | M11 RBAC filters reads, but member/role/policy management is still only partially represented in app contracts. |
+| M12 discovery | Similarity, classification harmonization, temporal patterns, and external correlations exist, but the app needs read models that link discoveries back to sources, stories, entities, and review artifacts. |
 | Graph aggregate | Entity-local edges exist, but product graph views need an aggregate or batched graph read model. |
 | Activity feed | No cross-system event stream exists yet. |
 | Usage/cost surface | Status exposes budget pieces, but product usage views need a broader read model. |
 | Settings/admin | Auth invitations exist, but workspace policy, roles, config, and product settings are future work. |
 | Production upload UX | Upload contracts exist, but real archive ingest should not be promoted until the trust/provenance gate is resolved or explicitly waived. |
-| Persistent translation | Translation controls exist in the reader, but M11 must define the persisted on-demand translation contract, cache behavior, permissions, and provenance before translations are generated or shown. |
 | Claim/citation anchors | Story entities can be highlighted conservatively, but exact claim spans, citation anchors, and assertion offsets need first-class API fields before the app shows passage-level claim links. |
 
 ## What To Reuse
 
 - API client shape and credential behavior.
+- Blob fetch shape for authenticated binary document streams.
 - React Query defaults and query-key discipline.
 - Hook-per-contract structure.
 - Upload session sequence.
-- Source reader pane pattern: original PDF, extracted story, and secondary processing background from document-scoped contracts.
+- Source reader pane pattern: authenticated original PDF, extracted story, and secondary processing background from document-scoped contracts.
 - Playwright smoke-test idea: verify real routes against a running API, not only static render.
 - API-backed empty/error states as first-class UI states.
 
@@ -168,15 +176,28 @@ These gaps should be visible in the app capability registry instead of hidden be
 - Static sample copy, seeded users, fixed local IDs, or local-only data assumptions.
 - Pipeline-first navigation that makes jobs feel like the main product object for non-technical researchers.
 
-## First API Slice
+## Reader-First App Slice
 
-After the cleanup, the first app API implementation should stay narrow:
+The app should now prove the source-reading happy path before expanding the product surface:
 
-1. Add the API client, local API types, React Query provider, and capability registry to `apps/app`.
-2. Bind existing routes only: `/`, `/sources`, `/sources/:id`, `/runs`, and `/evidence`.
-3. Use real loading/empty/error states.
-4. Keep auth/session behavior honest: `401` means unauthenticated, while network/CORS/5xx states remain unavailable/error UI.
-5. Do not use checked-in fixture data in app screens.
-6. Do not add new product modules until the API foundation is green.
+1. Bring one real local source through the existing pipeline with internal/dev tooling.
+2. Verify `/sources` and `/sources/:id` against that source.
+3. Fetch `/api/documents/:id/pdf` with app credentials as a Blob and render it in the app-controlled reader.
+4. Keep story/entity/evidence annotations conservative and avoid claim/citation anchors until offsets exist.
+5. Upgrade app smoke tests so `MULDER_SMOKE_SOURCE_ID` proves real reader content when configured.
+6. Do not activate Search until search results can land on real source/story reader destinations.
+
+### Local Reader Smoke Path
+
+Use development or internal tooling to create the source; do not add checked-in app fixtures or fixed UUIDs.
+
+Recommended local sequence:
+
+1. Build the CLI/API/app packages.
+2. Run the existing pipeline against a local PDF, for example `mulder pipeline run tests/data/pdf/Frontiers_of_Science_1980_v02-5-6.pdf --up-to graph`, using the local operator config.
+3. Capture the produced source UUID from the pipeline output or `/api/documents`.
+4. Run the app smoke with `MULDER_SMOKE_SOURCE_ID=<source-id>`.
+
+Without `MULDER_SMOKE_SOURCE_ID`, `pnpm smoke:app` should still verify the app shell, `/sources`, `/evidence`, and `/runs` against empty/error states. With the variable set, it must prove real reader content, no iframe-based original pane, and mobile-safe reader behavior.
 
 If Mulder needs a public example later, build it as a separate, explicitly labeled surface that does not point at a private production project and does not shape the production app.

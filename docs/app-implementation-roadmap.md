@@ -77,7 +77,6 @@ Current app strengths:
 Current app limitations:
 
 - many M11/M12 capabilities exist in backend packages but are not mounted as app HTTP read models
-- Source Reader still needs a first-class PDF pane instead of browser iframe behavior
 - translation UI is prepared, but not bound to a real app contract
 - claims/assertions do not yet have source/story offsets for passage-level linking
 - Review Queue is still disabled, even though M11 created the backend review workflow primitives
@@ -268,7 +267,7 @@ Purpose: make source understanding the strongest part of the product.
 
 Work:
 
-- Replace iframe PDF rendering with an app-controlled PDF pane using React-PDF/PDF.js.
+- Maintain the app-controlled PDF pane using React-PDF/PDF.js and authenticated Blob fetching.
 - Preserve split/original/story modes.
 - Hide split mode on small widths.
 - Add page navigation, zoom, fit-to-width, and render error states.

@@ -1,7 +1,9 @@
 export type CapabilityState =
 	| 'mounted-api'
 	| 'mounted-partial'
+	| 'backend-no-http-contract'
 	| 'cli-or-package-only'
+	| 'product-gated'
 	| 'documented-target'
 	| 'future-milestone'
 	| 'missing';
@@ -36,7 +38,15 @@ export type CapabilityId =
 	| 'admin.members'
 	| 'admin.policies'
 	| 'admin.integrations'
-	| 'm10.provenance';
+	| 'm10.provenance'
+	| 'm11.translation'
+	| 'm11.reviewWorkflow'
+	| 'm11.credibility'
+	| 'm11.rbac'
+	| 'm12.similarity'
+	| 'm12.classificationHarmonization'
+	| 'm12.temporalPatterns'
+	| 'm12.externalCorrelations';
 
 export interface Capability {
 	id: CapabilityId;
@@ -78,7 +88,7 @@ export const capabilities = {
 	},
 	'sources.add': {
 		id: 'sources.add',
-		state: 'future-milestone',
+		state: 'product-gated',
 	},
 	'evidence.summary': {
 		id: 'evidence.summary',
@@ -90,7 +100,7 @@ export const capabilities = {
 	},
 	'evidence.claims': {
 		id: 'evidence.claims',
-		state: 'missing',
+		state: 'backend-no-http-contract',
 	},
 	'evidence.reliability': {
 		id: 'evidence.reliability',
@@ -130,7 +140,7 @@ export const capabilities = {
 	},
 	'activity.feed': {
 		id: 'activity.feed',
-		state: 'missing',
+		state: 'backend-no-http-contract',
 	},
 	'operations.recovery': {
 		id: 'operations.recovery',
@@ -162,7 +172,39 @@ export const capabilities = {
 	},
 	'm10.provenance': {
 		id: 'm10.provenance',
-		state: 'future-milestone',
+		state: 'product-gated',
+	},
+	'm11.translation': {
+		id: 'm11.translation',
+		state: 'backend-no-http-contract',
+	},
+	'm11.reviewWorkflow': {
+		id: 'm11.reviewWorkflow',
+		state: 'backend-no-http-contract',
+	},
+	'm11.credibility': {
+		id: 'm11.credibility',
+		state: 'backend-no-http-contract',
+	},
+	'm11.rbac': {
+		id: 'm11.rbac',
+		state: 'mounted-partial',
+	},
+	'm12.similarity': {
+		id: 'm12.similarity',
+		state: 'backend-no-http-contract',
+	},
+	'm12.classificationHarmonization': {
+		id: 'm12.classificationHarmonization',
+		state: 'backend-no-http-contract',
+	},
+	'm12.temporalPatterns': {
+		id: 'm12.temporalPatterns',
+		state: 'backend-no-http-contract',
+	},
+	'm12.externalCorrelations': {
+		id: 'm12.externalCorrelations',
+		state: 'backend-no-http-contract',
 	},
 } satisfies Record<CapabilityId, Capability>;
 
