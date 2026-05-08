@@ -516,6 +516,218 @@ export interface SourceCredibilityListResponse {
 	meta: { count: number; limit: number; offset: number };
 }
 
+export type CollectionType = 'archive_mirror' | 'thematic' | 'import_batch' | 'curated' | 'other';
+export type CollectionVisibility = 'private' | 'team' | 'public';
+
+export interface CollectionRecord {
+	collection_id: string;
+	name: string;
+	description: string;
+	type: CollectionType;
+	archive_id: string | null;
+	created_by: string;
+	visibility: CollectionVisibility;
+	tags: string[];
+	defaults: {
+		sensitivity_level: SensitivityLevel;
+		default_language: string;
+		credibility_profile_id: string | null;
+	};
+	created_at: string;
+	updated_at: string;
+	document_count: number;
+	total_size_bytes: number;
+	languages: string[];
+	date_range: { earliest: string | null; latest: string | null };
+}
+
+export interface CollectionListResponse {
+	data: CollectionRecord[];
+	meta: { count: number; limit: number; offset: number };
+}
+
+export interface CollectionDetailResponse {
+	data: CollectionRecord;
+}
+
+export interface CreateCollectionRequest {
+	name: string;
+	description?: string;
+	type?: CollectionType;
+	visibility?: CollectionVisibility;
+	tags?: string[];
+	defaults?: {
+		sensitivity_level?: SensitivityLevel;
+		default_language?: string;
+		credibility_profile_id?: string | null;
+	};
+}
+
+export interface PatchCollectionRequest {
+	name?: string;
+	description?: string;
+	visibility?: CollectionVisibility;
+	tags?: string[];
+	defaults?: {
+		sensitivity_level?: SensitivityLevel;
+		default_language?: string;
+		credibility_profile_id?: string | null;
+	};
+}
+
+export type TaxonomyStatus = 'auto' | 'confirmed' | 'rejected';
+
+export interface TaxonomyEntryRecord {
+	id: string;
+	canonical_name: string;
+	entity_type: string;
+	category: string | null;
+	status: TaxonomyStatus;
+	aliases: string[];
+	created_at: string;
+	updated_at: string;
+}
+
+export interface TaxonomyListResponse {
+	data: TaxonomyEntryRecord[];
+	meta: { count: number; limit: number; offset: number };
+}
+
+export type DiscoveryReviewStatus = 'pending' | 'approved' | 'auto_approved' | 'corrected' | 'contested' | 'rejected';
+export type TaxonomyMappingType = 'equivalent' | 'broader' | 'narrower' | 'overlapping' | 'related';
+
+export interface SimilarEntityRecord {
+	entity_id: string;
+	entity_title: string;
+	overall_rank: number;
+	core: Record<string, { status: 'scored' | 'insufficient_data'; score: number | null; reason: string | null }>;
+	domain: {
+		id: string;
+		label: string;
+		source: 'taxonomy_mapping' | 'attribute_comparison' | 'custom_scorer';
+		config_ref: string;
+		score: number | null;
+		status: 'scored' | 'insufficient_data';
+		reason: string | null;
+		metadata: Record<string, unknown>;
+	}[];
+	explanation: string;
+	shared_entity_ids: string[];
+	key_differences: string[];
+	provenance: Record<string, unknown>;
+	sensitivity_level: SensitivityLevel;
+	sensitivity_metadata: Record<string, unknown>;
+	review_status: DiscoveryReviewStatus;
+	auto_discovered: boolean;
+}
+
+export interface TaxonomyMappingRecord {
+	id: string;
+	source_taxonomy_id: string;
+	source_category_id: string;
+	target_taxonomy_id: string;
+	target_category_id: string;
+	mapping_type: TaxonomyMappingType;
+	confidence: number;
+	conditions: string | null;
+	rationale: string;
+	mapping_author: 'llm_auto' | 'human' | 'hybrid';
+	review_status: 'draft' | 'reviewed' | 'contested';
+	provenance: Record<string, unknown>;
+	sensitivity_level: SensitivityLevel;
+	sensitivity_metadata: Record<string, unknown>;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface DiscoverySignalRecord {
+	id: string;
+	time_start: string;
+	time_end: string;
+	signal_strength: 'weak';
+	caveats: string[];
+	review_status: 'pending' | 'approved' | 'rejected' | 'contested';
+	provenance: Record<string, unknown>;
+	sensitivity_level: SensitivityLevel;
+	sensitivity_metadata: Record<string, unknown>;
+	computed_at: string;
+}
+
+export interface TemporalPatternRecord extends DiscoverySignalRecord {
+	region_key: string;
+	entity_count: number;
+}
+
+export interface TemporalAnomalyRecord extends TemporalPatternRecord {
+	region_geojson: Record<string, unknown> | null;
+	anomaly_type: 'frequency_spike' | 'frequency_changepoint';
+	baseline_rate: number;
+	observed_rate: number;
+	raw_significance: number;
+	comparison_count: number;
+	corrected_significance: number;
+	significance_threshold: number;
+	peak_date: string;
+	dominant_category_ref: { taxonomy_id: string | null; category_id: string } | null;
+	contributing_entity_ids: string[];
+	known_pattern_match: string | null;
+	bias_warning: string | null;
+}
+
+export interface SpatiotemporalHotspotRecord extends TemporalPatternRecord {
+	hotspot_type: 'density_cluster';
+	centroid_lat: number;
+	centroid_lng: number;
+	radius_km: number;
+	density: number;
+	persistence: 'transient' | 'recurring' | 'permanent';
+	recurrence_pattern: string | null;
+	related_cluster_ids: string[];
+	contributing_entity_ids: string[];
+	dominant_category_ref: { taxonomy_id: string | null; category_id: string } | null;
+	bias_warning: string | null;
+}
+
+export interface ExternalCorrelationRecord extends DiscoverySignalRecord {
+	internal_series_key: string;
+	external_source_id: string;
+	external_series_id: string;
+	method: 'spearman' | 'cross_correlation';
+	coefficient: number;
+	p_value: number;
+	lag_days: number;
+	data_point_count: number;
+	contributing_entity_ids: string[];
+	interpretation_caveat: string;
+}
+
+export interface SimilarEntityListResponse {
+	data: SimilarEntityRecord[];
+	meta: { count: number; limit: number; offset: number };
+	caveats: string[];
+}
+
+export interface ClassificationMappingListResponse {
+	data: TaxonomyMappingRecord[];
+	meta: { count: number; limit: number; offset: number };
+	caveats: string[];
+}
+
+export interface TemporalPatternListResponse {
+	data: {
+		anomalies: TemporalAnomalyRecord[];
+		hotspots: SpatiotemporalHotspotRecord[];
+	};
+	meta: { count: number; limit: number; offset: number };
+	caveats: string[];
+}
+
+export interface ExternalCorrelationListResponse {
+	data: ExternalCorrelationRecord[];
+	meta: { count: number; limit: number; offset: number };
+	caveats: string[];
+}
+
 export interface EvidenceSummaryResponse {
 	data: {
 		entities: {

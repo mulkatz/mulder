@@ -109,6 +109,16 @@ These endpoints are the first candidates for `apps/app` because they already rep
 | Review | `GET /api/review/artifacts/:artifactId` | Review artifact detail. |
 | Review | `GET /api/review/artifacts/:artifactId/events` | Review event history. |
 | Review | `POST /api/review/artifacts/:artifactId/actions` | Immutable review action/event recording. |
+| Collections | `GET /api/collections` | Collection list and corpus organization summaries. |
+| Collections | `POST /api/collections` | Non-archive collection creation; archive linkage remains internal/CLI-only. |
+| Collections | `GET /api/collections/:collectionId` | Collection detail and summary. |
+| Collections | `PATCH /api/collections/:collectionId` | Mutable collection metadata only: name, description, visibility, tags, defaults. |
+| Taxonomy | `GET /api/taxonomy` | Taxonomy list/filter for future Knowledge Base surfaces. |
+| Taxonomy | `GET /api/taxonomy/export` | YAML taxonomy export; browser bootstrap/merge is not active. |
+| Discovery | `GET /api/discovery/similar-entities` | Caveated similar-entity research leads. |
+| Discovery | `GET /api/discovery/temporal-patterns` | Caveated temporal anomaly and hotspot research leads. |
+| Discovery | `GET /api/discovery/classification-mappings` | Caveated classification/taxonomy mapping leads. |
+| Discovery | `GET /api/discovery/external-correlations` | Caveated external-correlation leads. |
 | Search | `POST /api/search` | Hybrid retrieval, citations, and trace data. |
 | Entities | `GET /api/entities` | Entity list with filters. |
 | Entities | `GET /api/entities/:id` | Entity detail, aliases, related stories. |
@@ -153,6 +163,16 @@ This mapping captures the app's hook-per-contract shape.
 | `useReviewArtifact` | `GET /api/review/artifacts/:artifactId` | Review inspector. |
 | `useReviewArtifactEvents` | `GET /api/review/artifacts/:artifactId/events` | Review history panel. |
 | `useRecordReviewAction` | `POST /api/review/artifacts/:artifactId/actions` | Future review action submission. |
+| `useCollections` | `GET /api/collections` | Future collection/archive organization surfaces. |
+| `useCollection` | `GET /api/collections/:collectionId` | Collection inspector/detail. |
+| `useCreateCollection` | `POST /api/collections` | Future collection creation; not Add Sources upload. |
+| `usePatchCollection` | `PATCH /api/collections/:collectionId` | Future collection metadata editing. |
+| `useTaxonomyEntries` | `GET /api/taxonomy` | Future Taxonomy route. |
+| `useTaxonomyExport` | `GET /api/taxonomy/export` | Future taxonomy export/download flow. |
+| `useSimilarEntityLeads` | `GET /api/discovery/similar-entities` | Future Discovery/Entity context panels. |
+| `useClassificationMappingLeads` | `GET /api/discovery/classification-mappings` | Future harmonization review surfaces. |
+| `useTemporalPatternLeads` | `GET /api/discovery/temporal-patterns` | Future discovery leads and timeline panels. |
+| `useExternalCorrelationLeads` | `GET /api/discovery/external-correlations` | Future external correlation panels. |
 | `useEntities` | `GET /api/entities` | Entities list. |
 | `useEntity` | `GET /api/entities/:id` | Entity inspector/profile. |
 | `useEntityEdges` | `GET /api/entities/:id/edges` | Entity-local graph context. |
@@ -178,7 +198,7 @@ These gaps should be visible in the app capability registry instead of hidden be
 | Review queues | Review HTTP contracts now exist, but Review Queue still needs content-first UX, localized states, and permission-aware empty/error handling before activation. |
 | Credibility profiles | Source credibility read models now exist, but Source Quality and reader trust panels still need UI design and smoke coverage. |
 | RBAC management | M11 RBAC filters reads, but member/role/policy management is still only partially represented in app contracts. |
-| M12 discovery | Similarity, classification harmonization, temporal patterns, and external correlations exist, but the app needs read models that link discoveries back to sources, stories, entities, and review artifacts. |
+| M12 discovery | Similarity, classification harmonization, temporal patterns, and external correlations now have caveated HTTP read models, but the app still needs UX that links discoveries back to sources, stories, entities, and review artifacts before route activation. |
 | Graph aggregate | Entity-local edges exist, but product graph views need an aggregate or batched graph read model. |
 | Activity feed | No cross-system event stream exists yet. |
 | Usage/cost surface | Status exposes budget pieces, but product usage views need a broader read model. |

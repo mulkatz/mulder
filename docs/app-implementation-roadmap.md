@@ -76,7 +76,7 @@ Current app strengths:
 
 Current app limitations:
 
-- many M12 capabilities still exist only in backend packages without app HTTP read models
+- M12 capabilities now have initial HTTP read models, but no content-first app surfaces yet
 - translation UI is prepared, and source-level HTTP contracts now exist; visible request UX still waits for smoke-tested polling/content switching
 - claims/assertions now have list/detail/source/story HTTP routes, but do not yet have source/story offsets for passage-level linking
 - Review Queue is still disabled, even though M11 review HTTP routes now exist, because the UX must present human decisions rather than raw artifact rows
@@ -194,29 +194,30 @@ Existing mounted contracts the app can continue to use:
 - evidence summary, contradictions, reliability sources, chains, clusters
 - uploads initiate/dev-upload/complete
 
-Contracts needed to productize M11:
+M11 contract status:
+
+| Product need | Contract status |
+| --- | --- |
+| Review Queue | Mounted: list queues, list queue artifacts, artifact detail, event history, record review action |
+| Credibility profiles | Mounted: source credibility detail, source credibility review status, dimensions, evidence refs |
+| Conflict nodes | Still needed: conflict list/detail, assertions, resolutions, review status, source/story links |
+| Translation | Mounted: list current translations, request translation, translation status, translated markdown/text retrieval |
+| RBAC | Partial: reads are filtered and auth/invites exist; role/member/policy management is still needed |
+| Source quality | Mounted: document quality, provenance/source detail, sensitivity summary, collection summary, credibility summary |
+
+Mounted contracts available for M12:
 
 | Product need | Required app contract |
 | --- | --- |
-| Review Queue | list queues, list queue artifacts, artifact detail, record review event/action |
-| Credibility profiles | source credibility detail, source credibility review status, dimensions, evidence refs |
-| Conflict nodes | conflict list/detail, assertions, resolutions, review status, source/story links |
-| Translation | list current translations, request translation, translation status, translated markdown/text retrieval |
-| RBAC | current user permissions, role list, members list, invite/member role management |
-| Source quality | provenance/custody/quality/sensitivity summary per source and collection |
+| Similar entities/cases | list similar links, explanation, dimension scores, caveats |
+| Classification harmonization | taxonomy mappings list, review status, mapped categories, caveats |
+| Temporal patterns | anomaly/hotspot lists, windows, source/entity ids, caveats |
+| External correlations | correlation list, external series ids, lag/correlation/caveat display |
 
-Contracts needed to productize M12:
-
-| Product need | Required app contract |
-| --- | --- |
-| Similar entities/cases | list similar links, detail explanation, dimension scores, review artifact link |
-| Classification harmonization | taxonomy mappings list/detail, review status, mapped categories |
-| Temporal patterns | pattern list/detail, windows, hotspots, source/entity links, caveats |
-| External correlations | correlation list/detail, external series metadata, lag/correlation/caveat display |
+These contracts are enough for future app hooks and early read-only surfaces. They are not yet enough to present discovery as polished research work without careful UX links back to source, story, entity, and review destinations.
 
 Cross-cutting contracts still needed:
 
-- first-class claim/assertion list and detail
 - claim/assertion offsets into story/source text
 - aggregate graph read model or batched graph endpoint
 - activity feed

@@ -132,7 +132,7 @@ export const capabilities = {
 	},
 	'taxonomy.manage': {
 		id: 'taxonomy.manage',
-		state: 'cli-or-package-only',
+		state: 'mounted-partial',
 	},
 	'stories.list': {
 		id: 'stories.list',
@@ -192,19 +192,19 @@ export const capabilities = {
 	},
 	'm12.similarity': {
 		id: 'm12.similarity',
-		state: 'backend-no-http-contract',
+		state: 'mounted-api',
 	},
 	'm12.classificationHarmonization': {
 		id: 'm12.classificationHarmonization',
-		state: 'backend-no-http-contract',
+		state: 'mounted-api',
 	},
 	'm12.temporalPatterns': {
 		id: 'm12.temporalPatterns',
-		state: 'backend-no-http-contract',
+		state: 'mounted-api',
 	},
 	'm12.externalCorrelations': {
 		id: 'm12.externalCorrelations',
-		state: 'backend-no-http-contract',
+		state: 'mounted-api',
 	},
 } satisfies Record<CapabilityId, Capability>;
 

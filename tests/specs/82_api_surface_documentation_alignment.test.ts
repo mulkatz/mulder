@@ -74,6 +74,14 @@ describe('Spec 82: API surface documentation alignment', () => {
 		expect(contract.paths).toHaveProperty('/api/claims/{claimId}');
 		expect(contract.paths).toHaveProperty('/api/stories/{storyId}/claims');
 		expect(contract.paths).toHaveProperty('/api/source-credibility');
+		expect(contract.paths).toHaveProperty('/api/collections');
+		expect(contract.paths).toHaveProperty('/api/collections/{collectionId}');
+		expect(contract.paths).toHaveProperty('/api/taxonomy');
+		expect(contract.paths).toHaveProperty('/api/taxonomy/export');
+		expect(contract.paths).toHaveProperty('/api/discovery/similar-entities');
+		expect(contract.paths).toHaveProperty('/api/discovery/temporal-patterns');
+		expect(contract.paths).toHaveProperty('/api/discovery/classification-mappings');
+		expect(contract.paths).toHaveProperty('/api/discovery/external-correlations');
 		expect(contract.paths).toHaveProperty('/api/search');
 		expect(contract.paths).not.toHaveProperty('/doc');
 		expect(contract.paths).not.toHaveProperty('/reference');

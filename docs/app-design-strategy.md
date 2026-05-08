@@ -139,15 +139,15 @@ Recommended sidebar grouping:
 | Group | Area | Purpose | Contract state |
 | --- | --- | --- | --- |
 | Workspace | Research Desk | Review needs, source health, new findings, open questions, and next research steps | Mounted partial: `/api/status`, jobs, evidence read models |
-| Workspace | Review Queue | Human review assignments for claims, contradictions, and source issues | Documented target; needs claim/review facade |
+| Workspace | Review Queue | Human review assignments for claims, contradictions, and source issues | Mounted API; needs content-first app route |
 | Workspace | Watchlist | Saved research areas, watched claims, sources, entities, or queries | Documented target |
 | Workspace | Research Agent | Assisted research workflows and autonomous follow-up | Future milestone: M14 |
 | Search | Search | Hybrid retrieval across sources, claims, citations, entities, and stories | Mounted API; trace depth is partial |
 | Sources | All Sources | Source archive list, source readiness, and entry point into the source reader | Mounted API; active route `/sources` |
 | Sources | Add Sources | Upload and ingest entry point | Upload routes exist; product use gated by M10 provenance/trust |
 | Sources | Archive | Future archive organization beyond the active all-sources list and reader | Documented target |
-| Sources | Source Quality | Provenance, custody, quality, sensitivity/RBAC, rollback, credibility | Future milestone: M10/M11 |
-| Findings | Claims & Evidence | Active review workflow for claims, contradictions, confidence, citations, and source support | Mounted partial; first-class claims and review actions need a facade |
+| Sources | Source Quality | Provenance, custody, quality, sensitivity/RBAC, rollback, credibility | Mounted partial; needs reader/source-quality UI |
+| Findings | Claims & Evidence | Active review workflow for claims, contradictions, confidence, citations, and source support | Mounted partial; claim/review routes exist, offsets still missing |
 | Findings | Contradictions | Contradiction-focused review | Mounted API, future dedicated route |
 | Findings | Source Reliability | Source reliability review | Mounted API, future dedicated route |
 | Findings | Evidence Chains | Thesis/evidence-chain review | Mounted API, future dedicated route |
@@ -155,8 +155,8 @@ Recommended sidebar grouping:
 | Knowledge Base | Entities | Entity search, profiles, aliases, merges | Mounted API |
 | Knowledge Base | Relationships | Relationship list and relationship review | Mounted partial |
 | Knowledge Base | Knowledge Map | Graph-backed exploration | Mounted partial; aggregate graph endpoint or batch edge query needed |
-| Knowledge Base | Claim Registry | Structured list of claim records as knowledge objects | Missing app facade |
-| Knowledge Base | Taxonomy | Taxonomy list, bootstrap, export, and rebootstrap if browser-managed | CLI/package-only |
+| Knowledge Base | Claim Registry | Structured list of claim records as knowledge objects | Mounted API; needs Knowledge Base UI |
+| Knowledge Base | Taxonomy | Taxonomy list, export, and future browser curation if needed | Mounted partial; bootstrap/merge remain CLI/operator-only |
 | Knowledge Base | Stories | Extracted narratives and story-level reading | Mounted partial; global story endpoint decision needed |
 | Operations | Processing | Background processing, job history, artifacts, failures, retries | Jobs mounted; app-shaped run facade needed |
 | Operations | Activity | Cross-system event stream | Missing aggregate |

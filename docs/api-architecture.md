@@ -70,9 +70,11 @@ Long-running operations. API writes to `jobs` table, returns `202 Accepted` + jo
 ```
 POST   /api/pipeline/run              # Enqueue pipeline run → 202 { job_id }
 POST   /api/pipeline/retry            # Retry failed sources → 202 { job_id }
-POST   /api/taxonomy/bootstrap        # Enqueue taxonomy bootstrap → 202 { job_id }
-POST   /api/taxonomy/re-bootstrap     # Enqueue taxonomy re-bootstrap → 202 { job_id }
 ```
+
+Taxonomy bootstrap/re-bootstrap are intentionally not mounted yet. They need a
+dedicated worker job type and browser curation workflow before becoming product
+HTTP routes.
 
 ### Sync Routes (Direct Response)
 
@@ -86,14 +88,11 @@ GET    /api/jobs/:id                  # Job status + progress + errors
 # Search
 POST   /api/search                    # Hybrid retrieval (vector + BM25 + graph + RRF + rerank)
 
-# Sources
-GET    /api/sources                   # List sources (filterable, paginated)
-GET    /api/sources/:id               # Source detail + step status
-DELETE /api/sources/:id               # Soft-delete source + cascade
-
-# Stories
-GET    /api/stories                   # List stories (filterable by source, status)
-GET    /api/stories/:id               # Story detail + entity links
+# Documents / Sources
+GET    /api/documents                 # List sources (filterable, paginated)
+GET    /api/documents/:id             # Reader-safe source detail
+GET    /api/documents/:id/stories     # Document-scoped stories
+GET    /api/documents/:id/observability # Processing background for a source
 
 # Entities
 GET    /api/entities                  # List/search entities (filterable by type, taxonomy)
@@ -106,6 +105,18 @@ GET    /api/entities/:id/edges        # Entity relationships
 # Taxonomy
 GET    /api/taxonomy                  # List taxonomy entries
 GET    /api/taxonomy/export           # Export taxonomy as YAML
+
+# Collections
+GET    /api/collections               # List collections
+POST   /api/collections               # Create non-archive collection
+GET    /api/collections/:id           # Collection detail
+PATCH  /api/collections/:id           # Patch mutable collection metadata
+
+# Discovery
+GET    /api/discovery/similar-entities
+GET    /api/discovery/temporal-patterns
+GET    /api/discovery/classification-mappings
+GET    /api/discovery/external-correlations
 
 # Documents (for Document Viewer — H10/H11)
 GET    /api/documents/:id/pdf         # Stream original PDF from GCS
@@ -299,17 +310,19 @@ apps/api/
     │   ├── common.ts            # Pagination, error envelope, job response
     │   ├── search.ts            # SearchRequest, SearchResponse
     │   ├── pipeline.ts          # PipelineRunRequest, JobStatusResponse
-    │   ├── sources.ts           # SourceListParams, SourceDetail
     │   ├── entities.ts          # EntityListParams, EntityDetail
-    │   └── documents.ts         # Document retrieval schemas
+    │   ├── documents.ts         # Document retrieval schemas
+    │   ├── collections.ts       # Collection read/mutation schemas
+    │   ├── taxonomy.ts          # Taxonomy list/export schemas
+    │   └── discovery.ts         # M12 discovery read schemas
     ├── routes/
     │   ├── pipeline.ts          # POST /api/pipeline/* (async, job-producing)
     │   ├── jobs.ts              # GET /api/jobs/*
     │   ├── search.ts            # POST /api/search
-    │   ├── sources.ts           # GET/DELETE /api/sources/*
-    │   ├── stories.ts           # GET /api/stories/*
     │   ├── entities.ts          # GET /api/entities/*, POST /api/entities/merge
-    │   ├── taxonomy.ts          # GET /api/taxonomy/*, POST (async)
+    │   ├── taxonomy.ts          # GET /api/taxonomy/*
+    │   ├── collections.ts       # GET/POST/PATCH /api/collections*
+    │   ├── discovery.ts         # GET /api/discovery/*
     │   ├── documents.ts         # GET /api/documents/* (PDF, layout, pages)
     │   ├── status.ts            # GET /api/status, /api/health
     │   └── index.ts             # Mount all route groups

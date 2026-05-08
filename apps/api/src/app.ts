@@ -10,6 +10,8 @@ import { createRequestIdMiddleware } from './middleware/request-id.js';
 import { createSecureHeadersMiddleware } from './middleware/secure-headers.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerClaimRoutes } from './routes/claims.js';
+import { registerCollectionRoutes } from './routes/collections.js';
+import { registerDiscoveryRoutes } from './routes/discovery.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEntityRoutes } from './routes/entities.js';
 import { registerEvidenceRoutes } from './routes/evidence.js';
@@ -20,6 +22,7 @@ import { registerReviewRoutes } from './routes/review.js';
 import { registerSearchRoute } from './routes/search.js';
 import { registerSourceInsightRoutes } from './routes/source-insights.js';
 import { registerStatusRoute } from './routes/status.js';
+import { registerTaxonomyRoutes } from './routes/taxonomy.js';
 import { registerTranslationRoutes } from './routes/translations.js';
 import { registerUploadRoutes } from './routes/uploads.js';
 
@@ -86,6 +89,9 @@ export function createApp(options: AppOptions = {}): OpenAPIHono {
 	registerStatusRoute(app);
 	registerTranslationRoutes(app);
 	registerReviewRoutes(app);
+	registerCollectionRoutes(app);
+	registerTaxonomyRoutes(app);
+	registerDiscoveryRoutes(app);
 
 	app.doc('/api/openapi.json', {
 		openapi: '3.0.0',

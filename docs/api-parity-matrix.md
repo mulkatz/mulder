@@ -79,6 +79,16 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 | Review | `GET` | `/api/review/artifacts/:artifactId` | HTTP ready for review artifact detail. |
 | Review | `GET` | `/api/review/artifacts/:artifactId/events` | HTTP ready for review event history. |
 | Review | `POST` | `/api/review/artifacts/:artifactId/actions` | HTTP ready for immutable review action/event recording. |
+| Collections | `GET` | `/api/collections` | HTTP ready for collection lists and summaries. Archive-linked collections remain CLI/internal until an Archives API exists. |
+| Collections | `POST` | `/api/collections` | HTTP ready for non-archive collection creation. `archive_id` and `created_by` are intentionally not browser-mutable. |
+| Collections | `GET` | `/api/collections/:collectionId` | HTTP ready for collection detail/summary. |
+| Collections | `PATCH` | `/api/collections/:collectionId` | HTTP ready for mutable collection metadata only: name, description, visibility, tags, and defaults. |
+| Taxonomy | `GET` | `/api/taxonomy` | HTTP ready for taxonomy list/filter. Browser bootstrap/merge/re-bootstrap remain CLI/operator-only for now. |
+| Taxonomy | `GET` | `/api/taxonomy/export` | HTTP ready for YAML export. |
+| Discovery | `GET` | `/api/discovery/similar-entities` | HTTP ready for caveated similar-entity research leads. |
+| Discovery | `GET` | `/api/discovery/temporal-patterns` | HTTP ready for caveated anomaly and hotspot research leads. |
+| Discovery | `GET` | `/api/discovery/classification-mappings` | HTTP ready for caveated taxonomy/classification mapping leads. |
+| Discovery | `GET` | `/api/discovery/external-correlations` | HTTP ready for caveated external-correlation research leads. |
 | Search | `POST` | `/api/search` | HTTP ready. App route still pending product UI activation. |
 | Entities | `GET` | `/api/entities` | HTTP ready for entity list/search. |
 | Entities | `GET` | `/api/entities/:id` | HTTP ready for entity detail. |
@@ -112,7 +122,7 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 | Layout/pages | Extract/page image data exists. | Layout/pages/page image routes are mounted. | Reader uses layout as supporting original text. | Good enough for now. |
 | Stories | Story repository exists. | `GET /api/documents/:id/stories` is mounted. | Reader story pane active. | Global story list/detail routes are missing. |
 | Processing background | Pipeline/job/source observability exists. | `GET /api/documents/:id/observability` is mounted. | Secondary reader panel active. | Keep secondary; do not let it become the product center. |
-| Collections/archive | `collection` CLI and repository exist. | No collection HTTP routes. | Archive disabled. | Need collection CRUD/list/read model before app activation. |
+| Collections/archive | `collection` CLI and repository exist. | Collection list/create/detail/patch routes are mounted. | Archive disabled; collection hooks prepared. | Need Archives API before archive-linked collections become a product workflow. |
 | Source rollback/restore/purge | `source rollback/restore/purge` CLI and repository exist. | No source recovery HTTP routes beyond pipeline retry. | Recovery disabled/partial. | Need admin-safe recovery contracts with permissions and audit. |
 | URL lifecycle/refetch | `url status/refetch` CLI and repository exist. | No URL lifecycle routes. | Not active. | Needed before URL source management becomes product UI. |
 
@@ -144,7 +154,7 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 | Relationships | Edge repository and graph step exist. | Entity-local edges route exists. | Partial. | Need aggregate/batched graph read model for Knowledge Map. |
 | Knowledge Map | Graph step and repositories exist. | No graph aggregate route. | Disabled. | Need scoped graph query/read model with pagination/limits. |
 | Claim Registry | Knowledge assertions exist. | Claim list/detail/source/story routes are mounted. | Disabled until Knowledge Base UI slice. | Need registry UI and offsets/citation anchors later. |
-| Taxonomy | `taxonomy bootstrap/re-bootstrap/show/export/curate/merge` CLI and taxonomy repository exist. | No taxonomy routes are mounted. | Disabled. | Need taxonomy list/export/curation routes if productized. |
+| Taxonomy | `taxonomy bootstrap/re-bootstrap/show/export/curate/merge` CLI and taxonomy repository exist. | Taxonomy list and YAML export routes are mounted. | Disabled until Knowledge Base UI slice. | Bootstrap/merge/re-bootstrap remain CLI/operator-only until browser curation is designed. |
 | Stories | Story repository exists. | Document-scoped stories exist only. | Partial through reader. | Need global story list/detail routes for registry-style UI. |
 
 ### Translation And Multilingual Work
@@ -168,10 +178,10 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 
 | Capability | CLI/core status | HTTP status | App status | Gap |
 | --- | --- | --- | --- | --- |
-| Similar entities/cases | M12 similarity repository and analyzer exist. | No discovery HTTP route. | Disabled. | Need read model linking similarities to entities, sources, stories, review status. |
-| Classification harmonization | M12 harmonization repository exists. | No HTTP route. | Disabled. | Need taxonomy/mapping routes and caveat/status model. |
-| Temporal patterns | M12 temporal-pattern repository exists. | No M12 temporal pattern route. | Disabled. | Need read model and caveats; current evidence clusters are older/adjacent, not full M12 UI. |
-| External correlations | M12 external correlations exist. | No HTTP route. | Disabled. | Need plugin metadata alignment and correlation read model. |
+| Similar entities/cases | M12 similarity repository and analyzer exist. | `GET /api/discovery/similar-entities` is mounted. | Disabled until Discovery UI slice. | Need UX that links leads back to entities, sources, stories, and review state. |
+| Classification harmonization | M12 harmonization repository exists. | `GET /api/discovery/classification-mappings` is mounted. | Disabled until Discovery/Taxonomy UI slice. | Need UX that makes mappings reviewable and non-authoritative. |
+| Temporal patterns | M12 temporal-pattern repository exists. | `GET /api/discovery/temporal-patterns` is mounted. | Disabled until Discovery UI slice. | Need source/entity/story landing links and caveats in the UI. |
+| External correlations | M12 external correlations exist. | `GET /api/discovery/external-correlations` is mounted. | Disabled until Discovery UI slice. | Need external-series context and clear correlation caveats. |
 
 ### Operations, Recovery, Usage, Admin
 
@@ -261,31 +271,27 @@ The search HTTP route exists. Product work should focus on UI and result links:
 - Keep retrieval traces behind disclosure.
 - Keep result content untranslated unless translation routes are used.
 
-### P2: Collections and taxonomy
+### P2: Collections, taxonomy, and discovery
 
-Recommended routes if productized:
+The first read contracts are now mounted:
 
 - `GET /api/collections`
 - `POST /api/collections`
-- `GET /api/collections/:id`
-- `PATCH /api/collections/:id`
+- `GET /api/collections/:collectionId`
+- `PATCH /api/collections/:collectionId`
 - `GET /api/taxonomy`
 - `GET /api/taxonomy/export`
-- `POST /api/taxonomy/bootstrap`
-- `POST /api/taxonomy/re-bootstrap`
-
-Taxonomy bootstrap and re-bootstrap should be async job routes.
-
-### P2: Discovery read models
-
-Recommended routes:
-
 - `GET /api/discovery/similar-entities`
 - `GET /api/discovery/temporal-patterns`
 - `GET /api/discovery/classification-mappings`
 - `GET /api/discovery/external-correlations`
 
-Discovery UI must frame outputs as research leads, not proof.
+The app should still wait for product UI slices before activating broad
+Knowledge Base and Discovery screens. Discovery UI must frame outputs as
+research leads, not proof.
+
+Taxonomy bootstrap and re-bootstrap remain CLI/operator-only until a dedicated
+worker job type and browser curation workflow exist.
 
 ### P3: Operations and admin
 
