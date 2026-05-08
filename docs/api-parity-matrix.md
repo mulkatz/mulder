@@ -57,7 +57,7 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 | Uploads | `PUT` | `/api/uploads/documents/dev-upload` | Dev/local transport, not a production product primitive. |
 | Uploads | `POST` | `/api/uploads/documents/complete` | HTTP partial. Completes upload and enqueues work; provenance-first workflow still missing. |
 | Documents | `GET` | `/api/documents` | HTTP ready for All Sources list. |
-| Documents | `GET` | `/api/documents/:id` | HTTP partial. Basic source detail exists; provenance, quality, language, sensitivity, and collection summary need expansion. |
+| Documents | `GET` | `/api/documents/:id` | HTTP ready for reader-safe source detail: provenance, original-source language, quality, sensitivity, collection, credibility, and reader links are present when available. |
 | Documents | `GET` | `/api/documents/:id/pdf` | HTTP ready for authenticated original-document reader. |
 | Documents | `GET` | `/api/documents/:id/layout` | HTTP ready for extracted layout text. |
 | Documents | `GET` | `/api/documents/:id/pages` | HTTP ready for page metadata/images. |
@@ -90,9 +90,9 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 
 | Capability | CLI/core status | HTTP status | App status | Gap |
 | --- | --- | --- | --- | --- |
-| Source ingestion | `ingest` and `pipeline run` exist. Core source/blob/provenance repositories exist. | Upload and pipeline routes exist, but product ingest is partial. | Add Sources disabled. | Need provenance-first Add Sources UX and source-detail contract expansion. |
+| Source ingestion | `ingest` and `pipeline run` exist. Core source/blob/provenance repositories exist. | Upload and pipeline routes exist, but product ingest is partial. | Add Sources disabled. | Need provenance-first Add Sources UX before activating upload for normal users. |
 | Source list | Source/document repositories exist. | `GET /api/documents` is mounted. | `/sources` active. | Good enough for read-only list. |
-| Source detail | Core has source, document quality, provenance, collection, sensitivity data. | `GET /api/documents/:id` exists but is basic. | Reader uses it for basic header/readiness. | Expand with provenance summary, quality, language, sensitivity, collection, authenticity, custody. |
+| Source detail | Core has source, document quality, provenance, collection, sensitivity data. | `GET /api/documents/:id` is expanded for the reader. | Reader can use it defensively for header, provenance, quality, language, sensitivity, collection, and credibility context. | Custody-chain detail still belongs in a later provenance inspector. |
 | Original document | Blob storage and document routes exist. | `GET /api/documents/:id/pdf` is mounted. | Reader uses app-controlled PDF pane. | Good for v1 reader. Later add thumbnails/search/rotation only if needed. |
 | Layout/pages | Extract/page image data exists. | Layout/pages/page image routes are mounted. | Reader uses layout as supporting original text. | Good enough for now. |
 | Stories | Story repository exists. | `GET /api/documents/:id/stories` is mounted. | Reader story pane active. | Global story list/detail routes are missing. |
@@ -195,8 +195,8 @@ the highest product gaps in app order.
 
 ### P0: Keep the existing reader path solid
 
-- Expand `GET /api/documents/:id` with provenance summary, quality, language,
-  sensitivity, collection, authenticity, custody, and reader-safe source links.
+- Keep expanded `GET /api/documents/:id` stable for provenance summary, quality,
+  language, sensitivity, collection, credibility, and reader-safe source links.
 - Keep `/api/documents/:id/pdf`, layout, pages, stories, and observability stable.
 - Do not add claim/citation anchors until offsets exist.
 
@@ -205,12 +205,12 @@ the highest product gaps in app order.
 Recommended minimal routes:
 
 - `GET /api/documents/:id/translations`
-- `GET /api/documents/:id/stories/:storyId/translations`
-- `POST /api/documents/:id/stories/:storyId/translations`
+- `POST /api/documents/:id/translations`
 - `GET /api/translations/:translationId`
 
-The app can then replace the reader translation stub with real cached
-translation status and content.
+The app translation control is intentionally disabled until these source-level
+routes exist. Story-level translation can come later if persistence and offsets
+need it.
 
 ### P1: Review and credibility contracts
 

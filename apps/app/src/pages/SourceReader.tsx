@@ -27,7 +27,6 @@ import { PageHeader } from '@/components/PageHeader';
 import { StateNotice } from '@/components/StateNotice';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Toolbar } from '@/components/Toolbar';
-import { requestStoryTranslation } from '@/features/documents/translation';
 import { useDocument } from '@/features/documents/useDocument';
 import { useDocumentLayout } from '@/features/documents/useDocumentLayout';
 import { useDocumentObservability } from '@/features/documents/useDocumentObservability';
@@ -557,16 +556,12 @@ function StoryRail({
 }
 
 function TranslationControls({
-	onRequestTranslation,
 	originalLanguage,
 	targetLanguage,
-	translationRequested,
 	setTargetLanguage,
 }: {
-	onRequestTranslation: () => void;
 	originalLanguage?: string | null;
 	targetLanguage: AppLocale;
-	translationRequested: boolean;
 	setTargetLanguage: (language: AppLocale) => void;
 }) {
 	const { t, i18n } = useTranslation();
@@ -593,16 +588,15 @@ function TranslationControls({
 					</select>
 				</label>
 				<button
-					className="inline-flex h-8 items-center rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
-					onClick={onRequestTranslation}
+					className="inline-flex h-8 cursor-not-allowed items-center rounded-md border border-border bg-panel px-3 text-sm text-text-muted opacity-70"
+					disabled
+					title={t('reader.translationDisabledTooltip')}
 					type="button"
 				>
 					{t('reader.translate')}
 				</button>
 			</div>
-			<p className="mt-2 text-xs text-text-muted">
-				{translationRequested ? t('reader.translationNotConnected') : t('reader.translationPrepareOnly')}
-			</p>
+			<p className="mt-2 text-xs text-text-muted">{t('reader.translationPrepareOnly')}</p>
 		</div>
 	);
 }
@@ -706,7 +700,6 @@ function EvidenceSignals({
 function StoryPane({
 	contradictionsError,
 	contradictionsIsLoading,
-	onRequestTranslation,
 	onSelectEntity,
 	onSelectStory,
 	selectedEntity,
@@ -718,11 +711,9 @@ function StoryPane({
 	storiesError,
 	storiesIsLoading,
 	targetLanguage,
-	translationRequested,
 }: {
 	contradictionsError: unknown;
 	contradictionsIsLoading: boolean;
-	onRequestTranslation: () => void;
 	onSelectEntity: (entity: EntityRecord) => void;
 	onSelectStory: (storyId: string) => void;
 	selectedEntity?: EntityRecord;
@@ -734,7 +725,6 @@ function StoryPane({
 	storiesError: unknown;
 	storiesIsLoading: boolean;
 	targetLanguage: AppLocale;
-	translationRequested: boolean;
 }) {
 	const { t } = useTranslation();
 
@@ -789,11 +779,9 @@ function StoryPane({
 											<StatusBadge status={selectedStory.status} />
 										</div>
 										<TranslationControls
-											onRequestTranslation={onRequestTranslation}
 											originalLanguage={selectedStory.language}
 											setTargetLanguage={setTargetLanguage}
 											targetLanguage={targetLanguage}
-											translationRequested={translationRequested}
 										/>
 									</div>
 									<div className="rounded-md border border-border bg-panel-raised p-5">
@@ -882,7 +870,6 @@ export function SourceReaderPage() {
 	const [selectedStoryId, setSelectedStoryId] = useState<string | undefined>(searchParams.get('story') ?? undefined);
 	const [selectedEntity, setSelectedEntity] = useState<EntityRecord | undefined>();
 	const [targetLanguage, setTargetLanguage] = useState<AppLocale>(i18n.language === 'de' ? 'de' : 'en');
-	const [translationRequested, setTranslationRequested] = useState(false);
 	const sourceQuery = useDocument(sourceId);
 	const storiesQuery = useDocumentStories(sourceId);
 	const layoutQuery = useDocumentLayout(sourceId);
@@ -903,7 +890,6 @@ export function SourceReaderPage() {
 		if (linkedStoryId && linkedStoryId !== selectedStoryId) {
 			setSelectedStoryId(linkedStoryId);
 			setSelectedEntity(undefined);
-			setTranslationRequested(false);
 		}
 	}, [searchParams, selectedStoryId]);
 
@@ -911,7 +897,6 @@ export function SourceReaderPage() {
 		if (stories.length > 0 && (!selectedStoryId || !stories.some((story) => story.id === selectedStoryId))) {
 			setSelectedStoryId(stories[0].id);
 			setSelectedEntity(undefined);
-			setTranslationRequested(false);
 		}
 	}, [selectedStoryId, stories]);
 
@@ -929,13 +914,6 @@ export function SourceReaderPage() {
 	function handleStorySelection(storyId: string) {
 		setSelectedStoryId(storyId);
 		setSelectedEntity(undefined);
-		setTranslationRequested(false);
-	}
-
-	async function handleTranslateRequest() {
-		if (!sourceId || !selectedStory) return;
-		await requestStoryTranslation({ sourceId, storyId: selectedStory.id, targetLanguage });
-		setTranslationRequested(true);
 	}
 
 	if (!sourceId) {
@@ -1009,7 +987,6 @@ export function SourceReaderPage() {
 						<StoryPane
 							contradictionsError={contradictionsQuery.error}
 							contradictionsIsLoading={contradictionsQuery.isLoading}
-							onRequestTranslation={handleTranslateRequest}
 							onSelectEntity={setSelectedEntity}
 							onSelectStory={handleStorySelection}
 							selectedEntity={selectedEntity}
@@ -1021,7 +998,6 @@ export function SourceReaderPage() {
 							storiesError={storiesQuery.error}
 							storiesIsLoading={storiesQuery.isLoading}
 							targetLanguage={targetLanguage}
-							translationRequested={translationRequested}
 						/>
 					) : null}
 				</div>

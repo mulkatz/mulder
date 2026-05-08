@@ -366,6 +366,7 @@ export const resources = {
 				translate: 'Translate',
 				translationPrepareOnly:
 					'Persistent on-demand translation is planned. It will be cached when the translation contract exists.',
+				translationDisabledTooltip: 'Translation is not connected yet.',
 				translationNotConnected: 'Translation is designed here, but the M11 translation service is not connected yet.',
 				noAnnotationSelectedTitle: 'No annotation selected',
 				noAnnotationSelectedBody: 'Select a highlighted entity in the story to inspect linked context.',
@@ -908,6 +909,7 @@ export const resources = {
 				translate: 'Übersetzen',
 				translationPrepareOnly:
 					'Dauerhafte Übersetzung auf Abruf ist vorgesehen. Sie wird zwischengespeichert, sobald der Übersetzungsvertrag existiert.',
+				translationDisabledTooltip: 'Übersetzung ist noch nicht angebunden.',
 				translationNotConnected:
 					'Die Übersetzung ist hier vorbereitet, aber der M11-Übersetzungsdienst ist noch nicht angebunden.',
 				noAnnotationSelectedTitle: 'Keine Markierung ausgewählt',

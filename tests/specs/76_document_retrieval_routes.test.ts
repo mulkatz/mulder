@@ -369,6 +369,17 @@ describe('Spec 76 — Document Retrieval Routes', () => {
 					layout: `/api/documents/${sourceA.id}/layout`,
 					pages: `/api/documents/${sourceA.id}/pages`,
 				},
+				reader_link: `/sources/${sourceA.id}`,
+				provenance: null,
+				original_source: null,
+				source_language: null,
+				sensitivity: {
+					level: 'internal',
+					metadata: expect.any(Object),
+				},
+				quality: null,
+				collection: null,
+				credibility: null,
 			},
 		});
 

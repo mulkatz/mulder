@@ -96,8 +96,71 @@ export interface DocumentListResponse {
 	meta: { count: number; limit: number; offset: number };
 }
 
+export type SensitivityLevel = 'public' | 'internal' | 'restricted' | 'confidential';
+
+export interface DocumentDetailRecord extends DocumentRecord {
+	reader_link: string;
+	provenance: {
+		context_id: string;
+		channel: string;
+		submitted_at: string;
+		submitted_by_type: string;
+		collection_id: string | null;
+		authenticity_status: string;
+		authenticity_notes: string | null;
+		submission_notes: string | null;
+	} | null;
+	original_source: {
+		source_type: string;
+		description: string;
+		source_date: string | null;
+		author: string | null;
+		language: string;
+		institution: string | null;
+		foia_reference: string | null;
+	} | null;
+	source_language: string | null;
+	sensitivity: {
+		level: SensitivityLevel;
+		metadata: Record<string, unknown>;
+	};
+	quality: {
+		id: string;
+		assessed_at: string;
+		assessment_method: string;
+		overall_quality: string;
+		processable: boolean;
+		recommended_path: string;
+		text_readability_score: number | null;
+		language: string | null;
+		language_confidence: number | null;
+	} | null;
+	collection: {
+		id: string;
+		name: string;
+		description: string;
+		type: string;
+		visibility: string;
+		tags: string[];
+		document_count: number;
+		total_size_bytes: number;
+		languages: string[];
+		date_range: { earliest: string | null; latest: string | null };
+	} | null;
+	credibility: {
+		profile_id: string;
+		source_type: string;
+		profile_author: string;
+		review_status: string;
+		last_reviewed: string | null;
+		dimension_count: number;
+		average_score: number | null;
+		sensitivity_level: SensitivityLevel;
+	} | null;
+}
+
 export interface DocumentDetailResponse {
-	data: DocumentRecord;
+	data: DocumentDetailRecord;
 }
 
 export type SourceStatus = DocumentRecord['status'];
