@@ -30,6 +30,7 @@ import type {
 	TemporalPatternQuery,
 } from '../routes/discovery.schemas.js';
 import { resolveApiDataContext, resolveReadMaxSensitivity } from './api-runtime.js';
+import { objectToJsonRecord } from './json-record.js';
 
 interface DiscoveryRouteOptions {
 	authPrincipal?: AuthPrincipal;
@@ -82,7 +83,7 @@ function similarityToResponse(result: SimilarityResult) {
 		key_differences: result.keyDifferences,
 		provenance: provenanceToRecord(result.provenance),
 		sensitivity_level: result.sensitivityLevel,
-		sensitivity_metadata: result.sensitivityMetadata as unknown as Record<string, unknown>,
+		sensitivity_metadata: objectToJsonRecord(result.sensitivityMetadata),
 		review_status: result.reviewStatus,
 		auto_discovered: result.autoDiscovered,
 	};
@@ -103,7 +104,7 @@ function taxonomyMappingToResponse(mapping: TaxonomyMapping) {
 		review_status: mapping.reviewStatus,
 		provenance: provenanceToRecord(mapping.provenance),
 		sensitivity_level: mapping.sensitivityLevel,
-		sensitivity_metadata: mapping.sensitivityMetadata as unknown as Record<string, unknown>,
+		sensitivity_metadata: objectToJsonRecord(mapping.sensitivityMetadata),
 		created_at: mapping.createdAt.toISOString(),
 		updated_at: mapping.updatedAt.toISOString(),
 	};
@@ -134,7 +135,7 @@ function anomalyToResponse(cluster: TemporalAnomalyCluster) {
 		review_status: cluster.reviewStatus,
 		provenance: provenanceToRecord(cluster.provenance),
 		sensitivity_level: cluster.sensitivityLevel,
-		sensitivity_metadata: cluster.sensitivityMetadata as unknown as Record<string, unknown>,
+		sensitivity_metadata: objectToJsonRecord(cluster.sensitivityMetadata),
 		computed_at: cluster.computedAt.toISOString(),
 	};
 }
@@ -162,7 +163,7 @@ function hotspotToResponse(cluster: SpatiotemporalHotspotCluster) {
 		review_status: cluster.reviewStatus,
 		provenance: provenanceToRecord(cluster.provenance),
 		sensitivity_level: cluster.sensitivityLevel,
-		sensitivity_metadata: cluster.sensitivityMetadata as unknown as Record<string, unknown>,
+		sensitivity_metadata: objectToJsonRecord(cluster.sensitivityMetadata),
 		computed_at: cluster.computedAt.toISOString(),
 	};
 }
@@ -187,7 +188,7 @@ function externalCorrelationToResponse(correlation: ExternalCorrelation) {
 		review_status: correlation.reviewStatus,
 		provenance: provenanceToRecord(correlation.provenance),
 		sensitivity_level: correlation.sensitivityLevel,
-		sensitivity_metadata: correlation.sensitivityMetadata as unknown as Record<string, unknown>,
+		sensitivity_metadata: objectToJsonRecord(correlation.sensitivityMetadata),
 		computed_at: correlation.computedAt.toISOString(),
 	};
 }

@@ -17,6 +17,7 @@ import type {
 	SourceCredibilityListResponse,
 } from '../routes/source-insights.schemas.js';
 import { resolveApiDataContext, resolveReadMaxSensitivity } from './api-runtime.js';
+import { objectToJsonRecord } from './json-record.js';
 
 interface SourceInsightRouteOptions {
 	authPrincipal?: AuthPrincipal;
@@ -46,7 +47,7 @@ function mapQualityAssessment(assessment: DocumentQualityAssessment) {
 		overall_quality: assessment.overallQuality,
 		processable: assessment.processable,
 		recommended_path: assessment.recommendedPath,
-		dimensions: assessment.dimensions as unknown as Record<string, unknown>,
+		dimensions: objectToJsonRecord(assessment.dimensions),
 		signals: assessment.signals,
 		created_at: assessment.createdAt.toISOString(),
 	};
@@ -61,9 +62,9 @@ function mapCredibilityProfile(profile: SourceCredibilityProfile) {
 		profile_author: profile.profileAuthor,
 		last_reviewed: profile.lastReviewed?.toISOString() ?? null,
 		review_status: profile.reviewStatus,
-		provenance: profile.provenance as unknown as Record<string, unknown>,
+		provenance: objectToJsonRecord(profile.provenance),
 		sensitivity_level: profile.sensitivityLevel,
-		sensitivity_metadata: profile.sensitivityMetadata as unknown as Record<string, unknown>,
+		sensitivity_metadata: objectToJsonRecord(profile.sensitivityMetadata),
 		dimensions: profile.dimensions.map((dimension) => ({
 			id: dimension.id,
 			profile_id: dimension.profileId,

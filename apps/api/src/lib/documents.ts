@@ -52,6 +52,7 @@ import type {
 	DocumentStoryResponse,
 } from '../routes/documents.schemas.js';
 import { PIPELINE_STEP_VALUES } from '../routes/pipeline.schemas.js';
+import { unknownToJsonRecord } from './json-record.js';
 
 interface DocumentContext {
 	config: MulderConfig;
@@ -161,7 +162,7 @@ function mapSourceToDocument(source: Source, layoutAvailable: boolean, pageImage
 }
 
 function readRecord(value: unknown): Record<string, unknown> {
-	return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+	return unknownToJsonRecord(value);
 }
 
 function mapSourceSensitivity(source: Source): DocumentDetailResponse['data']['sensitivity'] {

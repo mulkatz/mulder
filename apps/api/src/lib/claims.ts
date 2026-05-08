@@ -15,6 +15,7 @@ import type {
 	ClaimResponse,
 } from '../routes/claims.schemas.js';
 import { allowedSensitivity, resolveApiDataContext, resolveReadMaxSensitivity } from './api-runtime.js';
+import { isJsonRecord, objectToJsonRecord } from './json-record.js';
 
 interface ClaimsRouteOptions {
 	authPrincipal?: AuthPrincipal;
@@ -41,10 +42,6 @@ interface ClaimRow {
 	updated_at: Date;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 function mapClaim(row: ClaimRow): ClaimResponse {
 	const confidence = normalizeConfidenceMetadata(row.confidence_metadata);
 	return {
@@ -63,13 +60,12 @@ function mapClaim(row: ClaimRow): ClaimResponse {
 		},
 		classification_provenance: row.classification_provenance,
 		extracted_entity_ids: row.extracted_entity_ids ?? [],
-		provenance: mapArtifactProvenanceFromDb(row.provenance) as unknown as Record<string, unknown>,
-		quality_metadata: isRecord(row.quality_metadata) ? row.quality_metadata : null,
+		provenance: objectToJsonRecord(mapArtifactProvenanceFromDb(row.provenance)),
+		quality_metadata: isJsonRecord(row.quality_metadata) ? { ...row.quality_metadata } : null,
 		sensitivity_level: row.sensitivity_level ?? 'internal',
-		sensitivity_metadata: normalizeSensitivityMetadata(
-			row.sensitivity_metadata,
-			row.sensitivity_level ?? 'internal',
-		) as unknown as Record<string, unknown>,
+		sensitivity_metadata: objectToJsonRecord(
+			normalizeSensitivityMetadata(row.sensitivity_metadata, row.sensitivity_level ?? 'internal'),
+		),
 		created_at: row.created_at.toISOString(),
 		updated_at: row.updated_at.toISOString(),
 	};
