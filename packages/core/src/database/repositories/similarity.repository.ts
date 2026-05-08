@@ -7,6 +7,7 @@ import {
 	mergeArtifactProvenanceSql,
 	stringifyArtifactProvenance,
 } from './artifact-provenance.js';
+import { entityActiveSourceClause } from './entity.repository.js';
 import type {
 	CoreSimilarityDimensions,
 	DomainSimilarityDimension,
@@ -270,9 +271,11 @@ export async function listSimilarEntities(
 	let paramIndex = 2;
 	if (!options.includeDeleted) {
 		conditions.push('sc.deleted_at IS NULL');
+		conditions.push(entityActiveSourceClause('other_entity'));
 	}
 	if (options.maxSensitivityLevel) {
 		conditions.push(`sc.sensitivity_level = ANY($${paramIndex})`);
+		conditions.push(`other_entity.sensitivity_level = ANY($${paramIndex})`);
 		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
 		paramIndex++;
 	}
@@ -308,9 +311,11 @@ export async function countSimilarEntities(pool: Queryable, options: ListSimilar
 	let paramIndex = 2;
 	if (!options.includeDeleted) {
 		conditions.push('sc.deleted_at IS NULL');
+		conditions.push(entityActiveSourceClause('other_entity'));
 	}
 	if (options.maxSensitivityLevel) {
 		conditions.push(`sc.sensitivity_level = ANY($${paramIndex})`);
+		conditions.push(`other_entity.sensitivity_level = ANY($${paramIndex})`);
 		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
 		paramIndex++;
 	}

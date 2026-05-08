@@ -197,7 +197,7 @@ export async function findSourceCredibilityProfileBySourceId(
 	options?: Pick<SourceCredibilityProfileListOptions, 'maxSensitivityLevel'>,
 ): Promise<SourceCredibilityProfile | null> {
 	const params: unknown[] = [sourceId];
-	const filters = ['p.source_id = $1'];
+	const filters = ['p.source_id = $1', "s.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"];
 	if (options?.maxSensitivityLevel) {
 		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
 		filters.push(`p.sensitivity_level = ANY($${params.length})`);
@@ -218,7 +218,7 @@ export async function listSourceCredibilityProfiles(
 	options?: SourceCredibilityProfileListOptions,
 ): Promise<SourceCredibilityProfile[]> {
 	const params: unknown[] = [];
-	const filters: string[] = [];
+	const filters: string[] = ["s.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"];
 	if (options?.sourceType) {
 		assertEnum(options.sourceType, SOURCE_TYPES, 'sourceType');
 		params.push(options.sourceType);
@@ -258,7 +258,7 @@ export async function countSourceCredibilityProfiles(
 	options?: Omit<SourceCredibilityProfileListOptions, 'limit' | 'offset'>,
 ): Promise<number> {
 	const params: unknown[] = [];
-	const filters: string[] = [];
+	const filters: string[] = ["s.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"];
 	if (options?.sourceType) {
 		assertEnum(options.sourceType, SOURCE_TYPES, 'sourceType');
 		params.push(options.sourceType);

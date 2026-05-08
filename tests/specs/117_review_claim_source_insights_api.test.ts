@@ -243,6 +243,25 @@ describe('Spec 117: review, claims, and source insight API routes', () => {
 				],
 			});
 		}
+		const deletedSourceId = await seedSource(pool);
+		await upsertSourceCredibilityProfile(pool, {
+			sourceId: deletedSourceId,
+			sourceName: 'Deleted source',
+			sourceType: 'organization',
+			profileAuthor: 'llm_auto',
+			reviewStatus: 'draft',
+			dimensions: [
+				{
+					dimensionId: 'proximity',
+					label: 'Proximity',
+					score: 0.2,
+					rationale: 'Deleted source should not be listed.',
+				},
+			],
+		});
+		await pool.query("UPDATE sources SET deletion_status = 'soft_deleted', deleted_at = now() WHERE id = $1", [
+			deletedSourceId,
+		]);
 
 		const response = await app.request('http://localhost/api/source-credibility?review_status=draft&limit=1', {
 			headers: authorizedHeaders(),
@@ -374,6 +393,7 @@ describe('Spec 117: review, claims, and source insight API routes', () => {
 			artifactType: 'agent_finding',
 			subjectId: randomUUID(),
 			subjectTable: 'agent_findings',
+			reviewStatus: 'contested',
 			currentValue: { title: 'Visible review' },
 			context: { sensitivity_level: 'internal' },
 			sourceId,
@@ -383,6 +403,7 @@ describe('Spec 117: review, claims, and source insight API routes', () => {
 			artifactType: 'agent_finding',
 			subjectId: randomUUID(),
 			subjectTable: 'agent_findings',
+			reviewStatus: 'contested',
 			currentValue: { title: 'Hidden review' },
 			context: { sensitivity_level: 'confidential' },
 			sourceId,
@@ -392,6 +413,7 @@ describe('Spec 117: review, claims, and source insight API routes', () => {
 			artifactType: 'agent_finding',
 			subjectId: randomUUID(),
 			subjectTable: 'agent_findings',
+			reviewStatus: 'contested',
 			currentValue: { title: 'Deleted review' },
 			context: { sensitivity_level: 'internal' },
 			sourceId,
@@ -399,8 +421,19 @@ describe('Spec 117: review, claims, and source insight API routes', () => {
 		});
 		await pool.query('UPDATE review_artifacts SET deleted_at = now() WHERE artifact_id = $1', [deleted.artifactId]);
 
+		const queueSummaryResponse = await app.request('http://localhost/api/review/queues', {
+			headers: { Cookie: memberCookie },
+		});
+		expect(queueSummaryResponse.status).toBe(200);
+		const queueSummaryBody = (await readJson(queueSummaryResponse)) as {
+			data: { queue_key: string; pending_count: number; oldest_pending: string | null }[];
+		};
+		const contestedSummary = queueSummaryBody.data.find((queue) => queue.queue_key === 'contested_artifacts');
+		expect(contestedSummary).toMatchObject({ pending_count: 1 });
+		expect(contestedSummary?.oldest_pending).not.toBeNull();
+
 		const listResponse = await app.request(
-			'http://localhost/api/review/queues/contested_artifacts/artifacts?review_status=pending',
+			'http://localhost/api/review/queues/contested_artifacts/artifacts?review_status=contested',
 			{ headers: { Cookie: memberCookie } },
 		);
 		expect(listResponse.status).toBe(200);

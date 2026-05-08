@@ -118,11 +118,26 @@ async function countQueueArtifacts(
 	return Number.parseInt(result.rows[0]?.count ?? '0', 10) || 0;
 }
 
-async function countReviewEvents(artifactId: string): Promise<number> {
+async function countReviewEvents(
+	artifactId: string,
+	maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity>,
+): Promise<number> {
 	const { pool } = resolveApiDataContext('review');
+	const params: unknown[] = [artifactId];
+	const filters = ['re.artifact_id = $1', 'ra.deleted_at IS NULL'];
+	const allowed = allowedSensitivity(maxSensitivityLevel);
+	if (allowed) {
+		params.push(allowed);
+		filters.push(`COALESCE(NULLIF(ra.context->>'sensitivity_level', ''), 'internal') = ANY($${params.length})`);
+	}
 	const result = await pool.query<{ count: string }>(
-		'SELECT COUNT(*) AS count FROM review_events WHERE artifact_id = $1',
-		[artifactId],
+		`
+			SELECT COUNT(*) AS count
+			FROM review_events re
+			JOIN review_artifacts ra ON ra.artifact_id = re.artifact_id
+			WHERE ${filters.join(' AND ')}
+		`,
+		params,
 	);
 	return Number.parseInt(result.rows[0]?.count ?? '0', 10) || 0;
 }
@@ -147,8 +162,8 @@ async function requireVisibleReviewArtifact(
 
 export async function listReviewQueueSummaries(options?: ReviewRouteOptions): Promise<ReviewQueueListResponse> {
 	const { config, pool } = resolveApiDataContext('review');
-	resolveReadMaxSensitivity(config, options?.authPrincipal, 'review queues');
-	const queues = await listReviewQueues(pool, { activeOnly: true });
+	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal, 'review queues');
+	const queues = await listReviewQueues(pool, { activeOnly: true, maxSensitivityLevel });
 	return { data: queues.map(mapQueue) };
 }
 
@@ -193,8 +208,8 @@ export async function listReviewArtifactEvents(
 	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal, 'review events');
 	await requireVisibleReviewArtifact(pool, artifactId, maxSensitivityLevel);
 	const [count, events] = await Promise.all([
-		countReviewEvents(artifactId),
-		listReviewEvents(pool, artifactId, { limit: query.limit, offset: query.offset }),
+		countReviewEvents(artifactId, maxSensitivityLevel),
+		listReviewEvents(pool, artifactId, { maxSensitivityLevel, limit: query.limit, offset: query.offset }),
 	]);
 	return {
 		data: events.map(mapEvent),

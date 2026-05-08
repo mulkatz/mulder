@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createApp } from '@mulder/api';
 import {
 	createEntity,
@@ -40,16 +40,73 @@ function authorizedHeaders(): Record<string, string> {
 	};
 }
 
+function hashToken(token: string): string {
+	return createHash('sha256').update(`${TEST_API_CONFIG.auth.browser.session_secret}:${token}`).digest('hex');
+}
+
 async function readJson(response: Response): Promise<unknown> {
 	return await response.json();
 }
 
-async function createEntityFixture(pool: pg.Pool, label: string) {
+async function seedInvitation(
+	pool: pg.Pool,
+	input: { email: string; token: string; role: 'admin' | 'member' | 'owner' },
+): Promise<void> {
+	await pool.query(
+		`
+			INSERT INTO api_invitations (email, role, token_hash, expires_at)
+			VALUES ($1, $2, $3, now() + interval '1 day')
+		`,
+		[input.email, input.role, hashToken(input.token)],
+	);
+}
+
+async function acceptInvitation(app: ReturnType<typeof createApp>, pool: pg.Pool, role: 'admin' | 'member') {
+	const token = `${role}-${randomUUID()}`;
+	await seedInvitation(pool, { email: `${role}-${randomUUID()}@example.test`, role, token });
+	const response = await app.request('http://localhost/api/auth/invitations/accept', {
+		body: JSON.stringify({ token, password: 'correct horse battery staple' }),
+		headers: { 'Content-Type': 'application/json' },
+		method: 'POST',
+	});
+	expect(response.status).toBe(200);
+	const setCookie = response.headers.get('set-cookie');
+	expect(setCookie).toContain('mulder_session=');
+	return setCookie?.split(';')[0] ?? '';
+}
+
+async function seedSource(pool: pg.Pool, deletionStatus: 'active' | 'soft_deleted' = 'active'): Promise<string> {
+	const id = randomUUID();
+	await pool.query(
+		[
+			'INSERT INTO sources (id, filename, storage_path, file_hash, page_count, status, metadata, deletion_status, deleted_at)',
+			'VALUES ($1, $2, $3, $4, 2, $5, $6::jsonb, $7, CASE WHEN $7 = $8 THEN now() ELSE NULL END)',
+		].join(' '),
+		[
+			id,
+			'discovery-source.pdf',
+			`raw/${id}/discovery-source.pdf`,
+			randomUUID().replaceAll('-', '') + randomUUID().replaceAll('-', ''),
+			'analyzed',
+			JSON.stringify({ language: 'de' }),
+			deletionStatus,
+			'soft_deleted',
+		],
+	);
+	return id;
+}
+
+async function createEntityFixture(
+	pool: pg.Pool,
+	label: string,
+	options?: { sensitivityLevel?: 'internal' | 'confidential'; sourceDocumentIds?: string[] },
+) {
 	return await createEntity(pool, {
 		name: `${label} ${randomUUID()}`,
 		type: 'case',
 		attributes: {},
-		sensitivityLevel: 'internal',
+		provenance: options?.sourceDocumentIds ? { sourceDocumentIds: options.sourceDocumentIds } : undefined,
+		sensitivityLevel: options?.sensitivityLevel ?? 'internal',
 	});
 }
 
@@ -167,9 +224,15 @@ describe('Spec 118: collections, taxonomy, and discovery API routes', () => {
 
 	it('serves discovery leads as caveated research signals', async () => {
 		const app = createApp({ config: TEST_API_CONFIG });
+		const memberCookie = await acceptInvitation(app, pool, 'member');
 		const source = await createEntityFixture(pool, 'Source case');
 		const target = await createEntityFixture(pool, 'Target case');
 		const secondTarget = await createEntityFixture(pool, 'Second target case');
+		const hiddenTarget = await createEntityFixture(pool, 'Hidden target case', { sensitivityLevel: 'confidential' });
+		const deletedSourceId = await seedSource(pool, 'soft_deleted');
+		const deletedTarget = await createEntityFixture(pool, 'Deleted target case', {
+			sourceDocumentIds: [deletedSourceId],
+		});
 		await upsertSimilarityResult(pool, {
 			sourceEntityId: source.id,
 			targetEntityId: target.id,
@@ -196,6 +259,34 @@ describe('Spec 118: collections, taxonomy, and discovery API routes', () => {
 			explanation: 'Secondary comparison lead.',
 			sharedEntityIds: [],
 			keyDifferences: ['Different source context'],
+			reviewStatus: 'pending',
+		});
+		await upsertSimilarityResult(pool, {
+			sourceEntityId: source.id,
+			targetEntityId: hiddenTarget.id,
+			core: {
+				semantic: { status: 'scored', score: 0.95, reason: null },
+				structural: { status: 'insufficient_data', score: null, reason: 'missing_structure' },
+				geospatial: { status: 'insufficient_data', score: null, reason: 'missing_location' },
+				temporal: { status: 'insufficient_data', score: null, reason: 'missing_time' },
+			},
+			explanation: 'Confidential comparison lead.',
+			sharedEntityIds: [],
+			keyDifferences: ['Hidden target'],
+			reviewStatus: 'pending',
+		});
+		await upsertSimilarityResult(pool, {
+			sourceEntityId: source.id,
+			targetEntityId: deletedTarget.id,
+			core: {
+				semantic: { status: 'scored', score: 0.9, reason: null },
+				structural: { status: 'insufficient_data', score: null, reason: 'missing_structure' },
+				geospatial: { status: 'insufficient_data', score: null, reason: 'missing_location' },
+				temporal: { status: 'insufficient_data', score: null, reason: 'missing_time' },
+			},
+			explanation: 'Deleted-source comparison lead.',
+			sharedEntityIds: [],
+			keyDifferences: ['Deleted target source'],
 			reviewStatus: 'pending',
 		});
 
@@ -245,17 +336,27 @@ describe('Spec 118: collections, taxonomy, and discovery API routes', () => {
 		});
 
 		const similarResponse = await app.request(
-			`http://localhost/api/discovery/similar-entities?entity_id=${source.id}&limit=1`,
+			`http://localhost/api/discovery/similar-entities?entity_id=${source.id}&limit=10`,
 			{
-				headers: authorizedHeaders(),
+				headers: { Cookie: memberCookie },
 			},
 		);
 		expect(similarResponse.status).toBe(200);
-		expect(await readJson(similarResponse)).toMatchObject({
-			data: [expect.objectContaining({ review_status: 'pending' })],
-			meta: { count: 2, limit: 1, offset: 0 },
+		const similarBody = (await readJson(similarResponse)) as {
+			data: { entity_id: string; review_status: string }[];
+			meta: { count: number; limit: number; offset: number };
+			caveats: string[];
+		};
+		expect(similarBody).toMatchObject({
+			data: expect.arrayContaining([
+				expect.objectContaining({ entity_id: target.id, review_status: 'pending' }),
+				expect.objectContaining({ entity_id: secondTarget.id, review_status: 'pending' }),
+			]),
+			meta: { count: 2, limit: 10, offset: 0 },
 			caveats: expect.arrayContaining(['Discovery results are research leads, not final proof.']),
 		});
+		expect(similarBody.data.map((item) => item.entity_id)).not.toContain(hiddenTarget.id);
+		expect(similarBody.data.map((item) => item.entity_id)).not.toContain(deletedTarget.id);
 
 		const mappingsResponse = await app.request(
 			'http://localhost/api/discovery/classification-mappings?mapping_type=related&limit=1',

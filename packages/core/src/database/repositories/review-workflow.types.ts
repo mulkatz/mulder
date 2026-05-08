@@ -107,6 +107,7 @@ export interface RecordReviewEventInput {
 export interface ReviewEventListOptions {
 	action?: ReviewAction;
 	reviewerId?: string;
+	maxSensitivityLevel?: SensitivityLevel;
 	limit?: number;
 	offset?: number;
 }
@@ -122,6 +123,7 @@ export interface UpsertReviewQueueInput {
 
 export interface ReviewQueueListOptions {
 	activeOnly?: boolean;
+	maxSensitivityLevel?: SensitivityLevel;
 }
 
 export interface ReviewQueueArtifactListOptions {
