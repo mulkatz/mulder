@@ -1,5 +1,5 @@
+import { OpenAPIHono } from '@hono/zod-openapi';
 import { type ApiConfig, CONFIG_DEFAULTS, createLogger, type Logger } from '@mulder/core';
-import { Hono } from 'hono';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createBodyLimitMiddleware } from './middleware/body-limit.js';
 import { createCorsMiddleware } from './middleware/cors.js';
@@ -24,11 +24,40 @@ export interface AppOptions {
 	config?: ApiConfig;
 }
 
-export function createApp(options: AppOptions = {}): Hono {
+export function createApp(options: AppOptions = {}): OpenAPIHono {
 	const rootLogger = options.logger ?? createLogger();
 	const apiConfig = options.config ?? CONFIG_DEFAULTS.api;
 
-	const app = new Hono();
+	const app = new OpenAPIHono({
+		defaultHook: (result, c) => {
+			if (!result.success) {
+				const requestId = c.get('requestId');
+				if (requestId) {
+					c.header('X-Request-Id', requestId);
+				}
+				return c.json(
+					{
+						error: {
+							code: 'VALIDATION_ERROR',
+							message: 'Invalid request',
+							details: result.error.flatten(),
+						},
+					},
+					400,
+				);
+			}
+		},
+	});
+
+	app.openAPIRegistry.registerComponent('securitySchemes', 'BearerAuth', {
+		type: 'http',
+		scheme: 'bearer',
+	});
+	app.openAPIRegistry.registerComponent('securitySchemes', 'SessionCookie', {
+		type: 'apiKey',
+		in: 'cookie',
+		name: apiConfig.auth.browser.cookie_name,
+	});
 
 	app.onError(createErrorHandler(rootLogger));
 	app.use('*', createRequestIdMiddleware());
@@ -49,6 +78,14 @@ export function createApp(options: AppOptions = {}): Hono {
 	registerUploadRoutes(app);
 	registerSearchRoute(app);
 	registerStatusRoute(app);
+
+	app.doc('/api/openapi.json', {
+		openapi: '3.0.0',
+		info: {
+			title: 'Mulder API',
+			version: '0.0.0',
+		},
+	});
 
 	return app;
 }

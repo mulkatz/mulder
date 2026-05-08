@@ -29,13 +29,13 @@ hono                        # Core framework
 
 ---
 
-## 2. Runtime Schemas
+## 2. Runtime Schemas And OpenAPI Contract
 
-**Decision:** M7 ships runtime Zod validation, not a published OpenAPI document.
+**Decision:** The API uses runtime Zod validation through `@hono/zod-openapi` and publishes a machine-readable OpenAPI document at `GET /api/openapi.json`.
 
 **How it works:**
 ```typescript
-app.post('/api/search', async (c) => {
+app.openapi(searchRoute, async (c) => {
   const body = SearchRequestSchema.parse(await c.req.json())
   const result = await hybridRetrieve(body, config, services, pool)
   SearchResponseSchema.parse(result)
@@ -43,7 +43,9 @@ app.post('/api/search', async (c) => {
 })
 ```
 
-**Future work:** If external consumers need a generated contract, add OpenAPI/Scalar as an explicit feature. M7 does not mount `/doc` or `/reference`.
+**Published contract:** `GET /api/openapi.json` is public and generated from the mounted product routes. It must not advertise route sketches or backend-only capabilities that are not actually mounted.
+
+**Not mounted:** M7 does not mount `/doc` or `/reference`. A human-facing API explorer remains a separate future feature.
 
 **Shared schemas:** Route schemas import from `@mulder/core` types and extend them for HTTP context (pagination, error envelopes). Core domain types stay in `packages/core/`, API-specific wrappers live in `apps/api/src/schemas/`.
 
@@ -53,7 +55,7 @@ app.post('/api/search', async (c) => {
 
 **Decision:** No API explorer is mounted in the M7 runtime.
 
-Scalar remains a good future option, but it is not represented as a shipped config key or public unauthenticated route today.
+Scalar remains a good future option, but it is not represented as a shipped config key or public unauthenticated route today. External clients should use `GET /api/openapi.json` directly.
 
 ---
 
@@ -257,7 +259,7 @@ const data = await res.json() // fully typed
 
 **When used:** CLI commands check if `api.url` is configured in `mulder.config.yaml`. If set, route commands through the API client instead of calling pipeline functions directly. This enables remote execution without changing the CLI interface.
 
-**External consumers:** Use the documented JSON routes directly. A generated OpenAPI contract is future work, not part of the M7 runtime.
+**External consumers:** Use the documented JSON routes directly or fetch the generated OpenAPI document from `GET /api/openapi.json`. The JSON contract is intentionally shipped without a bundled explorer UI.
 
 ---
 
@@ -351,7 +353,7 @@ app.openapi(searchRoute, async (c) => {
 | Decision | Chose | Over | Why |
 |----------|-------|------|-----|
 | Framework | Hono | Express, Fastify | Small runtime, RPC client option, cold start |
-| OpenAPI | Future explicit feature | Silent runtime claim | Avoid promising unmounted `/doc` routes |
+| OpenAPI | Mounted JSON contract at `/api/openapi.json` | Silent route sketches | Keep external contracts aligned to mounted routes |
 | API Explorer | Future explicit feature | Silent Scalar config | Avoid promising unmounted `/reference` routes |
 | Auth | API key + browser session cookie | Browser-shipped API key | Keeps CLI/server access and browser access safe |
 | Rate limiting | In-memory token bucket | Redis, external service | Single-instance per Cloud Run; no infrastructure overhead |

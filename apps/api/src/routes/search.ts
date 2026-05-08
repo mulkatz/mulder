@@ -1,6 +1,14 @@
 import { createLogger, MulderError } from '@mulder/core';
-import type { Context, Hono } from 'hono';
+import type { Context } from 'hono';
 import { runSearch } from '../lib/search.js';
+import {
+	type ApiApp,
+	AUTH_SECURITY,
+	COMMON_ERROR_RESPONSES,
+	jsonRequestBody,
+	jsonResponse,
+	registerOpenApiRoute,
+} from './openapi.js';
 import { SearchRequestSchema, SearchResponseSchema } from './search.schemas.js';
 
 async function readJsonBody(c: Context): Promise<unknown> {
@@ -16,18 +24,35 @@ function readNoRerankToggle(url: string): boolean {
 	return searchParams.get('no_rerank') === 'true' || searchParams.get('rerank') === 'false';
 }
 
-export function registerSearchRoute(app: Hono): void {
-	app.post('/api/search', async (c) => {
-		const body = SearchRequestSchema.parse(await readJsonBody(c));
-		const requestContext = c.get('requestContext');
-		const response = await runSearch(
-			{
-				...body,
-				no_rerank: readNoRerankToggle(c.req.url),
+export function registerSearchRoute(app: ApiApp): void {
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'post',
+			path: '/api/search',
+			operationId: 'search',
+			tags: ['Search'],
+			security: AUTH_SECURITY,
+			request: {
+				body: jsonRequestBody(SearchRequestSchema, 'Search request'),
 			},
-			requestContext?.logger ?? createLogger(),
-		);
-		SearchResponseSchema.parse(response);
-		return c.json(response, 200);
-	});
+			responses: {
+				200: jsonResponse(SearchResponseSchema, 'Search results'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const body = SearchRequestSchema.parse(await readJsonBody(c));
+			const requestContext = c.get('requestContext');
+			const response = await runSearch(
+				{
+					...body,
+					no_rerank: readNoRerankToggle(c.req.url),
+				},
+				requestContext?.logger ?? createLogger(),
+			);
+			SearchResponseSchema.parse(response);
+			return c.json(response, 200);
+		},
+	);
 }

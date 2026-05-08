@@ -10,6 +10,7 @@ const PUBLIC_PATHS = new Set([
 	'/api/auth/logout',
 	'/api/auth/session',
 	'/api/auth/invitations/accept',
+	'/api/openapi.json',
 ]);
 const RATE_LIMIT_CLIENT_KEY = 'rateLimitClientKey';
 
