@@ -30,6 +30,10 @@ function readRequestLogger(c: Context): Logger | undefined {
 	return c.get('requestContext')?.logger;
 }
 
+function readRouteOptions(c: Context) {
+	return { authPrincipal: c.get('authPrincipal') };
+}
+
 export function registerUploadRoutes(app: ApiApp): void {
 	registerOpenApiRoute(
 		app,
@@ -73,7 +77,7 @@ export function registerUploadRoutes(app: ApiApp): void {
 		},
 		async (c) => {
 			const body = CompleteDocumentUploadRequestSchema.parse(await readJsonBody(c));
-			const response = await completeDocumentUpload(body, readRequestLogger(c));
+			const response = await completeDocumentUpload(body, readRequestLogger(c), readRouteOptions(c));
 			CompleteDocumentUploadResponseSchema.parse(response);
 			return c.json(response, 202);
 		},

@@ -9,15 +9,17 @@
  */
 
 import { createHash } from 'node:crypto';
-import type { MulderConfig, Services, SourceFormatMetadata, SourceType } from '@mulder/core';
+import type { Collection, MulderConfig, Services, SourceFormatMetadata, SourceType, SubmittedBy } from '@mulder/core';
 import {
 	buildContentAddressedBlobPath,
 	createChildLogger,
 	createPipelineRun,
 	createSource,
+	defaultSensitivityMetadata,
 	detectNativeText,
 	enqueueJob,
 	extractPdfMetadata,
+	findCollectionById,
 	findDocumentBlobByHash,
 	findSourceByCrossFormatDedupKey,
 	findSourceByHash,
@@ -25,6 +27,8 @@ import {
 	findStoriesBySourceId,
 	INGEST_ERROR_CODES,
 	IngestError,
+	recordIngestProvenance,
+	recordIngestProvenanceInTransaction,
 	upsertDocumentBlob,
 	upsertPipelineRunSource,
 	upsertSourceStep,
@@ -130,6 +134,108 @@ interface FinalizedUploadMetadata {
 	nativeTextRatio: number;
 	mediaType: string;
 	storageExtension: string;
+}
+
+function submittedByForUpload(payload: DocumentUploadFinalizeJobPayload): SubmittedBy {
+	return payload.submittedBy ?? { userId: 'worker', type: 'system', role: 'worker' };
+}
+
+function sensitivityForUpload(payload: DocumentUploadFinalizeJobPayload, collection?: Collection | null) {
+	const level = payload.expectedSensitivity?.level ?? collection?.defaults.sensitivityLevel ?? 'internal';
+	return {
+		sensitivityLevel: level,
+		sensitivityMetadata: defaultSensitivityMetadata(level, {
+			reason:
+				payload.expectedSensitivity?.reason ??
+				(payload.expectedSensitivity
+					? 'source_submission'
+					: collection
+						? 'collection_default'
+						: 'browser_upload_default'),
+			assignedBy: payload.expectedSensitivity ? 'human' : 'policy_rule',
+			piiTypes: payload.expectedSensitivity?.piiTypes ?? [],
+			declassifyDate: payload.expectedSensitivity?.declassifyDate ?? null,
+		}),
+	};
+}
+
+function uploadSubmissionMetadata(input: {
+	payload: DocumentUploadFinalizeJobPayload;
+	finalizedMetadata: FinalizedUploadMetadata;
+	finalizedStoragePath: string;
+	resolvedContentHash: string;
+	submittedContentHash: string;
+	deduplicationStatus: 'created' | 'exact_duplicate' | 'cross_format_duplicate';
+	crossFormatDedupKey?: string;
+}): Record<string, unknown> {
+	return {
+		...(input.payload.provenance?.context?.submissionMetadata ?? {}),
+		mulder_upload: {
+			filename: input.payload.filename,
+			storage_path: input.finalizedStoragePath,
+			provisional_storage_path: input.payload.storagePath,
+			resolved_content_hash: input.resolvedContentHash,
+			submitted_content_hash: input.submittedContentHash,
+			declared_size_bytes: input.payload.declaredSizeBytes ?? null,
+			media_type: input.finalizedMetadata.mediaType,
+			source_type: input.finalizedMetadata.sourceType,
+			storage_extension: input.finalizedMetadata.storageExtension,
+			deduplication_status: input.deduplicationStatus,
+			...(input.crossFormatDedupKey ? { cross_format_dedup_key: input.crossFormatDedupKey } : {}),
+		},
+	};
+}
+
+function storageExtensionFromPath(storagePath: string, fallback: string): string {
+	return storagePath.match(/\.([a-z0-9][a-z0-9-]*)$/u)?.[1] ?? fallback;
+}
+
+function buildUploadProvenanceInput(input: {
+	config: MulderConfig;
+	payload: DocumentUploadFinalizeJobPayload;
+	sourceId: string;
+	blobContentHash: string;
+	submittedContentHash: string;
+	finalizedStoragePath: string;
+	finalizedMetadata: FinalizedUploadMetadata;
+	deduplicationStatus: 'created' | 'exact_duplicate' | 'cross_format_duplicate';
+	crossFormatDedupKey?: string;
+}) {
+	const context = input.payload.provenance?.context;
+	return {
+		blobContentHash: input.blobContentHash,
+		sourceId: input.sourceId,
+		context: {
+			channel: context?.channel ?? 'manual_upload',
+			submittedBy: submittedByForUpload(input.payload),
+			submittedAt: context?.submittedAt,
+			collectionId: context?.collectionId ?? null,
+			submissionNotes: context?.submissionNotes ?? null,
+			submissionMetadata: uploadSubmissionMetadata({
+				payload: input.payload,
+				finalizedMetadata: input.finalizedMetadata,
+				finalizedStoragePath: input.finalizedStoragePath,
+				resolvedContentHash: input.blobContentHash,
+				submittedContentHash: input.submittedContentHash,
+				deduplicationStatus: input.deduplicationStatus,
+				crossFormatDedupKey: input.crossFormatDedupKey,
+			}),
+			authenticityStatus: context?.authenticityStatus ?? 'unverified',
+			authenticityNotes: context?.authenticityNotes ?? null,
+		},
+		originalSource: input.payload.provenance?.originalSource ?? null,
+		custodyChain: input.payload.provenance?.custodyChain ?? [],
+		archiveLocation: input.payload.provenance?.archiveLocation ?? undefined,
+		config: input.config.ingest_provenance,
+	};
+}
+
+async function collectionForUpload(
+	pool: pg.Pool,
+	payload: DocumentUploadFinalizeJobPayload,
+): Promise<Collection | null> {
+	const collectionId = payload.provenance?.context?.collectionId;
+	return collectionId ? await findCollectionById(pool, collectionId) : null;
 }
 
 function isFinalizableSourceType(sourceType: SourceType): sourceType is FinalizableSourceType {
@@ -365,18 +471,38 @@ async function finalizeUploadedDocument(
 	const fileHash = createHash('sha256').update(buffer).digest('hex');
 	const duplicateSource = await findSourceByHash(pool, fileHash);
 	if (duplicateSource && duplicateSource.id !== payload.sourceId) {
-		const duplicateStorageExtension = getStorageExtensionForDetection(detection);
-		if (duplicateStorageExtension && detection.mediaType) {
-			await ensureFinalizedUploadBlob({
-				services,
-				pool,
-				contentHash: fileHash,
-				content: buffer,
-				mediaType: detection.mediaType,
-				storageExtension: duplicateStorageExtension,
-				filename: payload.filename,
-			});
-		}
+		const finalizedStoragePath = await ensureFinalizedUploadBlob({
+			services,
+			pool,
+			contentHash: fileHash,
+			content: buffer,
+			mediaType: detection.mediaType,
+			storageExtension: canonicalStorageExtension,
+			filename: payload.filename,
+		});
+		await recordIngestProvenance(
+			pool,
+			buildUploadProvenanceInput({
+				config,
+				payload,
+				sourceId: duplicateSource.id,
+				blobContentHash: fileHash,
+				submittedContentHash: fileHash,
+				finalizedStoragePath,
+				finalizedMetadata: {
+					sourceType: isFinalizableSourceType(duplicateSource.sourceType)
+						? duplicateSource.sourceType
+						: detection.sourceType,
+					formatMetadata: duplicateSource.formatMetadata,
+					pageCount: duplicateSource.pageCount ?? 0,
+					hasNativeText: duplicateSource.hasNativeText,
+					nativeTextRatio: duplicateSource.nativeTextRatio,
+					mediaType: detection.mediaType,
+					storageExtension: storageExtensionFromPath(finalizedStoragePath, canonicalStorageExtension),
+				},
+				deduplicationStatus: 'exact_duplicate',
+			}),
+		);
 		await services.storage.delete(payload.storagePath);
 		return {
 			result_status: 'duplicate',
@@ -590,6 +716,20 @@ async function finalizeUploadedDocument(
 	if (crossFormatDedupKey) {
 		const existingCrossFormatSource = await findSourceByCrossFormatDedupKey(pool, crossFormatDedupKey);
 		if (existingCrossFormatSource && existingCrossFormatSource.id !== payload.sourceId) {
+			await recordIngestProvenance(
+				pool,
+				buildUploadProvenanceInput({
+					config,
+					payload,
+					sourceId: existingCrossFormatSource.id,
+					blobContentHash: existingCrossFormatSource.fileHash,
+					submittedContentHash: fileHash,
+					finalizedStoragePath: existingCrossFormatSource.storagePath,
+					finalizedMetadata,
+					deduplicationStatus: 'cross_format_duplicate',
+					crossFormatDedupKey,
+				}),
+			);
 			await services.storage.delete(payload.storagePath);
 			log.info(
 				{ sourceId: existingCrossFormatSource.id, crossFormatDedupKey },
@@ -613,6 +753,8 @@ async function finalizeUploadedDocument(
 		filename: payload.filename,
 	});
 	const shouldCleanupOriginalUpload = payload.storagePath !== finalizedStoragePath;
+	const collection = await collectionForUpload(pool, payload);
+	const sensitivity = sensitivityForUpload(payload, collection);
 
 	const client = await pool.connect();
 	try {
@@ -630,10 +772,25 @@ async function finalizeUploadedDocument(
 			sourceType: finalizedMetadata.sourceType,
 			formatMetadata: finalizedMetadata.formatMetadata,
 			metadata: finalizedMetadata.formatMetadata,
+			sensitivityLevel: sensitivity.sensitivityLevel,
+			sensitivityMetadata: sensitivity.sensitivityMetadata,
 		});
 
 		if (source.id !== payload.sourceId) {
 			await client.query('ROLLBACK');
+			await recordIngestProvenance(
+				pool,
+				buildUploadProvenanceInput({
+					config,
+					payload,
+					sourceId: source.id,
+					blobContentHash: source.fileHash,
+					submittedContentHash: fileHash,
+					finalizedStoragePath,
+					finalizedMetadata,
+					deduplicationStatus: 'exact_duplicate',
+				}),
+			);
 			if (shouldCleanupOriginalUpload) {
 				await services.storage.delete(payload.storagePath);
 			}
@@ -649,6 +806,19 @@ async function finalizeUploadedDocument(
 			stepName: 'ingest',
 			status: 'completed',
 		});
+		await recordIngestProvenanceInTransaction(
+			client,
+			buildUploadProvenanceInput({
+				config,
+				payload,
+				sourceId: source.id,
+				blobContentHash: fileHash,
+				submittedContentHash: fileHash,
+				finalizedStoragePath,
+				finalizedMetadata,
+				deduplicationStatus: 'created',
+			}),
+		);
 
 		const completionPayload: Record<string, unknown> = {
 			result_status: 'created',
@@ -694,6 +864,7 @@ async function finalizeUploadedDocument(
 				uploadedAt: new Date().toISOString(),
 				fileHash,
 				sourceType: source.sourceType,
+				sensitivityLevel: source.sensitivityLevel,
 				status: 'ingested',
 			})
 			.catch(() => {

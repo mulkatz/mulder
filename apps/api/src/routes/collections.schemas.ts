@@ -27,6 +27,7 @@ export const CreateCollectionRequestSchema = z.object({
 	name: z.string().trim().min(1).max(180),
 	description: z.string().trim().max(2000).optional().default(''),
 	type: CollectionTypeSchema.optional().default('other'),
+	archive_id: z.string().uuid().nullable().optional(),
 	visibility: CollectionVisibilitySchema.optional().default('private'),
 	tags: z.array(z.string().trim().min(1).max(80)).optional().default([]),
 	defaults: CollectionDefaultsSchema.optional().default({}),
@@ -35,6 +36,7 @@ export const CreateCollectionRequestSchema = z.object({
 export const PatchCollectionRequestSchema = z.object({
 	name: z.string().trim().min(1).max(180).optional(),
 	description: z.string().trim().max(2000).optional(),
+	archive_id: z.string().uuid().nullable().optional(),
 	visibility: CollectionVisibilitySchema.optional(),
 	tags: z.array(z.string().trim().min(1).max(80)).optional(),
 	defaults: CollectionDefaultsSchema.optional(),

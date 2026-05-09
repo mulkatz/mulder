@@ -554,6 +554,7 @@ export interface CreateCollectionRequest {
 	name: string;
 	description?: string;
 	type?: CollectionType;
+	archive_id?: string | null;
 	visibility?: CollectionVisibility;
 	tags?: string[];
 	defaults?: {
@@ -566,6 +567,7 @@ export interface CreateCollectionRequest {
 export interface PatchCollectionRequest {
 	name?: string;
 	description?: string;
+	archive_id?: string | null;
 	visibility?: CollectionVisibility;
 	tags?: string[];
 	defaults?: {

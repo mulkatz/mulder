@@ -11,8 +11,22 @@
  */
 
 import { hostname } from 'node:os';
-import type { Job, Logger, MulderConfig, Services } from '@mulder/core';
-import { MulderError } from '@mulder/core';
+import type {
+	AcquisitionChannel,
+	ArchiveLocationInput,
+	AuthenticityStatus,
+	CustodyStepInput,
+	Job,
+	Logger,
+	MulderConfig,
+	OriginalSourceInput,
+	PathSegmentType,
+	PIIType,
+	SensitivityLevel,
+	Services,
+	SubmittedBy,
+} from '@mulder/core';
+import { isSensitivityLevel, MulderError, PII_TYPES } from '@mulder/core';
 import type pg from 'pg';
 
 // ────────────────────────────────────────────────────────────
@@ -64,6 +78,28 @@ export interface PipelineRunJobPayload {
 	fallbackOnly?: boolean;
 }
 
+export interface DocumentUploadProvenancePayload {
+	context?: {
+		channel?: AcquisitionChannel;
+		submittedAt?: string;
+		collectionId?: string | null;
+		submissionNotes?: string | null;
+		submissionMetadata?: Record<string, unknown>;
+		authenticityStatus?: AuthenticityStatus;
+		authenticityNotes?: string | null;
+	};
+	originalSource?: OriginalSourceInput | null;
+	custodyChain?: CustodyStepInput[];
+	archiveLocation?: (Omit<ArchiveLocationInput, 'blobContentHash' | 'archiveId'> & { archiveId: string }) | null;
+}
+
+export interface DocumentUploadExpectedSensitivity {
+	level: SensitivityLevel;
+	reason?: string;
+	piiTypes?: PIIType[];
+	declassifyDate?: string | null;
+}
+
 export interface DocumentUploadFinalizeJobPayload {
 	sourceId: string;
 	filename: string;
@@ -71,6 +107,9 @@ export interface DocumentUploadFinalizeJobPayload {
 	tags?: string[];
 	startPipeline?: boolean;
 	declaredSizeBytes?: number;
+	submittedBy?: SubmittedBy;
+	provenance?: DocumentUploadProvenancePayload;
+	expectedSensitivity?: DocumentUploadExpectedSensitivity;
 }
 
 export interface TranslateJobPayload {
@@ -256,6 +295,29 @@ function asPositiveInteger(value: unknown): number | undefined {
 	return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
+function readOptionalRecord(value: unknown): Record<string, unknown> | undefined {
+	return isRecord(value) ? value : undefined;
+}
+
+function readNullableStringField(
+	payload: Record<string, unknown>,
+	primaryKey: string,
+	fallbackKey?: string,
+): string | null | undefined {
+	if (payload[primaryKey] === null) {
+		return null;
+	}
+	if (payload[primaryKey] !== undefined) {
+		const value = readStringField(payload, primaryKey);
+		return value ?? undefined;
+	}
+	if (fallbackKey && payload[fallbackKey] === null) {
+		return null;
+	}
+	const value = readStringField(payload, primaryKey, fallbackKey);
+	return value ?? undefined;
+}
+
 function readStringField(payload: Record<string, unknown>, primaryKey: string, fallbackKey?: string): string | null {
 	const primary = asString(payload[primaryKey]);
 	if (primary) {
@@ -267,6 +329,291 @@ function readStringField(payload: Record<string, unknown>, primaryKey: string, f
 	}
 
 	return null;
+}
+
+const ACQUISITION_CHANNELS = [
+	'archive_import',
+	'manual_upload',
+	'email_submission',
+	'web_research',
+	'api_import',
+	'bulk_import',
+	're_scan',
+	'partner_exchange',
+] as const;
+const AUTHENTICITY_STATUSES = ['unverified', 'verified', 'disputed'] as const;
+const ORIGINAL_SOURCE_TYPES = [
+	'witness_report',
+	'government_document',
+	'academic_paper',
+	'news_article',
+	'correspondence',
+	'field_notes',
+	'measurement_data',
+	'photograph',
+	'audio_recording',
+	'video_recording',
+	'other',
+] as const;
+const CUSTODY_HOLDER_TYPES = ['person', 'institution', 'archive', 'unknown'] as const;
+const CUSTODY_ACTIONS = [
+	'received',
+	'copied',
+	'digitized',
+	'annotated',
+	'translated',
+	'redacted',
+	'restored',
+	'transferred',
+	'archived',
+] as const;
+const ARCHIVE_SOURCE_STATUSES = [
+	'current',
+	'moved',
+	'deleted_from_source',
+	'archive_destroyed',
+	'digitized_only',
+	'unknown',
+] as const;
+const PATH_SEGMENT_TYPES = [
+	'collection',
+	'topic',
+	'region',
+	'time_period',
+	'person',
+	'case',
+	'administrative',
+	'unknown',
+] as const satisfies readonly PathSegmentType[];
+
+function readEnumField<T extends string>(
+	jobId: string,
+	allowed: readonly T[],
+	value: unknown,
+	field: string,
+): T | undefined {
+	if (value === undefined || value === null) {
+		return undefined;
+	}
+	if (typeof value === 'string' && allowed.includes(value as T)) {
+		return value as T;
+	}
+	throw invalidPayload(jobId, 'document_upload_finalize', `document_upload_finalize jobs require a valid ${field}`, {
+		field,
+		value,
+	});
+}
+
+function parseSubmittedBy(jobId: string, value: unknown): SubmittedBy | undefined {
+	if (value === undefined || value === null) {
+		return undefined;
+	}
+	if (!isRecord(value)) {
+		throw invalidPayload(jobId, 'document_upload_finalize', 'submittedBy must be an object', { field: 'submittedBy' });
+	}
+	const userId = readStringField(value, 'userId', 'user_id');
+	const type = readEnumField(jobId, ['human', 'system'] as const, value.type, 'submittedBy.type');
+	if (!userId || !type) {
+		throw invalidPayload(jobId, 'document_upload_finalize', 'submittedBy requires userId and type', {
+			field: 'submittedBy',
+		});
+	}
+	return {
+		userId,
+		type,
+		role: readNullableStringField(value, 'role') ?? null,
+	};
+}
+
+function parseCustodyChain(jobId: string, value: unknown): CustodyStepInput[] | undefined {
+	if (value === undefined || value === null) {
+		return undefined;
+	}
+	if (!Array.isArray(value)) {
+		throw invalidPayload(jobId, 'document_upload_finalize', 'custodyChain must be an array', {
+			field: 'provenance.custodyChain',
+		});
+	}
+	return value.map((rawStep, index) => {
+		if (!isRecord(rawStep)) {
+			throw invalidPayload(jobId, 'document_upload_finalize', 'custodyChain entries must be objects', {
+				field: `provenance.custodyChain.${index}`,
+			});
+		}
+		const stepOrder = asPositiveInteger(rawStep.stepOrder ?? rawStep.step_order);
+		const holder = readStringField(rawStep, 'holder');
+		if (!stepOrder || !holder) {
+			throw invalidPayload(jobId, 'document_upload_finalize', 'custodyChain entries require stepOrder and holder', {
+				field: `provenance.custodyChain.${index}`,
+			});
+		}
+		return {
+			stepOrder,
+			holder,
+			holderType: readEnumField(jobId, CUSTODY_HOLDER_TYPES, rawStep.holderType ?? rawStep.holder_type, 'holderType'),
+			receivedFrom: readNullableStringField(rawStep, 'receivedFrom', 'received_from'),
+			heldFrom: readNullableStringField(rawStep, 'heldFrom', 'held_from'),
+			heldUntil: readNullableStringField(rawStep, 'heldUntil', 'held_until'),
+			actions: Array.isArray(rawStep.actions)
+				? rawStep.actions
+						.map((action) => readEnumField(jobId, CUSTODY_ACTIONS, action, 'custodyAction'))
+						.filter((action): action is NonNullable<typeof action> => Boolean(action))
+				: undefined,
+			location: readNullableStringField(rawStep, 'location'),
+			notes: readNullableStringField(rawStep, 'notes'),
+		};
+	});
+}
+
+function parsePhysicalLocation(value: unknown) {
+	const record = readOptionalRecord(value);
+	if (!record) {
+		return undefined;
+	}
+	return {
+		building: readNullableStringField(record, 'building'),
+		room: readNullableStringField(record, 'room'),
+		shelf: readNullableStringField(record, 'shelf'),
+		container: readNullableStringField(record, 'container'),
+		position: readNullableStringField(record, 'position'),
+		notes: readNullableStringField(record, 'notes'),
+	};
+}
+
+function parseUploadProvenance(jobId: string, value: unknown): DocumentUploadProvenancePayload | undefined {
+	if (value === undefined || value === null) {
+		return undefined;
+	}
+	if (!isRecord(value)) {
+		throw invalidPayload(jobId, 'document_upload_finalize', 'provenance must be an object', { field: 'provenance' });
+	}
+
+	const context = readOptionalRecord(value.context);
+	const originalSource = readOptionalRecord(value.originalSource ?? value.original_source);
+	const archiveLocation = readOptionalRecord(value.archiveLocation ?? value.archive_location);
+	const sourceType = originalSource
+		? readEnumField(
+				jobId,
+				ORIGINAL_SOURCE_TYPES,
+				originalSource.sourceType ?? originalSource.source_type,
+				'provenance.originalSource.sourceType',
+			)
+		: undefined;
+	if (originalSource && !sourceType) {
+		throw invalidPayload(jobId, 'document_upload_finalize', 'originalSource requires sourceType', {
+			field: 'provenance.originalSource.sourceType',
+		});
+	}
+	const archiveId = archiveLocation ? readStringField(archiveLocation, 'archiveId', 'archive_id') : null;
+	const originalPath = archiveLocation ? readStringField(archiveLocation, 'originalPath', 'original_path') : null;
+	const originalFilename = archiveLocation
+		? readStringField(archiveLocation, 'originalFilename', 'original_filename')
+		: null;
+	if (archiveLocation && (!archiveId || !originalPath || !originalFilename)) {
+		throw invalidPayload(
+			jobId,
+			'document_upload_finalize',
+			'archiveLocation requires archiveId, originalPath, and originalFilename',
+			{ field: 'provenance.archiveLocation' },
+		);
+	}
+
+	return {
+		context: context
+			? {
+					channel: readEnumField(jobId, ACQUISITION_CHANNELS, context.channel, 'provenance.context.channel'),
+					submittedAt: readStringField(context, 'submittedAt', 'submitted_at') ?? undefined,
+					collectionId: readNullableStringField(context, 'collectionId', 'collection_id'),
+					submissionNotes: readNullableStringField(context, 'submissionNotes', 'submission_notes'),
+					submissionMetadata: readOptionalRecord(context.submissionMetadata ?? context.submission_metadata),
+					authenticityStatus: readEnumField(
+						jobId,
+						AUTHENTICITY_STATUSES,
+						context.authenticityStatus ?? context.authenticity_status,
+						'provenance.context.authenticityStatus',
+					),
+					authenticityNotes: readNullableStringField(context, 'authenticityNotes', 'authenticity_notes'),
+				}
+			: undefined,
+		originalSource: originalSource
+			? {
+					sourceType: sourceType ?? 'other',
+					sourceDescription:
+						readStringField(originalSource, 'sourceDescription', 'source_description') ??
+						readStringField(originalSource, 'description') ??
+						'Uploaded source',
+					sourceDate: readNullableStringField(originalSource, 'sourceDate', 'source_date'),
+					sourceAuthor: readNullableStringField(originalSource, 'sourceAuthor', 'source_author'),
+					sourceLanguage: readStringField(originalSource, 'sourceLanguage', 'source_language') ?? undefined,
+					sourceInstitution: readNullableStringField(originalSource, 'sourceInstitution', 'source_institution'),
+					foiaReference: readNullableStringField(originalSource, 'foiaReference', 'foia_reference'),
+				}
+			: undefined,
+		custodyChain: parseCustodyChain(jobId, value.custodyChain ?? value.custody_chain),
+		archiveLocation: archiveLocation
+			? {
+					archiveId: archiveId ?? '',
+					originalPath: originalPath ?? '',
+					originalFilename: originalFilename ?? '',
+					pathSegments: Array.isArray(archiveLocation.pathSegments ?? archiveLocation.path_segments)
+						? ((archiveLocation.pathSegments ?? archiveLocation.path_segments) as unknown[])
+								.filter(isRecord)
+								.map((segment) => ({
+									depth: typeof segment.depth === 'number' ? segment.depth : 0,
+									name: readStringField(segment, 'name') ?? 'unknown',
+									segmentType:
+										readEnumField(
+											jobId,
+											PATH_SEGMENT_TYPES,
+											segment.segmentType ?? segment.segment_type,
+											'pathSegment.segmentType',
+										) ?? 'unknown',
+								}))
+						: undefined,
+					physicalLocation: parsePhysicalLocation(
+						archiveLocation.physicalLocation ?? archiveLocation.physical_location,
+					),
+					sourceStatus: readEnumField(
+						jobId,
+						ARCHIVE_SOURCE_STATUSES,
+						archiveLocation.sourceStatus ?? archiveLocation.source_status,
+						'provenance.archiveLocation.sourceStatus',
+					),
+					recordedAt: readStringField(archiveLocation, 'recordedAt', 'recorded_at') ?? undefined,
+					validFrom: readNullableStringField(archiveLocation, 'validFrom', 'valid_from'),
+					validUntil: readNullableStringField(archiveLocation, 'validUntil', 'valid_until'),
+				}
+			: undefined,
+	};
+}
+
+function parseExpectedSensitivity(jobId: string, value: unknown): DocumentUploadExpectedSensitivity | undefined {
+	if (value === undefined || value === null) {
+		return undefined;
+	}
+	if (!isRecord(value)) {
+		throw invalidPayload(jobId, 'document_upload_finalize', 'expectedSensitivity must be an object', {
+			field: 'expectedSensitivity',
+		});
+	}
+	const level = value.level;
+	if (!isSensitivityLevel(level)) {
+		throw invalidPayload(jobId, 'document_upload_finalize', 'expectedSensitivity requires a valid level', {
+			field: 'expectedSensitivity.level',
+		});
+	}
+	const rawPiiTypes = value.piiTypes ?? value.pii_types;
+	const piiTypes = Array.isArray(rawPiiTypes)
+		? rawPiiTypes
+				.filter((item: unknown): item is PIIType => typeof item === 'string' && PII_TYPES.includes(item as PIIType))
+				.sort()
+		: undefined;
+	return {
+		level,
+		reason: readStringField(value, 'reason') ?? undefined,
+		piiTypes,
+		declassifyDate: readNullableStringField(value, 'declassifyDate', 'declassify_date'),
+	};
 }
 
 function invalidPayload(
@@ -469,6 +816,24 @@ function parseDocumentUploadFinalizePayload(jobId: string, payload: unknown): Do
 	const declaredSizeBytes = asPositiveInteger(payload.declaredSizeBytes ?? payload.declared_size_bytes);
 	if (declaredSizeBytes !== undefined) {
 		parsed.declaredSizeBytes = declaredSizeBytes;
+	}
+
+	const submittedBy = parseSubmittedBy(jobId, payload.submittedBy ?? payload.submitted_by);
+	if (submittedBy) {
+		parsed.submittedBy = submittedBy;
+	}
+
+	const provenance = parseUploadProvenance(jobId, payload.provenance);
+	if (provenance) {
+		parsed.provenance = provenance;
+	}
+
+	const expectedSensitivity = parseExpectedSensitivity(
+		jobId,
+		payload.expectedSensitivity ?? payload.expected_sensitivity,
+	);
+	if (expectedSensitivity) {
+		parsed.expectedSensitivity = expectedSensitivity;
 	}
 
 	return parsed;

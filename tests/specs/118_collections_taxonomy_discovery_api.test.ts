@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createApp } from '@mulder/api';
 import {
+	createArchive,
 	createEntity,
 	createTaxonomyEntry,
 	replaceExternalCorrelationSnapshot,
@@ -150,13 +151,18 @@ describe('Spec 118: collections, taxonomy, and discovery API routes', () => {
 		}
 	});
 
-	it('creates, lists, reads, and patches collections without exposing archive mutation', async () => {
+	it('creates, lists, reads, and patches collections with optional archive binding', async () => {
 		const app = createApp({ config: TEST_API_CONFIG });
+		const archive = await createArchive(pool, {
+			name: `Collection API archive ${randomUUID()}`,
+			description: 'Collection API archive',
+		});
 		const createResponse = await app.request('http://localhost/api/collections', {
 			body: JSON.stringify({
 				name: `Research collection ${randomUUID()}`,
 				description: 'Product API collection',
 				type: 'curated',
+				archive_id: archive.archiveId,
 				visibility: 'team',
 				tags: ['reader'],
 				defaults: { sensitivity_level: 'restricted', default_language: 'de' },
@@ -170,7 +176,7 @@ describe('Spec 118: collections, taxonomy, and discovery API routes', () => {
 			data: {
 				description: 'Product API collection',
 				type: 'curated',
-				archive_id: null,
+				archive_id: archive.archiveId,
 				visibility: 'team',
 				tags: ['reader'],
 				defaults: { sensitivity_level: 'restricted', default_language: 'de' },
@@ -187,7 +193,7 @@ describe('Spec 118: collections, taxonomy, and discovery API routes', () => {
 		});
 
 		const patchResponse = await app.request(`http://localhost/api/collections/${created.data.collection_id}`, {
-			body: JSON.stringify({ visibility: 'private', tags: ['reader', 'curated'] }),
+			body: JSON.stringify({ archive_id: null, visibility: 'private', tags: ['reader', 'curated'] }),
 			headers: { ...authorizedHeaders(), 'Content-Type': 'application/json' },
 			method: 'PATCH',
 		});

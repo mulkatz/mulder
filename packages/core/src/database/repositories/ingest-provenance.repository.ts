@@ -738,6 +738,59 @@ export async function listArchiveLocationsForBlob(
 	return result.rows.map(mapArchiveLocationRow);
 }
 
+export async function recordIngestProvenanceInTransaction(
+	client: Queryable,
+	input: RecordIngestProvenanceInput,
+): Promise<IngestProvenanceBundle> {
+	const archive = input.archive
+		? await upsertArchive(client, input.archive)
+		: input.archiveLocation?.archiveId
+			? await findArchiveById(client, input.archiveLocation.archiveId)
+			: null;
+	const archiveId = archive?.archiveId ?? input.archiveLocation?.archiveId;
+	if (input.archiveLocation && !archiveId) {
+		throw new DatabaseError('Archive location requires an archive or archiveId', DATABASE_ERROR_CODES.DB_QUERY_FAILED);
+	}
+	if (input.archiveLocation?.archiveId && !archive) {
+		throw new DatabaseError('Archive not found for archive location', DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+			context: { archiveId: input.archiveLocation.archiveId },
+		});
+	}
+	const collection = await resolveCollectionForIngest(
+		client,
+		{
+			explicitCollectionId: input.context.collectionId ?? null,
+			archive,
+			archiveLocation: input.archiveLocation ?? null,
+			submittedBy: input.context.submittedBy,
+		},
+		input.config?.collections,
+	);
+	const context = await recordAcquisitionContext(client, {
+		blobContentHash: input.blobContentHash,
+		sourceId: input.sourceId ?? null,
+		...input.context,
+		collectionId: collection?.collectionId ?? input.context.collectionId ?? null,
+	});
+	const originalSource = input.originalSource
+		? await recordOriginalSource(client, { ...input.originalSource, contextId: context.contextId })
+		: null;
+	const custodyChain = await replaceCustodyChain(
+		client,
+		context.contextId,
+		input.custodyChain?.map((step) => ({ ...step, contextId: context.contextId })) ?? [],
+	);
+	const archiveLocation =
+		input.archiveLocation && archiveId
+			? await recordArchiveLocation(client, {
+					...input.archiveLocation,
+					blobContentHash: input.blobContentHash,
+					archiveId,
+				})
+			: null;
+	return { context, archive, archiveLocation, collection, originalSource, custodyChain };
+}
+
 export async function recordIngestProvenance(
 	pool: pg.Pool,
 	input: RecordIngestProvenanceInput,
@@ -745,57 +798,9 @@ export async function recordIngestProvenance(
 	const client = await pool.connect();
 	try {
 		await client.query('BEGIN');
-		const archive = input.archive
-			? await upsertArchive(client, input.archive)
-			: input.archiveLocation?.archiveId
-				? await findArchiveById(client, input.archiveLocation.archiveId)
-				: null;
-		const archiveId = archive?.archiveId ?? input.archiveLocation?.archiveId;
-		if (input.archiveLocation && !archiveId) {
-			throw new DatabaseError(
-				'Archive location requires an archive or archiveId',
-				DATABASE_ERROR_CODES.DB_QUERY_FAILED,
-			);
-		}
-		if (input.archiveLocation?.archiveId && !archive) {
-			throw new DatabaseError('Archive not found for archive location', DATABASE_ERROR_CODES.DB_NOT_FOUND, {
-				context: { archiveId: input.archiveLocation.archiveId },
-			});
-		}
-		const collection = await resolveCollectionForIngest(
-			client,
-			{
-				explicitCollectionId: input.context.collectionId ?? null,
-				archive,
-				archiveLocation: input.archiveLocation ?? null,
-				submittedBy: input.context.submittedBy,
-			},
-			input.config?.collections,
-		);
-		const context = await recordAcquisitionContext(client, {
-			blobContentHash: input.blobContentHash,
-			sourceId: input.sourceId ?? null,
-			...input.context,
-			collectionId: collection?.collectionId ?? input.context.collectionId ?? null,
-		});
-		const originalSource = input.originalSource
-			? await recordOriginalSource(client, { ...input.originalSource, contextId: context.contextId })
-			: null;
-		const custodyChain = await replaceCustodyChain(
-			client,
-			context.contextId,
-			input.custodyChain?.map((step) => ({ ...step, contextId: context.contextId })) ?? [],
-		);
-		const archiveLocation =
-			input.archiveLocation && archiveId
-				? await recordArchiveLocation(client, {
-						...input.archiveLocation,
-						blobContentHash: input.blobContentHash,
-						archiveId,
-					})
-				: null;
+		const bundle = await recordIngestProvenanceInTransaction(client, input);
 		await client.query('COMMIT');
-		return { context, archive, archiveLocation, collection, originalSource, custodyChain };
+		return bundle;
 	} catch (error: unknown) {
 		await client.query('ROLLBACK').catch(() => {});
 		if (error instanceof DatabaseError) {

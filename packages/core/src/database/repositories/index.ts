@@ -284,6 +284,7 @@ export {
 	recordArchiveLocation,
 	recordCustodyStep,
 	recordIngestProvenance,
+	recordIngestProvenanceInTransaction,
 	recordOriginalSource,
 	replaceCustodyChain,
 	restoreAcquisitionContextsForSource,

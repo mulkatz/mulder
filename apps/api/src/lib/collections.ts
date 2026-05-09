@@ -152,6 +152,7 @@ export async function createCollectionFromApi(
 		name: input.name,
 		description: input.description,
 		type: input.type,
+		archiveId: input.archive_id ?? null,
 		createdBy: actorIdForPrincipal(options?.authPrincipal),
 		visibility: input.visibility,
 		tags: input.tags,
@@ -174,6 +175,7 @@ export async function patchCollectionFromApi(
 	let collection = await updateCollection(pool, collectionId, {
 		name: input.name,
 		description: input.description,
+		archiveId: input.archive_id,
 		visibility: input.visibility,
 		defaults: input.defaults
 			? {

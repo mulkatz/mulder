@@ -91,6 +91,160 @@ export function isSupportedOriginalStoragePath(storagePath: string): boolean {
 }
 
 export const UploadTransportSchema = z.enum(['gcs_resumable', 'dev_proxy']);
+export const UploadAcquisitionChannelSchema = z.enum([
+	'archive_import',
+	'manual_upload',
+	'email_submission',
+	'web_research',
+	'api_import',
+	'bulk_import',
+	're_scan',
+	'partner_exchange',
+]);
+export const UploadAuthenticityStatusSchema = z.enum(['unverified', 'verified', 'disputed']);
+export const UploadOriginalSourceTypeSchema = z.enum([
+	'witness_report',
+	'government_document',
+	'academic_paper',
+	'news_article',
+	'correspondence',
+	'field_notes',
+	'measurement_data',
+	'photograph',
+	'audio_recording',
+	'video_recording',
+	'other',
+]);
+export const UploadCustodyHolderTypeSchema = z.enum(['person', 'institution', 'archive', 'unknown']);
+export const UploadCustodyActionSchema = z.enum([
+	'received',
+	'copied',
+	'digitized',
+	'annotated',
+	'translated',
+	'redacted',
+	'restored',
+	'transferred',
+	'archived',
+]);
+export const UploadArchiveSourceStatusSchema = z.enum([
+	'current',
+	'moved',
+	'deleted_from_source',
+	'archive_destroyed',
+	'digitized_only',
+	'unknown',
+]);
+export const UploadPathSegmentTypeSchema = z.enum([
+	'collection',
+	'topic',
+	'region',
+	'time_period',
+	'person',
+	'case',
+	'administrative',
+	'unknown',
+]);
+export const UploadSensitivityLevelSchema = z.enum(['public', 'internal', 'restricted', 'confidential']);
+export const UploadPiiTypeSchema = z.enum([
+	'person_name',
+	'contact_info',
+	'medical_data',
+	'location_private',
+	'location_sighting',
+	'financial',
+	'unpublished_research',
+	'legal',
+]);
+
+const OptionalDateStringSchema = z.string().trim().min(1).max(64).nullable().optional();
+const OptionalTextSchema = z.string().trim().max(4000).nullable().optional();
+
+export const UploadProvenanceSchema = z.object({
+	acquisition: z
+		.object({
+			channel: UploadAcquisitionChannelSchema.optional().default('manual_upload'),
+			submitted_at: z.string().trim().min(1).max(64).optional(),
+			collection_id: z.string().uuid().nullable().optional(),
+			notes: OptionalTextSchema,
+			metadata: z.record(z.string(), z.unknown()).optional().default({}),
+		})
+		.optional(),
+	authenticity: z
+		.object({
+			status: UploadAuthenticityStatusSchema.optional().default('unverified'),
+			notes: OptionalTextSchema,
+		})
+		.optional(),
+	original_source: z
+		.object({
+			source_type: UploadOriginalSourceTypeSchema,
+			description: z.string().trim().min(1).max(4000),
+			source_date: OptionalDateStringSchema,
+			author: z.string().trim().max(512).nullable().optional(),
+			language: z.string().trim().min(2).max(16).optional(),
+			institution: z.string().trim().max(512).nullable().optional(),
+			foia_reference: z.string().trim().max(512).nullable().optional(),
+		})
+		.optional(),
+	custody_chain: z
+		.array(
+			z.object({
+				step_order: z.number().int().positive(),
+				holder: z.string().trim().min(1).max(512),
+				holder_type: UploadCustodyHolderTypeSchema.optional().default('unknown'),
+				received_from: z.string().trim().max(512).nullable().optional(),
+				held_from: OptionalDateStringSchema,
+				held_until: OptionalDateStringSchema,
+				actions: z.array(UploadCustodyActionSchema).max(12).optional().default([]),
+				location: z.string().trim().max(512).nullable().optional(),
+				notes: OptionalTextSchema,
+			}),
+		)
+		.max(50)
+		.optional()
+		.default([]),
+	archive_location: z
+		.object({
+			archive_id: z.string().uuid(),
+			original_path: z.string().trim().min(1).max(1000),
+			original_filename: z.string().trim().min(1).max(512),
+			path_segments: z
+				.array(
+					z.object({
+						depth: z.number().int().nonnegative(),
+						name: z.string().trim().min(1).max(256),
+						segment_type: UploadPathSegmentTypeSchema.optional().default('unknown'),
+					}),
+				)
+				.max(20)
+				.optional()
+				.default([]),
+			physical_location: z
+				.object({
+					building: z.string().trim().max(256).nullable().optional(),
+					room: z.string().trim().max(256).nullable().optional(),
+					shelf: z.string().trim().max(256).nullable().optional(),
+					container: z.string().trim().max(256).nullable().optional(),
+					position: z.string().trim().max(256).nullable().optional(),
+					notes: OptionalTextSchema,
+				})
+				.nullable()
+				.optional(),
+			source_status: UploadArchiveSourceStatusSchema.optional().default('current'),
+			recorded_at: z.string().trim().min(1).max(64).optional(),
+			valid_from: OptionalDateStringSchema,
+			valid_until: OptionalDateStringSchema,
+		})
+		.optional(),
+});
+
+export const UploadExpectedSensitivitySchema = z.object({
+	level: UploadSensitivityLevelSchema,
+	reason: z.string().trim().min(1).max(512).optional(),
+	pii_types: z.array(UploadPiiTypeSchema).max(20).optional().default([]),
+	declassify_date: z.string().trim().min(1).max(64).nullable().optional(),
+});
 
 export const InitiateDocumentUploadRequestSchema = z.object({
 	filename: z.string().trim().min(1).max(512),
@@ -124,6 +278,8 @@ export const CompleteDocumentUploadRequestSchema = z
 		filename: z.string().trim().min(1).max(512),
 		storage_path: z.string().min(1),
 		tags: z.array(z.string().trim().min(1).max(64)).max(20).optional(),
+		provenance: UploadProvenanceSchema.optional(),
+		expected_sensitivity: UploadExpectedSensitivitySchema.optional(),
 		start_pipeline: z.boolean().optional().default(true),
 	})
 	.superRefine((value, ctx) => {

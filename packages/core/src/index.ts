@@ -550,6 +550,7 @@ export {
 	recordArchiveLocation,
 	recordCustodyStep,
 	recordIngestProvenance,
+	recordIngestProvenanceInTransaction,
 	recordOriginalSource,
 	recordReviewEvent,
 	recordUrlHostLifecycle,

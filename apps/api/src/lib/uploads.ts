@@ -15,6 +15,7 @@ import {
 	type Services,
 } from '@mulder/core';
 import type pg from 'pg';
+import type { AuthPrincipal } from '../middleware/auth.js';
 import type {
 	CompleteDocumentUploadRequest,
 	CompleteDocumentUploadResponse,
@@ -32,6 +33,10 @@ interface UploadContext {
 	config: MulderConfig;
 	pool: pg.Pool;
 	services: Services;
+}
+
+interface UploadRouteOptions {
+	authPrincipal?: AuthPrincipal;
 }
 
 type Queryable = pg.Pool | pg.PoolClient;
@@ -146,6 +151,85 @@ async function assertNoInFlightFinalizeJob(pool: Queryable, sourceId: string): P
 	}
 }
 
+function submittedByForPrincipal(principal: AuthPrincipal | undefined) {
+	if (!principal) {
+		return { userId: 'api', type: 'system', role: 'api' };
+	}
+	if (principal.type === 'api_key') {
+		return { userId: `api-key:${principal.keyName}`, type: 'system', role: 'api_key' };
+	}
+	return { userId: principal.userId, type: 'human', role: principal.role };
+}
+
+function mapUploadProvenance(input: CompleteDocumentUploadRequest['provenance']) {
+	if (!input) {
+		return undefined;
+	}
+
+	return {
+		context: {
+			channel: input.acquisition?.channel,
+			submittedAt: input.acquisition?.submitted_at,
+			collectionId: input.acquisition?.collection_id,
+			submissionNotes: input.acquisition?.notes,
+			submissionMetadata: input.acquisition?.metadata,
+			authenticityStatus: input.authenticity?.status,
+			authenticityNotes: input.authenticity?.notes,
+		},
+		originalSource: input.original_source
+			? {
+					sourceType: input.original_source.source_type,
+					sourceDescription: input.original_source.description,
+					sourceDate: input.original_source.source_date,
+					sourceAuthor: input.original_source.author,
+					sourceLanguage: input.original_source.language,
+					sourceInstitution: input.original_source.institution,
+					foiaReference: input.original_source.foia_reference,
+				}
+			: undefined,
+		custodyChain: input.custody_chain?.map((step) => ({
+			stepOrder: step.step_order,
+			holder: step.holder,
+			holderType: step.holder_type,
+			receivedFrom: step.received_from,
+			heldFrom: step.held_from,
+			heldUntil: step.held_until,
+			actions: step.actions,
+			location: step.location,
+			notes: step.notes,
+		})),
+		archiveLocation: input.archive_location
+			? {
+					archiveId: input.archive_location.archive_id,
+					originalPath: input.archive_location.original_path,
+					originalFilename: input.archive_location.original_filename,
+					pathSegments: input.archive_location.path_segments?.map((segment) => ({
+						depth: segment.depth,
+						name: segment.name,
+						segmentType: segment.segment_type,
+					})),
+					physicalLocation: input.archive_location.physical_location,
+					sourceStatus: input.archive_location.source_status,
+					recordedAt: input.archive_location.recorded_at,
+					validFrom: input.archive_location.valid_from,
+					validUntil: input.archive_location.valid_until,
+				}
+			: undefined,
+	};
+}
+
+function mapExpectedSensitivity(input: CompleteDocumentUploadRequest['expected_sensitivity']) {
+	if (!input) {
+		return undefined;
+	}
+	return {
+		level: input.level,
+		reason: input.reason,
+		piiTypes: input.pii_types,
+		declassifyDate: input.declassify_date,
+	};
+}
+
 export async function initiateDocumentUpload(
 	input: InitiateDocumentUploadRequest,
 	logger?: Logger,
@@ -203,6 +287,7 @@ export async function initiateDocumentUpload(
 export async function completeDocumentUpload(
 	input: CompleteDocumentUploadRequest,
 	logger?: Logger,
+	options?: UploadRouteOptions,
 ): Promise<CompleteDocumentUploadResponse> {
 	const { pool, services } = resolveContext();
 	const requestLogger = createRouteLogger(logger ?? createLogger(), {
@@ -248,6 +333,9 @@ export async function completeDocumentUpload(
 					tags: input.tags ?? [],
 					startPipeline: input.start_pipeline,
 					declaredSizeBytes: metadata.sizeBytes,
+					submittedBy: submittedByForPrincipal(options?.authPrincipal),
+					provenance: mapUploadProvenance(input.provenance),
+					expectedSensitivity: mapExpectedSensitivity(input.expected_sensitivity),
 				}),
 			],
 		);

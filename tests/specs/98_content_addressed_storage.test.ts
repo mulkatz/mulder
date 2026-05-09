@@ -126,6 +126,7 @@ function cleanState(): void {
 			'DELETE FROM original_sources',
 			'DELETE FROM archive_locations',
 			'DELETE FROM acquisition_contexts',
+			'DELETE FROM collections',
 			'DELETE FROM archives',
 			'DELETE FROM source_steps',
 			'DELETE FROM chunks',
@@ -275,6 +276,8 @@ async function submitUpload(args: {
 	content: Buffer;
 	contentType: string;
 	startPipeline: boolean;
+	provenance?: Record<string, unknown>;
+	expectedSensitivity?: Record<string, unknown>;
 }): Promise<{ sourceId: string; provisionalPath: string; jobId: string }> {
 	const initiate = await apiPost('/api/uploads/documents/initiate', {
 		filename: args.filename,
@@ -292,6 +295,8 @@ async function submitUpload(args: {
 		filename: args.filename,
 		storage_path: provisionalPath,
 		start_pipeline: args.startPipeline,
+		...(args.provenance ? { provenance: args.provenance } : {}),
+		...(args.expectedSensitivity ? { expected_sensitivity: args.expectedSensitivity } : {}),
 	});
 	const completeBody = await readJson(complete);
 	expect(complete.status, JSON.stringify(completeBody)).toBe(202);
@@ -305,6 +310,8 @@ async function finalizeUpload(args: {
 	content: Buffer;
 	contentType: string;
 	startPipeline: boolean;
+	provenance?: Record<string, unknown>;
+	expectedSensitivity?: Record<string, unknown>;
 }): Promise<{ sourceId: string; provisionalPath: string; jobId: string; finalizePayload: Record<string, unknown> }> {
 	const { sourceId, provisionalPath, jobId } = await submitUpload(args);
 
@@ -590,6 +597,143 @@ describe('Spec 98 - Content-addressed raw blob storage', () => {
 		});
 	});
 
+	it('QA-05b: API upload finalization records submitted provenance and sensitivity', async () => {
+		if (!pgAvailable) return;
+		const content = Buffer.from('Spec 98 API provenance upload.\n', 'utf-8');
+
+		const finalized = await finalizeUpload({
+			filename: 'api-provenance.txt',
+			content,
+			contentType: 'text/plain',
+			startPipeline: false,
+			provenance: {
+				acquisition: {
+					channel: 'manual_upload',
+					notes: 'Digitized from box A',
+					metadata: { intake_form: 'A-7' },
+				},
+				authenticity: {
+					status: 'verified',
+					notes: 'Compared with the archive register',
+				},
+				original_source: {
+					source_type: 'field_notes',
+					description: 'Notebook scan from the field archive',
+					language: 'de',
+					author: 'A. Researcher',
+				},
+				custody_chain: [
+					{
+						step_order: 1,
+						holder: 'Archive Desk',
+						holder_type: 'archive',
+						actions: ['received', 'digitized'],
+						notes: 'Initial intake',
+					},
+				],
+			},
+			expectedSensitivity: {
+				level: 'restricted',
+				reason: 'contains witness names',
+				pii_types: ['person_name'],
+			},
+		});
+
+		const sourceRow = readJsonCell(
+			`SELECT row_to_json(source_row)::text FROM (SELECT sensitivity_level, sensitivity_metadata FROM sources WHERE id = ${sqlLiteral(finalized.sourceId)}) AS source_row;`,
+		);
+		expect(sourceRow.sensitivity_level).toBe('restricted');
+		expect(sourceRow.sensitivity_metadata).toMatchObject({
+			level: 'restricted',
+			reason: 'contains witness names',
+			assigned_by: 'human',
+			pii_types: ['person_name'],
+		});
+
+		const acquisition = readJsonCell(
+			`SELECT row_to_json(acquisition_row)::text FROM (SELECT context_id, channel, submitted_by_user_id, submitted_by_type, submitted_by_role, authenticity_status, authenticity_notes, submission_notes, submission_metadata FROM acquisition_contexts WHERE source_id = ${sqlLiteral(finalized.sourceId)} ORDER BY submitted_at DESC LIMIT 1) AS acquisition_row;`,
+		);
+		expect(acquisition).toMatchObject({
+			channel: 'manual_upload',
+			submitted_by_user_id: 'api-key:cli',
+			submitted_by_type: 'system',
+			submitted_by_role: 'api_key',
+			authenticity_status: 'verified',
+			authenticity_notes: 'Compared with the archive register',
+			submission_notes: 'Digitized from box A',
+		});
+		expect(acquisition.submission_metadata).toMatchObject({
+			intake_form: 'A-7',
+			mulder_upload: {
+				filename: 'api-provenance.txt',
+				media_type: 'text/plain',
+				source_type: 'text',
+			},
+		});
+
+		const originalSource = readJsonCell(
+			`SELECT row_to_json(original_row)::text FROM (SELECT source_type, source_description, source_language, source_author FROM original_sources WHERE context_id = ${sqlLiteral(String(acquisition.context_id))}) AS original_row;`,
+		);
+		expect(originalSource).toMatchObject({
+			source_type: 'field_notes',
+			source_description: 'Notebook scan from the field archive',
+			source_language: 'de',
+			source_author: 'A. Researcher',
+		});
+
+		const custody = readJsonCell(
+			`SELECT row_to_json(custody_row)::text FROM (SELECT step_order, holder, holder_type, actions::text, notes FROM custody_steps WHERE context_id = ${sqlLiteral(String(acquisition.context_id))}) AS custody_row;`,
+		);
+		expect(custody).toMatchObject({
+			step_order: 1,
+			holder: 'Archive Desk',
+			holder_type: 'archive',
+			actions: '{received,digitized}',
+			notes: 'Initial intake',
+		});
+	});
+
+	it('QA-05c: API upload finalization applies explicit collection sensitivity defaults', async () => {
+		if (!pgAvailable) return;
+		const content = Buffer.from('Spec 98 API collection default sensitivity.\n', 'utf-8');
+		const collection = await coreModule.createCollection(workerContext.pool, {
+			name: 'Spec 98 Upload Default Collection',
+			createdBy: 'spec98',
+			defaults: { sensitivityLevel: 'restricted', defaultLanguage: 'de' },
+		});
+
+		const finalized = await finalizeUpload({
+			filename: 'api-collection-default.txt',
+			content,
+			contentType: 'text/plain',
+			startPipeline: false,
+			provenance: {
+				acquisition: {
+					channel: 'manual_upload',
+					collection_id: collection.collectionId,
+					notes: 'Collection default sensitivity applies',
+				},
+			},
+		});
+
+		const sourceRow = readJsonCell(
+			`SELECT row_to_json(source_row)::text FROM (SELECT sensitivity_level, sensitivity_metadata FROM sources WHERE id = ${sqlLiteral(finalized.sourceId)}) AS source_row;`,
+		);
+		expect(sourceRow.sensitivity_level).toBe('restricted');
+		expect(sourceRow.sensitivity_metadata).toMatchObject({
+			level: 'restricted',
+			reason: 'collection_default',
+			assigned_by: 'policy_rule',
+		});
+		const acquisition = readJsonCell(
+			`SELECT row_to_json(acquisition_row)::text FROM (SELECT collection_id, submission_notes FROM acquisition_contexts WHERE source_id = ${sqlLiteral(finalized.sourceId)} ORDER BY submitted_at DESC LIMIT 1) AS acquisition_row;`,
+		);
+		expect(acquisition).toMatchObject({
+			collection_id: collection.collectionId,
+			submission_notes: 'Collection default sensitivity applies',
+		});
+	});
+
 	it('QA-06: API exact duplicate upload cleans up the provisional object', async () => {
 		if (!pgAvailable) return;
 		const content = Buffer.from('Spec 98 API exact duplicate upload.\n', 'utf-8');
@@ -755,6 +899,74 @@ describe('Spec 98 - Content-addressed raw blob storage', () => {
 		expect(existsSync(storageObjectPath(alternatePath))).toBe(false);
 		expect(existsSync(storageObjectPath(first.provisionalPath))).toBe(false);
 		expect(existsSync(storageObjectPath(second.provisionalPath))).toBe(false);
+	});
+
+	it('QA-06e: API cross-format duplicate records the later acquisition provenance', async () => {
+		if (!pgAvailable) return;
+		const reportText = 'Spec 98 API Cross-Format Duplicate Report\n\nAlpha beta gamma.\n';
+		const markdownContent = reportText.replaceAll('\n', '\r\n');
+		const textContentHash = sha256(reportText);
+		const markdownContentHash = sha256(markdownContent);
+		const collection = await coreModule.createCollection(workerContext.pool, {
+			name: 'Spec 98 Cross Format Collection',
+			createdBy: 'spec98',
+		});
+
+		const first = await finalizeUpload({
+			filename: 'api-cross-format.txt',
+			content: Buffer.from(reportText, 'utf-8'),
+			contentType: 'text/plain',
+			startPipeline: false,
+		});
+		const second = await finalizeUpload({
+			filename: 'api-cross-format.md',
+			content: Buffer.from(markdownContent, 'utf-8'),
+			contentType: 'text/markdown',
+			startPipeline: true,
+			provenance: {
+				acquisition: {
+					channel: 'manual_upload',
+					collection_id: collection.collectionId,
+					notes: 'Later acquisition from a different silo',
+				},
+			},
+		});
+
+		expect(sourceCountForHash(textContentHash)).toBe(1);
+		expect(blobCountForHash(markdownContentHash)).toBe(0);
+		expect(existsSync(storageObjectPath(second.provisionalPath))).toBe(false);
+		expect(second.finalizePayload).toMatchObject({
+			sourceId: second.sourceId,
+			result_status: 'duplicate',
+			resolved_source_id: first.sourceId,
+			duplicate_of_source_id: first.sourceId,
+		});
+
+		const acquisition = readJsonCell(
+			`SELECT row_to_json(acquisition_row)::text FROM (
+				SELECT collection_id, submission_notes, submission_metadata
+				FROM acquisition_contexts
+				WHERE source_id = ${sqlLiteral(first.sourceId)}
+					AND submission_notes = 'Later acquisition from a different silo'
+				ORDER BY submitted_at DESC
+				LIMIT 1
+			) AS acquisition_row;`,
+		);
+		expect(acquisition).toMatchObject({
+			collection_id: collection.collectionId,
+			submission_notes: 'Later acquisition from a different silo',
+		});
+		expect(acquisition.submission_metadata).toMatchObject({
+			mulder_upload: {
+				filename: 'api-cross-format.md',
+				deduplication_status: 'cross_format_duplicate',
+				resolved_content_hash: textContentHash,
+				submitted_content_hash: markdownContentHash,
+			},
+		});
+		expect(
+			Number(db.runSql(`SELECT COUNT(*) FROM acquisition_contexts WHERE source_id = ${sqlLiteral(first.sourceId)};`)),
+		).toBe(2);
 	});
 
 	it('QA-07: Cross-format duplicate behavior remains unchanged', () => {
