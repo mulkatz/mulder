@@ -346,7 +346,7 @@ Graph audit trail and data interchange. Depends on M11, M10.
 
 | Status | Step | What | Spec |
 |--------|------|------|------|
-| ⚪ | P1 | Graph change event log | §A14 |
+| 🟡 | P1 | Graph change event log | §A14 |
 | ⚪ | P2 | Graph snapshots + diff queries | §A14 |
 | ⚪ | P3 | Export framework — formats, sensitivity filtering, audit | §A15 |
 | ⚪ | P4 | Import adapter framework — field mapping, dry run, post-import report | §A15 |
