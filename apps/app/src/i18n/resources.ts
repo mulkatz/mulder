@@ -59,6 +59,8 @@ export const resources = {
 				dataNotExposedYet: 'This data is not exposed by the API yet.',
 				copyParameters: 'Copy parameters',
 				apiRequestFailed: 'The API request failed.',
+				routeLoadErrorTitle: 'View could not be loaded',
+				routeLoadErrorBody: 'Please refresh the page. If the problem continues, sign in again.',
 			},
 			status: {
 				completed: 'Completed',
@@ -595,6 +597,8 @@ export const resources = {
 				dataNotExposedYet: 'Diese Daten werden von der Schnittstelle noch nicht bereitgestellt.',
 				copyParameters: 'Parameter kopieren',
 				apiRequestFailed: 'Die Anfrage an die Schnittstelle ist fehlgeschlagen.',
+				routeLoadErrorTitle: 'Ansicht konnte nicht geladen werden',
+				routeLoadErrorBody: 'Bitte aktualisieren Sie die Seite. Falls das Problem bleibt, melden Sie sich erneut an.',
 			},
 			status: {
 				completed: 'Abgeschlossen',
