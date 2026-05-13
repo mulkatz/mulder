@@ -7,5 +7,6 @@ export function useDocumentLayout(sourceId?: string, options: { refetchInterval?
 		queryFn: () => apiFetchText(`/api/documents/${sourceId}/layout`),
 		enabled: Boolean(sourceId),
 		refetchInterval: options.refetchInterval,
+		staleTime: 30_000,
 	});
 }

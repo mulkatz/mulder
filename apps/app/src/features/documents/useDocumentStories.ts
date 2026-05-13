@@ -8,5 +8,6 @@ export function useDocumentStories(sourceId?: string, options: { refetchInterval
 		queryFn: () => apiFetch<DocumentStoriesResponse>(`/api/documents/${sourceId}/stories`),
 		enabled: Boolean(sourceId),
 		refetchInterval: options.refetchInterval,
+		staleTime: 30_000,
 	});
 }

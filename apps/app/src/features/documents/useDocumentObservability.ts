@@ -8,5 +8,6 @@ export function useDocumentObservability(sourceId?: string, options: { refetchIn
 		queryFn: () => apiFetch<DocumentObservabilityResponse>(`/api/documents/${sourceId}/observability`),
 		enabled: Boolean(sourceId),
 		refetchInterval: options.refetchInterval,
+		staleTime: 30_000,
 	});
 }

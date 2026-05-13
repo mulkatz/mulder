@@ -8,5 +8,6 @@ export function useDocumentPages(sourceId?: string, options: { refetchInterval?:
 		queryFn: () => apiFetch<DocumentPagesResponse>(`/api/documents/${sourceId}/pages`),
 		enabled: Boolean(sourceId),
 		refetchInterval: options.refetchInterval,
+		staleTime: 30_000,
 	});
 }
