@@ -245,7 +245,7 @@ export const resources = {
 				title: 'Research Desk',
 				description: 'Review source health, new findings, open questions, and the next research steps.',
 				startAnalysis: 'Add Sources',
-				startAnalysisTitle: 'Adding sources is gated until provenance and upload flows are product-ready.',
+				startAnalysisTitle: 'Add sources with provenance and start processing.',
 				viewSources: 'View Sources',
 				loadingTitle: 'Loading workspace data',
 				errorTitle: 'Workspace data unavailable',
@@ -922,8 +922,7 @@ export const resources = {
 				title: 'Rechercheplatz',
 				description: 'Prüfe Quellenzustand, neue Funde, offene Fragen und nächste Rechercheschritte.',
 				startAnalysis: 'Quellen hinzufügen',
-				startAnalysisTitle:
-					'Quellen können hinzugefügt werden, sobald Herkunfts- und Hochladeabläufe produktbereit sind.',
+				startAnalysisTitle: 'Quellen mit Herkunftsangaben hinzufügen und die Verarbeitung starten.',
 				viewSources: 'Quellen ansehen',
 				loadingTitle: 'Arbeitsbereichsdaten werden geladen',
 				errorTitle: 'Arbeitsbereichsdaten nicht verfügbar',

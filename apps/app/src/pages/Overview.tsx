@@ -183,15 +183,14 @@ export function OverviewPage() {
 								<Archive className="size-4" />
 								{t('overview.viewSources')}
 							</Link>
-							<button
-								className="inline-flex h-9 items-center gap-2 rounded-md bg-field px-3 text-sm font-medium text-text-subtle"
-								disabled
+							<Link
+								className="inline-flex h-9 items-center gap-2 rounded-md bg-accent px-3 text-sm font-medium text-text-inverse transition-colors hover:bg-accent-hover"
 								title={t('overview.startAnalysisTitle')}
-								type="button"
+								to="/sources/add"
 							>
 								<Plus className="size-4" />
 								{t('overview.startAnalysis')}
-							</button>
+							</Link>
 						</>
 					}
 					description={t('overview.description')}
@@ -227,15 +226,14 @@ export function OverviewPage() {
 							<Archive className="size-4" />
 							{t('overview.viewSources')}
 						</Link>
-						<button
-							className="inline-flex h-9 items-center gap-2 rounded-md bg-field px-3 text-sm font-medium text-text-subtle"
-							disabled
+						<Link
+							className="inline-flex h-9 items-center gap-2 rounded-md bg-accent px-3 text-sm font-medium text-text-inverse transition-colors hover:bg-accent-hover"
 							title={t('overview.startAnalysisTitle')}
-							type="button"
+							to="/sources/add"
 						>
 							<Plus className="size-4" />
 							{t('overview.startAnalysis')}
-						</button>
+						</Link>
 					</>
 				}
 				description={t('overview.description')}
