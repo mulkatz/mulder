@@ -2423,12 +2423,34 @@ export async function execute(
 			);
 		}
 		const nativeTextRatio = source.sourceType === 'image' ? 0 : source.nativeTextRatio;
-		const threshold = config.extraction.native_text_threshold;
-		const isNativePath = source.sourceType === 'pdf' && nativeTextRatio >= threshold;
+		const threshold = config.document_quality.extraction_routing.pdf_skip_document_ai_min_native_text_ratio;
+		const qualitySignals = latestQuality?.signals ?? {};
+		const pagesWithTextRatio =
+			typeof qualitySignals.pages_with_text_ratio === 'number'
+				? qualitySignals.pages_with_text_ratio
+				: source.hasNativeText
+					? nativeTextRatio
+					: 0;
+		const languageConfidence =
+			typeof qualitySignals.language_confidence === 'number' ? qualitySignals.language_confidence : 0;
+		const qualityAllowsNative =
+			latestQuality?.recommendedPath === 'standard' &&
+			nativeTextRatio >= config.document_quality.extraction_routing.pdf_skip_document_ai_min_native_text_ratio &&
+			pagesWithTextRatio >= config.document_quality.extraction_routing.pdf_skip_document_ai_min_pages_with_text_ratio &&
+			languageConfidence >= config.document_quality.extraction_routing.pdf_skip_document_ai_min_language_confidence;
+		const noQualityNativeAllowed =
+			!latestQuality &&
+			!config.document_quality.extraction_routing.prefer_document_ai_for_uncertain_pdf &&
+			source.hasNativeText &&
+			nativeTextRatio >= threshold;
+		const isNativePath = source.sourceType === 'pdf' && (qualityAllowsNative || noQualityNativeAllowed);
 
 		log.info(
 			{
 				nativeTextRatio,
+				pagesWithTextRatio,
+				languageConfidence,
+				qualityPath: latestQuality?.recommendedPath ?? null,
 				threshold,
 				sourceType: source.sourceType,
 				mediaType: sourceMediaType,

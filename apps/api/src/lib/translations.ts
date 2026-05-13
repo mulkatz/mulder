@@ -1,19 +1,26 @@
 import {
 	type AccessPrincipal,
 	allowedSensitivityLevelsForMax,
+	countProcessedSources,
+	countStories,
+	countTranslatedStoriesForTranslation,
 	DATABASE_ERROR_CODES,
 	DatabaseError,
+	type Entity,
 	enqueueJob,
 	findCurrentTranslatedDocument,
 	findSourceById,
 	getWorkerPool,
 	listTranslatedDocumentsForSource,
+	listTranslatedStoriesForTranslation,
 	loadConfig,
 	type MulderConfig,
 	MulderError,
 	normalizeSensitivityMetadata,
+	presentCorroborationScore,
 	resolveAccessPolicy,
 	type TranslatedDocument,
+	type TranslatedStory,
 } from '@mulder/core';
 import type pg from 'pg';
 import type { AuthPrincipal } from '../middleware/auth.js';
@@ -24,6 +31,7 @@ import type {
 	TranslationListQuery,
 	TranslationListResponse,
 	TranslationResponse,
+	TranslationStoriesResponse,
 } from '../routes/translations.schemas.js';
 
 interface TranslationContext {
@@ -121,6 +129,64 @@ function mapTranslation(document: TranslatedDocument): TranslationResponse {
 		sensitivity_level: document.sensitivityLevel,
 		created_at: document.createdAt.toISOString(),
 		updated_at: document.updatedAt.toISOString(),
+	};
+}
+
+function mapEntity(
+	entity: Entity,
+	config: MulderConfig,
+	corpusSize: number,
+): NonNullable<TranslationStoriesResponse['data']['stories'][number]['mentions'][number]['entity']> {
+	const corroboration = presentCorroborationScore(entity.corroborationScore, {
+		corpusSize,
+		threshold: config.thresholds.corroboration_meaningful,
+	});
+	return {
+		id: entity.id,
+		canonical_id: entity.canonicalId,
+		name: entity.name,
+		type: entity.type,
+		taxonomy_status: entity.taxonomyStatus,
+		taxonomy_id: entity.taxonomyId,
+		corroboration_score: corroboration.score,
+		corroboration_status: corroboration.status,
+		source_count: entity.sourceCount,
+		attributes: entity.attributes ?? {},
+		created_at: entity.createdAt.toISOString(),
+		updated_at: entity.updatedAt.toISOString(),
+	};
+}
+
+function mapTranslatedStory(
+	story: TranslatedStory,
+	config: MulderConfig,
+	corpusSize: number,
+): TranslationStoriesResponse['data']['stories'][number] {
+	return {
+		id: story.id,
+		translation_id: story.translationId,
+		story_id: story.storyId,
+		source_document_id: story.sourceDocumentId,
+		source_language: story.sourceLanguage,
+		target_language: story.targetLanguage,
+		title: story.title,
+		subtitle: story.subtitle,
+		markdown: story.markdown,
+		content_hash: story.contentHash,
+		sensitivity_level: story.sensitivityLevel,
+		created_at: story.createdAt.toISOString(),
+		updated_at: story.updatedAt.toISOString(),
+		mentions: story.mentions.map((mention) => ({
+			id: mention.id,
+			translated_story_id: mention.translatedStoryId,
+			entity_id: mention.entityId,
+			surface_text: mention.surfaceText,
+			start_offset: mention.startOffset,
+			end_offset: mention.endOffset,
+			confidence: mention.confidence,
+			method: mention.method,
+			...(mention.entity ? { entity: mapEntity(mention.entity, config, corpusSize) } : {}),
+		})),
 	};
 }
 
@@ -271,6 +337,36 @@ export async function requestDocumentTranslation(
 	if (!input.refresh) {
 		const cached = await findCurrentTranslatedDocument(pool, sourceId, input.target_language, { maxSensitivityLevel });
 		if (cached && cached.outputFormat === outputFormat) {
+			const [sourceStoryCount, translatedStoryCount] = await Promise.all([
+				countStories(pool, { sourceId, maxSensitivityLevel }),
+				countTranslatedStoriesForTranslation(pool, cached.id, { maxSensitivityLevel }),
+			]);
+			if (sourceStoryCount > 0 && translatedStoryCount === 0) {
+				const job = await enqueueJob(pool, {
+					type: 'translate',
+					payload: {
+						sourceId,
+						targetLanguage: input.target_language,
+						sourceLanguage: input.source_language,
+						pipelinePath: input.pipeline_path,
+						outputFormat,
+						refresh: false,
+					},
+					maxAttempts: 3,
+				});
+				return {
+					status: 202,
+					body: {
+						data: {
+							job_id: job.id,
+							status: 'pending',
+						},
+						links: {
+							status: `/api/jobs/${job.id}`,
+						},
+					},
+				};
+			}
 			return {
 				status: 200,
 				body: {
@@ -321,5 +417,32 @@ export async function getTranslation(
 	}
 	return {
 		data: mapTranslation(translation),
+	};
+}
+
+export async function listTranslationStories(
+	translationId: string,
+	options?: TranslationRouteOptions,
+): Promise<TranslationStoriesResponse> {
+	const { config, pool } = resolveContext();
+	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal);
+	const translation = await findTranslationById(pool, translationId, maxSensitivityLevel);
+	if (!translation) {
+		throw new MulderError(`Translation not found: ${translationId}`, TRANSLATION_NOT_FOUND_CODE, {
+			context: { translationId },
+		});
+	}
+	const [stories, corpusSize] = await Promise.all([
+		listTranslatedStoriesForTranslation(pool, translationId, { maxSensitivityLevel }),
+		countProcessedSources(pool),
+	]);
+	return {
+		data: {
+			translation_id: translationId,
+			stories: stories.map((story) => mapTranslatedStory(story, config, corpusSize)),
+		},
+		meta: {
+			count: stories.length,
+		},
 	};
 }

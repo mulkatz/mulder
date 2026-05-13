@@ -384,6 +384,17 @@ export interface InitiateDocumentUploadResponse {
 	};
 }
 
+export interface EnrichUploadProvenanceRequest {
+	source_id: string;
+	filename: string;
+	storage_path: string;
+	collection_id?: string | null;
+	draft?: {
+		provenance?: UploadProvenancePayload;
+		expected_sensitivity?: UploadExpectedSensitivityPayload;
+	};
+}
+
 export interface UploadProvenancePayload {
 	acquisition?: {
 		channel?: UploadAcquisitionChannel;
@@ -423,6 +434,20 @@ export interface UploadExpectedSensitivityPayload {
 	reason?: string;
 	pii_types?: string[];
 	declassify_date?: string | null;
+}
+
+export interface EnrichUploadProvenanceResponse {
+	data: {
+		suggestion_id: string;
+		source_id: string;
+		suggested: {
+			provenance?: UploadProvenancePayload;
+			expected_sensitivity?: UploadExpectedSensitivityPayload;
+		};
+		field_confidence: Record<string, number>;
+		warnings: string[];
+		requires_user_review: true;
+	};
 }
 
 export interface CompleteDocumentUploadRequest {
@@ -522,6 +547,43 @@ export interface CreateTranslationRequest {
 	pipeline_path?: TranslationPipelinePath;
 	output_format?: TranslationOutputFormat;
 	refresh?: boolean;
+}
+
+export interface TranslatedStoryEntityMentionRecord {
+	id: string;
+	translated_story_id: string;
+	entity_id: string;
+	surface_text: string;
+	start_offset: number;
+	end_offset: number;
+	confidence: number | null;
+	method: 'llm_structured_verified';
+	entity?: EntityRecord;
+}
+
+export interface TranslatedStoryRecord {
+	id: string;
+	translation_id: string;
+	story_id: string;
+	source_document_id: string;
+	source_language: string;
+	target_language: string;
+	title: string;
+	subtitle: string | null;
+	markdown: string;
+	content_hash: string;
+	sensitivity_level: SensitivityLevel;
+	created_at: string;
+	updated_at: string;
+	mentions: TranslatedStoryEntityMentionRecord[];
+}
+
+export interface TranslationStoriesResponse {
+	data: {
+		translation_id: string;
+		stories: TranslatedStoryRecord[];
+	};
+	meta: { count: number };
 }
 
 export type AssertionType = 'observation' | 'interpretation' | 'hypothesis';

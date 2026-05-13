@@ -65,9 +65,64 @@ export const TranslationAcceptedResponseSchema = z.object({
 	}),
 });
 
+export const TranslatedStoryEntitySchema = z.object({
+	id: z.string().uuid(),
+	canonical_id: z.string().nullable(),
+	name: z.string(),
+	type: z.string(),
+	taxonomy_status: z.enum(['auto', 'curated', 'merged']),
+	taxonomy_id: z.string().nullable(),
+	corroboration_score: z.number().nullable(),
+	corroboration_status: z.enum(['scored', 'not_scored', 'insufficient_data']),
+	source_count: z.number().int().nonnegative(),
+	attributes: z.record(z.string(), z.unknown()),
+	created_at: z.string(),
+	updated_at: z.string(),
+});
+
+export const TranslatedStoryMentionSchema = z.object({
+	id: z.string().uuid(),
+	translated_story_id: z.string().uuid(),
+	entity_id: z.string().uuid(),
+	surface_text: z.string(),
+	start_offset: z.number().int().nonnegative(),
+	end_offset: z.number().int().positive(),
+	confidence: z.number().nullable(),
+	method: z.literal('llm_structured_verified'),
+	entity: TranslatedStoryEntitySchema.optional(),
+});
+
+export const TranslatedStorySchema = z.object({
+	id: z.string().uuid(),
+	translation_id: z.string().uuid(),
+	story_id: z.string().uuid(),
+	source_document_id: z.string().uuid(),
+	source_language: z.string(),
+	target_language: z.string(),
+	title: z.string(),
+	subtitle: z.string().nullable(),
+	markdown: z.string(),
+	content_hash: z.string(),
+	sensitivity_level: z.enum(['public', 'internal', 'restricted', 'confidential']),
+	created_at: z.string(),
+	updated_at: z.string(),
+	mentions: z.array(TranslatedStoryMentionSchema),
+});
+
+export const TranslationStoriesResponseSchema = z.object({
+	data: z.object({
+		translation_id: z.string().uuid(),
+		stories: z.array(TranslatedStorySchema),
+	}),
+	meta: z.object({
+		count: z.number().int().nonnegative(),
+	}),
+});
+
 export type TranslationListQuery = z.infer<typeof TranslationListQuerySchema>;
 export type CreateTranslationRequest = z.infer<typeof CreateTranslationRequestSchema>;
 export type TranslationResponse = z.infer<typeof TranslationSchema>;
 export type TranslationListResponse = z.infer<typeof TranslationListResponseSchema>;
 export type TranslationDetailResponse = z.infer<typeof TranslationDetailResponseSchema>;
 export type TranslationAcceptedResponse = z.infer<typeof TranslationAcceptedResponseSchema>;
+export type TranslationStoriesResponse = z.infer<typeof TranslationStoriesResponseSchema>;

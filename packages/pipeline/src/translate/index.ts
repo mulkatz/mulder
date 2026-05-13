@@ -2,8 +2,11 @@ import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type { Logger, MulderConfig, Services, Source } from '@mulder/core';
 import {
+	countTranslatedStoriesForTranslation,
 	createCurrentTranslatedDocument,
+	createTranslatedStoryBundle,
 	findCurrentTranslatedDocument,
+	findEntitiesByStoryId,
 	findSourceById,
 	findStoriesBySourceId,
 	PIPELINE_ERROR_CODES,
@@ -11,6 +14,9 @@ import {
 	renderPrompt,
 } from '@mulder/core';
 import type pg from 'pg';
+import { z } from 'zod';
+import { z as z3 } from 'zod/v3';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { TranslateData, TranslateInput, TranslateResult } from './types.js';
 
 export type { TranslateData, TranslateInput, TranslateResult, TranslationOutcome } from './types.js';
@@ -21,6 +27,18 @@ interface ResolvedSourceMaterial {
 	contentHash: string;
 	sourceLanguage: string;
 	media?: Array<{ mimeType: string; data: Buffer }>;
+	stories: StoryMaterial[];
+}
+
+interface StoryMaterial {
+	storyId: string;
+	title: string;
+	subtitle: string | null;
+	markdown: string;
+	language: string | null;
+	sensitivityLevel: Source['sensitivityLevel'];
+	sensitivityMetadata: unknown;
+	entities: Array<{ id: string; name: string; type: string }>;
 }
 
 const DEFAULT_SOURCE_LANGUAGE = 'und';
@@ -59,6 +77,15 @@ function hashBuffer(content: Buffer): string {
 	return createHash('sha256').update(content).digest('hex');
 }
 
+function findUniqueOffset(markdown: string, surface: string): { start: number; end: number } | null {
+	const trimmed = surface.trim();
+	if (!trimmed) return null;
+	const first = markdown.indexOf(trimmed);
+	if (first < 0) return null;
+	if (markdown.indexOf(trimmed, first + trimmed.length) >= 0) return null;
+	return { start: first, end: first + trimmed.length };
+}
+
 function metadataString(source: Source, key: string): string | null {
 	const metadataValue = source.metadata[key];
 	if (typeof metadataValue === 'string' && metadataValue.trim().length > 0) {
@@ -94,20 +121,33 @@ async function assembleStoryMarkdown(
 	services: Services,
 	pool: pg.Pool,
 	sourceId: string,
-): Promise<{ content: string; language: string | null } | null> {
+): Promise<{ content: string; language: string | null; stories: StoryMaterial[] } | null> {
 	const stories = await findStoriesBySourceId(pool, sourceId);
 	if (stories.length === 0) {
 		return null;
 	}
 
 	const blocks: string[] = [];
+	const storyMaterials: StoryMaterial[] = [];
 	for (const story of stories) {
 		const markdown = await services.storage.download(story.gcsMarkdownUri);
-		blocks.push(markdown.toString('utf8'));
+		const content = markdown.toString('utf8');
+		const entities = await findEntitiesByStoryId(pool, story.id);
+		blocks.push(content);
+		storyMaterials.push({
+			storyId: story.id,
+			title: story.title,
+			subtitle: story.subtitle,
+			markdown: content,
+			language: story.language,
+			sensitivityLevel: story.sensitivityLevel,
+			sensitivityMetadata: story.sensitivityMetadata,
+			entities: entities.map((entity) => ({ id: entity.id, name: entity.name, type: entity.type })),
+		});
 	}
 
 	const language = stories.find((story) => story.language && story.language.trim().length > 0)?.language ?? null;
-	return { content: blocks.join('\n\n---\n\n'), language };
+	return { content: blocks.join('\n\n---\n\n'), language, stories: storyMaterials };
 }
 
 async function resolveSourceMaterial(
@@ -134,6 +174,7 @@ async function resolveSourceMaterial(
 			content: input.content,
 			contentHash: hashText(input.content),
 			sourceLanguage,
+			stories: [],
 		};
 	}
 
@@ -149,6 +190,7 @@ async function resolveSourceMaterial(
 			content: storyMaterial.content,
 			contentHash: hashText(storyMaterial.content),
 			sourceLanguage,
+			stories: storyMaterial.stories,
 		};
 	}
 
@@ -166,6 +208,7 @@ async function resolveSourceMaterial(
 			content,
 			contentHash: hashText(content),
 			sourceLanguage,
+			stories: [],
 		};
 	}
 
@@ -176,6 +219,7 @@ async function resolveSourceMaterial(
 		contentHash: source.fileHash || hashBuffer(rawContent),
 		sourceLanguage,
 		media: [{ mimeType, data: rawContent }],
+		stories: [],
 	};
 }
 
@@ -193,6 +237,108 @@ async function assertTextWithinTokenLimit(
 			{ context: { sourceId, tokenCount, maxDocumentLengthTokens } },
 		);
 	}
+}
+
+const translatedStoryResponseSchema = z.object({
+	title: z.string().min(1),
+	subtitle: z.string().nullable().optional(),
+	markdown: z.string().min(1),
+	entity_mentions: z
+		.array(
+			z.object({
+				entity_id: z.string().uuid(),
+				surface_text: z.string().min(1),
+				confidence: z.number().min(0).max(1).nullable().optional(),
+			}),
+		)
+		.default([]),
+});
+
+const translatedStoryResponseSchemaV3 = z3.object({
+	title: z3.string().min(1),
+	subtitle: z3.string().nullable().optional(),
+	markdown: z3.string().min(1),
+	entity_mentions: z3
+		.array(
+			z3.object({
+				entity_id: z3.string().uuid(),
+				surface_text: z3.string().min(1),
+				confidence: z3.number().min(0).max(1).nullable().optional(),
+			}),
+		)
+		.default([]),
+});
+
+const translatedStoryJsonSchema = zodToJsonSchema(translatedStoryResponseSchemaV3, {
+	name: 'TranslatedStoryResponse',
+	$refStrategy: 'none',
+}) as Record<string, unknown>;
+
+async function ensureTranslatedStories(input: {
+	config: MulderConfig;
+	services: Services;
+	pool: pg.Pool;
+	material: ResolvedSourceMaterial;
+	translationId: string;
+	targetLanguage: string;
+	logger: Logger;
+}): Promise<number> {
+	if (input.material.stories.length === 0) return 0;
+	let count = 0;
+	for (const story of input.material.stories) {
+		const prompt = [
+			'Translate this extracted story. Preserve markdown structure and meaning.',
+			'Return entity mentions only when the translated surface text appears exactly once in the translated markdown.',
+			`Source language: ${input.material.sourceLanguage}`,
+			`Target language: ${input.targetLanguage}`,
+			`Entities: ${JSON.stringify(story.entities)}`,
+			`Title: ${story.title}`,
+			story.subtitle ? `Subtitle: ${story.subtitle}` : null,
+			'Markdown:',
+			story.markdown,
+		]
+			.filter(Boolean)
+			.join('\n\n');
+		const response = await input.services.llm.generateStructured<z.infer<typeof translatedStoryResponseSchema>>({
+			prompt,
+			systemInstruction:
+				'Translate faithfully. Entity mention offsets will be verified by exact surface matching; omit uncertain mentions.',
+			schema: translatedStoryJsonSchema,
+			responseValidator: (data) => translatedStoryResponseSchema.parse(data),
+		});
+		const mentions = response.entity_mentions
+			.map((mention) => {
+				const entity = story.entities.find((candidate) => candidate.id === mention.entity_id);
+				const offsets = entity ? findUniqueOffset(response.markdown, mention.surface_text) : null;
+				if (!entity || !offsets) return null;
+				return {
+					entityId: mention.entity_id,
+					surfaceText: mention.surface_text,
+					startOffset: offsets.start,
+					endOffset: offsets.end,
+					confidence: mention.confidence ?? null,
+					method: 'llm_structured_verified' as const,
+				};
+			})
+			.filter((mention): mention is NonNullable<typeof mention> => mention !== null);
+		await createTranslatedStoryBundle(input.pool, {
+			translationId: input.translationId,
+			storyId: story.storyId,
+			sourceDocumentId: input.material.source.id,
+			sourceLanguage: input.material.sourceLanguage,
+			targetLanguage: input.targetLanguage,
+			title: response.title,
+			subtitle: response.subtitle ?? null,
+			markdown: response.markdown,
+			contentHash: hashText(story.markdown),
+			sensitivityLevel: story.sensitivityLevel,
+			sensitivityMetadata: story.sensitivityMetadata,
+			mentions,
+		});
+		count++;
+	}
+	input.logger.info({ sourceId: input.material.source.id, count }, 'Translated story records ensured');
+	return count;
 }
 
 export async function execute(
@@ -219,6 +365,19 @@ export async function execute(
 	if (config.translation.cache_enabled && input.refresh !== true) {
 		const cached = await findCurrentTranslatedDocument(pool, input.sourceId, targetLanguage);
 		if (cached && cached.contentHash === material.contentHash && cached.outputFormat === outputFormat) {
+			const existingStoryCount = await countTranslatedStoriesForTranslation(pool, cached.id);
+			const translatedStoryCount =
+				existingStoryCount > 0
+					? existingStoryCount
+					: await ensureTranslatedStories({
+							config,
+							services,
+							pool,
+							material,
+							translationId: cached.id,
+							targetLanguage,
+							logger,
+						});
 			logger.info({ sourceId: input.sourceId, targetLanguage }, 'Translation cache hit');
 			const data: TranslateData = {
 				sourceId: input.sourceId,
@@ -231,6 +390,7 @@ export async function execute(
 				contentHash: cached.contentHash,
 				content: cached.content,
 				document: cached,
+				translatedStoryCount,
 			};
 			return {
 				status: 'success',
@@ -279,6 +439,15 @@ export async function execute(
 		sensitivityLevel: material.source.sensitivityLevel,
 		sensitivityMetadata: material.source.sensitivityMetadata,
 	});
+	const translatedStoryCount = await ensureTranslatedStories({
+		config,
+		services,
+		pool,
+		material,
+		translationId: document.id,
+		targetLanguage,
+		logger,
+	});
 
 	const data: TranslateData = {
 		sourceId: input.sourceId,
@@ -291,6 +460,7 @@ export async function execute(
 		contentHash: document.contentHash,
 		content: document.content,
 		document,
+		translatedStoryCount,
 	};
 
 	logger.info({ sourceId: input.sourceId, targetLanguage, pipelinePath }, 'Translation complete');

@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, FileUp, FolderPlus, RefreshCcw, ShieldCheck, Upload } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileUp, FolderPlus, RefreshCcw, ShieldCheck, Upload, Wand2 } from 'lucide-react';
 import { type ChangeEvent, type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
@@ -87,6 +87,10 @@ function formatBytes(value: number) {
 	return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function createClientId() {
+	return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now());
+}
+
 function collectionDefaultsText(collection: CollectionRecord | undefined, t: ReturnType<typeof useTranslation>['t']) {
 	if (!collection) return undefined;
 	return t('addSources.collectionDefaultsValue', {
@@ -104,6 +108,7 @@ export function AddSourcesPage() {
 	const canManageCollections = ['owner', 'admin'].includes(sessionQuery.data?.data.user.role ?? '');
 	const collections = collectionsQuery.data?.data ?? [];
 	const [files, setFiles] = useState<File[]>([]);
+	const [fileSelectionId, setFileSelectionId] = useState(createClientId);
 	const [sourceLanguage, setSourceLanguage] = useState('');
 	const [languageTouched, setLanguageTouched] = useState(false);
 	const [channel, setChannel] = useState<UploadAcquisitionChannel | ''>('');
@@ -122,6 +127,10 @@ export function AddSourcesPage() {
 	const [provenanceConfirmed, setProvenanceConfirmed] = useState(false);
 	const [newCollectionName, setNewCollectionName] = useState('');
 	const [newCollectionError, setNewCollectionError] = useState<string | undefined>();
+	const [intakeSuggestionId, setIntakeSuggestionId] = useState<string | undefined>();
+	const [autofillWarnings, setAutofillWarnings] = useState<string[]>([]);
+	const [autofillError, setAutofillError] = useState<string | undefined>();
+	const [autofillPending, setAutofillPending] = useState(false);
 
 	const selectedCollection = collections.find((collection) => collection.collection_id === collectionId);
 	const selectedDefaults = collectionDefaultsText(selectedCollection, t);
@@ -135,6 +144,7 @@ export function AddSourcesPage() {
 	const isUploading = upload.rows.some((row) =>
 		['initiating', 'uploading', 'finalizing', 'processing'].includes(row.status),
 	);
+	const canAutofill = files.length > 0 && !isUploading && !autofillPending;
 
 	useEffect(() => {
 		if (!selectedCollection) return;
@@ -148,6 +158,10 @@ export function AddSourcesPage() {
 
 	function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
 		setFiles(Array.from(event.target.files ?? []));
+		setFileSelectionId(createClientId());
+		setIntakeSuggestionId(undefined);
+		setAutofillWarnings([]);
+		setAutofillError(undefined);
 		upload.reset();
 	}
 
@@ -163,11 +177,20 @@ export function AddSourcesPage() {
 						...(channel ? { channel } : {}),
 						collection_id: collectionId || null,
 						metadata: {
+							...(intakeSuggestionId ? { intake_suggestion_id: intakeSuggestionId } : {}),
 							no_collection_confirmed: !collectionId && noCollectionConfirmed,
 						},
 						notes: trimmedAcquisitionNotes || null,
 					}
-				: undefined;
+				: intakeSuggestionId
+					? {
+							collection_id: collectionId || null,
+							metadata: {
+								intake_suggestion_id: intakeSuggestionId,
+								no_collection_confirmed: !collectionId && noCollectionConfirmed,
+							},
+						}
+					: undefined;
 		const originalSource = trimmedDescription
 			? {
 					description: trimmedDescription,
@@ -215,6 +238,48 @@ export function AddSourcesPage() {
 		event.preventDefault();
 		if (!formIsReady || isUploading) return;
 		await upload.uploadFiles(files, buildPayload());
+	}
+
+	async function handleAutofill() {
+		const file = files[0];
+		if (!file || !canAutofill) return;
+		setAutofillPending(true);
+		setAutofillError(undefined);
+		setAutofillWarnings([]);
+		try {
+			const response = await upload.enrichProvenance(
+				`autofill:${fileSelectionId}:0`,
+				file,
+				buildPayload(),
+				collectionId || null,
+			);
+			const suggested = response.data.suggested;
+			const provenance = suggested.provenance;
+			const originalSource = provenance?.original_source;
+			const authenticity = provenance?.authenticity;
+			const acquisition = provenance?.acquisition;
+			if (originalSource?.language) {
+				setSourceLanguage(originalSource.language);
+				setLanguageTouched(true);
+			}
+			if (originalSource?.source_type) setSourceType(originalSource.source_type);
+			if (originalSource?.description) setSourceDescription(originalSource.description);
+			if (authenticity?.status) setAuthenticityStatus(authenticity.status);
+			if (authenticity?.notes) setAuthenticityNotes(authenticity.notes);
+			if (acquisition?.channel) setChannel(acquisition.channel);
+			if (acquisition?.notes) setAcquisitionNotes(acquisition.notes);
+			if (suggested.expected_sensitivity?.level) {
+				setSensitivityLevel(suggested.expected_sensitivity.level);
+				setSensitivityTouched(true);
+			}
+			if (suggested.expected_sensitivity?.reason) setSensitivityReason(suggested.expected_sensitivity.reason);
+			setIntakeSuggestionId(response.data.suggestion_id);
+			setAutofillWarnings(response.data.warnings);
+		} catch (error) {
+			setAutofillError(getErrorMessage(error, t('addSources.autofillFailed')));
+		} finally {
+			setAutofillPending(false);
+		}
 	}
 
 	async function handleCreateCollection() {
@@ -286,6 +351,29 @@ export function AddSourcesPage() {
 								type="file"
 							/>
 						</Field>
+						<div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-panel-raised p-3">
+							<button
+								className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field disabled:text-text-faint"
+								disabled={!canAutofill}
+								onClick={handleAutofill}
+								type="button"
+							>
+								<Wand2 className="size-4" />
+								{autofillPending ? t('addSources.autofilling') : t('addSources.autofill')}
+							</button>
+							<p className="min-w-0 flex-1 text-xs text-text-subtle">
+								{files.length > 1 ? t('addSources.autofillHelpFirstFile') : t('addSources.autofillHelp')}
+							</p>
+							{intakeSuggestionId ? (
+								<span className="text-xs font-medium text-accent">{t('addSources.aiSuggested')}</span>
+							) : null}
+						</div>
+						{autofillError ? <StateNotice tone="error" title={autofillError} /> : null}
+						{autofillWarnings.length > 0 ? (
+							<StateNotice tone="info" title={t('addSources.autofillReviewTitle')}>
+								{autofillWarnings.join(' ')}
+							</StateNotice>
+						) : null}
 
 						<div className="grid gap-4 md:grid-cols-2">
 							<Field id="add-sources-language" label={t('addSources.sourceLanguage')}>

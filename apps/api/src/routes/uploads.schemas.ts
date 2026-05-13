@@ -305,6 +305,33 @@ export const CompleteDocumentUploadRequestSchema = z
 		}
 	});
 
+export const EnrichUploadProvenanceRequestSchema = z.object({
+	source_id: z.string().uuid(),
+	filename: z.string().trim().min(1).max(512),
+	storage_path: z.string().min(1),
+	collection_id: z.string().uuid().nullable().optional(),
+	draft: z
+		.object({
+			provenance: UploadProvenanceSchema.optional(),
+			expected_sensitivity: UploadExpectedSensitivitySchema.optional(),
+		})
+		.optional(),
+});
+
+export const EnrichUploadProvenanceResponseSchema = z.object({
+	data: z.object({
+		suggestion_id: z.string().uuid(),
+		source_id: z.string().uuid(),
+		suggested: z.object({
+			provenance: UploadProvenanceSchema.optional(),
+			expected_sensitivity: UploadExpectedSensitivitySchema.optional(),
+		}),
+		field_confidence: z.record(z.string(), z.number().min(0).max(1)),
+		warnings: z.array(z.string()),
+		requires_user_review: z.literal(true),
+	}),
+});
+
 export const CompleteDocumentUploadResponseSchema = z.object({
 	data: z.object({
 		job_id: z.string().uuid(),
@@ -379,6 +406,8 @@ export const UploadFinalizationStatusResponseSchema = z.object({
 
 export type InitiateDocumentUploadRequest = z.infer<typeof InitiateDocumentUploadRequestSchema>;
 export type InitiateDocumentUploadResponse = z.infer<typeof InitiateDocumentUploadResponseSchema>;
+export type EnrichUploadProvenanceRequest = z.infer<typeof EnrichUploadProvenanceRequestSchema>;
+export type EnrichUploadProvenanceResponse = z.infer<typeof EnrichUploadProvenanceResponseSchema>;
 export type CompleteDocumentUploadRequest = z.infer<typeof CompleteDocumentUploadRequestSchema>;
 export type CompleteDocumentUploadResponse = z.infer<typeof CompleteDocumentUploadResponseSchema>;
 export type UploadFinalizationStatusResponse = z.infer<typeof UploadFinalizationStatusResponseSchema>;

@@ -6,6 +6,7 @@ import type {
 	TranslationDetailResponse,
 	TranslationListResponse,
 	TranslationStatus,
+	TranslationStoriesResponse,
 } from '@/lib/api-types';
 
 export interface DocumentTranslationFilters {
@@ -64,6 +65,15 @@ export function useTranslationDetail(translationId?: string) {
 		enabled: Boolean(translationId),
 		queryFn: () => apiFetch<TranslationDetailResponse>(`/api/translations/${translationId}`),
 		queryKey: ['translations', translationId],
+		staleTime: 30_000,
+	});
+}
+
+export function useTranslationStories(translationId?: string) {
+	return useQuery({
+		enabled: Boolean(translationId),
+		queryFn: () => apiFetch<TranslationStoriesResponse>(`/api/translations/${translationId}/stories`),
+		queryKey: ['translations', translationId, 'stories'],
 		staleTime: 30_000,
 	});
 }

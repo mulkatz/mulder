@@ -112,6 +112,53 @@ async function seedTranslation(pool: pg.Pool, sourceId: string): Promise<string>
 	return result.rows[0].id;
 }
 
+async function seedStory(pool: pg.Pool, sourceId: string): Promise<string> {
+	const result = await pool.query<{ id: string }>(
+		`
+			INSERT INTO stories (
+				source_id,
+				title,
+				language,
+				page_start,
+				page_end,
+				gcs_markdown_uri,
+				gcs_metadata_uri,
+				status
+			)
+			VALUES ($1, 'Story', 'de', 1, 1, 'stories/story.md', 'stories/story.json', 'enriched')
+			RETURNING id
+		`,
+		[sourceId],
+	);
+	return result.rows[0].id;
+}
+
+async function seedTranslatedStory(
+	pool: pg.Pool,
+	translationId: string,
+	storyId: string,
+	sourceId: string,
+): Promise<void> {
+	await pool.query(
+		`
+			INSERT INTO translated_stories (
+				translation_id,
+				story_id,
+				source_document_id,
+				source_language,
+				target_language,
+				title,
+				markdown,
+				content_hash,
+				sensitivity_level,
+				sensitivity_metadata
+			)
+			VALUES ($1, $2, $3, 'de', 'en', 'Translated Story', 'Translated story markdown', 'story-hash', 'internal', '{}'::jsonb)
+		`,
+		[translationId, storyId, sourceId],
+	);
+}
+
 describe('Spec 116: translation API routes', () => {
 	let pool: pg.Pool;
 	const originalConfig = process.env.MULDER_CONFIG;
@@ -189,6 +236,8 @@ describe('Spec 116: translation API routes', () => {
 		const app = createApp({ config: TEST_API_CONFIG });
 		const sourceId = await seedSource(pool);
 		const translationId = await seedTranslation(pool, sourceId);
+		const storyId = await seedStory(pool, sourceId);
+		await seedTranslatedStory(pool, translationId, storyId, sourceId);
 
 		const cachedResponse = await app.request(`http://localhost/api/documents/${sourceId}/translations`, {
 			body: JSON.stringify({ target_language: 'en' }),
@@ -222,6 +271,55 @@ describe('Spec 116: translation API routes', () => {
 				refresh: true,
 			},
 		});
+	});
+
+	it('enqueues translation backfill when a cached translation has no translated stories', async () => {
+		const app = createApp({ config: TEST_API_CONFIG });
+		const sourceId = await seedSource(pool);
+		await seedTranslation(pool, sourceId);
+		await seedStory(pool, sourceId);
+
+		const response = await app.request(`http://localhost/api/documents/${sourceId}/translations`, {
+			body: JSON.stringify({ target_language: 'en' }),
+			headers: { ...authorizedHeaders(), 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+		expect(response.status).toBe(202);
+		const body = (await readJson(response)) as { data: { job_id: string }; links: { status: string } };
+		expect(body.links.status).toBe(`/api/jobs/${body.data.job_id}`);
+
+		const job = await pool.query<{ type: string; payload: Record<string, unknown> }>('SELECT type, payload FROM jobs');
+		expect(job.rows).toHaveLength(1);
+		expect(job.rows[0]).toMatchObject({
+			type: 'translate',
+			payload: {
+				sourceId,
+				targetLanguage: 'en',
+				refresh: false,
+			},
+		});
+	});
+
+	it('returns cached source translations when there are no original stories to backfill', async () => {
+		const app = createApp({ config: TEST_API_CONFIG });
+		const sourceId = await seedSource(pool);
+		const translationId = await seedTranslation(pool, sourceId);
+
+		const response = await app.request(`http://localhost/api/documents/${sourceId}/translations`, {
+			body: JSON.stringify({ target_language: 'en' }),
+			headers: { ...authorizedHeaders(), 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+		expect(response.status).toBe(200);
+		expect(await readJson(response)).toMatchObject({
+			data: {
+				id: translationId,
+				status: 'current',
+			},
+		});
+
+		const job = await pool.query<{ type: string; payload: Record<string, unknown> }>('SELECT type, payload FROM jobs');
+		expect(job.rows).toHaveLength(0);
 	});
 
 	it('protects routes and validates request bodies', async () => {

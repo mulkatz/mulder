@@ -352,8 +352,47 @@ class DevLlmService implements LlmService {
 
 		let result: T;
 
+		if (hasProperty('markdown') && hasProperty('entity_mentions')) {
+			this.logger.debug('DevLlmService: generateStructured — returning translated story fixture');
+			result = JSON.parse(
+				JSON.stringify({
+					title: 'Dev Translation Story',
+					subtitle: null,
+					markdown: '# Dev Translation Story\n\nTranslated story fixture content.',
+					entity_mentions: [],
+				}),
+			);
+		} else if (hasProperty('suggested')) {
+			this.logger.debug('DevLlmService: generateStructured — returning intake enrichment fixture');
+			result = JSON.parse(
+				JSON.stringify({
+					suggested: {
+						provenance: {
+							original_source: {
+								source_type: 'other',
+								description: 'AI-suggested description based on the uploaded file preview.',
+							},
+							authenticity: {
+								status: 'unverified',
+								notes: 'AI suggestion; verify before completing provenance.',
+							},
+						},
+						expected_sensitivity: {
+							level: 'internal',
+							reason: 'AI suggestion based on limited intake metadata; review before completion.',
+							pii_types: [],
+						},
+					},
+					field_confidence: {
+						'provenance.original_source.description': 0.45,
+						'expected_sensitivity.level': 0.35,
+					},
+					warnings: ['Review all AI-suggested provenance before upload completion.'],
+				}),
+			);
+		}
 		// Detect segmentation schema by checking for a 'stories' property in the JSON Schema
-		if (hasProperty('stories')) {
+		else if (hasProperty('stories')) {
 			this.logger.debug('DevLlmService: generateStructured — returning segmentation fixture');
 			result = JSON.parse(
 				JSON.stringify({

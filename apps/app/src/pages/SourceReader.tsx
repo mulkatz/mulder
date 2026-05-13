@@ -34,11 +34,22 @@ import { useDocumentObservability } from '@/features/documents/useDocumentObserv
 import { useDocumentPages } from '@/features/documents/useDocumentPages';
 import { useDocumentPdf } from '@/features/documents/useDocumentPdf';
 import { useDocumentStories } from '@/features/documents/useDocumentStories';
-import { useDocumentTranslations, useRequestDocumentTranslation } from '@/features/documents/useDocumentTranslations';
+import {
+	useDocumentTranslations,
+	useRequestDocumentTranslation,
+	useTranslationStories,
+} from '@/features/documents/useDocumentTranslations';
 import { useContradictions } from '@/features/evidence/useContradictions';
 import { useJob } from '@/features/jobs/useJob';
 import { type AppLocale, locales } from '@/i18n/resources';
-import type { ContradictionRecord, DocumentStoryRecord, EntityRecord, TranslationRecord } from '@/lib/api-types';
+import type {
+	ContradictionRecord,
+	DocumentDetailRecord,
+	DocumentStoryRecord,
+	EntityRecord,
+	TranslatedStoryRecord,
+	TranslationRecord,
+} from '@/lib/api-types';
 import { cn } from '@/lib/cn';
 import { getErrorMessage, isApiUnavailableError } from '@/lib/query-state';
 
@@ -607,6 +618,87 @@ function StoryRail({
 	);
 }
 
+function TranslatedStoryRail({
+	onSelect,
+	selectedStoryId,
+	stories,
+}: {
+	onSelect: (storyId: string) => void;
+	selectedStoryId?: string;
+	stories: TranslatedStoryRecord[];
+}) {
+	const { t, i18n } = useTranslation();
+
+	return (
+		<div className="space-y-2 border-b border-border p-3 lg:max-h-[640px] lg:overflow-auto lg:border-r lg:border-b-0">
+			<p className="text-xs font-medium text-text-subtle">{t('reader.storyRailTitle')}</p>
+			{stories.map((story) => (
+				<button
+					className={cn(
+						'w-full rounded-md border border-border bg-panel-raised p-3 text-left transition-colors hover:border-border-strong hover:bg-field',
+						selectedStoryId === story.story_id && 'border-accent bg-accent-soft',
+					)}
+					key={story.id}
+					onClick={() => onSelect(story.story_id)}
+					type="button"
+				>
+					<p className="line-clamp-2 text-sm font-medium text-text">{story.title}</p>
+					<div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-text-subtle">
+						<span>{formatLanguage(story.target_language, i18n.language, t)}</span>
+					</div>
+					<div className="mt-2 flex items-center justify-between gap-2">
+						<StatusBadge status="current" />
+						<span className="font-mono text-[11px] text-text-subtle">{story.mentions.length}</span>
+					</div>
+				</button>
+			))}
+		</div>
+	);
+}
+
+function OffsetAnnotatedText({
+	markdown,
+	mentions,
+	onSelectEntity,
+	selectedEntityId,
+}: {
+	markdown: string;
+	mentions: TranslatedStoryRecord['mentions'];
+	onSelectEntity: (entity: EntityRecord) => void;
+	selectedEntityId?: string;
+}) {
+	const sortedMentions = [...mentions]
+		.filter((mention) => mention.entity && mention.start_offset >= 0 && mention.end_offset > mention.start_offset)
+		.sort((a, b) => a.start_offset - b.start_offset || a.end_offset - b.end_offset);
+	const parts: ReactNode[] = [];
+	let cursor = 0;
+	for (const mention of sortedMentions) {
+		if (!mention.entity || mention.start_offset < cursor || mention.start_offset > markdown.length) continue;
+		if (mention.start_offset > cursor) {
+			parts.push(markdown.slice(cursor, mention.start_offset));
+		}
+		const text = markdown.slice(mention.start_offset, Math.min(mention.end_offset, markdown.length));
+		parts.push(
+			<button
+				className={cn(
+					'rounded-sm bg-accent-soft px-1 text-accent underline decoration-accent/40 decoration-1 underline-offset-2 transition-colors hover:bg-accent hover:text-text-inverse',
+					selectedEntityId === mention.entity_id && 'bg-accent text-text-inverse',
+				)}
+				key={mention.id}
+				onClick={() => mention.entity && onSelectEntity(mention.entity)}
+				type="button"
+			>
+				{text}
+			</button>,
+		);
+		cursor = Math.min(mention.end_offset, markdown.length);
+	}
+	if (cursor < markdown.length) {
+		parts.push(markdown.slice(cursor));
+	}
+	return <div className="whitespace-pre-wrap text-sm leading-7 text-text">{parts}</div>;
+}
+
 function TranslationControls({
 	contentMode,
 	isJobRunning,
@@ -846,6 +938,10 @@ function StoryPane({
 			? translationJobQuery.data?.data.job.error_log
 			: null;
 	const currentTranslation = translationsQuery.data?.data[0];
+	const translatedStoriesQuery = useTranslationStories(currentTranslation?.id);
+	const translatedStories = translatedStoriesQuery.data?.data.stories ?? [];
+	const selectedTranslatedStory =
+		translatedStories.find((story) => story.story_id === selectedStoryId) ?? translatedStories[0];
 	const refetchTranslations = translationsQuery.refetch;
 
 	useEffect(() => {
@@ -969,39 +1065,100 @@ function StoryPane({
 				</div>
 			) : null}
 			{contentMode === 'translation' ? (
-				<div className="grid min-h-[640px] gap-4 p-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
-					<div className="min-w-0 space-y-4">
-						{translationsQuery.isLoading ? (
-							<StateNotice tone="loading" title={t('reader.translationLoadingTitle')} />
-						) : null}
-						{isTranslationJobRunning ? <StateNotice tone="loading" title={t('reader.translationJobRunning')} /> : null}
-						{currentTranslation ? (
-							<div className="rounded-md border border-border bg-panel-raised p-5">
-								<div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
-									<div>
-										<p className="text-xs text-text-subtle">
-											{t('reader.translationMeta', {
-												language: formatLanguage(currentTranslation.target_language, i18n.language, t),
-											})}
-										</p>
-										<h2 className="mt-1 text-xl font-semibold text-text">{t('reader.translatedSourceContent')}</h2>
-									</div>
-									<StatusBadge status={currentTranslation.status} />
-								</div>
-								<PlainMarkdown markdown={currentTranslation.content || t('reader.translationEmptyBody')} />
+				currentTranslation && translatedStories.length > 0 ? (
+					<div className="grid min-h-[640px] lg:grid-cols-[250px_minmax(0,1fr)]">
+						<TranslatedStoryRail
+							onSelect={onSelectStory}
+							selectedStoryId={selectedStoryId}
+							stories={translatedStories}
+						/>
+						<div className="grid min-w-0 gap-4 p-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
+							<div className="min-w-0 space-y-4">
+								{selectedTranslatedStory ? (
+									<>
+										<div className="space-y-3">
+											<div className="flex flex-wrap items-start justify-between gap-3">
+												<div className="min-w-0">
+													<p className="text-xs text-text-subtle">
+														{t('reader.translationMeta', {
+															language: formatLanguage(currentTranslation.target_language, i18n.language, t),
+														})}
+													</p>
+													<h2 className="mt-1 text-2xl font-semibold text-text">{selectedTranslatedStory.title}</h2>
+													{selectedTranslatedStory.subtitle ? (
+														<p className="mt-1 text-sm text-text-muted">{selectedTranslatedStory.subtitle}</p>
+													) : null}
+												</div>
+												<StatusBadge status={currentTranslation.status} />
+											</div>
+										</div>
+										<div className="rounded-md border border-border bg-panel-raised p-5">
+											{selectedTranslatedStory.mentions.length === 0 ? (
+												<StateNotice title={t('reader.translationNoVerifiedSpansTitle')}>
+													{t('reader.translationNoVerifiedSpansBody')}
+												</StateNotice>
+											) : null}
+											<div className="mt-3">
+												<OffsetAnnotatedText
+													markdown={selectedTranslatedStory.markdown}
+													mentions={selectedTranslatedStory.mentions}
+													onSelectEntity={onSelectEntity}
+													selectedEntityId={selectedEntity?.id}
+												/>
+											</div>
+										</div>
+									</>
+								) : null}
 							</div>
-						) : !translationsQuery.isLoading && !isTranslationJobRunning ? (
-							<StateNotice title={t('reader.translationEmptyTitle')}>{t('reader.translationEmptyBody')}</StateNotice>
-						) : null}
+							<InspectorPanel title={t('reader.linkedContext')}>
+								<InspectorSection title={t('reader.entityContext')}>
+									<EntityContextPanel entity={selectedEntity} />
+								</InspectorSection>
+							</InspectorPanel>
+						</div>
 					</div>
-					<InspectorPanel title={t('reader.linkedContext')}>
-						<InspectorSection title={t('reader.entityContext')}>
-							<StateNotice title={t('reader.translationAnnotationsDisabledTitle')}>
-								{t('reader.translationAnnotationsDisabledBody')}
-							</StateNotice>
-						</InspectorSection>
-					</InspectorPanel>
-				</div>
+				) : (
+					<div className="grid min-h-[640px] gap-4 p-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
+						<div className="min-w-0 space-y-4">
+							{translationsQuery.isLoading || translatedStoriesQuery.isLoading ? (
+								<StateNotice tone="loading" title={t('reader.translationLoadingTitle')} />
+							) : null}
+							{isTranslationJobRunning ? (
+								<StateNotice tone="loading" title={t('reader.translationJobRunning')} />
+							) : null}
+							{currentTranslation ? (
+								<div className="rounded-md border border-border bg-panel-raised p-5">
+									<div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+										<div>
+											<p className="text-xs text-text-subtle">
+												{t('reader.translationMeta', {
+													language: formatLanguage(currentTranslation.target_language, i18n.language, t),
+												})}
+											</p>
+											<h2 className="mt-1 text-xl font-semibold text-text">{t('reader.translatedSourceContent')}</h2>
+										</div>
+										<StatusBadge status={currentTranslation.status} />
+									</div>
+									<StateNotice title={t('reader.translationStoriesUnavailableTitle')}>
+										{t('reader.translationStoriesUnavailableBody')}
+									</StateNotice>
+									<div className="mt-4">
+										<PlainMarkdown markdown={currentTranslation.content || t('reader.translationEmptyBody')} />
+									</div>
+								</div>
+							) : !translationsQuery.isLoading && !isTranslationJobRunning ? (
+								<StateNotice title={t('reader.translationEmptyTitle')}>{t('reader.translationEmptyBody')}</StateNotice>
+							) : null}
+						</div>
+						<InspectorPanel title={t('reader.linkedContext')}>
+							<InspectorSection title={t('reader.entityContext')}>
+								<StateNotice title={t('reader.translationAnnotationsDisabledTitle')}>
+									{t('reader.translationAnnotationsDisabledBody')}
+								</StateNotice>
+							</InspectorSection>
+						</InspectorPanel>
+					</div>
+				)
 			) : null}
 			{contentMode === 'stories' && stories.length > 0 ? (
 				<div className="grid min-h-[640px] lg:grid-cols-[250px_minmax(0,1fr)]">
@@ -1060,14 +1217,17 @@ function ProcessingBackground({
 	observability,
 	onToggle,
 	open,
+	source,
 }: {
 	error: unknown;
 	isLoading: boolean;
 	observability?: ReturnType<typeof useDocumentObservability>['data'];
 	onToggle: (open: boolean) => void;
 	open: boolean;
+	source?: DocumentDetailRecord;
 }) {
 	const { t } = useTranslation();
+	const extractionPath = source?.quality?.recommended_path ?? null;
 
 	return (
 		<details className="panel p-4" onToggle={(event) => onToggle(event.currentTarget.open)} open={open}>
@@ -1088,17 +1248,29 @@ function ProcessingBackground({
 					</StateNotice>
 				) : null}
 				{observability ? (
-					<div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-						{observability.data.source.steps.map((step) => (
-							<div className="rounded-md bg-field p-3" key={step.step}>
-								<p className="truncate text-sm text-text">{step.step}</p>
-								<div className="mt-2">
-									<StatusBadge status={step.status} />
+					<>
+						{extractionPath ? (
+							<p className="rounded-md border border-border bg-panel-raised p-3 text-sm text-text-muted">
+								{t('reader.extractionRoute', {
+									route:
+										extractionPath === 'standard'
+											? t('reader.extractionRouteNative')
+											: t('reader.extractionRouteDocumentAi'),
+								})}
+							</p>
+						) : null}
+						<div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+							{observability.data.source.steps.map((step) => (
+								<div className="rounded-md bg-field p-3" key={step.step}>
+									<p className="truncate text-sm text-text">{step.step}</p>
+									<div className="mt-2">
+										<StatusBadge status={step.status} />
+									</div>
+									{step.error_message ? <p className="mt-2 text-xs text-danger">{step.error_message}</p> : null}
 								</div>
-								{step.error_message ? <p className="mt-2 text-xs text-danger">{step.error_message}</p> : null}
-							</div>
-						))}
-					</div>
+							))}
+						</div>
+					</>
 				) : null}
 			</div>
 		</details>
@@ -1298,6 +1470,7 @@ export function SourceReaderPage() {
 					observability={observabilityQuery.data}
 					onToggle={setProcessingOpen}
 					open={processingOpen}
+					source={sourceQuery.data?.data}
 				/>
 			</div>
 		</>

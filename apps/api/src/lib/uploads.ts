@@ -1,6 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
 	createChildLogger,
+	createIntakeEnrichmentSuggestion,
 	createLogger,
 	createServiceRegistry,
 	DATABASE_ERROR_CODES,
@@ -22,6 +23,8 @@ import type { AuthPrincipal } from '../middleware/auth.js';
 import type {
 	CompleteDocumentUploadRequest,
 	CompleteDocumentUploadResponse,
+	EnrichUploadProvenanceRequest,
+	EnrichUploadProvenanceResponse,
 	InitiateDocumentUploadRequest,
 	InitiateDocumentUploadResponse,
 	UploadFinalizationStatusResponse,
@@ -45,12 +48,46 @@ interface UploadRouteOptions {
 }
 
 type Queryable = pg.Pool | pg.PoolClient;
+type EnrichmentSuggestedSensitivity = NonNullable<
+	EnrichUploadProvenanceResponse['data']['suggested']['expected_sensitivity']
+>;
+type EnrichmentSuggestedSensitivityLevel = EnrichmentSuggestedSensitivity['level'];
+type EnrichmentSuggestedPiiType = NonNullable<EnrichmentSuggestedSensitivity['pii_types']>[number];
 
 let cachedContext: UploadContext | null = null;
 let cachedConfigPath: string | null = null;
 
 const FINALIZE_JOB_TYPE = 'document_upload_finalize';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ALLOWED_UPLOAD_SOURCE_TYPES = new Set([
+	'witness_report',
+	'government_document',
+	'academic_paper',
+	'news_article',
+	'correspondence',
+	'field_notes',
+	'measurement_data',
+	'photograph',
+	'audio_recording',
+	'video_recording',
+	'other',
+]);
+const ALLOWED_UPLOAD_SENSITIVITY_LEVELS: ReadonlySet<EnrichmentSuggestedSensitivityLevel> = new Set([
+	'public',
+	'internal',
+	'restricted',
+	'confidential',
+]);
+const ALLOWED_UPLOAD_PII_TYPES: ReadonlySet<EnrichmentSuggestedPiiType> = new Set([
+	'person_name',
+	'contact_info',
+	'medical_data',
+	'location_private',
+	'location_sighting',
+	'financial',
+	'unpublished_research',
+	'legal',
+]);
 
 function resolveConfigPath(): string {
 	return process.env.MULDER_CONFIG ?? 'mulder.config.yaml';
@@ -284,6 +321,228 @@ function mapExpectedSensitivity(input: CompleteDocumentUploadRequest['expected_s
 		reason: input.reason,
 		piiTypes: input.pii_types,
 		declassifyDate: input.declassify_date,
+	};
+}
+
+function expectedOriginalStoragePath(input: EnrichUploadProvenanceRequest): string {
+	const extension = canonicalUploadExtensionForFilename(input.filename);
+	if (!extension) {
+		throw new MulderError('Filename must end with a supported upload extension before enrichment', 'VALIDATION_ERROR', {
+			context: { filename: input.filename },
+		});
+	}
+	return `raw/${input.source_id}/original.${extension}`;
+}
+
+function previewUploadedObject(content: Buffer, contentType: string | null, filename: string): string {
+	const normalizedContentType = contentType?.split(';')[0]?.trim().toLowerCase() ?? '';
+	const lowerFilename = filename.toLowerCase();
+	if (
+		normalizedContentType.startsWith('text/') ||
+		lowerFilename.endsWith('.txt') ||
+		lowerFilename.endsWith('.md') ||
+		lowerFilename.endsWith('.markdown') ||
+		lowerFilename.endsWith('.csv')
+	) {
+		return content.toString('utf8', 0, Math.min(content.byteLength, 16_000));
+	}
+	return [
+		`Filename: ${filename}`,
+		`Content type: ${contentType ?? 'unknown'}`,
+		`Size bytes: ${content.byteLength}`,
+		'Binary preview is intentionally limited before finalization.',
+	].join('\n');
+}
+
+function safeEnumValue<T extends string>(value: unknown, allowed: ReadonlySet<T>): T | null {
+	return typeof value === 'string' && allowed.has(value as T) ? (value as T) : null;
+}
+
+function safeLanguage(value: unknown): string | undefined {
+	if (typeof value !== 'string') return undefined;
+	const normalized = value.trim().toLowerCase();
+	return /^[a-z]{2,3}(-[a-z0-9]{2,8})?$/.test(normalized) && normalized.length <= 16 ? normalized : undefined;
+}
+
+function safePiiTypes(value: unknown): EnrichmentSuggestedPiiType[] {
+	if (!Array.isArray(value)) return [];
+	return value.filter(
+		(item): item is EnrichmentSuggestedPiiType => safeEnumValue(item, ALLOWED_UPLOAD_PII_TYPES) !== null,
+	);
+}
+
+function sanitizeEnrichmentSuggestion(
+	value: unknown,
+	draft: EnrichUploadProvenanceRequest['draft'] | undefined,
+): EnrichUploadProvenanceResponse['data']['suggested'] {
+	const candidate =
+		value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+	const suggested =
+		candidate.suggested && typeof candidate.suggested === 'object' && !Array.isArray(candidate.suggested)
+			? (candidate.suggested as Record<string, unknown>)
+			: candidate;
+	const provenance =
+		suggested.provenance && typeof suggested.provenance === 'object' && !Array.isArray(suggested.provenance)
+			? (suggested.provenance as Record<string, unknown>)
+			: {};
+	const expectedSensitivity =
+		suggested.expected_sensitivity &&
+		typeof suggested.expected_sensitivity === 'object' &&
+		!Array.isArray(suggested.expected_sensitivity)
+			? (suggested.expected_sensitivity as Record<string, unknown>)
+			: null;
+
+	const safeProvenance: Record<string, unknown> = {};
+	const draftProvenance = draft?.provenance;
+	if (
+		draftProvenance?.acquisition?.channel ||
+		draftProvenance?.acquisition?.collection_id ||
+		draftProvenance?.acquisition?.notes
+	) {
+		safeProvenance.acquisition = {
+			...draftProvenance.acquisition,
+			metadata: draftProvenance.acquisition?.metadata ?? {},
+		};
+	}
+	if (
+		provenance.original_source &&
+		typeof provenance.original_source === 'object' &&
+		!Array.isArray(provenance.original_source)
+	) {
+		const original = provenance.original_source as Record<string, unknown>;
+		if (typeof original.description === 'string' && original.description.trim().length > 0) {
+			const sourceType = safeEnumValue(original.source_type, ALLOWED_UPLOAD_SOURCE_TYPES) ?? 'other';
+			const language = safeLanguage(original.language);
+			safeProvenance.original_source = {
+				source_type: sourceType,
+				description: original.description,
+				...(language ? { language } : {}),
+			};
+		}
+	}
+	safeProvenance.authenticity = {
+		status: draftProvenance?.authenticity?.status ?? 'unverified',
+		notes: draftProvenance?.authenticity?.notes ?? 'AI suggestion; verify before completing provenance.',
+	};
+	if (draftProvenance?.custody_chain && draftProvenance.custody_chain.length > 0) {
+		safeProvenance.custody_chain = draftProvenance.custody_chain;
+	}
+
+	const suggestedPayload = {
+		provenance: safeProvenance,
+	} as EnrichUploadProvenanceResponse['data']['suggested'];
+	if (expectedSensitivity && safeEnumValue(expectedSensitivity.level, ALLOWED_UPLOAD_SENSITIVITY_LEVELS) !== null) {
+		const level = safeEnumValue(expectedSensitivity.level, ALLOWED_UPLOAD_SENSITIVITY_LEVELS) ?? 'internal';
+		suggestedPayload.expected_sensitivity = {
+			level,
+			reason:
+				typeof expectedSensitivity.reason === 'string' && expectedSensitivity.reason.trim().length > 0
+					? expectedSensitivity.reason
+					: 'AI suggested sensitivity; review before upload completion.',
+			pii_types: safePiiTypes(expectedSensitivity.pii_types),
+		};
+	}
+	return suggestedPayload;
+}
+
+function readConfidenceMap(value: unknown): Record<string, number> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+	const source = (value as Record<string, unknown>).field_confidence;
+	if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+	return Object.fromEntries(
+		Object.entries(source)
+			.filter((entry): entry is [string, number] => typeof entry[1] === 'number' && entry[1] >= 0 && entry[1] <= 1)
+			.map(([key, confidence]) => [key, confidence]),
+	);
+}
+
+function readWarnings(value: unknown): string[] {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+	const warnings = (value as Record<string, unknown>).warnings;
+	return Array.isArray(warnings) ? warnings.filter((warning): warning is string => typeof warning === 'string') : [];
+}
+
+export async function enrichUploadProvenance(
+	input: EnrichUploadProvenanceRequest,
+	logger?: Logger,
+	options?: UploadRouteOptions,
+): Promise<EnrichUploadProvenanceResponse> {
+	const { config, pool, services } = resolveContext();
+	const requestLogger = createRouteLogger(logger ?? createLogger(), {
+		action: 'enrich-provenance',
+		source_id: input.source_id,
+	});
+
+	if (
+		!isSupportedOriginalStoragePath(input.storage_path) ||
+		input.storage_path !== expectedOriginalStoragePath(input)
+	) {
+		throw new MulderError('storage_path must reference the initiated original upload object', 'VALIDATION_ERROR', {
+			context: { source_id: input.source_id, storage_path: input.storage_path },
+		});
+	}
+
+	const metadata = await services.storage.getMetadata(input.storage_path);
+	if (!metadata) {
+		throw new MulderError(`Uploaded object not found: ${input.storage_path}`, 'UPLOAD_OBJECT_NOT_FOUND', {
+			context: { source_id: input.source_id, storage_path: input.storage_path },
+		});
+	}
+
+	const content = await services.storage.download(input.storage_path);
+	const fileHash = createHash('sha256').update(content).digest('hex');
+	const preview = previewUploadedObject(content, metadata.contentType, input.filename);
+	const prompt = [
+		'Suggest provenance fields for a newly uploaded research source.',
+		'Return advisory JSON only. Do not state acquisition, custody, or authenticity as fact unless the draft supplies it.',
+		'Default authenticity to unverified. Sensitivity suggestions must include a short reason.',
+		`Filename: ${input.filename}`,
+		`Collection id: ${input.collection_id ?? 'none'}`,
+		`Draft: ${JSON.stringify(input.draft ?? {})}`,
+		'Preview:',
+		preview,
+	].join('\n\n');
+
+	const rawSuggestion = await services.llm.generateStructured({
+		prompt,
+		systemInstruction: 'You are assisting provenance intake. Produce cautious, user-reviewable suggestions only.',
+		schema: {
+			type: 'object',
+			properties: {
+				suggested: { type: 'object' },
+				field_confidence: { type: 'object' },
+				warnings: { type: 'array', items: { type: 'string' } },
+			},
+			required: ['suggested', 'field_confidence', 'warnings'],
+		},
+	});
+
+	const suggested = sanitizeEnrichmentSuggestion(rawSuggestion, input.draft);
+	const warnings = ['Review AI-suggested provenance before completing the upload.', ...readWarnings(rawSuggestion)];
+	const fieldConfidence = readConfidenceMap(rawSuggestion);
+	const suggestion = await createIntakeEnrichmentSuggestion(pool, {
+		sourceId: input.source_id,
+		storagePath: input.storage_path,
+		filename: input.filename,
+		fileHash,
+		model: config.translation.engine,
+		promptVersion: 'intake-provenance-v1',
+		suggestedPayload: suggested,
+		fieldConfidence,
+		warnings,
+		requestedBy: submittedByForPrincipal(options?.authPrincipal),
+	});
+
+	requestLogger.info({ suggestionId: suggestion.id }, 'Upload provenance enrichment suggestion created');
+	return {
+		data: {
+			suggestion_id: suggestion.id,
+			source_id: input.source_id,
+			suggested,
+			field_confidence: fieldConfidence,
+			warnings,
+			requires_user_review: true,
+		},
 	};
 }
 
