@@ -46,6 +46,7 @@ const sourceTypes: UploadOriginalSourceType[] = [
 	'video_recording',
 ];
 const sensitivityLevels: SensitivityLevel[] = ['public', 'internal', 'restricted', 'confidential'];
+const autoValue = '';
 
 function Field({
 	children,
@@ -103,19 +104,19 @@ export function AddSourcesPage() {
 	const canManageCollections = ['owner', 'admin'].includes(sessionQuery.data?.data.user.role ?? '');
 	const collections = collectionsQuery.data?.data ?? [];
 	const [files, setFiles] = useState<File[]>([]);
-	const [sourceLanguage, setSourceLanguage] = useState(i18n.language === 'de' ? 'de' : 'en');
+	const [sourceLanguage, setSourceLanguage] = useState('');
 	const [languageTouched, setLanguageTouched] = useState(false);
-	const [channel, setChannel] = useState<UploadAcquisitionChannel>('manual_upload');
+	const [channel, setChannel] = useState<UploadAcquisitionChannel | ''>('');
 	const [acquisitionNotes, setAcquisitionNotes] = useState('');
 	const [collectionId, setCollectionId] = useState('');
 	const [noCollectionConfirmed, setNoCollectionConfirmed] = useState(false);
-	const [sourceType, setSourceType] = useState<UploadOriginalSourceType>('other');
+	const [sourceType, setSourceType] = useState<UploadOriginalSourceType | ''>('');
 	const [sourceDescription, setSourceDescription] = useState('');
-	const [authenticityStatus, setAuthenticityStatus] = useState<UploadAuthenticityStatus>('unverified');
+	const [authenticityStatus, setAuthenticityStatus] = useState<UploadAuthenticityStatus | ''>('');
 	const [authenticityNotes, setAuthenticityNotes] = useState('');
 	const [custodian, setCustodian] = useState('');
 	const [custodyNotes, setCustodyNotes] = useState('');
-	const [sensitivityLevel, setSensitivityLevel] = useState<SensitivityLevel>('internal');
+	const [sensitivityLevel, setSensitivityLevel] = useState<SensitivityLevel | ''>('');
 	const [sensitivityTouched, setSensitivityTouched] = useState(false);
 	const [sensitivityReason, setSensitivityReason] = useState('');
 	const [provenanceConfirmed, setProvenanceConfirmed] = useState(false);
@@ -130,14 +131,7 @@ export function AddSourcesPage() {
 	const hasSuccessfulRows = upload.rows.some((row) => row.status === 'created' || row.status === 'duplicate');
 	const selectedFileSize = useMemo(() => files.reduce((total, file) => total + file.size, 0), [files]);
 	const collectionRequiredConfirmed = Boolean(collectionId) || noCollectionConfirmed;
-	const formIsReady =
-		files.length > 0 &&
-		sourceLanguage.trim().length >= 2 &&
-		sourceDescription.trim().length > 0 &&
-		custodian.trim().length > 0 &&
-		sensitivityReason.trim().length > 0 &&
-		collectionRequiredConfirmed &&
-		provenanceConfirmed;
+	const formIsReady = files.length > 0 && collectionRequiredConfirmed && provenanceConfirmed;
 	const isUploading = upload.rows.some((row) =>
 		['initiating', 'uploading', 'finalizing', 'processing'].includes(row.status),
 	);
@@ -163,38 +157,55 @@ export function AddSourcesPage() {
 		const trimmedCustodyNotes = custodyNotes.trim();
 		const trimmedAcquisitionNotes = acquisitionNotes.trim();
 		const trimmedAuthenticityNotes = authenticityNotes.trim();
-		const payload: DocumentUploadPayload = {
-			expected_sensitivity: {
-				level: sensitivityLevel,
-				reason: sensitivityReason.trim(),
-			},
-			provenance: {
-				acquisition: {
-					channel,
-					collection_id: collectionId || null,
-					metadata: {
-						no_collection_confirmed: !collectionId && noCollectionConfirmed,
-					},
-					notes: trimmedAcquisitionNotes || null,
-				},
-				authenticity: {
-					notes: trimmedAuthenticityNotes || null,
-					status: authenticityStatus,
-				},
-				custody_chain: [
+		const acquisition =
+			channel || collectionId || trimmedAcquisitionNotes || noCollectionConfirmed
+				? {
+						...(channel ? { channel } : {}),
+						collection_id: collectionId || null,
+						metadata: {
+							no_collection_confirmed: !collectionId && noCollectionConfirmed,
+						},
+						notes: trimmedAcquisitionNotes || null,
+					}
+				: undefined;
+		const originalSource = trimmedDescription
+			? {
+					description: trimmedDescription,
+					source_type: sourceType || 'other',
+					...(sourceLanguage.trim() ? { language: sourceLanguage.trim() } : {}),
+				}
+			: undefined;
+		const authenticity =
+			authenticityStatus || trimmedAuthenticityNotes
+				? {
+						notes: trimmedAuthenticityNotes || null,
+						status: authenticityStatus || 'unverified',
+					}
+				: undefined;
+		const custodyChain = trimmedCustodian
+			? [
 					{
-						actions: ['received'],
 						holder: trimmedCustodian,
-						holder_type: 'unknown',
+						holder_type: 'unknown' as const,
 						notes: trimmedCustodyNotes || null,
 						step_order: 1,
 					},
-				],
-				original_source: {
-					description: trimmedDescription,
-					language: sourceLanguage.trim(),
-					source_type: sourceType,
-				},
+				]
+			: undefined;
+		const payload: DocumentUploadPayload = {
+			...(sensitivityLevel
+				? {
+						expected_sensitivity: {
+							level: sensitivityLevel,
+							...(sensitivityReason.trim() ? { reason: sensitivityReason.trim() } : {}),
+						},
+					}
+				: {}),
+			provenance: {
+				...(acquisition ? { acquisition } : {}),
+				...(authenticity ? { authenticity } : {}),
+				...(custodyChain ? { custody_chain: custodyChain } : {}),
+				...(originalSource ? { original_source: originalSource } : {}),
 			},
 		};
 		return payload;
@@ -212,8 +223,8 @@ export function AddSourcesPage() {
 		try {
 			const created = await createCollection.mutateAsync({
 				defaults: {
-					default_language: sourceLanguage,
-					sensitivity_level: sensitivityLevel,
+					default_language: sourceLanguage || (i18n.language === 'de' ? 'de' : 'en'),
+					sensitivity_level: sensitivityLevel || 'internal',
 				},
 				description: t('addSources.createdCollectionDescription'),
 				name: newCollectionName.trim(),
@@ -287,6 +298,7 @@ export function AddSourcesPage() {
 									}}
 									value={sourceLanguage}
 								>
+									<option value={autoValue}>{t('common.auto')}</option>
 									{languages.map((language) => (
 										<option key={language} value={language}>
 											{t(`languages.${language}`, { defaultValue: language })}
@@ -298,9 +310,10 @@ export function AddSourcesPage() {
 								<select
 									className={fieldClassName()}
 									id="add-sources-source-type"
-									onChange={(event) => setSourceType(event.target.value as UploadOriginalSourceType)}
+									onChange={(event) => setSourceType(event.target.value as UploadOriginalSourceType | '')}
 									value={sourceType}
 								>
+									<option value={autoValue}>{t('common.auto')}</option>
 									{sourceTypes.map((type) => (
 										<option key={type} value={type}>
 											{t(`sourceTypes.${type}`)}
@@ -328,9 +341,10 @@ export function AddSourcesPage() {
 								<select
 									className={fieldClassName()}
 									id="add-sources-acquisition-channel"
-									onChange={(event) => setChannel(event.target.value as UploadAcquisitionChannel)}
+									onChange={(event) => setChannel(event.target.value as UploadAcquisitionChannel | '')}
 									value={channel}
 								>
+									<option value={autoValue}>{t('common.auto')}</option>
 									{channels.map((item) => (
 										<option key={item} value={item}>
 											{t(`acquisitionChannels.${item}`)}
@@ -342,9 +356,10 @@ export function AddSourcesPage() {
 								<select
 									className={fieldClassName()}
 									id="add-sources-authenticity-status"
-									onChange={(event) => setAuthenticityStatus(event.target.value as UploadAuthenticityStatus)}
+									onChange={(event) => setAuthenticityStatus(event.target.value as UploadAuthenticityStatus | '')}
 									value={authenticityStatus}
 								>
+									<option value={autoValue}>{t('common.auto')}</option>
 									{authenticityStatuses.map((status) => (
 										<option key={status} value={status}>
 											{t(`authenticity.${status}`)}
@@ -399,10 +414,11 @@ export function AddSourcesPage() {
 									id="add-sources-sensitivity-level"
 									onChange={(event) => {
 										setSensitivityTouched(true);
-										setSensitivityLevel(event.target.value as SensitivityLevel);
+										setSensitivityLevel(event.target.value as SensitivityLevel | '');
 									}}
 									value={sensitivityLevel}
 								>
+									<option value={autoValue}>{t('common.auto')}</option>
 									{sensitivityLevels.map((level) => (
 										<option key={level} value={level}>
 											{t(`sensitivity.${level}`)}

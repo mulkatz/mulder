@@ -25,7 +25,7 @@ export type DocumentUploadRowStatus =
 
 export interface DocumentUploadPayload {
 	provenance: UploadProvenancePayload;
-	expected_sensitivity: UploadExpectedSensitivityPayload;
+	expected_sensitivity?: UploadExpectedSensitivityPayload;
 	tags?: string[];
 }
 

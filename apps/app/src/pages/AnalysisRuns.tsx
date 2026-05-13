@@ -1,7 +1,8 @@
 import type { TFunction } from 'i18next';
-import { AlertCircle, ChevronDown, Clock, Download, Filter, PlayCircle } from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronRight, Clock, Download, Filter, PlayCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { CodeBlock } from '@/components/CodeBlock';
 import { type DataColumn, DataTable } from '@/components/DataTable';
 import { IconButton } from '@/components/IconButton';
@@ -12,11 +13,159 @@ import { StateNotice } from '@/components/StateNotice';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Tabs } from '@/components/Tabs';
 import { SelectControl, Toolbar } from '@/components/Toolbar';
+import { useDocumentObservability } from '@/features/documents/useDocumentObservability';
+import { useDocuments } from '@/features/documents/useDocuments';
 import { useJob } from '@/features/jobs/useJob';
 import { useJobs } from '@/features/jobs/useJobs';
+import type { DocumentRecord, JobProgress } from '@/lib/api-types';
 import { getErrorMessage, isApiUnavailableError } from '@/lib/query-state';
 import type { AnalysisRun, RunStatus } from '@/lib/types';
 import { jobDetailToAnalysisRun, jobToAnalysisRun } from '@/lib/view-models';
+
+function formatElapsedSince(value: string | null | undefined, locale: string) {
+	if (!value) return '—';
+	const startedAt = new Date(value).getTime();
+	if (Number.isNaN(startedAt)) return '—';
+	const totalMinutes = Math.max(1, Math.round((Date.now() - startedAt) / 60000));
+	if (locale.startsWith('de')) {
+		if (totalMinutes < 60) return `${totalMinutes} Min.`;
+		const hours = Math.floor(totalMinutes / 60);
+		const minutes = totalMinutes % 60;
+		if (hours < 24) return minutes > 0 ? `${hours} Std. ${minutes} Min.` : `${hours} Std.`;
+		const days = Math.floor(hours / 24);
+		const remainingHours = hours % 24;
+		return remainingHours > 0 ? `${days} T. ${remainingHours} Std.` : `${days} T.`;
+	}
+	if (totalMinutes < 60) return `${totalMinutes} min`;
+	const hours = Math.floor(totalMinutes / 60);
+	const minutes = totalMinutes % 60;
+	if (hours < 24) return minutes > 0 ? `${hours} h ${minutes} min` : `${hours} h`;
+	const days = Math.floor(hours / 24);
+	const remainingHours = hours % 24;
+	return remainingHours > 0 ? `${days} d ${remainingHours} h` : `${days} d`;
+}
+
+function formatDateTime(value: string | null | undefined, locale: string) {
+	if (!value) return '—';
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return value;
+	return new Intl.DateTimeFormat(locale, {
+		month: 'short',
+		day: '2-digit',
+		hour: '2-digit',
+		minute: '2-digit',
+	}).format(date);
+}
+
+function ProcessingDocuments({
+	documentMap,
+	expandedSourceId,
+	locale,
+	onToggleSource,
+	progress,
+}: {
+	documentMap: Map<string, DocumentRecord>;
+	expandedSourceId?: string;
+	locale: string;
+	onToggleSource: (sourceId: string) => void;
+	progress: JobProgress | null | undefined;
+}) {
+	const { t } = useTranslation();
+	const observabilityQuery = useDocumentObservability(expandedSourceId);
+	const expandedSteps = observabilityQuery.data?.data.source.steps ?? [];
+
+	if (!progress || progress.sources.length === 0) {
+		return <p className="text-sm text-text-muted">{t('runs.noDocumentProgress')}</p>;
+	}
+
+	return (
+		<div className="space-y-2">
+			{progress.sources.map((source) => {
+				const document = documentMap.get(source.source_id);
+				const expanded = expandedSourceId === source.source_id;
+				return (
+					<div className="rounded-md border border-border bg-panel-raised" key={source.source_id}>
+						<button
+							className="flex w-full items-start gap-3 p-3 text-left transition-colors hover:bg-field"
+							onClick={() => onToggleSource(source.source_id)}
+							type="button"
+						>
+							{expanded ? (
+								<ChevronDown className="mt-0.5 size-4 shrink-0 text-text-subtle" />
+							) : (
+								<ChevronRight className="mt-0.5 size-4 shrink-0 text-text-subtle" />
+							)}
+							<div className="min-w-0 flex-1">
+								<div className="flex flex-wrap items-center gap-2">
+									<p className="truncate text-sm font-medium text-text">
+										{document?.filename ?? t('runs.sourceNotVisible')}
+									</p>
+									<StatusBadge status={source.status} />
+								</div>
+								<p className="mt-1 truncate text-xs text-text-muted">
+									{t('runs.currentStep')}: {source.current_step}
+								</p>
+								<p className="mt-1 text-xs text-text-subtle">
+									{t('runs.started')}: {formatDateTime(source.updated_at, locale)} · {t('runs.elapsed')}:{' '}
+									{formatElapsedSince(source.updated_at, locale)}
+								</p>
+								{source.error_message ? <p className="mt-1 text-xs text-danger">{source.error_message}</p> : null}
+							</div>
+						</button>
+						{expanded ? (
+							<div className="border-t border-border p-3">
+								<div className="mb-3 flex items-center justify-between gap-3">
+									<p className="text-xs font-medium text-text-subtle">{t('runs.pipelineSteps')}</p>
+									<Link className="text-xs font-medium text-accent hover:underline" to={`/sources/${source.source_id}`}>
+										{t('runs.openSource')}
+									</Link>
+								</div>
+								{observabilityQuery.isLoading ? (
+									<StateNotice tone="loading" title={t('runs.detailLoadingTitle')} />
+								) : null}
+								{observabilityQuery.error ? (
+									<StateNotice
+										tone="error"
+										title={
+											isApiUnavailableError(observabilityQuery.error)
+												? t('runs.detailUnavailableTitle')
+												: t('runs.detailErrorTitle')
+										}
+									>
+										{getErrorMessage(observabilityQuery.error, t('common.apiRequestFailed'))}
+									</StateNotice>
+								) : null}
+								{expandedSteps.length > 0 ? (
+									<div className="space-y-2">
+										{expandedSteps.map((step) => (
+											<div
+												className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md bg-panel px-3 py-2"
+												key={`${source.source_id}-${step.step}`}
+											>
+												<div className="min-w-0">
+													<p className="truncate text-sm text-text">{step.step}</p>
+													<p className="mt-1 text-xs text-text-subtle">
+														{step.completed_at
+															? `${t('runs.started')}: ${formatDateTime(step.completed_at, locale)} · ${t('runs.elapsed')}: ${formatElapsedSince(step.completed_at, locale)}`
+															: t('runs.stepWaiting')}
+													</p>
+													{step.error_message ? <p className="mt-1 text-xs text-danger">{step.error_message}</p> : null}
+												</div>
+												<StatusBadge status={step.status} />
+											</div>
+										))}
+									</div>
+								) : !observabilityQuery.isLoading && !observabilityQuery.error ? (
+									<p className="text-sm text-text-muted">{t('runs.noPipelineSteps')}</p>
+								) : null}
+							</div>
+						) : null}
+					</div>
+				);
+			})}
+		</div>
+	);
+}
 
 function getRunColumns(t: TFunction): DataColumn<AnalysisRun>[] {
 	return [
@@ -80,8 +229,13 @@ export function AnalysisRunsPage() {
 	const [status, setStatus] = useState<RunStatus | 'all'>('all');
 	const [query, setQuery] = useState('');
 	const [selectedId, setSelectedId] = useState<string | undefined>();
+	const [expandedSourceId, setExpandedSourceId] = useState<string | undefined>();
 	const jobsQuery = useJobs({ limit: 50 });
+	const documentsQuery = useDocuments({ limit: 100 });
 	const viewModelContext = useMemo(() => ({ locale: i18n.language, t }), [i18n.language, t]);
+	const documentMap = useMemo(() => {
+		return new Map((documentsQuery.data?.data ?? []).map((document) => [document.id, document]));
+	}, [documentsQuery.data]);
 
 	const runs = useMemo(
 		() => (jobsQuery.data?.data ?? []).map((job) => jobToAnalysisRun(job, viewModelContext)),
@@ -115,6 +269,7 @@ export function AnalysisRunsPage() {
 	const selectedRun = selectedJobQuery.data
 		? jobDetailToAnalysisRun(selectedJobQuery.data.data, viewModelContext)
 		: selectedListRun;
+	const selectedProgress = selectedJobQuery.data?.data.progress;
 	const runColumns = getRunColumns(t);
 	const hasRunFilters = query.trim().length > 0 || status !== 'all';
 	const runTableRows = jobsQuery.error ? [] : filteredRuns;
@@ -205,7 +360,10 @@ export function AnalysisRunsPage() {
 						columns={runColumns}
 						emptyMessage={runTableEmptyMessage}
 						getRowKey={(run) => run.id}
-						onRowClick={(run) => setSelectedId(run.id)}
+						onRowClick={(run) => {
+							setSelectedId(run.id);
+							setExpandedSourceId(undefined);
+						}}
 						rows={runTableRows}
 						selectedKey={selectedRun?.id}
 						minWidth={800}
@@ -233,6 +391,15 @@ export function AnalysisRunsPage() {
 								</StateNotice>
 							</div>
 						) : null}
+						<InspectorSection title={t('runs.documents')}>
+							<ProcessingDocuments
+								documentMap={documentMap}
+								expandedSourceId={expandedSourceId}
+								locale={i18n.language}
+								onToggleSource={(sourceId) => setExpandedSourceId(expandedSourceId === sourceId ? undefined : sourceId)}
+								progress={selectedProgress}
+							/>
+						</InspectorSection>
 						<InspectorSection title={t('runs.execution')}>
 							<div className="grid grid-cols-2 gap-2">
 								<div className="rounded-md bg-field p-3">
