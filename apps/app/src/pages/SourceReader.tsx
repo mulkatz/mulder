@@ -8,6 +8,7 @@ import {
 	Languages,
 	PanelLeft,
 	PanelRight,
+	Plus,
 	RefreshCcw,
 	SplitSquareHorizontal,
 	Workflow,
@@ -33,20 +34,38 @@ import { useDocumentObservability } from '@/features/documents/useDocumentObserv
 import { useDocumentPages } from '@/features/documents/useDocumentPages';
 import { useDocumentPdf } from '@/features/documents/useDocumentPdf';
 import { useDocumentStories } from '@/features/documents/useDocumentStories';
+import { useDocumentTranslations, useRequestDocumentTranslation } from '@/features/documents/useDocumentTranslations';
 import { useContradictions } from '@/features/evidence/useContradictions';
+import { useJob } from '@/features/jobs/useJob';
 import { type AppLocale, locales } from '@/i18n/resources';
-import type { ContradictionRecord, DocumentStoryRecord, EntityRecord } from '@/lib/api-types';
+import type { ContradictionRecord, DocumentStoryRecord, EntityRecord, TranslationRecord } from '@/lib/api-types';
 import { cn } from '@/lib/cn';
 import { getErrorMessage, isApiUnavailableError } from '@/lib/query-state';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
 type ReaderViewMode = 'split' | 'original' | 'story';
+type StoryContentMode = 'stories' | 'translation';
 
 const READER_MODE_STORAGE_KEY = 'mulder.reader.viewMode';
 const PDF_MIN_ZOOM = 0.7;
 const PDF_MAX_ZOOM = 2.25;
 const PDF_ZOOM_STEP = 0.15;
+const ACTIVE_PROCESSING_REFETCH_MS = 4000;
+const TRANSLATION_JOB_REFETCH_MS = 2500;
+
+function isProcessingActive(observability?: ReturnType<typeof useDocumentObservability>['data']) {
+	if (!observability) return false;
+	const jobStatus = observability.data.job?.status;
+	const progress = observability.data.progress;
+	return (
+		jobStatus === 'pending' ||
+		jobStatus === 'running' ||
+		progress?.source_status === 'pending' ||
+		progress?.source_status === 'processing' ||
+		progress?.run_status === 'running'
+	);
+}
 
 function readInitialReaderMode(): ReaderViewMode {
 	if (typeof window === 'undefined') return 'split';
@@ -269,6 +288,31 @@ function AnnotatedMarkdown({
 	);
 }
 
+function PlainMarkdown({ markdown }: { markdown: string }) {
+	const components: Components = {
+		blockquote: ({ children }) => (
+			<blockquote className="border-l-2 border-border pl-4 text-text-muted">{children}</blockquote>
+		),
+		code: ({ children }) => (
+			<code className="rounded-sm bg-field px-1 py-0.5 font-mono text-[0.9em] text-text">{children}</code>
+		),
+		h1: ({ children }) => <h1 className="text-2xl font-semibold text-text">{children}</h1>,
+		h2: ({ children }) => <h2 className="text-xl font-semibold text-text">{children}</h2>,
+		h3: ({ children }) => <h3 className="text-lg font-semibold text-text">{children}</h3>,
+		li: ({ children }) => <li className="pl-1">{children}</li>,
+		ol: ({ children }) => <ol className="list-decimal space-y-2 pl-5">{children}</ol>,
+		p: ({ children }) => <p>{children}</p>,
+		strong: ({ children }) => <strong className="font-semibold text-text">{children}</strong>,
+		ul: ({ children }) => <ul className="list-disc space-y-2 pl-5">{children}</ul>,
+	};
+
+	return (
+		<div className="space-y-4 text-sm leading-7 text-text">
+			<ReactMarkdown components={components}>{markdown}</ReactMarkdown>
+		</div>
+	);
+}
+
 function ViewModeButton({
 	children,
 	isActive,
@@ -300,6 +344,7 @@ function OriginalPane({
 	pagesError,
 	pagesIsLoading,
 	sourceId,
+	sourceFilename,
 	story,
 }: {
 	layoutError: unknown;
@@ -309,10 +354,12 @@ function OriginalPane({
 	pagesError: unknown;
 	pagesIsLoading: boolean;
 	sourceId: string;
+	sourceFilename?: string;
 	story?: DocumentStoryRecord;
 }) {
 	const { t } = useTranslation();
-	const pdfQuery = useDocumentPdf(sourceId);
+	const isPdf = sourceFilename?.toLowerCase().endsWith('.pdf') ?? true;
+	const pdfQuery = useDocumentPdf(sourceId, { enabled: isPdf });
 	const pdfUrl = useObjectUrl(pdfQuery.data);
 	const [viewerRef, viewerWidth] = useElementWidth<HTMLDivElement>();
 	const [pageNumber, setPageNumber] = useState(story?.page_start ?? 1);
@@ -438,7 +485,12 @@ function OriginalPane({
 					className="min-h-[420px] overflow-auto rounded-md border border-border bg-panel-raised p-3"
 					ref={viewerRef}
 				>
-					{pdfQuery.isLoading ? <StateNotice tone="loading" title={t('reader.pdfLoadingTitle')} /> : null}
+					{!isPdf ? (
+						<StateNotice title={t('reader.originalPreviewUnavailableTitle')}>
+							{t('reader.originalPreviewUnavailableBody')}
+						</StateNotice>
+					) : null}
+					{isPdf && pdfQuery.isLoading ? <StateNotice tone="loading" title={t('reader.pdfLoadingTitle')} /> : null}
 					{pdfQuery.error ? (
 						<StateNotice
 							tone="error"
@@ -556,13 +608,31 @@ function StoryRail({
 }
 
 function TranslationControls({
+	contentMode,
+	isJobRunning,
+	isRequesting,
+	onRefresh,
+	onRequest,
+	onShowStories,
+	onShowTranslation,
 	originalLanguage,
+	requestDisabled,
 	targetLanguage,
 	setTargetLanguage,
+	translation,
 }: {
+	contentMode: StoryContentMode;
+	isJobRunning: boolean;
+	isRequesting: boolean;
+	onRefresh: () => void;
+	onRequest: () => void;
+	onShowStories: () => void;
+	onShowTranslation: () => void;
 	originalLanguage?: string | null;
+	requestDisabled: boolean;
 	targetLanguage: AppLocale;
 	setTargetLanguage: (language: AppLocale) => void;
+	translation?: TranslationRecord;
 }) {
 	const { t, i18n } = useTranslation();
 
@@ -588,15 +658,43 @@ function TranslationControls({
 					</select>
 				</label>
 				<button
-					className="inline-flex h-8 cursor-not-allowed items-center rounded-md border border-border bg-panel px-3 text-sm text-text-muted opacity-70"
-					disabled
-					title={t('reader.translationDisabledTooltip')}
+					className="inline-flex h-8 items-center rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field disabled:text-text-faint"
+					disabled={requestDisabled || isRequesting || isJobRunning}
+					onClick={translation ? onRefresh : onRequest}
 					type="button"
 				>
-					{t('reader.translate')}
+					{translation ? t('reader.translateAgain') : t('reader.translate')}
 				</button>
 			</div>
-			<p className="mt-2 text-xs text-text-muted">{t('reader.translationPrepareOnly')}</p>
+			<div className="mt-3 flex flex-wrap items-center gap-2">
+				<button
+					className={cn(
+						'inline-flex h-8 items-center rounded-sm px-3 text-sm text-text-muted transition-colors hover:text-text',
+						contentMode === 'stories' && 'bg-panel text-text shadow-soft',
+					)}
+					onClick={onShowStories}
+					type="button"
+				>
+					{t('reader.extractedStoriesView')}
+				</button>
+				<button
+					className={cn(
+						'inline-flex h-8 items-center rounded-sm px-3 text-sm text-text-muted transition-colors hover:text-text',
+						contentMode === 'translation' && 'bg-panel text-text shadow-soft',
+					)}
+					onClick={onShowTranslation}
+					type="button"
+				>
+					{t('reader.translatedSourceView')}
+				</button>
+				<span className="text-xs text-text-subtle">
+					{isJobRunning
+						? t('reader.translationJobRunning')
+						: translation
+							? t('reader.translationCurrent')
+							: t('reader.translationNotRequested')}
+				</span>
+			</div>
 		</div>
 	);
 }
@@ -698,6 +796,7 @@ function EvidenceSignals({
 }
 
 function StoryPane({
+	activeProcessing,
 	contradictionsError,
 	contradictionsIsLoading,
 	onSelectEntity,
@@ -707,11 +806,14 @@ function StoryPane({
 	selectedStoryId,
 	setTargetLanguage,
 	signals,
+	sourceId,
+	sourceLanguage,
 	stories,
 	storiesError,
 	storiesIsLoading,
 	targetLanguage,
 }: {
+	activeProcessing: boolean;
 	contradictionsError: unknown;
 	contradictionsIsLoading: boolean;
 	onSelectEntity: (entity: EntityRecord) => void;
@@ -721,12 +823,70 @@ function StoryPane({
 	selectedStoryId?: string;
 	setTargetLanguage: (language: AppLocale) => void;
 	signals: ContradictionRecord[];
+	sourceId?: string;
+	sourceLanguage?: string | null;
 	stories: DocumentStoryRecord[];
 	storiesError: unknown;
 	storiesIsLoading: boolean;
 	targetLanguage: AppLocale;
 }) {
-	const { t } = useTranslation();
+	const { t, i18n } = useTranslation();
+	const [contentMode, setContentMode] = useState<StoryContentMode>('stories');
+	const [translationJobId, setTranslationJobId] = useState<string | undefined>();
+	const [translationPolling, setTranslationPolling] = useState(false);
+	const translationsQuery = useDocumentTranslations(sourceId, { status: 'current', targetLanguage });
+	const requestTranslation = useRequestDocumentTranslation(sourceId);
+	const translationJobQuery = useJob(translationJobId, {
+		refetchInterval: translationPolling ? TRANSLATION_JOB_REFETCH_MS : false,
+	});
+	const translationJobStatus = translationJobQuery.data?.data.job.status;
+	const isTranslationJobRunning = translationJobStatus === 'pending' || translationJobStatus === 'running';
+	const translationFailureLog =
+		translationJobStatus === 'failed' || translationJobStatus === 'dead_letter'
+			? translationJobQuery.data?.data.job.error_log
+			: null;
+	const currentTranslation = translationsQuery.data?.data[0];
+	const refetchTranslations = translationsQuery.refetch;
+
+	useEffect(() => {
+		if (translationJobStatus === 'completed') {
+			setTranslationPolling(false);
+			void refetchTranslations();
+			setContentMode('translation');
+			setTranslationJobId(undefined);
+		}
+		if (translationJobStatus === 'failed' || translationJobStatus === 'dead_letter') {
+			setTranslationPolling(false);
+		}
+	}, [refetchTranslations, translationJobStatus]);
+
+	function submitTranslation(refresh: boolean) {
+		if (!sourceId) return;
+		setTranslationPolling(false);
+		setTranslationJobId(undefined);
+		requestTranslation.mutate(
+			{
+				output_format: 'markdown',
+				pipeline_path: 'translation_only',
+				refresh,
+				source_language: sourceLanguage ?? selectedStory?.language ?? undefined,
+				target_language: targetLanguage,
+			},
+			{
+				onSuccess: (response) => {
+					setContentMode('translation');
+					if ('links' in response) {
+						setTranslationJobId(response.data.job_id);
+						setTranslationPolling(true);
+					} else {
+						setTranslationPolling(false);
+						setTranslationJobId(undefined);
+						void refetchTranslations();
+					}
+				},
+			},
+		);
+	}
 
 	return (
 		<section className="panel min-w-0 overflow-hidden">
@@ -736,6 +896,54 @@ function StoryPane({
 					<h2 className="font-medium text-text">{t('reader.storyWorkspace')}</h2>
 				</div>
 			</Toolbar>
+			<div className="border-b border-border p-3">
+				<TranslationControls
+					contentMode={contentMode}
+					isJobRunning={isTranslationJobRunning}
+					isRequesting={requestTranslation.isPending}
+					onRefresh={() => submitTranslation(true)}
+					onRequest={() => submitTranslation(false)}
+					onShowStories={() => setContentMode('stories')}
+					onShowTranslation={() => setContentMode('translation')}
+					originalLanguage={sourceLanguage ?? selectedStory?.language}
+					requestDisabled={!sourceId}
+					setTargetLanguage={setTargetLanguage}
+					targetLanguage={targetLanguage}
+					translation={currentTranslation}
+				/>
+			</div>
+			{translationsQuery.error || requestTranslation.error || translationJobQuery.error ? (
+				<div className="border-b border-border p-3">
+					<StateNotice
+						tone="error"
+						title={
+							isApiUnavailableError(translationsQuery.error ?? requestTranslation.error ?? translationJobQuery.error)
+								? t('reader.translationUnavailableTitle')
+								: t('reader.translationErrorTitle')
+						}
+					>
+						{getErrorMessage(
+							translationsQuery.error ?? requestTranslation.error ?? translationJobQuery.error,
+							t('common.apiRequestFailed'),
+						)}
+					</StateNotice>
+				</div>
+			) : null}
+			{translationJobStatus === 'failed' || translationJobStatus === 'dead_letter' ? (
+				<div className="border-b border-border p-3">
+					<StateNotice tone="error" title={t('reader.translationFailedTitle')}>
+						{t('reader.translationFailedBody')}
+						{translationFailureLog ? (
+							<div className="mt-3">
+								<p className="text-xs font-medium text-danger">{t('reader.translationFailureDetailLabel')}</p>
+								<pre className="mt-2 max-h-40 overflow-auto rounded-md border border-border bg-panel-raised p-3 text-xs text-text-muted">
+									{translationFailureLog}
+								</pre>
+							</div>
+						) : null}
+					</StateNotice>
+				</div>
+			) : null}
 			{storiesIsLoading ? (
 				<div className="border-b border-border p-3">
 					<StateNotice tone="loading" title={t('reader.storiesLoadingTitle')} />
@@ -753,12 +961,49 @@ function StoryPane({
 					</StateNotice>
 				</div>
 			) : null}
-			{!storiesIsLoading && !storiesError && stories.length === 0 ? (
+			{contentMode === 'stories' && !storiesIsLoading && !storiesError && stories.length === 0 ? (
 				<div className="p-3">
-					<StateNotice title={t('reader.noStoriesTitle')}>{t('reader.noStoriesBody')}</StateNotice>
+					<StateNotice title={activeProcessing ? t('reader.storiesProcessingTitle') : t('reader.noStoriesTitle')}>
+						{activeProcessing ? t('reader.storiesProcessingBody') : t('reader.noStoriesBody')}
+					</StateNotice>
 				</div>
 			) : null}
-			{stories.length > 0 ? (
+			{contentMode === 'translation' ? (
+				<div className="grid min-h-[640px] gap-4 p-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
+					<div className="min-w-0 space-y-4">
+						{translationsQuery.isLoading ? (
+							<StateNotice tone="loading" title={t('reader.translationLoadingTitle')} />
+						) : null}
+						{isTranslationJobRunning ? <StateNotice tone="loading" title={t('reader.translationJobRunning')} /> : null}
+						{currentTranslation ? (
+							<div className="rounded-md border border-border bg-panel-raised p-5">
+								<div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+									<div>
+										<p className="text-xs text-text-subtle">
+											{t('reader.translationMeta', {
+												language: formatLanguage(currentTranslation.target_language, i18n.language, t),
+											})}
+										</p>
+										<h2 className="mt-1 text-xl font-semibold text-text">{t('reader.translatedSourceContent')}</h2>
+									</div>
+									<StatusBadge status={currentTranslation.status} />
+								</div>
+								<PlainMarkdown markdown={currentTranslation.content || t('reader.translationEmptyBody')} />
+							</div>
+						) : !translationsQuery.isLoading && !isTranslationJobRunning ? (
+							<StateNotice title={t('reader.translationEmptyTitle')}>{t('reader.translationEmptyBody')}</StateNotice>
+						) : null}
+					</div>
+					<InspectorPanel title={t('reader.linkedContext')}>
+						<InspectorSection title={t('reader.entityContext')}>
+							<StateNotice title={t('reader.translationAnnotationsDisabledTitle')}>
+								{t('reader.translationAnnotationsDisabledBody')}
+							</StateNotice>
+						</InspectorSection>
+					</InspectorPanel>
+				</div>
+			) : null}
+			{contentMode === 'stories' && stories.length > 0 ? (
 				<div className="grid min-h-[640px] lg:grid-cols-[250px_minmax(0,1fr)]">
 					<StoryRail onSelect={onSelectStory} selectedStoryId={selectedStoryId} stories={stories} />
 					<div className="grid min-w-0 gap-4 p-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
@@ -778,11 +1023,6 @@ function StoryPane({
 											</div>
 											<StatusBadge status={selectedStory.status} />
 										</div>
-										<TranslationControls
-											originalLanguage={selectedStory.language}
-											setTargetLanguage={setTargetLanguage}
-											targetLanguage={targetLanguage}
-										/>
 									</div>
 									<div className="rounded-md border border-border bg-panel-raised p-5">
 										<AnnotatedMarkdown
@@ -818,15 +1058,19 @@ function ProcessingBackground({
 	error,
 	isLoading,
 	observability,
+	onToggle,
+	open,
 }: {
 	error: unknown;
 	isLoading: boolean;
 	observability?: ReturnType<typeof useDocumentObservability>['data'];
+	onToggle: (open: boolean) => void;
+	open: boolean;
 }) {
 	const { t } = useTranslation();
 
 	return (
-		<details className="panel p-4">
+		<details className="panel p-4" onToggle={(event) => onToggle(event.currentTarget.open)} open={open}>
 			<summary className="flex cursor-pointer items-center gap-2 text-sm font-medium text-text">
 				<Workflow className="size-4 text-accent" />
 				{t('reader.processingBackground')}
@@ -870,20 +1114,31 @@ export function SourceReaderPage() {
 	const [selectedStoryId, setSelectedStoryId] = useState<string | undefined>(searchParams.get('story') ?? undefined);
 	const [selectedEntity, setSelectedEntity] = useState<EntityRecord | undefined>();
 	const [targetLanguage, setTargetLanguage] = useState<AppLocale>(i18n.language === 'de' ? 'de' : 'en');
-	const sourceQuery = useDocument(sourceId);
-	const storiesQuery = useDocumentStories(sourceId);
-	const layoutQuery = useDocumentLayout(sourceId);
-	const pagesQuery = useDocumentPages(sourceId);
-	const observabilityQuery = useDocumentObservability(sourceId);
+	const [processingOpen, setProcessingOpen] = useState(false);
+	const [observabilityPolling, setObservabilityPolling] = useState(false);
+	const observabilityQuery = useDocumentObservability(sourceId, {
+		refetchInterval: observabilityPolling ? ACTIVE_PROCESSING_REFETCH_MS : false,
+	});
+	const activeProcessing = isProcessingActive(observabilityQuery.data);
+	const processingRefetchInterval = activeProcessing ? ACTIVE_PROCESSING_REFETCH_MS : false;
+	const sourceQuery = useDocument(sourceId, { refetchInterval: processingRefetchInterval });
+	const storiesQuery = useDocumentStories(sourceId, { refetchInterval: processingRefetchInterval });
+	const layoutQuery = useDocumentLayout(sourceId, { refetchInterval: processingRefetchInterval });
+	const pagesQuery = useDocumentPages(sourceId, { refetchInterval: processingRefetchInterval });
 	const contradictionsQuery = useContradictions({ status: 'all', limit: 100 });
 	const stories = storiesQuery.data?.data.stories ?? [];
 	const selectedStory = stories.find((story) => story.id === selectedStoryId) ?? stories[0];
 	const source = sourceQuery.data?.data ?? observabilityQuery.data?.data.source;
+	const sourceLanguage = sourceQuery.data?.data.source_language ?? null;
 	const effectiveViewMode = isCompact && viewMode === 'split' ? 'story' : viewMode;
 	const pageCount = pagesQuery.data?.meta.count;
 	const storySignals = selectedStory
 		? (contradictionsQuery.data?.data ?? []).filter((record) => record.story_id === selectedStory.id)
 		: [];
+
+	useEffect(() => {
+		setObservabilityPolling(activeProcessing);
+	}, [activeProcessing]);
 
 	useEffect(() => {
 		const linkedStoryId = searchParams.get('story');
@@ -930,13 +1185,44 @@ export function SourceReaderPage() {
 		<>
 			<PageHeader
 				actions={
-					<Link
-						className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
-						to="/sources"
-					>
-						<ArrowLeft className="size-4" />
-						{t('reader.backToSources')}
-					</Link>
+					<>
+						<Link
+							className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
+							to="/sources"
+						>
+							<ArrowLeft className="size-4" />
+							{t('reader.backToSources')}
+						</Link>
+						<Link
+							className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
+							to="/sources/add"
+						>
+							<Plus className="size-4" />
+							{t('reader.addSources')}
+						</Link>
+						<button
+							className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
+							onClick={() => {
+								void sourceQuery.refetch();
+								void storiesQuery.refetch();
+								void layoutQuery.refetch();
+								void pagesQuery.refetch();
+								void observabilityQuery.refetch();
+							}}
+							type="button"
+						>
+							<RefreshCcw className="size-4" />
+							{t('reader.refetchSource')}
+						</button>
+						<button
+							className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
+							onClick={() => setProcessingOpen(true)}
+							type="button"
+						>
+							<Workflow className="size-4" />
+							{t('reader.openProcessing')}
+						</button>
+					</>
 				}
 				description={t('reader.description')}
 				eyebrow={t('reader.eyebrow')}
@@ -979,12 +1265,14 @@ export function SourceReaderPage() {
 							pagesError={pagesQuery.error}
 							pagesIsLoading={pagesQuery.isLoading}
 							sourceId={sourceId}
+							sourceFilename={source?.filename}
 							story={selectedStory}
 						/>
 					) : null}
 
 					{effectiveViewMode === 'split' || effectiveViewMode === 'story' ? (
 						<StoryPane
+							activeProcessing={activeProcessing}
 							contradictionsError={contradictionsQuery.error}
 							contradictionsIsLoading={contradictionsQuery.isLoading}
 							onSelectEntity={setSelectedEntity}
@@ -994,6 +1282,8 @@ export function SourceReaderPage() {
 							selectedStoryId={selectedStory?.id}
 							setTargetLanguage={setTargetLanguage}
 							signals={storySignals}
+							sourceId={sourceId}
+							sourceLanguage={sourceLanguage}
 							stories={stories}
 							storiesError={storiesQuery.error}
 							storiesIsLoading={storiesQuery.isLoading}
@@ -1006,6 +1296,8 @@ export function SourceReaderPage() {
 					error={observabilityQuery.error}
 					isLoading={observabilityQuery.isLoading}
 					observability={observabilityQuery.data}
+					onToggle={setProcessingOpen}
+					open={processingOpen}
 				/>
 			</div>
 		</>

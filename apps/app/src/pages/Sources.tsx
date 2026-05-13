@@ -303,15 +303,14 @@ export function SourcesPage() {
 		<>
 			<PageHeader
 				actions={
-					<button
-						className="inline-flex h-9 items-center gap-2 rounded-md bg-field px-3 text-sm font-medium text-text-subtle"
-						disabled
+					<Link
+						className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm font-medium text-text transition-colors hover:bg-field"
 						title={t('sources.addSourcesTitle')}
-						type="button"
+						to="/sources/add"
 					>
 						<Plus className="size-4" />
 						{t('common.addSources')}
-					</button>
+					</Link>
 				}
 				description={t('sources.description')}
 				eyebrow={t('sources.eyebrow')}

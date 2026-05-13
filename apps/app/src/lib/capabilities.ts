@@ -88,7 +88,7 @@ export const capabilities = {
 	},
 	'sources.add': {
 		id: 'sources.add',
-		state: 'product-gated',
+		state: 'mounted-api',
 	},
 	'evidence.summary': {
 		id: 'evidence.summary',

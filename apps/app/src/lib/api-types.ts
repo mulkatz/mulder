@@ -316,6 +316,168 @@ export interface DocumentObservabilityResponse {
 	};
 }
 
+export type UploadTransport = 'gcs_resumable' | 'dev_proxy';
+export type UploadAcquisitionChannel =
+	| 'archive_import'
+	| 'manual_upload'
+	| 'email_submission'
+	| 'web_research'
+	| 'api_import'
+	| 'bulk_import'
+	| 're_scan'
+	| 'partner_exchange';
+export type UploadAuthenticityStatus = 'unverified' | 'verified' | 'disputed';
+export type UploadOriginalSourceType =
+	| 'witness_report'
+	| 'government_document'
+	| 'academic_paper'
+	| 'news_article'
+	| 'correspondence'
+	| 'field_notes'
+	| 'measurement_data'
+	| 'photograph'
+	| 'audio_recording'
+	| 'video_recording'
+	| 'other';
+export type UploadCustodyHolderType = 'person' | 'institution' | 'archive' | 'unknown';
+export type UploadCustodyAction =
+	| 'received'
+	| 'copied'
+	| 'digitized'
+	| 'annotated'
+	| 'translated'
+	| 'redacted'
+	| 'restored'
+	| 'transferred'
+	| 'archived';
+export type UploadFinalizationResultStatus =
+	| 'pending'
+	| 'created'
+	| 'duplicate'
+	| 'completed_unavailable'
+	| 'failed'
+	| 'dead_letter';
+
+export interface InitiateDocumentUploadRequest {
+	filename: string;
+	size_bytes: number;
+	content_type: string;
+	tags?: string[];
+}
+
+export interface UploadTarget {
+	url: string;
+	method: 'PUT';
+	headers: Record<string, string>;
+	transport: UploadTransport;
+	expires_at: string | null;
+}
+
+export interface InitiateDocumentUploadResponse {
+	data: {
+		source_id: string;
+		storage_path: string;
+		upload: UploadTarget;
+		limits: {
+			max_bytes: number;
+		};
+	};
+}
+
+export interface UploadProvenancePayload {
+	acquisition?: {
+		channel?: UploadAcquisitionChannel;
+		submitted_at?: string;
+		collection_id?: string | null;
+		notes?: string | null;
+		metadata?: Record<string, unknown>;
+	};
+	authenticity?: {
+		status?: UploadAuthenticityStatus;
+		notes?: string | null;
+	};
+	original_source?: {
+		source_type: UploadOriginalSourceType;
+		description: string;
+		source_date?: string | null;
+		author?: string | null;
+		language?: string;
+		institution?: string | null;
+		foia_reference?: string | null;
+	};
+	custody_chain?: {
+		step_order: number;
+		holder: string;
+		holder_type?: UploadCustodyHolderType;
+		received_from?: string | null;
+		held_from?: string | null;
+		held_until?: string | null;
+		actions?: UploadCustodyAction[];
+		location?: string | null;
+		notes?: string | null;
+	}[];
+}
+
+export interface UploadExpectedSensitivityPayload {
+	level: SensitivityLevel;
+	reason?: string;
+	pii_types?: string[];
+	declassify_date?: string | null;
+}
+
+export interface CompleteDocumentUploadRequest {
+	source_id: string;
+	filename: string;
+	storage_path: string;
+	tags?: string[];
+	provenance?: UploadProvenancePayload;
+	expected_sensitivity?: UploadExpectedSensitivityPayload;
+	start_pipeline?: boolean;
+}
+
+export interface CompleteDocumentUploadResponse {
+	data: {
+		job_id: string;
+		status: 'pending';
+		source_id: string;
+	};
+	links: {
+		status: string;
+		upload_status?: string;
+	};
+}
+
+export interface UploadFinalizationStatusResponse {
+	data: {
+		job_id: string;
+		requested_source_id: string;
+		job_status: JobStatus;
+		result_status: UploadFinalizationResultStatus;
+		source: {
+			id: string;
+			filename: string;
+			status: string;
+			links: {
+				document: string;
+			};
+		} | null;
+		pipeline: {
+			job_id: string | null;
+			run_id: string | null;
+			links: {
+				job: string | null;
+			};
+		} | null;
+		created_at: string;
+		started_at: string | null;
+		finished_at: string | null;
+	};
+	links: {
+		job: string;
+		source?: string;
+	};
+}
+
 export type TranslationStatus = 'current' | 'stale';
 export type TranslationPipelinePath = 'full' | 'translation_only';
 export type TranslationOutputFormat = 'markdown' | 'html';

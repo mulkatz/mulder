@@ -10,6 +10,7 @@ import { StateNotice } from '@/components/StateNotice';
 const AcceptInvitationPage = lazy(() =>
 	import('@/pages/AcceptInvitation').then((module) => ({ default: module.AcceptInvitationPage })),
 );
+const AddSourcesPage = lazy(() => import('@/pages/AddSources').then((module) => ({ default: module.AddSourcesPage })));
 const AnalysisRunsPage = lazy(() =>
 	import('@/pages/AnalysisRuns').then((module) => ({ default: module.AnalysisRunsPage })),
 );
@@ -120,6 +121,7 @@ function AppRoutes() {
 						<Route path="/runs" element={withPageTransition(<AnalysisRunsPage />, location.pathname)} />
 						<Route path="/evidence" element={withPageTransition(<EvidenceWorkspacePage />, location.pathname)} />
 						<Route path="/sources" element={withPageTransition(<SourcesPage />, location.pathname)} />
+						<Route path="/sources/add" element={withPageTransition(<AddSourcesPage />, location.pathname)} />
 						<Route path="/sources/:sourceId" element={withPageTransition(<SourceReaderPage />, location.pathname)} />
 					</Route>
 				</Route>
