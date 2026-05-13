@@ -72,8 +72,11 @@ function buildPoolConfig(config: CloudSqlConfig): pg.PoolConfig {
 		poolConfig.password = effectiveConfig.password;
 	}
 
-	// Enable SSL for non-localhost connections (Cloud SQL)
-	const isLocal = effectiveConfig.host === 'localhost' || effectiveConfig.host === '127.0.0.1';
+	// Cloud Run's Cloud SQL connector exposes Postgres through a Unix socket.
+	const isLocal =
+		effectiveConfig.host === 'localhost' ||
+		effectiveConfig.host === '127.0.0.1' ||
+		effectiveConfig.host.startsWith('/');
 	if (!isLocal) {
 		poolConfig.ssl = { rejectUnauthorized: false };
 	}
