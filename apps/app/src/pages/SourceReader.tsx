@@ -51,7 +51,7 @@ const READER_MODE_STORAGE_KEY = 'mulder.reader.viewMode';
 const PDF_MIN_ZOOM = 0.7;
 const PDF_MAX_ZOOM = 2.25;
 const PDF_ZOOM_STEP = 0.15;
-const ACTIVE_PROCESSING_REFETCH_MS = 4000;
+const ACTIVE_PROCESSING_REFETCH_MS = 10_000;
 const TRANSLATION_JOB_REFETCH_MS = 2500;
 
 function isProcessingActive(observability?: ReturnType<typeof useDocumentObservability>['data']) {

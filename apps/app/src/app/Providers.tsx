@@ -15,7 +15,10 @@ function emitAuthExpired(error: unknown) {
 function createQueryClient() {
 	return new QueryClient({
 		queryCache: new QueryCache({
-			onError: emitAuthExpired,
+			onError: (error, query) => {
+				if (query.queryKey[0] === 'auth') return;
+				emitAuthExpired(error);
+			},
 		}),
 		mutationCache: new MutationCache({
 			onError: emitAuthExpired,
@@ -24,7 +27,7 @@ function createQueryClient() {
 			queries: {
 				staleTime: 30_000,
 				retry: (count, error) => {
-					if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
+					if (error instanceof ApiError && [401, 403, 404, 429].includes(error.status)) {
 						return false;
 					}
 
