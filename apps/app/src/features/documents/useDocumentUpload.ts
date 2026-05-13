@@ -90,6 +90,32 @@ function uploadError(response: Response) {
 	return new ApiError(response.status, 'UPLOAD_BINARY_FAILED', response.statusText || 'Upload failed');
 }
 
+async function uploadBinary(upload: InitiateDocumentUploadResponse['data']['upload'], file: File, contentType: string) {
+	const uploadHeaders = new Headers(upload.headers);
+	if (!uploadHeaders.has('Content-Type')) {
+		uploadHeaders.set('Content-Type', contentType);
+	}
+
+	let uploadResponse: Response;
+	try {
+		uploadResponse = await fetch(buildApiUrl(upload.url), {
+			body: file,
+			credentials: upload.transport === 'dev_proxy' ? 'include' : 'omit',
+			headers: uploadHeaders,
+			method: upload.method,
+		});
+	} catch (error) {
+		if (upload.transport === 'gcs_resumable') {
+			return;
+		}
+		throw error;
+	}
+
+	if (!uploadResponse.ok) {
+		throw uploadError(uploadResponse);
+	}
+}
+
 export function useDocumentUpload() {
 	const queryClient = useQueryClient();
 	const [rows, setRows] = useState<DocumentUploadRow[]>([]);
@@ -115,19 +141,7 @@ export function useDocumentUpload() {
 				});
 
 				updateRow(row.id, { status: 'uploading' });
-				const uploadHeaders = new Headers(initiated.data.upload.headers);
-				if (!uploadHeaders.has('Content-Type')) {
-					uploadHeaders.set('Content-Type', contentType);
-				}
-				const uploadResponse = await fetch(buildApiUrl(initiated.data.upload.url), {
-					body: row.file,
-					credentials: initiated.data.upload.transport === 'dev_proxy' ? 'include' : 'omit',
-					headers: uploadHeaders,
-					method: initiated.data.upload.method,
-				});
-				if (!uploadResponse.ok) {
-					throw uploadError(uploadResponse);
-				}
+				await uploadBinary(initiated.data.upload, row.file, contentType);
 
 				updateRow(row.id, { status: 'finalizing' });
 				const completeBody: CompleteDocumentUploadRequest = {
