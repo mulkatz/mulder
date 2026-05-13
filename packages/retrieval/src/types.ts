@@ -10,6 +10,8 @@
  * @see docs/functional-spec.md §5.1
  */
 
+import type { SensitivityLevel } from '@mulder/core';
+
 // ────────────────────────────────────────────────────────────
 // Strategy identifier
 // ────────────────────────────────────────────────────────────
@@ -60,6 +62,8 @@ export interface VectorSearchOptions {
 	limit?: number;
 	/** Optional filter: only search within chunks of these stories. */
 	storyIds?: string[];
+	/** Optional access-control filter: only return artifacts readable up to this level. */
+	maxSensitivityLevel?: SensitivityLevel;
 	/**
 	 * Optional: skip generated question chunks (`is_question = true`) so that
 	 * vector search only matches content chunks. Default: `false` (include all).
@@ -87,6 +91,8 @@ export interface FulltextSearchOptions {
 	limit?: number;
 	/** Optional filter: only search within chunks of these stories. */
 	storyIds?: string[];
+	/** Optional access-control filter: only return artifacts readable up to this level. */
+	maxSensitivityLevel?: SensitivityLevel;
 	/**
 	 * Include generated question chunks in the result set. Default: `false`
 	 * (content chunks only, per functional spec §5.1). Most callers should
@@ -217,6 +223,8 @@ export interface GraphSearchOptions {
 	supernodeThreshold?: number;
 	/** Only return chunks from these stories. Optional filter. */
 	storyIds?: string[];
+	/** Optional access-control filter: only traverse and return artifacts readable up to this level. */
+	maxSensitivityLevel?: SensitivityLevel;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -249,6 +257,8 @@ export interface HybridRetrieveOptions {
 	noRerank?: boolean;
 	/** Populate per-result strategy contributions in the explain block. */
 	explain?: boolean;
+	/** Optional access-control filter for all retrieval strategies, seeds, confidence, and explain output. */
+	maxSensitivityLevel?: SensitivityLevel;
 }
 
 /**

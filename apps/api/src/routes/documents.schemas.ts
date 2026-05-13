@@ -14,6 +14,7 @@ export const SOURCE_STATUS_VALUES = [
 export const DOCUMENT_ARTIFACT_KIND_VALUES = ['pdf', 'layout', 'page_image'] as const;
 
 export const SourceStatusSchema = z.enum(SOURCE_STATUS_VALUES);
+export const SensitivityLevelSchema = z.enum(['public', 'internal', 'restricted', 'confidential']);
 export const DocumentArtifactKindSchema = z.enum(DOCUMENT_ARTIFACT_KIND_VALUES);
 
 export const DocumentListQuerySchema = z.object({
@@ -29,6 +30,31 @@ export const DocumentLinksSchema = z.object({
 	pages: z.string().min(1),
 });
 
+export const DocumentQualityHintSchema = z.object({
+	overall_quality: z.string(),
+	processable: z.boolean(),
+	recommended_path: z.string(),
+	language: z.string().nullable(),
+});
+
+export const DocumentCredibilityHintSchema = z.object({
+	review_status: z.string(),
+	average_score: z.number().nullable(),
+	sensitivity_level: SensitivityLevelSchema,
+});
+
+export const DocumentCollectionHintSchema = z.object({
+	id: z.string().uuid(),
+	name: z.string().min(1),
+});
+
+export const DocumentProvenanceHintSchema = z.object({
+	channel: z.string(),
+	submitted_at: z.string(),
+	authenticity_status: z.string(),
+	collection_id: z.string().uuid().nullable(),
+});
+
 export const DocumentListItemSchema = z.object({
 	id: z.string().uuid(),
 	filename: z.string().min(1),
@@ -37,13 +63,19 @@ export const DocumentListItemSchema = z.object({
 	has_native_text: z.boolean(),
 	layout_available: z.boolean(),
 	page_image_count: z.number().int().nonnegative(),
+	source_language: z.string().nullable(),
+	sensitivity_level: SensitivityLevelSchema,
+	quality_hint: DocumentQualityHintSchema.nullable(),
+	credibility_hint: DocumentCredibilityHintSchema.nullable(),
+	collection_hint: DocumentCollectionHintSchema.nullable(),
+	provenance_hint: DocumentProvenanceHintSchema.nullable(),
 	created_at: z.string(),
 	updated_at: z.string(),
 	links: DocumentLinksSchema,
 });
 
 export const DocumentSensitivitySummarySchema = z.object({
-	level: z.enum(['public', 'internal', 'restricted', 'confidential']),
+	level: SensitivityLevelSchema,
 	metadata: z.record(z.string(), z.unknown()),
 });
 
@@ -104,7 +136,7 @@ export const DocumentCredibilitySummarySchema = z.object({
 	last_reviewed: z.string().nullable(),
 	dimension_count: z.number().int().nonnegative(),
 	average_score: z.number().nullable(),
-	sensitivity_level: z.enum(['public', 'internal', 'restricted', 'confidential']),
+	sensitivity_level: SensitivityLevelSchema,
 });
 
 export const DocumentDetailItemSchema = DocumentListItemSchema.extend({

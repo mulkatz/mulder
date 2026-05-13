@@ -230,6 +230,33 @@ describe('Spec 117: review, claims, and source insight API routes', () => {
 			data: [{ source_id: sourceId }],
 			meta: { count: 1, limit: 50, offset: 0 },
 		});
+
+		const documentsResponse = await app.request('http://localhost/api/documents?search=parity-source', {
+			headers: authorizedHeaders(),
+		});
+		expect(documentsResponse.status).toBe(200);
+		expect(await readJson(documentsResponse)).toMatchObject({
+			data: [
+				{
+					id: sourceId,
+					source_language: 'de',
+					sensitivity_level: 'internal',
+					quality_hint: {
+						overall_quality: 'medium',
+						processable: true,
+						recommended_path: 'standard',
+						language: 'de',
+					},
+					credibility_hint: {
+						review_status: 'draft',
+						average_score: 0.63,
+						sensitivity_level: 'internal',
+					},
+					collection_hint: null,
+					provenance_hint: null,
+				},
+			],
+		});
 	});
 
 	it('returns total source credibility count for paginated lists', async () => {

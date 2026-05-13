@@ -138,7 +138,12 @@ export function registerEntityRoutes(app: ApiApp): void {
 		},
 		async (c) => {
 			const body = EntityMergeRequestSchema.parse(await readJsonBody(c));
-			const response = await mergeEntities(body.target_id, body.source_id, c.get('requestContext')?.logger);
+			const response = await mergeEntities(
+				body.target_id,
+				body.source_id,
+				c.get('requestContext')?.logger,
+				readRouteOptions(c),
+			);
 			EntityMergeResponseSchema.parse(response);
 			return c.json(response, 200);
 		},

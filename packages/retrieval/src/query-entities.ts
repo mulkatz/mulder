@@ -15,6 +15,8 @@
  */
 
 import {
+	allowedSensitivityLevelsForMax,
+	countEdges,
 	countEntities,
 	createChildLogger,
 	createLogger,
@@ -22,6 +24,7 @@ import {
 	type MulderConfig,
 	RETRIEVAL_ERROR_CODES,
 	RetrievalError,
+	type SensitivityLevel,
 } from '@mulder/core';
 import type pg from 'pg';
 import type { QueryConfidence } from './types.js';
@@ -97,7 +100,11 @@ function buildCandidatePhrases(query: string): string[] {
  * @param query - Free-text user query.
  * @returns Seed entity IDs in first-seen order.
  */
-export async function extractQueryEntities(pool: pg.Pool, query: string): Promise<string[]> {
+export async function extractQueryEntities(
+	pool: pg.Pool,
+	query: string,
+	options?: { maxSensitivityLevel?: SensitivityLevel },
+): Promise<string[]> {
 	const start = Date.now();
 
 	if (typeof query !== 'string' || query.trim().length === 0) {
@@ -118,13 +125,13 @@ export async function extractQueryEntities(pool: pg.Pool, query: string): Promis
 		}
 
 		// Try original casing first.
-		let entity = await findEntityByAlias(pool, phrase);
+		let entity = await findEntityByAlias(pool, phrase, { maxSensitivityLevel: options?.maxSensitivityLevel });
 
 		// Fall back to lowercased lookup if no match and the casing differs.
 		if (entity === null) {
 			const lowered = phrase.toLowerCase();
 			if (lowered !== phrase) {
-				entity = await findEntityByAlias(pool, lowered);
+				entity = await findEntityByAlias(pool, lowered, { maxSensitivityLevel: options?.maxSensitivityLevel });
 			}
 		}
 
@@ -156,29 +163,26 @@ export async function extractQueryEntities(pool: pg.Pool, query: string): Promis
  * progressed beyond the initial `ingested` state — i.e., documents that have
  * actually been processed and contribute content.
  */
-async function countCorpusSources(pool: pg.Pool): Promise<number> {
+async function countCorpusSources(pool: pg.Pool, maxSensitivityLevel?: SensitivityLevel): Promise<number> {
 	try {
+		const params: unknown[] = [];
+		const sensitivityClause = maxSensitivityLevel
+			? `AND sensitivity_level = ANY($${params.push(allowedSensitivityLevelsForMax(maxSensitivityLevel))})`
+			: '';
 		const result = await pool.query<{ count: string }>(
-			"SELECT COUNT(*) AS count FROM sources WHERE status != 'ingested'",
+			`
+				SELECT COUNT(*) AS count
+				FROM sources
+				WHERE status != 'ingested'
+				  AND deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+				  ${sensitivityClause}
+			`,
+			params,
 		);
 		return Number.parseInt(result.rows[0]?.count ?? '0', 10);
 	} catch (cause: unknown) {
 		throw new RetrievalError(
 			'Failed to count corpus sources for query confidence',
-			RETRIEVAL_ERROR_CODES.RETRIEVAL_QUERY_FAILED,
-			{ cause },
-		);
-	}
-}
-
-/** Counts all rows in the `entity_edges` table. */
-async function countEntityEdges(pool: pg.Pool): Promise<number> {
-	try {
-		const result = await pool.query<{ count: string }>('SELECT COUNT(*) AS count FROM entity_edges');
-		return Number.parseInt(result.rows[0]?.count ?? '0', 10);
-	} catch (cause: unknown) {
-		throw new RetrievalError(
-			'Failed to count entity edges for query confidence',
 			RETRIEVAL_ERROR_CODES.RETRIEVAL_QUERY_FAILED,
 			{ cause },
 		);
@@ -240,13 +244,13 @@ function classifyCorroborationReliability(
 export async function computeQueryConfidence(
 	pool: pg.Pool,
 	config: MulderConfig,
-	options: { graphHitCount: number },
+	options: { graphHitCount: number; maxSensitivityLevel?: SensitivityLevel },
 ): Promise<QueryConfidence> {
 	const start = Date.now();
 
-	const corpusSize = await countCorpusSources(pool);
-	const entityCount = await countEntities(pool);
-	const edgeCount = await countEntityEdges(pool);
+	const corpusSize = await countCorpusSources(pool, options.maxSensitivityLevel);
+	const entityCount = await countEntities(pool, { maxSensitivityLevel: options.maxSensitivityLevel });
+	const edgeCount = await countEdges(pool, { maxSensitivityLevel: options.maxSensitivityLevel });
 
 	const graphDensity = entityCount > 0 ? edgeCount / entityCount : 0;
 	const taxonomyStatus = classifyTaxonomyStatus(corpusSize, config.thresholds.taxonomy_bootstrap);

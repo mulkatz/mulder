@@ -262,7 +262,86 @@ describe('Spec 77: Browser-safe email/password auth', () => {
 		}
 	});
 
-	it('QA-06: the app bundle source does not reference VITE_MULDER_API_KEY', () => {
+	it('QA-06: login and invitation acceptance use strict public rate limits', async () => {
+		const loginIp = '203.0.113.77';
+		for (let index = 0; index < 10; index += 1) {
+			const response = await postJson(
+				app,
+				'/api/auth/login',
+				{
+					email: 'missing@example.com',
+					password: 'incorrect password',
+				},
+				{ 'X-Forwarded-For': loginIp },
+			);
+			expect(response.status).toBe(401);
+		}
+
+		const throttledLogin = await postJson(
+			app,
+			'/api/auth/login',
+			{
+				email: 'missing@example.com',
+				password: 'incorrect password',
+			},
+			{ 'X-Forwarded-For': loginIp },
+		);
+		expect(throttledLogin.status).toBe(429);
+		expect(await throttledLogin.json()).toMatchObject({
+			error: {
+				code: 'RATE_LIMIT_EXCEEDED',
+				details: {
+					tier: 'strict',
+				},
+			},
+		});
+
+		const separateClient = await postJson(
+			app,
+			'/api/auth/login',
+			{
+				email: 'missing@example.com',
+				password: 'incorrect password',
+			},
+			{ 'X-Forwarded-For': '203.0.113.79' },
+		);
+		expect(separateClient.status).toBe(401);
+
+		const acceptIp = '203.0.113.78';
+		for (let index = 0; index < 10; index += 1) {
+			const response = await postJson(
+				app,
+				'/api/auth/invitations/accept',
+				{
+					token: 'missing-token',
+					password: 'correct horse battery staple',
+				},
+				{ 'X-Forwarded-For': acceptIp },
+			);
+			expect(response.status).toBe(401);
+		}
+
+		const throttledAccept = await postJson(
+			app,
+			'/api/auth/invitations/accept',
+			{
+				token: 'missing-token',
+				password: 'correct horse battery staple',
+			},
+			{ 'X-Forwarded-For': acceptIp },
+		);
+		expect(throttledAccept.status).toBe(429);
+		expect(await throttledAccept.json()).toMatchObject({
+			error: {
+				code: 'RATE_LIMIT_EXCEEDED',
+				details: {
+					tier: 'strict',
+				},
+			},
+		});
+	});
+
+	it('QA-07: the app bundle source does not reference VITE_MULDER_API_KEY', () => {
 		const apiClient = readFileSync(resolve(ROOT, 'apps/app/src/lib/api-client.ts'), 'utf8');
 		const authGate = readFileSync(resolve(ROOT, 'apps/app/src/app/AuthGate.tsx'), 'utf8');
 		expect(apiClient).not.toContain('VITE_MULDER_API_KEY');

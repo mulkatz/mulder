@@ -150,6 +150,7 @@ export async function hybridRetrieve(
 	const topK = options?.topK ?? config.retrieval.top_k;
 	const noRerank = options?.noRerank === true;
 	const explain = options?.explain === true;
+	const maxSensitivityLevel = options?.maxSensitivityLevel;
 	const trimmedQuery = query.trim();
 	const oversample = Math.max(topK * 3, config.retrieval.rerank.candidates);
 
@@ -160,7 +161,7 @@ export async function hybridRetrieve(
 
 	// 6. Extract seed entities for graph traversal — only if graph is active.
 	const graphActive = activeStrategies.includes('graph');
-	const seedEntityIds = graphActive ? await extractQueryEntities(pool, trimmedQuery) : [];
+	const seedEntityIds = graphActive ? await extractQueryEntities(pool, trimmedQuery, { maxSensitivityLevel }) : [];
 
 	// 7. Build task list. Strategies with no usable input (graph w/o seeds)
 	//    are recorded as skipped instead of executed.
@@ -171,14 +172,15 @@ export async function hybridRetrieve(
 		if (name === 'vector') {
 			tasks.push({
 				name: 'vector',
-				run: () => vectorSearch(pool, embeddingService, config, { query: trimmedQuery, limit: oversample }),
+				run: () =>
+					vectorSearch(pool, embeddingService, config, { query: trimmedQuery, limit: oversample, maxSensitivityLevel }),
 			});
 			continue;
 		}
 		if (name === 'fulltext') {
 			tasks.push({
 				name: 'fulltext',
-				run: () => fulltextSearch(pool, config, { query: trimmedQuery, limit: oversample }),
+				run: () => fulltextSearch(pool, config, { query: trimmedQuery, limit: oversample, maxSensitivityLevel }),
 			});
 			continue;
 		}
@@ -190,7 +192,7 @@ export async function hybridRetrieve(
 			const seeds = seedEntityIds;
 			tasks.push({
 				name: 'graph',
-				run: () => graphSearch(pool, config, { entityIds: seeds, limit: oversample }),
+				run: () => graphSearch(pool, config, { entityIds: seeds, limit: oversample, maxSensitivityLevel }),
 			});
 		}
 	}
@@ -244,7 +246,7 @@ export async function hybridRetrieve(
 
 	// 12. Compute confidence.
 	const graphHitCount = strategyResults.get('graph')?.length ?? 0;
-	const confidence = await computeQueryConfidence(pool, config, { graphHitCount });
+	const confidence = await computeQueryConfidence(pool, config, { graphHitCount, maxSensitivityLevel });
 
 	// 12a. Negative-query gate: when the top reranker score is below the
 	// configured floor AND the query is already flagged as degraded, drop

@@ -148,7 +148,7 @@ function timelineFromJob(job: JobForAnalysis, context: ViewModelContext) {
 
 export function jobToAnalysisRun(job: JobForAnalysis, contextInput?: Partial<ViewModelContext>): AnalysisRun {
 	const context = getContext(contextInput);
-	const payload = 'payload' in job ? job.payload : { type: job.type };
+	const payload = 'payload' in job && job.payload ? job.payload : { type: job.type };
 	const error = 'error_log' in job ? job.error_log : null;
 
 	return {

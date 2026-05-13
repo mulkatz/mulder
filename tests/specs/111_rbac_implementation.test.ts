@@ -377,6 +377,72 @@ describe('Spec 111: RBAC implementation', () => {
 			sensitivityLevel: 'internal',
 			sensitivityMetadata: sensitivityMetadata('internal'),
 		});
+		const hiddenEdgeChunk = await coreModule.createChunk(pool, {
+			storyId: publicFixture.story.id,
+			content: 'Hidden edge provenance graph chunk',
+			chunkIndex: 0,
+			sensitivityLevel: 'public',
+			sensitivityMetadata: sensitivityMetadata('public'),
+		});
+		const hiddenLinkEntity = await coreModule.upsertEntityByNameType(pool, {
+			name: `Hidden link entity ${randomUUID()}`,
+			type: 'person',
+			attributes: {},
+			provenance: { sourceDocumentIds: [internalFixture.source.id] },
+			sensitivityLevel: 'internal',
+			sensitivityMetadata: sensitivityMetadata('internal'),
+		});
+		const hiddenLinkStory = await coreModule.createStory(pool, {
+			sourceId: internalFixture.source.id,
+			title: `Hidden link story ${randomUUID()}`,
+			gcsMarkdownUri: `segments/${internalFixture.source.id}/hidden-link-story.md`,
+			gcsMetadataUri: `segments/${internalFixture.source.id}/hidden-link-story.meta.json`,
+			extractionConfidence: 0.95,
+			sensitivityLevel: 'internal',
+			sensitivityMetadata: sensitivityMetadata('internal'),
+		});
+		const hiddenLinkChunk = await coreModule.createChunk(pool, {
+			storyId: hiddenLinkStory.id,
+			content: 'Hidden story-entity provenance graph chunk',
+			chunkIndex: 0,
+			sensitivityLevel: 'internal',
+			sensitivityMetadata: sensitivityMetadata('internal'),
+		});
+		await coreModule.linkStoryEntity(pool, {
+			storyId: hiddenLinkStory.id,
+			entityId: hiddenLinkEntity.id,
+			mentionCount: 1,
+			provenance: { sourceDocumentIds: [restrictedFixture.source.id] },
+			sensitivityLevel: 'internal',
+			sensitivityMetadata: sensitivityMetadata('internal'),
+		});
+		const visibleEdgeCountBeforeGraphFixtures = await coreModule.countEdges(pool, {
+			maxSensitivityLevel: 'internal',
+		});
+		await coreModule.createEdge(pool, {
+			sourceEntityId: internalFixture.entity.id,
+			targetEntityId: restrictedFixture.entity.id,
+			relationship: 'hidden_endpoint_fixture',
+			provenance: { sourceDocumentIds: [internalFixture.source.id] },
+			sensitivityLevel: 'internal',
+			sensitivityMetadata: sensitivityMetadata('internal'),
+		});
+		await coreModule.createEdge(pool, {
+			sourceEntityId: internalFixture.entity.id,
+			targetEntityId: hiddenLinkEntity.id,
+			relationship: 'hidden_story_entity_provenance_fixture',
+			provenance: { sourceDocumentIds: [internalFixture.source.id] },
+			sensitivityLevel: 'internal',
+			sensitivityMetadata: sensitivityMetadata('internal'),
+		});
+		await coreModule.createEdge(pool, {
+			sourceEntityId: internalFixture.entity.id,
+			targetEntityId: publicFixture.entity.id,
+			relationship: 'hidden_provenance_fixture',
+			provenance: { sourceDocumentIds: [restrictedFixture.source.id] },
+			sensitivityLevel: 'internal',
+			sensitivityMetadata: sensitivityMetadata('internal'),
+		});
 
 		expect(
 			(await coreModule.findAllSources(pool, { maxSensitivityLevel: 'internal' })).map((source) => source.id).sort(),
@@ -410,6 +476,26 @@ describe('Spec 111: RBAC implementation', () => {
 				await coreModule.findStoriesByEntityId(pool, internalFixture.entity.id, { maxSensitivityLevel: 'internal' })
 			).map((story) => story.id),
 		).not.toContain(restrictedStoryForInternalEntity.id);
+		expect(await coreModule.countEdges(pool, { maxSensitivityLevel: 'internal' })).toBe(
+			visibleEdgeCountBeforeGraphFixtures + 1,
+		);
+		expect(await coreModule.countEdges(pool, { maxSensitivityLevel: 'confidential' })).toBeGreaterThan(
+			visibleEdgeCountBeforeGraphFixtures + 1,
+		);
+		expect(
+			(
+				await coreModule.traverseGraph(pool, [internalFixture.entity.id], 1, 10, 100, {
+					maxSensitivityLevel: 'internal',
+				})
+			).map((result) => result.chunk.id),
+		).not.toEqual(expect.arrayContaining([hiddenEdgeChunk.id, hiddenLinkChunk.id]));
+		expect(
+			(
+				await coreModule.traverseGraph(pool, [internalFixture.entity.id], 1, 10, 100, {
+					maxSensitivityLevel: 'confidential',
+				})
+			).map((result) => result.chunk.id),
+		).toEqual(expect.arrayContaining([hiddenEdgeChunk.id, hiddenLinkChunk.id]));
 		const internalProfile = await coreModule.upsertSourceCredibilityProfile(pool, {
 			sourceId: internalFixture.source.id,
 			sourceName: 'Internal credibility source',

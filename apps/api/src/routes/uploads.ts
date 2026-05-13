@@ -1,6 +1,11 @@
 import { type Logger, MulderError } from '@mulder/core';
 import type { Context } from 'hono';
-import { completeDocumentUpload, handleDevUploadProxy, initiateDocumentUpload } from '../lib/uploads.js';
+import {
+	completeDocumentUpload,
+	getDocumentUploadFinalizationStatus,
+	handleDevUploadProxy,
+	initiateDocumentUpload,
+} from '../lib/uploads.js';
 import {
 	type ApiApp,
 	AUTH_SECURITY,
@@ -16,6 +21,8 @@ import {
 	DevUploadQuerySchema,
 	InitiateDocumentUploadRequestSchema,
 	InitiateDocumentUploadResponseSchema,
+	UploadFinalizationParamsSchema,
+	UploadFinalizationStatusResponseSchema,
 } from './uploads.schemas.js';
 
 async function readJsonBody(c: Context): Promise<unknown> {
@@ -56,6 +63,30 @@ export function registerUploadRoutes(app: ApiApp): void {
 			const response = await initiateDocumentUpload(body, readRequestLogger(c));
 			InitiateDocumentUploadResponseSchema.parse(response);
 			return c.json(response, 201);
+		},
+	);
+
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'get',
+			path: '/api/uploads/documents/finalizations/{jobId}',
+			operationId: 'getDocumentUploadFinalizationStatus',
+			tags: ['Uploads'],
+			security: AUTH_SECURITY,
+			request: {
+				params: UploadFinalizationParamsSchema,
+			},
+			responses: {
+				200: jsonResponse(UploadFinalizationStatusResponseSchema, 'Document upload finalization status'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const { jobId } = UploadFinalizationParamsSchema.parse({ jobId: c.req.param('jobId') });
+			const response = await getDocumentUploadFinalizationStatus(jobId, readRouteOptions(c));
+			UploadFinalizationStatusResponseSchema.parse(response);
+			return c.json(response, 200);
 		},
 	);
 

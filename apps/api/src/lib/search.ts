@@ -12,6 +12,7 @@ import {
 } from '@mulder/core';
 import { type HybridRetrievalResult, type HybridRetrieveOptions, hybridRetrieve } from '@mulder/retrieval';
 import type pg from 'pg';
+import type { AuthPrincipal } from '../middleware/auth.js';
 import type {
 	SearchConfidence,
 	SearchExplain,
@@ -19,6 +20,7 @@ import type {
 	SearchResponse,
 	SearchResult,
 } from '../routes/search.schemas.js';
+import { resolveReadMaxSensitivity } from './api-runtime.js';
 
 interface SearchContext {
 	config: MulderConfig;
@@ -28,6 +30,10 @@ interface SearchContext {
 
 interface SearchExecutionInput extends SearchRequest {
 	no_rerank: boolean;
+}
+
+interface SearchRouteOptions {
+	authPrincipal?: AuthPrincipal;
 }
 
 let cachedContext: SearchContext | null = null;
@@ -134,16 +140,24 @@ export function buildSearchResponse(result: HybridRetrievalResult): SearchRespon
 	};
 }
 
-function buildRetrieveOptions(input: SearchExecutionInput): HybridRetrieveOptions {
+function buildRetrieveOptions(
+	input: SearchExecutionInput,
+	maxSensitivityLevel: HybridRetrieveOptions['maxSensitivityLevel'],
+): HybridRetrieveOptions {
 	return {
 		strategy: input.strategy,
 		topK: input.top_k,
 		noRerank: input.no_rerank,
 		explain: input.explain,
+		maxSensitivityLevel,
 	};
 }
 
-export async function runSearch(input: SearchExecutionInput, logger: Logger): Promise<SearchResponse> {
+export async function runSearch(
+	input: SearchExecutionInput,
+	logger: Logger,
+	options?: SearchRouteOptions,
+): Promise<SearchResponse> {
 	const requestLogger = createChildLogger(logger, {
 		module: 'api',
 		route: 'search',
@@ -154,13 +168,14 @@ export async function runSearch(input: SearchExecutionInput, logger: Logger): Pr
 	});
 	const startedAt = performance.now();
 	const context = resolveSearchContext(requestLogger);
+	const maxSensitivityLevel = resolveReadMaxSensitivity(context.config, options?.authPrincipal, 'search');
 	const result = await hybridRetrieve(
 		context.pool,
 		context.services.embedding,
 		context.services.llm,
 		context.config,
 		input.query,
-		buildRetrieveOptions(input),
+		buildRetrieveOptions(input, maxSensitivityLevel),
 	);
 	const response = buildSearchResponse(result);
 

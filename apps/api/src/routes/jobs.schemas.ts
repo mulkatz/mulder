@@ -25,7 +25,7 @@ export const JobSummarySchema = z.object({
 	status: JobStatusSchema,
 	attempts: z.number().int().nonnegative(),
 	max_attempts: z.number().int().positive(),
-	worker_id: z.string().nullable(),
+	worker_id: z.string().nullable().optional(),
 	created_at: z.string(),
 	started_at: z.string().nullable(),
 	finished_at: z.string().nullable(),
@@ -48,12 +48,12 @@ export const JobDetailSchema = z.object({
 	status: JobStatusSchema,
 	attempts: z.number().int().nonnegative(),
 	max_attempts: z.number().int().positive(),
-	worker_id: z.string().nullable(),
+	worker_id: z.string().nullable().optional(),
 	created_at: z.string(),
 	started_at: z.string().nullable(),
 	finished_at: z.string().nullable(),
-	error_log: z.string().nullable(),
-	payload: z.record(z.string(), z.unknown()),
+	error_log: z.string().nullable().optional(),
+	payload: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const JobProgressSourceSchema = z.object({

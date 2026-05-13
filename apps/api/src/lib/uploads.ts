@@ -5,14 +5,17 @@ import {
 	createServiceRegistry,
 	DATABASE_ERROR_CODES,
 	DatabaseError,
+	findJobById,
 	findSourceById,
 	getWorkerPool,
 	INGEST_ERROR_CODES,
+	type Job,
 	type Logger,
 	loadConfig,
 	type MulderConfig,
 	MulderError,
 	type Services,
+	type Source,
 } from '@mulder/core';
 import type pg from 'pg';
 import type { AuthPrincipal } from '../middleware/auth.js';
@@ -21,6 +24,7 @@ import type {
 	CompleteDocumentUploadResponse,
 	InitiateDocumentUploadRequest,
 	InitiateDocumentUploadResponse,
+	UploadFinalizationStatusResponse,
 } from '../routes/uploads.schemas.js';
 import {
 	canonicalUploadExtensionForContentType,
@@ -28,6 +32,7 @@ import {
 	isSupportedOriginalStoragePath,
 	type UploadStorageExtension,
 } from '../routes/uploads.schemas.js';
+import { isOperatorPrincipal, resolveReadMaxSensitivity, toIsoString } from './api-runtime.js';
 
 interface UploadContext {
 	config: MulderConfig;
@@ -45,6 +50,7 @@ let cachedContext: UploadContext | null = null;
 let cachedConfigPath: string | null = null;
 
 const FINALIZE_JOB_TYPE = 'document_upload_finalize';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function resolveConfigPath(): string {
 	return process.env.MULDER_CONFIG ?? 'mulder.config.yaml';
@@ -87,6 +93,57 @@ function resolveContext(): UploadContext {
 
 function maxUploadBytes(config: MulderConfig): number {
 	return config.ingestion.max_file_size_mb * 1024 * 1024;
+}
+
+function uploadFinalizationNotFound(jobId: string): never {
+	throw new DatabaseError(`Upload finalization not found: ${jobId}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+		context: { job_id: jobId },
+	});
+}
+
+function readPayloadString(payload: Job['payload'], key: string): string | null {
+	const value = payload[key];
+	return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readPayloadUuid(payload: Job['payload'], key: string): string | null {
+	const value = readPayloadString(payload, key);
+	return value && UUID_PATTERN.test(value) ? value : null;
+}
+
+function readSubmittedByUserId(payload: Job['payload']): string | null {
+	const submittedBy = payload.submittedBy ?? payload.submitted_by;
+	if (!submittedBy || typeof submittedBy !== 'object' || Array.isArray(submittedBy)) {
+		return null;
+	}
+	const userId = (submittedBy as Record<string, unknown>).userId ?? (submittedBy as Record<string, unknown>).user_id;
+	return typeof userId === 'string' && userId.trim().length > 0 ? userId.trim() : null;
+}
+
+async function findSourceVisibleToPrincipal(
+	pool: pg.Pool,
+	sourceId: string | null,
+	authPrincipal: AuthPrincipal | undefined,
+	maxSensitivityLevel?: Source['sensitivityLevel'],
+): Promise<Source | null> {
+	if (!sourceId) {
+		return null;
+	}
+	if (isOperatorPrincipal(authPrincipal)) {
+		return await findSourceById(pool, sourceId);
+	}
+	return await findSourceById(pool, sourceId, { maxSensitivityLevel });
+}
+
+function mapVisibleUploadSource(source: Source): NonNullable<UploadFinalizationStatusResponse['data']['source']> {
+	return {
+		id: source.id,
+		filename: source.filename,
+		status: source.status,
+		links: {
+			document: `/api/documents/${source.id}`,
+		},
+	};
 }
 
 function resolveUploadInput(input: { filename: string; contentType: string }): {
@@ -289,7 +346,7 @@ export async function completeDocumentUpload(
 	logger?: Logger,
 	options?: UploadRouteOptions,
 ): Promise<CompleteDocumentUploadResponse> {
-	const { pool, services } = resolveContext();
+	const { config, pool, services } = resolveContext();
 	const requestLogger = createRouteLogger(logger ?? createLogger(), {
 		action: 'complete',
 		source_id: input.source_id,
@@ -301,6 +358,21 @@ export async function completeDocumentUpload(
 		throw new MulderError(`Uploaded object not found: ${input.storage_path}`, 'UPLOAD_OBJECT_NOT_FOUND', {
 			context: { source_id: input.source_id, storage_path: input.storage_path },
 		});
+	}
+	const maxBytes = maxUploadBytes(config);
+	if (!Number.isFinite(metadata.sizeBytes) || metadata.sizeBytes < 0 || metadata.sizeBytes > maxBytes) {
+		throw new MulderError(
+			'Uploaded object exceeds the configured ingest limit',
+			INGEST_ERROR_CODES.INGEST_FILE_TOO_LARGE,
+			{
+				context: {
+					source_id: input.source_id,
+					storage_path: input.storage_path,
+					size_bytes: metadata.sizeBytes,
+					max_bytes: maxBytes,
+				},
+			},
+		);
 	}
 
 	const client = await pool.connect();
@@ -369,8 +441,170 @@ export async function completeDocumentUpload(
 		},
 		links: {
 			status: `/api/jobs/${jobId}`,
+			upload_status: `/api/uploads/documents/finalizations/${jobId}`,
 		},
 	};
+}
+
+function deriveUploadFinalizationResultStatus(input: {
+	job: Job;
+	payloadResultStatus: string | null;
+	visibleSource: Source | null;
+}): UploadFinalizationStatusResponse['data']['result_status'] {
+	if (input.job.status === 'pending' || input.job.status === 'running') {
+		return 'pending';
+	}
+	if (input.job.status === 'failed') {
+		return 'failed';
+	}
+	if (input.job.status === 'dead_letter') {
+		return 'dead_letter';
+	}
+	if (!input.visibleSource) {
+		return 'completed_unavailable';
+	}
+	if (input.payloadResultStatus === 'duplicate') {
+		return 'duplicate';
+	}
+	if (input.payloadResultStatus === 'created') {
+		return 'created';
+	}
+	return 'completed_unavailable';
+}
+
+function mapVisiblePipeline(
+	job: Job,
+	visibleSource: Source | null,
+): UploadFinalizationStatusResponse['data']['pipeline'] {
+	if (!visibleSource || job.status !== 'completed') {
+		return null;
+	}
+
+	const pipelineJobId = readPayloadUuid(job.payload, 'pipeline_job_id');
+	const pipelineRunId = readPayloadUuid(job.payload, 'pipeline_run_id');
+	if (!pipelineJobId && !pipelineRunId) {
+		return null;
+	}
+
+	return {
+		job_id: pipelineJobId,
+		run_id: pipelineRunId,
+		links: {
+			job: pipelineJobId ? `/api/jobs/${pipelineJobId}` : null,
+		},
+	};
+}
+
+async function canInspectUploadFinalization(input: {
+	pool: pg.Pool;
+	job: Job;
+	requestedSourceId: string;
+	resolvedSourceId: string | null;
+	authPrincipal: AuthPrincipal | undefined;
+	maxSensitivityLevel?: Source['sensitivityLevel'];
+}): Promise<boolean> {
+	if (isOperatorPrincipal(input.authPrincipal)) {
+		return true;
+	}
+	if (input.authPrincipal?.type !== 'session') {
+		return false;
+	}
+
+	if (readSubmittedByUserId(input.job.payload) === input.authPrincipal.userId) {
+		return true;
+	}
+
+	const requestedSource = await findSourceVisibleToPrincipal(
+		input.pool,
+		input.requestedSourceId,
+		input.authPrincipal,
+		input.maxSensitivityLevel,
+	);
+	if (requestedSource) {
+		return true;
+	}
+
+	const resolvedSource = await findSourceVisibleToPrincipal(
+		input.pool,
+		input.resolvedSourceId,
+		input.authPrincipal,
+		input.maxSensitivityLevel,
+	);
+	return Boolean(resolvedSource);
+}
+
+export async function getDocumentUploadFinalizationStatus(
+	jobId: string,
+	options?: UploadRouteOptions,
+): Promise<UploadFinalizationStatusResponse> {
+	const { config, pool } = resolveContext();
+	const job = await findJobById(pool, jobId);
+	if (!job || job.type !== FINALIZE_JOB_TYPE) {
+		uploadFinalizationNotFound(jobId);
+	}
+
+	const requestedSourceId = readPayloadUuid(job.payload, 'sourceId') ?? readPayloadUuid(job.payload, 'source_id');
+	if (!requestedSourceId) {
+		uploadFinalizationNotFound(jobId);
+	}
+
+	const resolvedSourceId =
+		readPayloadUuid(job.payload, 'resolved_source_id') ?? readPayloadUuid(job.payload, 'duplicate_of_source_id');
+	let maxSensitivityLevel: Source['sensitivityLevel'] | undefined;
+	if (!isOperatorPrincipal(options?.authPrincipal)) {
+		try {
+			maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal, 'upload finalizations');
+		} catch {
+			uploadFinalizationNotFound(jobId);
+		}
+	}
+
+	const canInspect = await canInspectUploadFinalization({
+		pool,
+		job,
+		requestedSourceId,
+		resolvedSourceId,
+		authPrincipal: options?.authPrincipal,
+		maxSensitivityLevel,
+	});
+	if (!canInspect) {
+		uploadFinalizationNotFound(jobId);
+	}
+
+	const resolvedVisibleSource = await findSourceVisibleToPrincipal(
+		pool,
+		resolvedSourceId ?? requestedSourceId,
+		options?.authPrincipal,
+		maxSensitivityLevel,
+	);
+	const visibleSource = job.status === 'completed' ? resolvedVisibleSource : null;
+	const resultStatus = deriveUploadFinalizationResultStatus({
+		job,
+		payloadResultStatus: readPayloadString(job.payload, 'result_status'),
+		visibleSource,
+	});
+	const source =
+		visibleSource && (resultStatus === 'created' || resultStatus === 'duplicate')
+			? mapVisibleUploadSource(visibleSource)
+			: null;
+	const response: UploadFinalizationStatusResponse = {
+		data: {
+			job_id: job.id,
+			requested_source_id: requestedSourceId,
+			job_status: job.status,
+			result_status: resultStatus,
+			source,
+			pipeline: mapVisiblePipeline(job, source ? visibleSource : null),
+			created_at: job.createdAt.toISOString(),
+			started_at: toIsoString(job.startedAt),
+			finished_at: toIsoString(job.finishedAt),
+		},
+		links: {
+			job: `/api/jobs/${job.id}`,
+			...(source ? { source: source.links.document } : {}),
+		},
+	};
+	return response;
 }
 
 export async function handleDevUploadProxy(

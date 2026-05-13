@@ -333,6 +333,12 @@ describe('Spec 76 — Document Retrieval Routes', () => {
 					has_native_text: true,
 					layout_available: true,
 					page_image_count: 2,
+					source_language: null,
+					sensitivity_level: 'internal',
+					quality_hint: null,
+					credibility_hint: null,
+					collection_hint: null,
+					provenance_hint: null,
 					created_at: expect.any(String),
 					updated_at: expect.any(String),
 					links: {
@@ -362,6 +368,12 @@ describe('Spec 76 — Document Retrieval Routes', () => {
 				has_native_text: true,
 				layout_available: true,
 				page_image_count: 2,
+				source_language: null,
+				sensitivity_level: 'internal',
+				quality_hint: null,
+				credibility_hint: null,
+				collection_hint: null,
+				provenance_hint: null,
 				created_at: expect.any(String),
 				updated_at: expect.any(String),
 				links: {
@@ -372,7 +384,6 @@ describe('Spec 76 — Document Retrieval Routes', () => {
 				reader_link: `/sources/${sourceA.id}`,
 				provenance: null,
 				original_source: null,
-				source_language: null,
 				sensitivity: {
 					level: 'internal',
 					metadata: expect.any(Object),

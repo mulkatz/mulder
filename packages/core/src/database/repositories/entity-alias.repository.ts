@@ -208,19 +208,32 @@ export async function findAliasesByEntityId(
 export async function findEntityByAlias(
 	pool: pg.Pool,
 	alias: string,
-	options?: { includeDeleted?: boolean },
+	options?: { includeDeleted?: boolean; maxSensitivityLevel?: Entity['sensitivityLevel'] },
 ): Promise<Entity | null> {
+	const conditions = ['ea.alias = $1'];
+	const params: unknown[] = [alias];
+	let paramIndex = 2;
+	if (!options?.includeDeleted) {
+		conditions.push(aliasActiveSourceClause('ea'));
+		conditions.push(entityActiveSourceClause('e'));
+	}
+	if (options?.maxSensitivityLevel) {
+		conditions.push(`ea.sensitivity_level = ANY($${paramIndex})`);
+		conditions.push(`e.sensitivity_level = ANY($${paramIndex})`);
+		params.push(allowedSensitivityLevelsForMax(options.maxSensitivityLevel));
+		paramIndex++;
+	}
+
 	const sql = `
     SELECT e.*
     FROM entities e
     JOIN entity_aliases ea ON ea.entity_id = e.id
-    WHERE ea.alias = $1
-      ${options?.includeDeleted ? '' : `AND ${aliasActiveSourceClause('ea')} AND ${entityActiveSourceClause('e')}`}
+    WHERE ${conditions.join(' AND ')}
     LIMIT 1
   `;
 
 	try {
-		const result = await pool.query<EntityRow>(sql, [alias]);
+		const result = await pool.query<EntityRow>(sql, params);
 		if (result.rows.length === 0) {
 			return null;
 		}

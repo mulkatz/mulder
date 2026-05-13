@@ -42,6 +42,10 @@ function resolveRateLimitTier(method: string, path: string, query: URLSearchPara
 		return 'relaxed';
 	}
 
+	if (normalizedMethod === 'POST' && (path === '/api/auth/login' || path === '/api/auth/invitations/accept')) {
+		return 'strict';
+	}
+
 	if (normalizedMethod === 'GET' && (path === '/api/jobs' || path.startsWith('/api/jobs/'))) {
 		return 'relaxed';
 	}
@@ -73,7 +77,14 @@ function computeRetryAfterSeconds(bucket: RateLimitBucket, limitPerMinute: numbe
 }
 
 function getClientKey(c: Context): string {
-	return c.get('rateLimitClientKey') ?? ANONYMOUS_CLIENT_KEY;
+	const authenticatedKey = c.get('rateLimitClientKey');
+	if (authenticatedKey) {
+		return authenticatedKey;
+	}
+	const forwardedFor = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
+	const realIp = c.req.header('x-real-ip')?.trim();
+	const clientIp = forwardedFor || realIp;
+	return clientIp ? `ip:${clientIp}` : ANONYMOUS_CLIENT_KEY;
 }
 
 export function createRateLimitMiddleware(apiConfig: ApiConfig): MiddlewareHandler {

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -17,6 +17,7 @@ const CORE_DIST = resolve(CORE_DIR, 'dist/index.js');
 const API_APP_DIST = resolve(API_DIR, 'dist/app.js');
 const CLI_DIST = resolve(CLI_DIR, 'dist/index.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
+const SESSION_SECRET = 'test-session-secret';
 
 function buildPackage(packageDir: string): void {
 	const result = spawnSync('pnpm', ['build'], {
@@ -143,6 +144,24 @@ function authorizedHeaders(): Record<string, string> {
 		Authorization: 'Bearer test-api-key',
 		'X-Forwarded-For': '203.0.113.10',
 	};
+}
+
+function hashSessionToken(token: string): string {
+	return createHash('sha256').update(`${SESSION_SECRET}:${token}`).digest('hex');
+}
+
+function seedSession(role: 'member' | 'admin' = 'member'): string {
+	const userId = randomUUID();
+	const token = `${role}-${randomUUID()}`;
+	db.runSql(
+		[
+			'INSERT INTO api_users (id, email, password_hash, role)',
+			`VALUES ('${userId}', '${role}-${randomUUID()}@example.test', 'test-hash', '${role}');`,
+			'INSERT INTO api_sessions (user_id, token_hash, expires_at)',
+			`VALUES ('${userId}', '${hashSessionToken(token)}', now() + interval '1 hour');`,
+		].join(' '),
+	);
+	return `mulder_session=${token}`;
 }
 
 describe('Spec 72 — Job Status API', () => {
@@ -462,6 +481,72 @@ describe('Spec 72 — Job Status API', () => {
 				},
 			},
 		});
+	});
+
+	it('QA-02b: browser members see only readable jobs with redacted internals', async () => {
+		const cookie = seedSession('member');
+
+		const listResponse = await app.request('http://localhost/api/jobs', {
+			headers: {
+				Cookie: cookie,
+				'X-Forwarded-For': '203.0.113.22',
+			},
+		});
+
+		expect(listResponse.status).toBe(200);
+		const listBody = (await listResponse.json()) as {
+			data: Array<Record<string, unknown>>;
+			meta: { count: number; limit: number };
+		};
+		expect(listBody.meta).toEqual({ count: 2, limit: 20 });
+		expect(listBody.data.map((job) => job.id)).toEqual([runningJobId, pendingJobId]);
+		for (const job of listBody.data) {
+			expect(job).not.toHaveProperty('worker_id');
+			expect(job).not.toHaveProperty('payload');
+			expect(job).not.toHaveProperty('error_log');
+		}
+
+		const detailResponse = await app.request(`http://localhost/api/jobs/${runningJobId}`, {
+			headers: {
+				Cookie: cookie,
+				'X-Forwarded-For': '203.0.113.23',
+			},
+		});
+		expect(detailResponse.status).toBe(200);
+		const detailBody = (await detailResponse.json()) as {
+			data: {
+				job: Record<string, unknown>;
+				progress: { source_counts: Record<string, number>; sources: Array<Record<string, unknown>> };
+			};
+		};
+		expect(detailBody.data.job).toMatchObject({
+			id: runningJobId,
+			type: 'pipeline_run',
+			status: 'running',
+		});
+		expect(detailBody.data.job).not.toHaveProperty('worker_id');
+		expect(detailBody.data.job).not.toHaveProperty('payload');
+		expect(detailBody.data.job).not.toHaveProperty('error_log');
+		expect(detailBody.data.progress.source_counts).toEqual({
+			pending: 0,
+			processing: 1,
+			completed: 0,
+			failed: 0,
+		});
+		expect(detailBody.data.progress.sources).toEqual([
+			expect.objectContaining({
+				source_id: sourceId,
+				error_message: null,
+			}),
+		]);
+
+		const hiddenResponse = await app.request(`http://localhost/api/jobs/${deadLetterJobId}`, {
+			headers: {
+				Cookie: cookie,
+				'X-Forwarded-For': '203.0.113.24',
+			},
+		});
+		expect(hiddenResponse.status).toBe(404);
 	});
 
 	it('QA-03: failed and dead-letter jobs expose error_log while remaining inspectable', async () => {

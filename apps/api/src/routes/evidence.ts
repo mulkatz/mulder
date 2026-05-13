@@ -1,3 +1,4 @@
+import { assertOperatorPrincipal } from '../lib/api-runtime.js';
 import {
 	getEvidenceSummary,
 	listEvidenceChains,
@@ -57,6 +58,10 @@ function readEvidenceClustersQuery(url: string): Record<string, string | undefin
 	};
 }
 
+function assertCanReadEvidence(authPrincipal: Parameters<typeof assertOperatorPrincipal>[0]): void {
+	assertOperatorPrincipal(authPrincipal, 'evidence snapshots');
+}
+
 export function registerEvidenceRoutes(app: ApiApp): void {
 	registerOpenApiRoute(
 		app,
@@ -72,6 +77,7 @@ export function registerEvidenceRoutes(app: ApiApp): void {
 			},
 		},
 		async (c) => {
+			assertCanReadEvidence(c.get('authPrincipal'));
 			const response = await getEvidenceSummary(c.get('requestContext')?.logger);
 			EvidenceSummaryResponseSchema.parse(response);
 			return c.json(response, 200);
@@ -95,6 +101,7 @@ export function registerEvidenceRoutes(app: ApiApp): void {
 			},
 		},
 		async (c) => {
+			assertCanReadEvidence(c.get('authPrincipal'));
 			const query = EvidenceContradictionsQuerySchema.parse(readEvidenceContradictionsQuery(c.req.url));
 			const response = await listEvidenceContradictions(query, c.get('requestContext')?.logger);
 			EvidenceContradictionsResponseSchema.parse(response);
@@ -119,6 +126,7 @@ export function registerEvidenceRoutes(app: ApiApp): void {
 			},
 		},
 		async (c) => {
+			assertCanReadEvidence(c.get('authPrincipal'));
 			const query = EvidenceReliabilitySourcesQuerySchema.parse(readEvidenceReliabilitySourcesQuery(c.req.url));
 			const response = await listSourceReliability(query, c.get('requestContext')?.logger);
 			EvidenceReliabilitySourcesResponseSchema.parse(response);
@@ -143,6 +151,7 @@ export function registerEvidenceRoutes(app: ApiApp): void {
 			},
 		},
 		async (c) => {
+			assertCanReadEvidence(c.get('authPrincipal'));
 			const query = EvidenceChainsQuerySchema.parse(readEvidenceChainsQuery(c.req.url));
 			const response = await listEvidenceChains(query, c.get('requestContext')?.logger);
 			EvidenceChainsResponseSchema.parse(response);
@@ -167,6 +176,7 @@ export function registerEvidenceRoutes(app: ApiApp): void {
 			},
 		},
 		async (c) => {
+			assertCanReadEvidence(c.get('authPrincipal'));
 			const query = EvidenceClustersQuerySchema.parse(readEvidenceClustersQuery(c.req.url));
 			const response = await listSpatioTemporalClusters(query, c.get('requestContext')?.logger);
 			EvidenceClustersResponseSchema.parse(response);

@@ -58,7 +58,7 @@ Request body:
 
 ```json
 {
-  "filename": "mufon-journal-2017-03.pdf",
+  "filename": "archive-file-2017-03.pdf",
   "size_bytes": 19300352,
   "content_type": "application/pdf",
   "tags": ["review"]
@@ -100,7 +100,7 @@ Request body:
 ```json
 {
   "source_id": "uuid",
-  "filename": "mufon-journal-2017-03.pdf",
+  "filename": "archive-file-2017-03.pdf",
   "storage_path": "raw/uuid/original.pdf",
   "tags": ["review"],
   "start_pipeline": true
@@ -111,7 +111,17 @@ Success behavior:
 
 - returns `202`
 - enqueues a `document_upload_finalize` job
-- response includes the finalize `job_id`, a job-status link, and the provisional `source_id`
+- response includes the finalize `job_id`, the provisional `source_id`, the generic job-status link, and the browser-safe upload-finalization status link
+
+#### `GET /api/uploads/documents/finalizations/{jobId}`
+
+Purpose: give browser clients a safe upload-specific status without exposing generic job payloads.
+
+Success behavior:
+
+- returns the requested source ID, job status, derived finalization result, visible source link when allowed, and visible pipeline identifiers when available
+- returns `completed_unavailable` when a submitted upload completed but resolved to a source the browser principal cannot read
+- never exposes raw job payload, worker ID, or raw error log to normal browser sessions
 
 Rules:
 
@@ -128,7 +138,7 @@ Payload in:
 ```json
 {
   "sourceId": "uuid",
-  "filename": "mufon-journal-2017-03.pdf",
+  "filename": "archive-file-2017-03.pdf",
   "storagePath": "raw/uuid/original.pdf",
   "tags": ["review"],
   "startPipeline": true
@@ -167,10 +177,11 @@ Job payload out:
 
 - the upload page uses the new initiate endpoint instead of a fake timer-driven upload
 - after initiation, the page uploads the file directly to the returned target
-- after the direct upload succeeds, the page calls complete and polls `/api/jobs/{job_id}`
+- after the direct upload succeeds, the page calls complete and polls `/api/uploads/documents/finalizations/{job_id}`
 - when finalize completes:
   - new upload: show the created source and pipeline job links
   - duplicate upload: explain that the document already exists and link to the existing source
+  - hidden duplicate: explain that processing completed but no readable source is available
 
 ### 4.5 Middleware And Limit Behavior
 

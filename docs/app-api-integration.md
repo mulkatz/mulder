@@ -85,7 +85,8 @@ These endpoints are the first candidates for `apps/app` because they already rep
 | Pipeline | `POST /api/pipeline/retry` | Retry flow for failed work. Treat as operational. |
 | Uploads | `POST /api/uploads/documents/initiate` | Starts large browser upload session. |
 | Uploads | `PUT /api/uploads/documents/dev-upload` | Local/dev upload transport. Not a production product primitive. |
-| Uploads | `POST /api/uploads/documents/complete` | Finalizes upload and creates a job. |
+| Uploads | `POST /api/uploads/documents/complete` | Finalizes upload, creates a job, and returns the safe upload-status link. |
+| Uploads | `GET /api/uploads/documents/finalizations/:jobId` | Browser-safe finalization status for Add Sources; use this instead of reading job payloads. |
 | Documents | `GET /api/documents` | Archive list and Overview corpus counts. |
 | Documents | `GET /api/documents/:id` | Reader-safe source detail: readiness, provenance summary, quality, language, sensitivity, collection, credibility, and stable reader links. |
 | Documents | `GET /api/documents/:id/pdf` | PDF document stream. |
@@ -182,7 +183,7 @@ This mapping captures the app's hook-per-contract shape.
 | `useEvidenceReliabilitySources` | `GET /api/evidence/reliability/sources` | Trust/source panels. |
 | `useEvidenceChains` | `GET /api/evidence/chains` | Future evidence-chain drilldown. |
 | `useEvidenceClusters` | `GET /api/evidence/clusters` | Future spatial/temporal review. |
-| `useDocumentUpload` | upload initiate -> transport -> complete -> job polling | Future document ingest flow after release gates are satisfied. |
+| `useDocumentUpload` | upload initiate -> transport -> complete -> upload finalization polling | Future document ingest flow after release gates are satisfied. |
 
 ## Known App API Gaps
 

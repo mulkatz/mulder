@@ -1,3 +1,4 @@
+import type { Context } from 'hono';
 import { getJobStatusById, listRecentJobs } from '../lib/job-status.js';
 import {
 	JobDetailParamsSchema,
@@ -15,6 +16,10 @@ function readJobListQuery(url: string): Record<string, string | undefined> {
 		worker_id: searchParams.get('worker_id') ?? undefined,
 		limit: searchParams.get('limit') ?? undefined,
 	};
+}
+
+function readRouteOptions(c: Context) {
+	return { authPrincipal: c.get('authPrincipal') };
 }
 
 export function registerJobRoutes(app: ApiApp): void {
@@ -36,7 +41,7 @@ export function registerJobRoutes(app: ApiApp): void {
 		},
 		async (c) => {
 			const query = JobListQuerySchema.parse(readJobListQuery(c.req.url));
-			const response = await listRecentJobs(query);
+			const response = await listRecentJobs(query, readRouteOptions(c));
 			JobListResponseSchema.parse(response);
 			return c.json(response, 200);
 		},
@@ -60,7 +65,7 @@ export function registerJobRoutes(app: ApiApp): void {
 		},
 		async (c) => {
 			const { id } = JobDetailParamsSchema.parse({ id: c.req.param('id') });
-			const response = await getJobStatusById(id);
+			const response = await getJobStatusById(id, readRouteOptions(c));
 			JobDetailResponseSchema.parse(response);
 			return c.json(response, 200);
 		},

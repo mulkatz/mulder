@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { EmbeddingService, LlmService, Services } from '@mulder/core';
@@ -15,6 +15,7 @@ const CORE_DIST = resolve(CORE_DIR, 'dist/index.js');
 const RETRIEVAL_DIST = resolve(RETRIEVAL_DIR, 'dist/index.js');
 const API_APP_DIST = resolve(API_DIR, 'dist/app.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
+const SESSION_SECRET = 'test-session-secret';
 
 const mocks = vi.hoisted(() => ({
 	hybridRetrieve: vi.fn(),
@@ -58,7 +59,27 @@ function buildPackage(packageDir: string): void {
 }
 
 function cleanState(): void {
-	db.runSql('DELETE FROM pipeline_run_sources; DELETE FROM pipeline_runs; DELETE FROM jobs;');
+	db.runSql(
+		'DELETE FROM pipeline_run_sources; DELETE FROM pipeline_runs; DELETE FROM jobs; DELETE FROM api_sessions; DELETE FROM api_users;',
+	);
+}
+
+function hashSessionToken(token: string): string {
+	return createHash('sha256').update(`${SESSION_SECRET}:${token}`).digest('hex');
+}
+
+function seedSession(role: 'member' | 'admin' = 'member'): string {
+	const userId = randomUUID();
+	const token = `${role}-${randomUUID()}`;
+	db.runSql(
+		[
+			'INSERT INTO api_users (id, email, password_hash, role)',
+			`VALUES ('${userId}', '${role}-${randomUUID()}@example.test', 'test-hash', '${role}');`,
+			'INSERT INTO api_sessions (user_id, token_hash, expires_at)',
+			`VALUES ('${userId}', '${hashSessionToken(token)}', now() + interval '1 hour');`,
+		].join(' '),
+	);
+	return `mulder_session=${token}`;
 }
 
 function buildMockServices(): Services {
@@ -393,6 +414,33 @@ describe('Spec 73 — Search API Routes', () => {
 					contributions: [],
 				},
 			},
+		});
+		expect(mocks.hybridRetrieve.mock.calls[0]?.[5]).toMatchObject({
+			maxSensitivityLevel: 'confidential',
+		});
+	});
+
+	it('QA-01b: browser member search is scoped to member-readable sensitivity', async () => {
+		const cookie = seedSession('member');
+
+		const response = await app.request('http://localhost/api/search', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Cookie: cookie,
+				'X-Forwarded-For': '203.0.113.11',
+			},
+			body: JSON.stringify({
+				query: 'ufo sighting',
+				strategy: 'hybrid',
+				top_k: 10,
+			}),
+		});
+
+		expect(response.status).toBe(200);
+		expect(mocks.hybridRetrieve).toHaveBeenCalledTimes(1);
+		expect(mocks.hybridRetrieve.mock.calls[0]?.[5]).toMatchObject({
+			maxSensitivityLevel: 'internal',
 		});
 	});
 

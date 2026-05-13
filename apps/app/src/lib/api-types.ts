@@ -41,7 +41,7 @@ export interface JobSummary {
 	status: JobStatus;
 	attempts: number;
 	max_attempts: number;
-	worker_id: string | null;
+	worker_id?: string | null;
 	created_at: string;
 	started_at: string | null;
 	finished_at: string | null;
@@ -67,8 +67,8 @@ export interface JobProgress {
 }
 
 export interface JobDetailRecord extends JobSummary {
-	error_log: string | null;
-	payload: Record<string, unknown>;
+	error_log?: string | null;
+	payload?: Record<string, unknown>;
 }
 
 export interface JobDetailResponse {
@@ -76,6 +76,33 @@ export interface JobDetailResponse {
 		job: JobDetailRecord;
 		progress: JobProgress | null;
 	};
+}
+
+export type SensitivityLevel = 'public' | 'internal' | 'restricted' | 'confidential';
+
+export interface DocumentQualityHint {
+	overall_quality: string;
+	processable: boolean;
+	recommended_path: string;
+	language: string | null;
+}
+
+export interface DocumentCredibilityHint {
+	review_status: string;
+	average_score: number | null;
+	sensitivity_level: SensitivityLevel;
+}
+
+export interface DocumentCollectionHint {
+	id: string;
+	name: string;
+}
+
+export interface DocumentProvenanceHint {
+	channel: string;
+	submitted_at: string;
+	authenticity_status: string;
+	collection_id: string | null;
 }
 
 export interface DocumentRecord {
@@ -86,6 +113,12 @@ export interface DocumentRecord {
 	has_native_text: boolean;
 	layout_available: boolean;
 	page_image_count: number;
+	source_language: string | null;
+	sensitivity_level: SensitivityLevel;
+	quality_hint: DocumentQualityHint | null;
+	credibility_hint: DocumentCredibilityHint | null;
+	collection_hint: DocumentCollectionHint | null;
+	provenance_hint: DocumentProvenanceHint | null;
 	created_at: string;
 	updated_at: string;
 	links: { pdf: string; layout: string; pages: string };
@@ -95,8 +128,6 @@ export interface DocumentListResponse {
 	data: DocumentRecord[];
 	meta: { count: number; limit: number; offset: number };
 }
-
-export type SensitivityLevel = 'public' | 'internal' | 'restricted' | 'confidential';
 
 export interface DocumentDetailRecord extends DocumentRecord {
 	reader_link: string;

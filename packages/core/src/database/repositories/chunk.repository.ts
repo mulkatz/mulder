@@ -13,9 +13,14 @@
  */
 
 import type pg from 'pg';
+import { allowedSensitivityLevelsForMax } from '../../shared/access-control.js';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
-import { normalizeSensitivityMetadata, stringifySensitivityMetadata } from '../../shared/sensitivity.js';
+import {
+	normalizeSensitivityMetadata,
+	type SensitivityLevel,
+	stringifySensitivityMetadata,
+} from '../../shared/sensitivity.js';
 import {
 	mapArtifactProvenanceFromDb,
 	mergeArtifactProvenanceSql,
@@ -33,6 +38,28 @@ import { queryWithSensitivityColumnFallback, queryWithSourceDeletionStatusFallba
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'chunk-repository' });
+
+type ChunkSearchFilter = {
+	storyIds?: string[];
+	maxSensitivityLevel?: SensitivityLevel;
+};
+
+function applyChunkReadSensitivityFilter(
+	conditions: string[],
+	params: unknown[],
+	paramIndex: number,
+	maxSensitivityLevel: SensitivityLevel | undefined,
+): number {
+	if (!maxSensitivityLevel) {
+		return paramIndex;
+	}
+
+	conditions.push(`chunks.sensitivity_level = ANY($${paramIndex})`);
+	conditions.push(`stories.sensitivity_level = ANY($${paramIndex})`);
+	conditions.push(`sources.sensitivity_level = ANY($${paramIndex})`);
+	params.push(allowedSensitivityLevelsForMax(maxSensitivityLevel));
+	return paramIndex + 1;
+}
 
 // ────────────────────────────────────────────────────────────
 // pgvector string parsing
@@ -533,7 +560,7 @@ export async function searchByVector(
 	pool: pg.Pool,
 	queryEmbedding: number[],
 	limit: number,
-	filter?: { storyIds?: string[] },
+	filter?: ChunkSearchFilter,
 ): Promise<VectorSearchResult[]> {
 	const embeddingLiteral = formatEmbedding(queryEmbedding);
 	const conditions = ['chunks.embedding IS NOT NULL'];
@@ -545,6 +572,7 @@ export async function searchByVector(
 		params.push(filter.storyIds);
 		paramIndex++;
 	}
+	paramIndex = applyChunkReadSensitivityFilter(conditions, params, paramIndex, filter?.maxSensitivityLevel);
 
 	const whereClause = conditions.join(' AND ');
 	const sql = `
@@ -599,7 +627,7 @@ export async function searchByVectorWithEfSearch(
 	queryEmbedding: number[],
 	limit: number,
 	efSearch: number,
-	filter?: { storyIds?: string[] },
+	filter?: ChunkSearchFilter,
 ): Promise<VectorSearchResult[]> {
 	// SQL-injection guard: SET cannot use bind parameters, so we must validate
 	// the integer client-side before string-interpolating it into the SQL.
@@ -621,6 +649,7 @@ export async function searchByVectorWithEfSearch(
 		params.push(filter.storyIds);
 		paramIndex++;
 	}
+	paramIndex = applyChunkReadSensitivityFilter(conditions, params, paramIndex, filter?.maxSensitivityLevel);
 
 	const whereClause = conditions.join(' AND ');
 	const sql = `
@@ -688,7 +717,7 @@ export async function searchByFts(
 	pool: pg.Pool,
 	query: string,
 	limit: number,
-	filter?: { storyIds?: string[]; excludeQuestions?: boolean },
+	filter?: ChunkSearchFilter & { excludeQuestions?: boolean },
 ): Promise<FtsSearchResult[]> {
 	const conditions = ["chunks.fts_vector @@ plainto_tsquery('simple', $1)"];
 	const params: unknown[] = [query, limit];
@@ -699,6 +728,7 @@ export async function searchByFts(
 		params.push(filter.storyIds);
 		paramIndex++;
 	}
+	paramIndex = applyChunkReadSensitivityFilter(conditions, params, paramIndex, filter?.maxSensitivityLevel);
 
 	if (filter?.excludeQuestions === true) {
 		// Literal boolean predicate — no bind parameter needed and no SQL

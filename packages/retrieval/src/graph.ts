@@ -64,7 +64,12 @@ export async function graphSearch(
 
 	// 3. Build optional filter.
 	const hasStoryFilter = Array.isArray(options.storyIds) && options.storyIds.length > 0;
-	const filter = hasStoryFilter ? { storyIds: options.storyIds } : undefined;
+	const filter =
+		hasStoryFilter && options.storyIds
+			? { storyIds: options.storyIds, maxSensitivityLevel: options.maxSensitivityLevel }
+			: options.maxSensitivityLevel
+				? { maxSensitivityLevel: options.maxSensitivityLevel }
+				: undefined;
 
 	// 4. Execute the recursive CTE traversal via the repository.
 	let rawResults: GraphTraversalResult[];

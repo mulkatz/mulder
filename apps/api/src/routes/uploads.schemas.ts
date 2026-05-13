@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { JobStatusSchema } from './jobs.schemas.js';
 
 const SUPPORTED_UPLOAD_EXTENSIONS = new Map([
 	['pdf', 'pdf'],
@@ -312,6 +313,7 @@ export const CompleteDocumentUploadResponseSchema = z.object({
 	}),
 	links: z.object({
 		status: z.string().regex(/^\/api\/jobs\/[0-9a-f-]+$/i),
+		upload_status: z.string().regex(/^\/api\/uploads\/documents\/finalizations\/[0-9a-f-]+$/i),
 	}),
 });
 
@@ -319,7 +321,64 @@ export const DevUploadQuerySchema = z.object({
 	storage_path: z.string().min(1),
 });
 
+export const UploadFinalizationParamsSchema = z.object({
+	jobId: z.string().uuid(),
+});
+
+export const UploadFinalizationResultStatusSchema = z.enum([
+	'pending',
+	'created',
+	'duplicate',
+	'completed_unavailable',
+	'failed',
+	'dead_letter',
+]);
+
+export const UploadFinalizationStatusResponseSchema = z.object({
+	data: z.object({
+		job_id: z.string().uuid(),
+		requested_source_id: z.string().uuid(),
+		job_status: JobStatusSchema,
+		result_status: UploadFinalizationResultStatusSchema,
+		source: z
+			.object({
+				id: z.string().uuid(),
+				filename: z.string(),
+				status: z.string(),
+				links: z.object({
+					document: z.string().regex(/^\/api\/documents\/[0-9a-f-]+$/i),
+				}),
+			})
+			.nullable(),
+		pipeline: z
+			.object({
+				job_id: z.string().uuid().nullable(),
+				run_id: z.string().uuid().nullable(),
+				links: z.object({
+					job: z
+						.string()
+						.regex(/^\/api\/jobs\/[0-9a-f-]+$/i)
+						.nullable(),
+				}),
+			})
+			.nullable(),
+		created_at: z.string(),
+		started_at: z.string().nullable(),
+		finished_at: z.string().nullable(),
+	}),
+	links: z
+		.object({
+			job: z.string().regex(/^\/api\/jobs\/[0-9a-f-]+$/i),
+			source: z
+				.string()
+				.regex(/^\/api\/documents\/[0-9a-f-]+$/i)
+				.optional(),
+		})
+		.strict(),
+});
+
 export type InitiateDocumentUploadRequest = z.infer<typeof InitiateDocumentUploadRequestSchema>;
 export type InitiateDocumentUploadResponse = z.infer<typeof InitiateDocumentUploadResponseSchema>;
 export type CompleteDocumentUploadRequest = z.infer<typeof CompleteDocumentUploadRequestSchema>;
 export type CompleteDocumentUploadResponse = z.infer<typeof CompleteDocumentUploadResponseSchema>;
+export type UploadFinalizationStatusResponse = z.infer<typeof UploadFinalizationStatusResponseSchema>;

@@ -1,6 +1,7 @@
 import { performance } from 'node:perf_hooks';
 import {
 	type AccessPrincipal,
+	allowedSensitivityLevelsForMax,
 	countProcessedSources,
 	countSources,
 	createChildLogger,
@@ -67,6 +68,36 @@ const DOCUMENT_NOT_FOUND_CODE = 'DOCUMENT_NOT_FOUND';
 const PDF_CONTENT_TYPE = 'application/pdf';
 const MARKDOWN_CONTENT_TYPE = 'text/markdown; charset=utf-8';
 const PNG_CONTENT_TYPE = 'image/png';
+
+type DocumentListHints = Pick<
+	DocumentListItem,
+	'source_language' | 'sensitivity_level' | 'quality_hint' | 'credibility_hint' | 'collection_hint' | 'provenance_hint'
+>;
+
+interface DocumentQualityHintRow {
+	source_id: string;
+	overall_quality: string;
+	processable: boolean;
+	recommended_path: string;
+	language: string | null;
+}
+
+interface DocumentCredibilityHintRow {
+	source_id: string;
+	review_status: string;
+	sensitivity_level: DocumentListHints['sensitivity_level'];
+	average_score: string | number | null;
+}
+
+interface DocumentProvenanceHintRow {
+	source_id: string;
+	channel: string;
+	submitted_at: Date;
+	authenticity_status: string;
+	collection_id: string | null;
+	collection_name: string | null;
+	source_language: string | null;
+}
 
 let cachedContext: DocumentContext | null = null;
 let cachedConfigPath: string | null = null;
@@ -146,7 +177,12 @@ function buildDocumentLinks(id: string): { pdf: string; layout: string; pages: s
 	};
 }
 
-function mapSourceToDocument(source: Source, layoutAvailable: boolean, pageImageCount: number): DocumentListItem {
+function mapSourceToDocument(
+	source: Source,
+	layoutAvailable: boolean,
+	pageImageCount: number,
+	hints?: DocumentListHints,
+): DocumentListItem {
 	return {
 		id: source.id,
 		filename: source.filename,
@@ -155,6 +191,12 @@ function mapSourceToDocument(source: Source, layoutAvailable: boolean, pageImage
 		has_native_text: source.hasNativeText,
 		layout_available: layoutAvailable,
 		page_image_count: pageImageCount,
+		source_language: hints?.source_language ?? readSourceMetadataLanguage(source),
+		sensitivity_level: hints?.sensitivity_level ?? source.sensitivityLevel ?? 'internal',
+		quality_hint: hints?.quality_hint ?? null,
+		credibility_hint: hints?.credibility_hint ?? null,
+		collection_hint: hints?.collection_hint ?? null,
+		provenance_hint: hints?.provenance_hint ?? null,
 		created_at: toIsoString(source.createdAt),
 		updated_at: toIsoString(source.updatedAt),
 		links: buildDocumentLinks(source.id),
@@ -308,6 +350,196 @@ function resolveSourceLanguage(input: {
 		input.quality?.dimensions.languageDetection.primaryLanguage ??
 		readSourceMetadataLanguage(input.source)
 	);
+}
+
+function mapQualityHint(
+	quality: Awaited<ReturnType<typeof findLatestDocumentQualityAssessment>>,
+): DocumentListHints['quality_hint'] {
+	if (!quality) {
+		return null;
+	}
+	return {
+		overall_quality: quality.overallQuality,
+		processable: quality.processable,
+		recommended_path: quality.recommendedPath,
+		language: quality.dimensions.languageDetection.primaryLanguage,
+	};
+}
+
+function mapCredibilityHint(
+	credibility: Awaited<ReturnType<typeof findSourceCredibilityProfileBySourceId>>,
+): DocumentListHints['credibility_hint'] {
+	if (!credibility) {
+		return null;
+	}
+	const averageScore =
+		credibility.dimensions.length > 0
+			? credibility.dimensions.reduce((total, dimension) => total + dimension.score, 0) / credibility.dimensions.length
+			: null;
+	return {
+		review_status: credibility.reviewStatus,
+		average_score: averageScore,
+		sensitivity_level: credibility.sensitivityLevel,
+	};
+}
+
+function mapCollectionHint(
+	collection: Awaited<ReturnType<typeof summarizeCollection>>,
+): DocumentListHints['collection_hint'] {
+	if (!collection) {
+		return null;
+	}
+	return {
+		id: collection.collectionId,
+		name: collection.name,
+	};
+}
+
+function mapProvenanceHint(
+	acquisition: Awaited<ReturnType<typeof listAcquisitionContextsForSource>>[number] | null,
+): DocumentListHints['provenance_hint'] {
+	if (!acquisition) {
+		return null;
+	}
+	return {
+		channel: acquisition.channel,
+		submitted_at: acquisition.submittedAt.toISOString(),
+		authenticity_status: acquisition.authenticityStatus,
+		collection_id: acquisition.collectionId,
+	};
+}
+
+function readNullableNumber(value: string | number | null): number | null {
+	if (typeof value === 'number') {
+		return Number.isFinite(value) ? value : null;
+	}
+	if (typeof value === 'string') {
+		const parsed = Number.parseFloat(value);
+		return Number.isFinite(parsed) ? parsed : null;
+	}
+	return null;
+}
+
+function createBaseListHint(source: Source): DocumentListHints {
+	return {
+		source_language: readSourceMetadataLanguage(source),
+		sensitivity_level: source.sensitivityLevel ?? 'internal',
+		quality_hint: null,
+		credibility_hint: null,
+		collection_hint: null,
+		provenance_hint: null,
+	};
+}
+
+async function loadDocumentListHints(
+	pool: pg.Pool,
+	sources: Source[],
+	maxSensitivityLevel: ReturnType<typeof resolveReadMaxSensitivity>,
+): Promise<Map<string, DocumentListHints>> {
+	const hints = new Map(sources.map((source) => [source.id, createBaseListHint(source)]));
+	if (sources.length === 0) {
+		return hints;
+	}
+
+	const sourceIds = sources.map((source) => source.id);
+	const credibilityParams: unknown[] = [sourceIds];
+	const credibilitySensitivityClause = maxSensitivityLevel
+		? `AND p.sensitivity_level = ANY($${credibilityParams.push(allowedSensitivityLevelsForMax(maxSensitivityLevel))})`
+		: '';
+	const [qualityResult, credibilityResult, provenanceResult] = await Promise.all([
+		pool.query<DocumentQualityHintRow>(
+			`
+				SELECT DISTINCT ON (source_id)
+					source_id,
+					overall_quality,
+					processable,
+					recommended_path,
+					COALESCE(
+						dimensions #>> '{languageDetection,primaryLanguage}',
+						dimensions #>> '{language_detection,primary_language}'
+					) AS language
+				FROM document_quality_assessments
+				WHERE source_id = ANY($1::uuid[])
+				ORDER BY source_id, assessed_at DESC, created_at DESC, id DESC
+			`,
+			[sourceIds],
+		),
+		pool.query<DocumentCredibilityHintRow>(
+			`
+				SELECT
+					p.source_id,
+					p.review_status,
+					p.sensitivity_level,
+					AVG(d.score)::double precision AS average_score
+				FROM source_credibility_profiles p
+				LEFT JOIN credibility_dimensions d ON d.profile_id = p.profile_id
+				WHERE p.source_id = ANY($1::uuid[])
+				${credibilitySensitivityClause}
+				GROUP BY p.source_id, p.review_status, p.sensitivity_level
+			`,
+			credibilityParams,
+		),
+		pool.query<DocumentProvenanceHintRow>(
+			`
+				SELECT DISTINCT ON (ac.source_id)
+					ac.source_id,
+					ac.channel,
+					ac.submitted_at,
+					ac.authenticity_status,
+					ac.collection_id,
+					c.name AS collection_name,
+					os.source_language
+				FROM acquisition_contexts ac
+				LEFT JOIN collections c ON c.collection_id = ac.collection_id
+				LEFT JOIN original_sources os ON os.context_id = ac.context_id
+				WHERE ac.source_id = ANY($1::uuid[])
+				  AND ac.status IN ('active', 'restored')
+				ORDER BY ac.source_id,
+					CASE WHEN ac.status = 'active' THEN 0 ELSE 1 END,
+					ac.submitted_at DESC,
+					ac.context_id DESC
+			`,
+			[sourceIds],
+		),
+	]);
+
+	for (const row of qualityResult.rows) {
+		const hint = hints.get(row.source_id);
+		if (!hint) continue;
+		hint.quality_hint = {
+			overall_quality: row.overall_quality,
+			processable: row.processable,
+			recommended_path: row.recommended_path,
+			language: row.language,
+		};
+		hint.source_language ??= row.language;
+	}
+
+	for (const row of credibilityResult.rows) {
+		const hint = hints.get(row.source_id);
+		if (!hint) continue;
+		hint.credibility_hint = {
+			review_status: row.review_status,
+			average_score: readNullableNumber(row.average_score),
+			sensitivity_level: row.sensitivity_level,
+		};
+	}
+
+	for (const row of provenanceResult.rows) {
+		const hint = hints.get(row.source_id);
+		if (!hint) continue;
+		hint.provenance_hint = {
+			channel: row.channel,
+			submitted_at: row.submitted_at.toISOString(),
+			authenticity_status: row.authenticity_status,
+			collection_id: row.collection_id,
+		};
+		hint.collection_hint =
+			row.collection_id && row.collection_name ? { id: row.collection_id, name: row.collection_name } : null;
+		hint.source_language ??= row.source_language;
+	}
+
+	return hints;
 }
 
 function mapEntityForDocument(
@@ -1098,6 +1330,7 @@ async function buildDocumentListResponse(
 	const startedAt = performance.now();
 
 	const [count, sources] = await Promise.all([countSources(pool, filter), findAllSources(pool, filter)]);
+	const hints = await loadDocumentListHints(pool, sources, maxSensitivityLevel);
 	const documents = await Promise.all(
 		sources.map(async (source) => {
 			const [layoutAvailable, pageImageCount] = await Promise.all([
@@ -1105,7 +1338,7 @@ async function buildDocumentListResponse(
 				countPageArtifacts(services, source.id),
 			]);
 
-			return mapSourceToDocument(source, layoutAvailable, pageImageCount);
+			return mapSourceToDocument(source, layoutAvailable, pageImageCount, hints.get(source.id));
 		}),
 	);
 
@@ -1166,14 +1399,22 @@ export async function getDocumentDetail(
 		acquisition ? findOriginalSourceForContext(pool, acquisition.contextId) : Promise.resolve(null),
 		acquisition?.collectionId ? summarizeCollection(pool, acquisition.collectionId) : Promise.resolve(null),
 	]);
-	const document = mapSourceToDocument(source, layoutAvailable, pageImageCount);
+	const sourceLanguage = resolveSourceLanguage({ originalSource, quality, source });
+	const document = mapSourceToDocument(source, layoutAvailable, pageImageCount, {
+		source_language: sourceLanguage,
+		sensitivity_level: source.sensitivityLevel ?? 'internal',
+		quality_hint: mapQualityHint(quality),
+		credibility_hint: mapCredibilityHint(credibility),
+		collection_hint: mapCollectionHint(collection),
+		provenance_hint: mapProvenanceHint(acquisition),
+	});
 	const response: DocumentDetailResponse = {
 		data: {
 			...document,
 			reader_link: `/sources/${source.id}`,
 			provenance: mapAcquisitionSummary(acquisition),
 			original_source: mapOriginalSourceSummary(originalSource),
-			source_language: resolveSourceLanguage({ originalSource, quality, source }),
+			source_language: sourceLanguage,
 			sensitivity: mapSourceSensitivity(source),
 			quality: mapQualitySummary(quality),
 			collection: mapCollectionSummary(collection),

@@ -50,6 +50,7 @@ export function registerSearchRoute(app: ApiApp): void {
 					no_rerank: readNoRerankToggle(c.req.url),
 				},
 				requestContext?.logger ?? createLogger(),
+				{ authPrincipal: c.get('authPrincipal') },
 			);
 			SearchResponseSchema.parse(response);
 			return c.json(response, 200);

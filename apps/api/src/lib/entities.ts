@@ -41,6 +41,7 @@ import type {
 	EntityResponse,
 	EntityStoryResponse,
 } from '../routes/entities.schemas.js';
+import { assertOperatorPrincipal } from './api-runtime.js';
 
 type CoreEntity = Entity;
 type CoreEntityAlias = EntityAlias;
@@ -325,9 +326,15 @@ export async function getEntityEdges(
 	return response;
 }
 
-export async function mergeEntities(targetId: string, sourceId: string, logger?: Logger): Promise<EntityMergeResponse> {
+export async function mergeEntities(
+	targetId: string,
+	sourceId: string,
+	logger?: Logger,
+	options?: RouteAccessOptions,
+): Promise<EntityMergeResponse> {
 	const rootLogger = logger ?? createLogger();
 	const { pool } = resolveContext();
+	assertOperatorPrincipal(options?.authPrincipal, 'entity curation');
 	const requestLogger = createRouteLogger(rootLogger, {
 		action: 'merge',
 		target_id: targetId,

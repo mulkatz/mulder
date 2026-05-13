@@ -16,8 +16,10 @@
  */
 
 import type pg from 'pg';
+import { allowedSensitivityLevelsForMax } from '../../shared/access-control.js';
 import { DATABASE_ERROR_CODES, DatabaseError } from '../../shared/errors.js';
 import { createChildLogger, createLogger } from '../../shared/logger.js';
+import type { SensitivityLevel } from '../../shared/sensitivity.js';
 
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'graph-traversal-repository' });
@@ -47,6 +49,7 @@ export interface GraphTraversalResult {
 interface GraphTraversalFilter {
 	storyIds?: string[];
 	includeDeleted?: boolean;
+	maxSensitivityLevel?: SensitivityLevel;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -117,14 +120,31 @@ export async function traverseGraph(
 ): Promise<GraphTraversalResult[]> {
 	// Build the storyIds filter clause and parameters dynamically.
 	const hasStoryFilter = Array.isArray(filter?.storyIds) && filter.storyIds.length > 0;
-
-	// Parameter positions:
-	// $1 = seedEntityIds (text[])
-	// $2 = maxHops
-	// $3 = limit
-	// $4 = supernodeThreshold
-	// $5 = storyIds (text[], only if filter is present)
-	const storyFilterClause = hasStoryFilter ? 'AND c.story_id = ANY($5)' : '';
+	const params: unknown[] = [seedEntityIds, maxHops, limit, supernodeThreshold];
+	let paramIndex = 5;
+	const storyFilterClause = hasStoryFilter ? `AND c.story_id = ANY($${paramIndex++}::uuid[])` : '';
+	if (hasStoryFilter && filter?.storyIds) {
+		params.push(filter.storyIds);
+	}
+	const sensitivityParam = filter?.maxSensitivityLevel ? paramIndex++ : null;
+	if (filter?.maxSensitivityLevel) {
+		params.push(allowedSensitivityLevelsForMax(filter.maxSensitivityLevel));
+	}
+	const baseEntitySensitivityClause = sensitivityParam ? `AND e.sensitivity_level = ANY($${sensitivityParam})` : '';
+	const traversalSensitivityClause = sensitivityParam
+		? `
+        AND e2.sensitivity_level = ANY($${sensitivityParam})
+        AND ee.sensitivity_level = ANY($${sensitivityParam})
+      `
+		: '';
+	const resultSensitivityClause = sensitivityParam
+		? `
+        AND se.sensitivity_level = ANY($${sensitivityParam})
+        AND c.sensitivity_level = ANY($${sensitivityParam})
+        AND s.sensitivity_level = ANY($${sensitivityParam})
+        AND src.sensitivity_level = ANY($${sensitivityParam})
+      `
+		: '';
 	const activeSourceClause = filter?.includeDeleted
 		? ''
 		: "AND src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')";
@@ -141,6 +161,7 @@ export async function traverseGraph(
             FROM jsonb_array_elements_text(COALESCE(se.provenance->'source_document_ids', '[]'::jsonb)) AS link_sources(source_id)
             JOIN sources link_src ON link_src.id::text = link_sources.source_id
             WHERE link_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+              ${sensitivityParam ? `AND link_src.sensitivity_level = ANY($${sensitivityParam})` : ''}
           )
         )
       `;
@@ -153,6 +174,7 @@ export async function traverseGraph(
             FROM jsonb_array_elements_text(COALESCE(ee.provenance->'source_document_ids', '[]'::jsonb)) AS edge_sources(source_id)
             JOIN sources edge_src ON edge_src.id::text = edge_sources.source_id
             WHERE edge_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+              ${sensitivityParam ? `AND edge_src.sensitivity_level = ANY($${sensitivityParam})` : ''}
           )
           OR EXISTS (
             SELECT 1
@@ -160,6 +182,7 @@ export async function traverseGraph(
             JOIN sources edge_story_src ON edge_story_src.id = edge_story.source_id
             WHERE edge_story.id = ee.story_id
               AND edge_story_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+              ${sensitivityParam ? `AND edge_story.sensitivity_level = ANY($${sensitivityParam}) AND edge_story_src.sensitivity_level = ANY($${sensitivityParam})` : ''}
           )
           OR (
             ee.story_id IS NULL
@@ -183,6 +206,7 @@ export async function traverseGraph(
         1.0::float AS path_confidence
       FROM entities e
       WHERE e.id = ANY($1)
+        ${baseEntitySensitivityClause}
 
       UNION ALL
 
@@ -202,6 +226,7 @@ export async function traverseGraph(
         AND ee.edge_type = 'RELATIONSHIP'
         AND e2.source_count < $4
         ${activeEdgeClause}
+        ${traversalSensitivityClause}
     ),
     -- Deduplicate traversal: keep best path_confidence per entity
     best_entities AS (
@@ -232,16 +257,12 @@ export async function traverseGraph(
         ${storyFilterClause}
         ${activeSourceClause}
         ${activeStoryEntityClause}
+        ${resultSensitivityClause}
       ORDER BY c.id, be.path_confidence DESC
     ) deduped
     ORDER BY deduped.path_confidence DESC, deduped.chunk_id
     LIMIT $3
   `;
-
-	const params: unknown[] = [seedEntityIds, maxHops, limit, supernodeThreshold];
-	if (hasStoryFilter && filter?.storyIds) {
-		params.push(filter.storyIds);
-	}
 
 	try {
 		const result = await pool.query<TraversalRow>(sql, params);

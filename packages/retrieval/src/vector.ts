@@ -112,7 +112,12 @@ export async function vectorSearch(
 	//    callers that may pass a config without the field set in some
 	//    edge case (e.g., partial test fixtures).
 	const efSearch = config.retrieval.strategies.vector.ef_search;
-	const filter = options.storyIds && options.storyIds.length > 0 ? { storyIds: options.storyIds } : undefined;
+	const filter =
+		options.storyIds && options.storyIds.length > 0
+			? { storyIds: options.storyIds, maxSensitivityLevel: options.maxSensitivityLevel }
+			: options.maxSensitivityLevel
+				? { maxSensitivityLevel: options.maxSensitivityLevel }
+				: undefined;
 
 	let rawResults: VectorSearchResult[];
 	try {

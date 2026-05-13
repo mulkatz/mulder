@@ -102,6 +102,22 @@ export function actorIdForPrincipal(authPrincipal: AuthPrincipal | undefined): s
 	return authPrincipal.userId;
 }
 
+export function isOperatorPrincipal(authPrincipal: AuthPrincipal | undefined): boolean {
+	if (!authPrincipal || authPrincipal.type === 'api_key') {
+		return true;
+	}
+	return authPrincipal.role === 'admin' || authPrincipal.role === 'owner';
+}
+
+export function assertOperatorPrincipal(authPrincipal: AuthPrincipal | undefined, resourceName: string): void {
+	if (isOperatorPrincipal(authPrincipal)) {
+		return;
+	}
+	throw new MulderError(`The current principal cannot inspect ${resourceName}`, 'AUTH_FORBIDDEN', {
+		context: { resource: resourceName, required_role: 'admin' },
+	});
+}
+
 export function toIsoString(value: Date | null): string | null {
 	return value ? value.toISOString() : null;
 }

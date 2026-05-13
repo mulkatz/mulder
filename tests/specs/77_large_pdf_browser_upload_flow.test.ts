@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { WorkerRuntimeContext } from '@mulder/worker';
@@ -25,6 +25,7 @@ const BLOBS_STORAGE_DIR = resolve(STORAGE_DIR, 'blobs');
 const RAW_STORAGE_DIR = resolve(STORAGE_DIR, 'raw');
 const FIXTURE_PDF = resolve(ROOT, 'fixtures/raw/native-text-sample.pdf');
 const MAX_BODY_BYTES = 10 * 1024 * 1024;
+const SESSION_SECRET = 'test-session-secret';
 
 function buildPackage(packageDir: string): void {
 	const result = spawnSync('pnpm', ['build'], {
@@ -68,6 +69,8 @@ function cleanState(): void {
 	db.runSql(
 		[
 			'DELETE FROM jobs',
+			'DELETE FROM api_sessions',
+			'DELETE FROM api_users',
 			'DELETE FROM pipeline_run_sources',
 			'DELETE FROM pipeline_runs',
 			'DELETE FROM source_steps',
@@ -170,12 +173,82 @@ async function apiPut(
 	});
 }
 
+async function apiGet(
+	app: ApiApp,
+	path: string,
+	headers: Record<string, string> = {
+		Authorization: 'Bearer test-api-key',
+		'X-Forwarded-For': '203.0.113.10',
+	},
+): Promise<Response> {
+	return await app.request(`http://localhost${path}`, {
+		method: 'GET',
+		headers,
+	});
+}
+
 async function readJson(response: Response): Promise<Record<string, unknown>> {
 	return (await response.json()) as Record<string, unknown>;
 }
 
 function readJsonCell(sql: string): Record<string, unknown> {
 	return JSON.parse(db.runSql(sql)) as Record<string, unknown>;
+}
+
+function hashSessionToken(token: string): string {
+	return createHash('sha256').update(`${SESSION_SECRET}:${token}`).digest('hex');
+}
+
+function seedSession(role: 'member' | 'admin' = 'member'): { cookie: string; userId: string } {
+	const userId = randomUUID();
+	const token = `${role}-${randomUUID()}`;
+	db.runSql(
+		[
+			'INSERT INTO api_users (id, email, password_hash, role)',
+			`VALUES ('${userId}', '${role}-${randomUUID()}@example.test', 'test-hash', '${role}');`,
+			'INSERT INTO api_sessions (user_id, token_hash, expires_at)',
+			`VALUES ('${userId}', '${hashSessionToken(token)}', now() + interval '1 hour');`,
+		].join(' '),
+	);
+	return { cookie: `mulder_session=${token}`, userId };
+}
+
+function sessionHeaders(session: { cookie: string }): Record<string, string> {
+	return {
+		Cookie: session.cookie,
+		'X-Forwarded-For': '203.0.113.10',
+	};
+}
+
+async function sessionPost(app: ApiApp, session: { cookie: string }, path: string, body: unknown): Promise<Response> {
+	return await app.request(`http://localhost${path}`, {
+		method: 'POST',
+		headers: {
+			...sessionHeaders(session),
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify(body),
+	});
+}
+
+function insertJob(input: {
+	id: string;
+	type: string;
+	status: 'pending' | 'running' | 'completed' | 'failed' | 'dead_letter';
+	attempts: number;
+	maxAttempts: number;
+	payload: Record<string, unknown>;
+	errorLog?: string | null;
+	workerId?: string | null;
+}): void {
+	db.runSql(
+		[
+			'INSERT INTO jobs (id, type, payload, status, attempts, max_attempts, error_log, worker_id)',
+			`VALUES ('${input.id}', '${input.type}', '${JSON.stringify(input.payload)}'::jsonb, '${input.status}', ${input.attempts}, ${input.maxAttempts},`,
+			input.errorLog === undefined || input.errorLog === null ? 'NULL' : `'${input.errorLog}'`,
+			`, ${input.workerId === undefined || input.workerId === null ? 'NULL' : `'${input.workerId}'`})`,
+		].join(' '),
+	);
 }
 
 async function processOneJob(context: WorkerRuntimeContext, workerModule: typeof import('@mulder/worker')) {
@@ -301,6 +374,42 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 		expect(Number(db.runSql('SELECT COUNT(*) FROM jobs;'))).toBe(beforeJobs);
 	});
 
+	it('QA-02b: complete rejects objects whose actual stored size exceeds the ingest limit', async () => {
+		const beforeJobs = Number(db.runSql('SELECT COUNT(*) FROM jobs;'));
+		const initiate = await apiPost(app, '/api/uploads/documents/initiate', {
+			filename: 'actual-too-large.pdf',
+			size_bytes: fixturePdf.byteLength,
+			content_type: 'application/pdf',
+		});
+		const initiateBody = await readJson(initiate);
+		const sourceId = String((initiateBody.data as Record<string, unknown>).source_id);
+		const storagePath = String((initiateBody.data as Record<string, unknown>).storage_path);
+		const absolutePath = writeUploadedObject(sourceId, Buffer.from('%PDF-1.7\n'));
+		truncateSync(absolutePath, 101 * 1024 * 1024);
+
+		const complete = await apiPost(app, '/api/uploads/documents/complete', {
+			source_id: sourceId,
+			filename: 'actual-too-large.pdf',
+			storage_path: storagePath,
+			start_pipeline: true,
+		});
+
+		expect(complete.status).toBe(413);
+		expect(await complete.json()).toEqual({
+			error: {
+				code: 'INGEST_FILE_TOO_LARGE',
+				message: 'Uploaded object exceeds the configured ingest limit',
+				details: {
+					source_id: sourceId,
+					storage_path: storagePath,
+					size_bytes: 101 * 1024 * 1024,
+					max_bytes: 100 * 1024 * 1024,
+				},
+			},
+		});
+		expect(Number(db.runSql('SELECT COUNT(*) FROM jobs;'))).toBe(beforeJobs);
+	});
+
 	it('QA-03: complete + finalize creates a source and queues the pipeline job', async () => {
 		const expectedStoragePath = expectedBlobPath(fixturePdf, 'pdf');
 		const initiate = await apiPost(app, '/api/uploads/documents/initiate', {
@@ -326,6 +435,27 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 		expect(complete.status).toBe(202);
 		const completeBody = await readJson(complete);
 		const jobId = String((completeBody.data as Record<string, unknown>).job_id);
+		const completeLinks = completeBody.links as Record<string, unknown>;
+		expect(completeLinks).toMatchObject({
+			status: `/api/jobs/${jobId}`,
+			upload_status: `/api/uploads/documents/finalizations/${jobId}`,
+		});
+
+		const pendingStatus = await apiGet(app, String(completeLinks.upload_status));
+		expect(pendingStatus.status).toBe(200);
+		expect(await readJson(pendingStatus)).toMatchObject({
+			data: {
+				job_id: jobId,
+				requested_source_id: sourceId,
+				job_status: 'pending',
+				result_status: 'pending',
+				source: null,
+				pipeline: null,
+			},
+			links: {
+				job: `/api/jobs/${jobId}`,
+			},
+		});
 
 		const processed = await processOneJob(workerContext, workerModule);
 		expect(processed.state).toBe('completed');
@@ -378,6 +508,36 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 			force: false,
 			tag: 'browser-upload',
 		});
+
+		const finalizedStatus = await apiGet(app, String(completeLinks.upload_status));
+		expect(finalizedStatus.status).toBe(200);
+		expect(await readJson(finalizedStatus)).toMatchObject({
+			data: {
+				job_id: jobId,
+				requested_source_id: sourceId,
+				job_status: 'completed',
+				result_status: 'created',
+				source: {
+					id: sourceId,
+					filename: 'native-text-sample.pdf',
+					status: 'ingested',
+					links: {
+						document: `/api/documents/${sourceId}`,
+					},
+				},
+				pipeline: {
+					job_id: finalizePayload.pipeline_job_id,
+					run_id: finalizePayload.pipeline_run_id,
+					links: {
+						job: `/api/jobs/${String(finalizePayload.pipeline_job_id)}`,
+					},
+				},
+			},
+			links: {
+				job: `/api/jobs/${jobId}`,
+				source: `/api/documents/${sourceId}`,
+			},
+		});
 	});
 
 	it('QA-04: duplicate finalize resolves to the existing source and removes the provisional object', async () => {
@@ -398,7 +558,28 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 			start_pipeline: false,
 		});
 		expect(firstComplete.status).toBe(202);
+		const firstCompleteBody = await readJson(firstComplete);
+		const firstJobId = String((firstCompleteBody.data as Record<string, unknown>).job_id);
+		const firstUploadStatus = String((firstCompleteBody.links as Record<string, unknown>).upload_status);
 		await processOneJob(workerContext, workerModule);
+
+		const firstStatus = await apiGet(app, firstUploadStatus);
+		expect(firstStatus.status).toBe(200);
+		expect(await readJson(firstStatus)).toMatchObject({
+			data: {
+				job_id: firstJobId,
+				requested_source_id: firstSourceId,
+				job_status: 'completed',
+				result_status: 'created',
+				source: {
+					id: firstSourceId,
+				},
+				pipeline: null,
+			},
+			links: {
+				source: `/api/documents/${firstSourceId}`,
+			},
+		});
 
 		const secondInitiate = await apiPost(app, '/api/uploads/documents/initiate', {
 			filename: 'native-text-sample.pdf',
@@ -431,6 +612,179 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 			result_status: 'duplicate',
 			resolved_source_id: firstSourceId,
 			duplicate_of_source_id: firstSourceId,
+		});
+
+		const duplicateStatus = await apiGet(
+			app,
+			String((secondCompleteBody.links as Record<string, unknown>).upload_status),
+		);
+		expect(duplicateStatus.status).toBe(200);
+		expect(await readJson(duplicateStatus)).toMatchObject({
+			data: {
+				job_id: secondJobId,
+				requested_source_id: secondSourceId,
+				job_status: 'completed',
+				result_status: 'duplicate',
+				source: {
+					id: firstSourceId,
+					filename: 'native-text-sample.pdf',
+				},
+				pipeline: null,
+			},
+			links: {
+				source: `/api/documents/${firstSourceId}`,
+			},
+		});
+	});
+
+	it('QA-04b: duplicate finalization hides unreadable resolved sources from member sessions', async () => {
+		const firstInitiate = await apiPost(app, '/api/uploads/documents/initiate', {
+			filename: 'confidential-source.pdf',
+			size_bytes: fixturePdf.byteLength,
+			content_type: 'application/pdf',
+		});
+		const firstBody = await readJson(firstInitiate);
+		const firstSourceId = String((firstBody.data as Record<string, unknown>).source_id);
+		const firstStoragePath = String((firstBody.data as Record<string, unknown>).storage_path);
+		writeUploadedObject(firstSourceId, fixturePdf);
+
+		const firstComplete = await apiPost(app, '/api/uploads/documents/complete', {
+			source_id: firstSourceId,
+			filename: 'confidential-source.pdf',
+			storage_path: firstStoragePath,
+			expected_sensitivity: {
+				level: 'confidential',
+				reason: 'restricted source silo',
+			},
+			start_pipeline: false,
+		});
+		expect(firstComplete.status).toBe(202);
+		await processOneJob(workerContext, workerModule);
+
+		const member = seedSession('member');
+		const secondInitiate = await sessionPost(app, member, '/api/uploads/documents/initiate', {
+			filename: 'member-duplicate.pdf',
+			size_bytes: fixturePdf.byteLength,
+			content_type: 'application/pdf',
+		});
+		expect(secondInitiate.status).toBe(201);
+		const secondBody = await readJson(secondInitiate);
+		const secondSourceId = String((secondBody.data as Record<string, unknown>).source_id);
+		const secondStoragePath = String((secondBody.data as Record<string, unknown>).storage_path);
+		writeUploadedObject(secondSourceId, fixturePdf);
+
+		const secondComplete = await sessionPost(app, member, '/api/uploads/documents/complete', {
+			source_id: secondSourceId,
+			filename: 'member-duplicate.pdf',
+			storage_path: secondStoragePath,
+			start_pipeline: false,
+		});
+		expect(secondComplete.status).toBe(202);
+		const secondCompleteBody = await readJson(secondComplete);
+		const secondJobId = String((secondCompleteBody.data as Record<string, unknown>).job_id);
+		await processOneJob(workerContext, workerModule);
+
+		const memberStatus = await apiGet(
+			app,
+			String((secondCompleteBody.links as Record<string, unknown>).upload_status),
+			sessionHeaders(member),
+		);
+		expect(memberStatus.status).toBe(200);
+		const memberStatusBody = await readJson(memberStatus);
+		expect(memberStatusBody).toMatchObject({
+			data: {
+				job_id: secondJobId,
+				requested_source_id: secondSourceId,
+				job_status: 'completed',
+				result_status: 'completed_unavailable',
+				source: null,
+				pipeline: null,
+			},
+			links: {
+				job: `/api/jobs/${secondJobId}`,
+			},
+		});
+		expect(JSON.stringify(memberStatusBody)).not.toContain(firstSourceId);
+
+		const otherMember = seedSession('member');
+		const otherStatus = await apiGet(
+			app,
+			String((secondCompleteBody.links as Record<string, unknown>).upload_status),
+			sessionHeaders(otherMember),
+		);
+		expect(otherStatus.status).toBe(404);
+	});
+
+	it('QA-04c: upload finalization status rejects non-upload jobs', async () => {
+		const jobId = randomUUID();
+		insertJob({
+			id: jobId,
+			type: 'quality',
+			status: 'pending',
+			attempts: 0,
+			maxAttempts: 3,
+			payload: { sourceId: randomUUID() },
+		});
+
+		const response = await apiGet(app, `/api/uploads/documents/finalizations/${jobId}`);
+		expect(response.status).toBe(404);
+	});
+
+	it('QA-04d: failed upload finalization status stays sanitized for browser sessions', async () => {
+		const member = seedSession('member');
+		const jobId = randomUUID();
+		const sourceId = randomUUID();
+		insertJob({
+			id: jobId,
+			type: 'document_upload_finalize',
+			status: 'failed',
+			attempts: 1,
+			maxAttempts: 3,
+			workerId: 'worker-host-123',
+			errorLog: 'raw stack with storage path gs://private/source.pdf',
+			payload: {
+				sourceId,
+				filename: 'failed-upload.pdf',
+				storagePath: `raw/${sourceId}/original.pdf`,
+				submittedBy: {
+					userId: member.userId,
+					type: 'human',
+					role: 'member',
+				},
+			},
+		});
+
+		const response = await apiGet(app, `/api/uploads/documents/finalizations/${jobId}`, sessionHeaders(member));
+		expect(response.status).toBe(200);
+		const body = await readJson(response);
+		expect(body).toMatchObject({
+			data: {
+				job_id: jobId,
+				requested_source_id: sourceId,
+				job_status: 'failed',
+				result_status: 'failed',
+				source: null,
+				pipeline: null,
+			},
+		});
+		const serialized = JSON.stringify(body);
+		expect(serialized).not.toContain('payload');
+		expect(serialized).not.toContain('worker-host-123');
+		expect(serialized).not.toContain('private/source.pdf');
+
+		const jobDetail = await apiGet(app, `/api/jobs/${jobId}`);
+		expect(jobDetail.status).toBe(200);
+		expect(await readJson(jobDetail)).toMatchObject({
+			data: {
+				job: {
+					id: jobId,
+					error_log: 'raw stack with storage path gs://private/source.pdf',
+					payload: {
+						sourceId,
+					},
+					worker_id: 'worker-host-123',
+				},
+			},
 		});
 	});
 

@@ -55,7 +55,8 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 | Pipeline | `POST` | `/api/pipeline/retry` | HTTP partial. Retry exists; broader recovery/reprocess surface is missing. |
 | Uploads | `POST` | `/api/uploads/documents/initiate` | HTTP partial. Transport exists; product Add Sources UX is still gated. |
 | Uploads | `PUT` | `/api/uploads/documents/dev-upload` | Dev/local transport, not a production product primitive. |
-| Uploads | `POST` | `/api/uploads/documents/complete` | HTTP partial. Completes upload and enqueues work; provenance-first workflow still missing. |
+| Uploads | `POST` | `/api/uploads/documents/complete` | HTTP partial. Completes upload, enqueues work, and links to the safe upload-finalization status facade. |
+| Uploads | `GET` | `/api/uploads/documents/finalizations/:jobId` | HTTP partial. Browser-safe upload finalization status for Add Sources; prefer this over generic job payloads. |
 | Documents | `GET` | `/api/documents` | HTTP ready for All Sources list. |
 | Documents | `GET` | `/api/documents/:id` | HTTP ready for reader-safe source detail: provenance, original-source language, quality, sensitivity, collection, credibility, and reader links are present when available. |
 | Documents | `GET` | `/api/documents/:id/pdf` | HTTP ready for authenticated original-document reader. |
@@ -115,7 +116,7 @@ This list is based on `apps/api/src/routes/*` and `apps/api/src/app.ts`.
 
 | Capability | CLI/core status | HTTP status | App status | Gap |
 | --- | --- | --- | --- | --- |
-| Source ingestion | `ingest` and `pipeline run` exist. Core source/blob/provenance repositories exist. | Upload and pipeline routes exist, but product ingest is partial. | Add Sources disabled. | Need provenance-first Add Sources UX before activating upload for normal users. |
+| Source ingestion | `ingest` and `pipeline run` exist. Core source/blob/provenance repositories exist. | Upload, pipeline, and upload-finalization status routes exist, but product ingest is partial. | Add Sources disabled. | Need provenance-first Add Sources UX before activating upload for normal users. |
 | Source list | Source/document repositories exist. | `GET /api/documents` is mounted. | `/sources` active. | Good enough for read-only list. |
 | Source detail | Core has source, document quality, provenance, collection, sensitivity data. | `GET /api/documents/:id` is expanded for the reader. | Reader can use it defensively for header, provenance, quality, language, sensitivity, collection, and credibility context. | Custody-chain detail still belongs in a later provenance inspector. |
 | Original document | Blob storage and document routes exist. | `GET /api/documents/:id/pdf` is mounted. | Reader uses app-controlled PDF pane. | Good for v1 reader. Later add thumbnails/search/rotation only if needed. |

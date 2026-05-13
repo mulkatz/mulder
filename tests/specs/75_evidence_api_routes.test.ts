@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -12,6 +12,7 @@ const API_DIR = resolve(ROOT, 'apps/api');
 const CORE_DIST = resolve(CORE_DIR, 'dist/index.js');
 const API_APP_DIST = resolve(API_DIR, 'dist/app.js');
 const EXAMPLE_CONFIG = resolve(ROOT, 'mulder.config.example.yaml');
+const SESSION_SECRET = 'test-session-secret';
 
 interface ApiApp {
 	request: (input: string | Request, init?: RequestInit) => Promise<Response>;
@@ -58,6 +59,24 @@ function sqlJson(value: Record<string, unknown>): string {
 
 function cleanState(): void {
 	truncateMulderTables();
+}
+
+function hashSessionToken(token: string): string {
+	return createHash('sha256').update(`${SESSION_SECRET}:${token}`).digest('hex');
+}
+
+function seedSession(role: 'member' | 'admin' = 'member'): string {
+	const userId = randomUUID();
+	const token = `${role}-${randomUUID()}`;
+	db.runSql(
+		[
+			'INSERT INTO api_users (id, email, password_hash, role)',
+			`VALUES (${sqlString(userId)}, ${sqlString(`${role}-${randomUUID()}@example.test`)}, 'test-hash', ${sqlString(role)});`,
+			'INSERT INTO api_sessions (user_id, token_hash, expires_at)',
+			`VALUES (${sqlString(userId)}, ${sqlString(hashSessionToken(token))}, now() + interval '1 hour');`,
+		].join(' '),
+	);
+	return `mulder_session=${token}`;
 }
 
 function seedSource(opts: { filename: string; reliabilityScore?: number | null; status?: string }): string {
@@ -488,6 +507,27 @@ describe('Spec 75 — Evidence API Routes', () => {
 			},
 			clusters: {
 				count: 3,
+			},
+		});
+	});
+
+	it('QA-02b: browser members cannot read operator-only evidence snapshots', async () => {
+		if (!pgAvailable) {
+			return;
+		}
+
+		const response = await app.request('http://localhost/api/evidence/summary', {
+			method: 'GET',
+			headers: {
+				Cookie: seedSession('member'),
+				'X-Forwarded-For': '203.0.113.12',
+			},
+		});
+
+		expect(response.status).toBe(403);
+		expect(await response.json()).toMatchObject({
+			error: {
+				code: 'AUTH_FORBIDDEN',
 			},
 		});
 	});

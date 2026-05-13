@@ -60,7 +60,14 @@ export async function fulltextSearch(
 	//    via `includeQuestions: true`.
 	const excludeQuestions = options.includeQuestions !== true;
 	const hasStoryIds = Array.isArray(options.storyIds) && options.storyIds.length > 0;
-	const filter: { storyIds?: string[]; excludeQuestions?: boolean } = { excludeQuestions };
+	const filter: {
+		storyIds?: string[];
+		excludeQuestions?: boolean;
+		maxSensitivityLevel?: typeof options.maxSensitivityLevel;
+	} = {
+		excludeQuestions,
+		maxSensitivityLevel: options.maxSensitivityLevel,
+	};
 	if (hasStoryIds && options.storyIds) {
 		filter.storyIds = options.storyIds;
 	}

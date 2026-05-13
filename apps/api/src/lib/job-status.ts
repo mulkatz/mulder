@@ -1,4 +1,11 @@
-import type { Job, PipelineRun, PipelineRunSource, PipelineRunSourceStatus } from '@mulder/core';
+import type {
+	Job,
+	JobStatus,
+	MulderConfig,
+	PipelineRun,
+	PipelineRunSource,
+	PipelineRunSourceStatus,
+} from '@mulder/core';
 import {
 	countJobs,
 	countPipelineRunSourcesByStatus,
@@ -8,16 +15,39 @@ import {
 	findJobs,
 	findPipelineRunById,
 	findPipelineRunSourcesByRunId,
+	findSourceById,
 	getWorkerPool,
 	loadConfig,
+	MulderError,
 	PIPELINE_ERROR_CODES,
 	PipelineError,
 } from '@mulder/core';
 import type { Pool } from 'pg';
+import type { AuthPrincipal } from '../middleware/auth.js';
 import type { JobDetailResponse, JobListQuery, JobListResponse } from '../routes/jobs.schemas.js';
+import { allowedSensitivity, isOperatorPrincipal, resolveReadMaxSensitivity } from './api-runtime.js';
 
 interface JobStatusContext {
+	config: MulderConfig;
 	pool: Pool;
+}
+
+interface JobRouteOptions {
+	authPrincipal?: AuthPrincipal;
+}
+
+interface JobRow {
+	id: string;
+	type: string;
+	payload: Job['payload'] | string;
+	status: JobStatus;
+	attempts: number;
+	max_attempts: number;
+	error_log: string | null;
+	worker_id: string | null;
+	created_at: Date;
+	started_at: Date | null;
+	finished_at: Date | null;
 }
 
 interface JobProgress {
@@ -45,9 +75,7 @@ function resolveContext(): JobStatusContext {
 		);
 	}
 
-	return {
-		pool: getWorkerPool(config.gcp.cloud_sql),
-	};
+	return { config, pool: getWorkerPool(config.gcp.cloud_sql) };
 }
 
 function toIsoString(value: Date | null): string | null {
@@ -59,6 +87,61 @@ function resolveRunId(payload: Job['payload']): string | null {
 	return typeof candidate === 'string' && candidate.length > 0 ? candidate : null;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJobPayload(payload: Job['payload'] | string): Job['payload'] {
+	if (typeof payload !== 'string') {
+		return payload;
+	}
+	try {
+		const parsed: unknown = JSON.parse(payload);
+		return isPlainObject(parsed) ? parsed : {};
+	} catch {
+		return {};
+	}
+}
+
+function mapJobRow(row: JobRow): Job {
+	return {
+		id: row.id,
+		type: row.type,
+		payload: parseJobPayload(row.payload),
+		status: row.status,
+		attempts: row.attempts,
+		maxAttempts: row.max_attempts,
+		errorLog: row.error_log,
+		workerId: row.worker_id,
+		createdAt: row.created_at,
+		startedAt: row.started_at,
+		finishedAt: row.finished_at,
+	};
+}
+
+function readPayloadString(payload: Job['payload'], ...keys: string[]): string | null {
+	for (const key of keys) {
+		const value = payload[key];
+		if (typeof value === 'string' && value.trim().length > 0) {
+			return value.trim();
+		}
+	}
+	return null;
+}
+
+function resolveSourceId(payload: Job['payload']): string | null {
+	return readPayloadString(payload, 'sourceId', 'source_id');
+}
+
+function resolveSubmittedByUserId(payload: Job['payload']): string | null {
+	const submittedBy = payload.submittedBy ?? payload.submitted_by;
+	if (!isPlainObject(submittedBy)) {
+		return null;
+	}
+	const userId = submittedBy.userId ?? submittedBy.user_id;
+	return typeof userId === 'string' && userId.trim().length > 0 ? userId.trim() : null;
+}
+
 function mapJobSummary(job: Job): JobListResponse['data'][number] {
 	return {
 		id: job.id,
@@ -67,6 +150,22 @@ function mapJobSummary(job: Job): JobListResponse['data'][number] {
 		attempts: job.attempts,
 		max_attempts: job.maxAttempts,
 		worker_id: job.workerId,
+		created_at: job.createdAt.toISOString(),
+		started_at: toIsoString(job.startedAt),
+		finished_at: toIsoString(job.finishedAt),
+		links: {
+			self: `/api/jobs/${job.id}`,
+		},
+	};
+}
+
+function mapRedactedJobSummary(job: Job): JobListResponse['data'][number] {
+	return {
+		id: job.id,
+		type: job.type,
+		status: job.status,
+		attempts: job.attempts,
+		max_attempts: job.maxAttempts,
 		created_at: job.createdAt.toISOString(),
 		started_at: toIsoString(job.startedAt),
 		finished_at: toIsoString(job.finishedAt),
@@ -92,7 +191,51 @@ function mapJobDetail(job: Job): JobDetailResponse['data']['job'] {
 	};
 }
 
-async function resolveProgress(pool: Pool, job: Job): Promise<JobProgress | null> {
+function mapRedactedJobDetail(job: Job): JobDetailResponse['data']['job'] {
+	return {
+		...mapRedactedJobSummary(job),
+	};
+}
+
+function emptySourceCounts(): Record<PipelineRunSourceStatus, number> {
+	return {
+		pending: 0,
+		processing: 0,
+		completed: 0,
+		failed: 0,
+	};
+}
+
+function countProgressSources(sources: PipelineRunSource[]): Record<PipelineRunSourceStatus, number> {
+	const counts = emptySourceCounts();
+	for (const source of sources) {
+		counts[source.status]++;
+	}
+	return counts;
+}
+
+async function filterVisibleProgressSources(
+	pool: Pool,
+	sources: PipelineRunSource[],
+	maxSensitivityLevel: ReturnType<typeof resolveReadMaxSensitivity>,
+): Promise<PipelineRunSource[]> {
+	if (!maxSensitivityLevel) {
+		return sources;
+	}
+	const visible = await Promise.all(
+		sources.map(async (source) => ({
+			source,
+			visible: Boolean(await findSourceById(pool, source.sourceId, { maxSensitivityLevel })),
+		})),
+	);
+	return visible.filter((entry) => entry.visible).map((entry) => entry.source);
+}
+
+async function resolveProgress(
+	pool: Pool,
+	job: Job,
+	options?: { redacted?: boolean; maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity> },
+): Promise<JobProgress | null> {
 	const runId = resolveRunId(job.payload);
 	if (!runId) {
 		return null;
@@ -107,54 +250,167 @@ async function resolveProgress(pool: Pool, job: Job): Promise<JobProgress | null
 		return null;
 	}
 
-	const sources = await findPipelineRunSourcesByRunId(pool, runId);
+	const allSources = await findPipelineRunSourcesByRunId(pool, runId);
+	const sources = options?.redacted
+		? await filterVisibleProgressSources(pool, allSources, options.maxSensitivityLevel)
+		: allSources;
 
 	return {
 		run_id: run.id,
 		run_status: run.status,
-		source_counts: sourceCounts,
+		source_counts: options?.redacted ? countProgressSources(sources) : sourceCounts,
 		sources: sources.map((source) => ({
 			source_id: source.sourceId,
 			current_step: source.currentStep,
 			status: source.status,
-			error_message: source.errorMessage,
+			error_message: options?.redacted ? null : source.errorMessage,
 			updated_at: source.updatedAt.toISOString(),
 		})),
 	};
 }
 
-export async function listRecentJobs(input: JobListQuery): Promise<JobListResponse> {
-	const { pool } = resolveContext();
-	const filter = {
-		type: input.type,
-		status: input.status,
-		workerId: input.worker_id,
-	};
-	const [count, jobs] = await Promise.all([
-		countJobs(pool, filter),
-		findJobs(pool, {
-			...filter,
-			limit: input.limit,
-		}),
-	]);
+function buildJobFilterSql(input: JobListQuery): { conditions: string[]; params: unknown[] } {
+	const conditions: string[] = [];
+	const params: unknown[] = [];
+	if (input.type) {
+		params.push(input.type);
+		conditions.push(`type = $${params.length}`);
+	}
+	if (input.status) {
+		params.push(input.status);
+		conditions.push(`status = $${params.length}`);
+	}
+	if (input.worker_id) {
+		params.push(input.worker_id);
+		conditions.push(`worker_id = $${params.length}`);
+	}
+	return { conditions, params };
+}
 
+async function listVisibleJobsForPrincipal(
+	pool: Pool,
+	input: JobListQuery,
+	authPrincipal: Extract<AuthPrincipal, { type: 'session' }>,
+	maxSensitivityLevel: ReturnType<typeof resolveReadMaxSensitivity>,
+): Promise<JobListResponse> {
+	const { conditions, params } = buildJobFilterSql(input);
+	params.push(authPrincipal.userId);
+	const userParam = params.length;
+	const allowed = allowedSensitivity(maxSensitivityLevel);
+	const sensitivityClause = allowed ? `AND sources.sensitivity_level = ANY($${params.push(allowed)})` : '';
+	conditions.push(`
+		(
+			COALESCE(payload->'submittedBy'->>'userId', payload->'submitted_by'->>'user_id') = $${userParam}
+			OR EXISTS (
+				SELECT 1
+				FROM sources
+				WHERE sources.id::text = COALESCE(jobs.payload->>'sourceId', jobs.payload->>'source_id')
+				  AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+				  ${sensitivityClause}
+			)
+		)
+	`);
+	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+	const countResult = await pool.query<{ count: string }>(`SELECT COUNT(*) AS count FROM jobs ${whereClause}`, params);
+	const pageParams = [...params, input.limit];
+	const result = await pool.query<JobRow>(
+		`
+			SELECT *
+			FROM jobs
+			${whereClause}
+			ORDER BY created_at DESC, id DESC
+			LIMIT $${pageParams.length}
+		`,
+		pageParams,
+	);
 	return {
-		data: jobs.map(mapJobSummary),
+		data: result.rows.map(mapJobRow).map(mapRedactedJobSummary),
 		meta: {
-			count,
+			count: Number.parseInt(countResult.rows[0]?.count ?? '0', 10) || 0,
 			limit: input.limit,
 		},
 	};
 }
 
-export async function getJobStatusById(id: string): Promise<JobDetailResponse> {
-	const { pool } = resolveContext();
+async function canReadJob(
+	pool: Pool,
+	job: Job,
+	authPrincipal: Extract<AuthPrincipal, { type: 'session' }>,
+	maxSensitivityLevel: ReturnType<typeof resolveReadMaxSensitivity>,
+): Promise<boolean> {
+	if (resolveSubmittedByUserId(job.payload) === authPrincipal.userId) {
+		return true;
+	}
+	const sourceId = resolveSourceId(job.payload);
+	if (!sourceId) {
+		return false;
+	}
+	return Boolean(await findSourceById(pool, sourceId, { maxSensitivityLevel }));
+}
+
+export async function listRecentJobs(input: JobListQuery, options?: JobRouteOptions): Promise<JobListResponse> {
+	const { config, pool } = resolveContext();
+	const filter = {
+		type: input.type,
+		status: input.status,
+		workerId: input.worker_id,
+	};
+	if (!options?.authPrincipal || isOperatorPrincipal(options.authPrincipal)) {
+		const [count, jobs] = await Promise.all([
+			countJobs(pool, filter),
+			findJobs(pool, {
+				...filter,
+				limit: input.limit,
+			}),
+		]);
+		return {
+			data: jobs.map(mapJobSummary),
+			meta: {
+				count,
+				limit: input.limit,
+			},
+		};
+	}
+
+	const authPrincipal = options.authPrincipal;
+	if (authPrincipal.type !== 'session') {
+		throw new MulderError('The current principal cannot inspect jobs', 'AUTH_FORBIDDEN', {
+			context: { resource: 'jobs' },
+		});
+	}
+	const maxSensitivityLevel = resolveReadMaxSensitivity(config, authPrincipal, 'jobs');
+	return await listVisibleJobsForPrincipal(pool, input, authPrincipal, maxSensitivityLevel);
+}
+
+export async function getJobStatusById(id: string, options?: JobRouteOptions): Promise<JobDetailResponse> {
+	const { config, pool } = resolveContext();
 	const job = await findJobById(pool, id);
 
 	if (!job) {
 		throw new DatabaseError(`Job not found: ${id}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
 			context: { id },
 		});
+	}
+
+	if (options?.authPrincipal && !isOperatorPrincipal(options.authPrincipal)) {
+		const authPrincipal = options.authPrincipal;
+		if (authPrincipal.type !== 'session') {
+			throw new DatabaseError(`Job not found: ${id}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+				context: { id },
+			});
+		}
+		const maxSensitivityLevel = resolveReadMaxSensitivity(config, authPrincipal, 'jobs');
+		if (!(await canReadJob(pool, job, authPrincipal, maxSensitivityLevel))) {
+			throw new DatabaseError(`Job not found: ${id}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+				context: { id },
+			});
+		}
+		return {
+			data: {
+				job: mapRedactedJobDetail(job),
+				progress: await resolveProgress(pool, job, { redacted: true, maxSensitivityLevel }),
+			},
+		};
 	}
 
 	return {

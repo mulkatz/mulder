@@ -29,7 +29,14 @@ type Queryable = pg.Pool | pg.PoolClient;
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'edge-repository' });
 
-function edgeActiveSourceClause(edgeAlias: string): string {
+function edgeActiveSourceClause(edgeAlias: string, sensitivityParam?: number): string {
+	const sourceSensitivityClause = sensitivityParam ? `AND edge_src.sensitivity_level = ANY($${sensitivityParam})` : '';
+	const storySensitivityClause = sensitivityParam
+		? `
+          AND edge_story.sensitivity_level = ANY($${sensitivityParam})
+          AND edge_story_src.sensitivity_level = ANY($${sensitivityParam})
+        `
+		: '';
 	return `
     (
       EXISTS (
@@ -37,6 +44,7 @@ function edgeActiveSourceClause(edgeAlias: string): string {
         FROM jsonb_array_elements_text(COALESCE(${edgeAlias}.provenance->'source_document_ids', '[]'::jsonb)) AS edge_sources(source_id)
         JOIN sources edge_src ON edge_src.id::text = edge_sources.source_id
         WHERE edge_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+          ${sourceSensitivityClause}
       )
       OR EXISTS (
         SELECT 1
@@ -44,6 +52,7 @@ function edgeActiveSourceClause(edgeAlias: string): string {
         JOIN sources edge_story_src ON edge_story_src.id = edge_story.source_id
         WHERE edge_story.id = ${edgeAlias}.story_id
           AND edge_story_src.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+          ${storySensitivityClause}
       )
       OR (
         ${edgeAlias}.story_id IS NULL
@@ -626,6 +635,7 @@ export async function countEdges(pool: pg.Pool, filter?: EdgeFilter): Promise<nu
 	const conditions: string[] = [];
 	const params: unknown[] = [];
 	let paramIndex = 1;
+	let sensitivityParam: number | undefined;
 
 	if (filter?.sourceEntityId) {
 		conditions.push(`ee.source_entity_id = $${paramIndex}`);
@@ -656,13 +666,30 @@ export async function countEdges(pool: pg.Pool, filter?: EdgeFilter): Promise<nu
 		params.push(filter.relationship);
 		paramIndex++;
 	}
-	if (!filter?.includeDeleted) {
-		conditions.push(edgeActiveSourceClause('ee'));
-	}
 	if (filter?.maxSensitivityLevel) {
-		conditions.push(`ee.sensitivity_level = ANY($${paramIndex})`);
+		sensitivityParam = paramIndex;
+		conditions.push(`ee.sensitivity_level = ANY($${sensitivityParam})`);
+		conditions.push(`
+      EXISTS (
+        SELECT 1
+        FROM entities edge_source_entity
+        WHERE edge_source_entity.id = ee.source_entity_id
+          AND edge_source_entity.sensitivity_level = ANY($${sensitivityParam})
+      )
+    `);
+		conditions.push(`
+      EXISTS (
+        SELECT 1
+        FROM entities edge_target_entity
+        WHERE edge_target_entity.id = ee.target_entity_id
+          AND edge_target_entity.sensitivity_level = ANY($${sensitivityParam})
+      )
+    `);
 		params.push(allowedSensitivityLevelsForMax(filter.maxSensitivityLevel));
 		paramIndex++;
+	}
+	if (!filter?.includeDeleted) {
+		conditions.push(edgeActiveSourceClause('ee', sensitivityParam));
 	}
 
 	const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
