@@ -450,6 +450,9 @@ export async function execute(
 		sensitivityAutoDetectionEnabled,
 		sensitivityLevels: sensitivityConfig.levels,
 		piiTypes: sensitivityConfig.pii_types,
+		strictOntologyEnums: false,
+		strictAttributeSchema: false,
+		boundedConfidence: false,
 	};
 	const jsonSchema = generateExtractionSchema(ontology, extractionSchemaOptions);
 	const responseSchema = getExtractionResponseSchema(ontology, extractionSchemaOptions);
@@ -775,15 +778,7 @@ export async function execute(
 		credibilityProfileCreated = credibilityResult.created;
 		credibilityProfileStatus = credibilityResult.status;
 
-		let credibilityErrorMessage: string | undefined;
 		if (credibilityResult.status === 'failed') {
-			credibilityErrorMessage = `Source credibility draft generation failed: ${
-				credibilityResult.reason ?? 'unknown error'
-			}`;
-			errors.push({
-				code: ENRICH_ERROR_CODES.ENRICH_LLM_FAILED,
-				message: credibilityErrorMessage,
-			});
 			log.warn(
 				{ sourceId: story.sourceId, reason: credibilityResult.reason },
 				'Source credibility draft generation failed non-fatally',
@@ -793,9 +788,9 @@ export async function execute(
 		await upsertSourceStep(pool, {
 			sourceId: story.sourceId,
 			stepName: STEP_NAME,
-			status: credibilityResult.status === 'failed' ? 'partial' : 'completed',
+			status: 'completed',
 			configHash: stepConfigHash,
-			errorMessage: credibilityErrorMessage,
+			errorMessage: undefined,
 		});
 	} else {
 		await upsertSourceStep(pool, {

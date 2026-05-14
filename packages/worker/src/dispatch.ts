@@ -21,14 +21,17 @@ import {
 	extractPdfMetadata,
 	findCollectionById,
 	findDocumentBlobByHash,
+	findLatestPipelineRunSourceForSource,
 	findSourceByCrossFormatDedupKey,
 	findSourceByHash,
 	findSourceById,
 	findStoriesBySourceId,
+	getStepConfigHash,
 	INGEST_ERROR_CODES,
 	IngestError,
 	recordIngestProvenance,
 	recordIngestProvenanceInTransaction,
+	updateSourceStatus,
 	upsertDocumentBlob,
 	upsertPipelineRunSource,
 	upsertSourceStep,
@@ -71,6 +74,7 @@ import {
 	type WorkerDispatchFn,
 	WorkerError,
 	type WorkerJobEnvelope,
+	type WorkerPipelineStepName,
 } from './worker.types.js';
 
 export interface DispatchResult {
@@ -106,6 +110,136 @@ function assertPipelineRunCompleted(job: WorkerJobEnvelope, status: string): voi
 }
 
 const BROWSER_UPLOAD_PIPELINE_TAG = 'browser-upload';
+const PIPELINE_RESUME_DUPLICATE_UPLOAD_TAG = 'duplicate-upload-resume';
+const WORKER_PIPELINE_STEPS: readonly WorkerPipelineStepName[] = [
+	'quality',
+	'extract',
+	'segment',
+	'enrich',
+	'embed',
+	'graph',
+];
+const PIPELINE_JOB_TYPES = ['pipeline_run', ...WORKER_PIPELINE_STEPS] as const;
+const WORKER_PIPELINE_STEP_SET = new Set<string>(WORKER_PIPELINE_STEPS);
+
+interface InFlightPipelineJobRow {
+	id: string;
+	run_id: string | null;
+}
+
+interface DuplicatePipelineResume {
+	pipeline_job_id?: string;
+	pipeline_run_id?: string;
+}
+
+function isWorkerPipelineStep(value: string | null | undefined): value is WorkerPipelineStepName {
+	return typeof value === 'string' && WORKER_PIPELINE_STEP_SET.has(value);
+}
+
+function isTerminalSourceStatus(status: string): boolean {
+	return status === 'graphed' || status === 'analyzed';
+}
+
+function sourceStatusForStoryStep(jobType: 'enrich' | 'embed' | 'graph'): 'enriched' | 'embedded' | 'graphed' {
+	switch (jobType) {
+		case 'enrich':
+			return 'enriched';
+		case 'embed':
+			return 'embedded';
+		case 'graph':
+			return 'graphed';
+	}
+}
+
+async function findInFlightPipelineJob(pool: pg.Pool, sourceId: string): Promise<InFlightPipelineJobRow | null> {
+	const result = await pool.query<InFlightPipelineJobRow>(
+		`
+			SELECT id, payload->>'runId' AS run_id
+			FROM jobs
+			WHERE type = ANY($2::text[])
+				AND status IN ('pending', 'running')
+				AND COALESCE(payload->>'sourceId', payload->>'source_id') = $1
+			ORDER BY created_at DESC
+			LIMIT 1
+		`,
+		[sourceId, PIPELINE_JOB_TYPES],
+	);
+	return result.rows[0] ?? null;
+}
+
+async function maybeEnqueueDuplicatePipelineResume(
+	pool: pg.Pool,
+	source: { id: string; status: string },
+	startPipeline: boolean | undefined,
+): Promise<DuplicatePipelineResume> {
+	if (startPipeline === false) {
+		return {};
+	}
+
+	const inFlight = await findInFlightPipelineJob(pool, source.id);
+	if (inFlight) {
+		return {
+			pipeline_job_id: inFlight.id,
+			...(inFlight.run_id ? { pipeline_run_id: inFlight.run_id } : {}),
+		};
+	}
+
+	const latest = await findLatestPipelineRunSourceForSource(pool, source.id);
+	const failedStep =
+		latest?.status === 'failed' && isWorkerPipelineStep(latest.currentStep) ? latest.currentStep : null;
+	if (!failedStep && isTerminalSourceStatus(source.status)) {
+		return {};
+	}
+
+	const firstStep = failedStep ?? 'quality';
+	const force = Boolean(failedStep);
+	const client = await pool.connect();
+	try {
+		await client.query('BEGIN');
+		const run = await createPipelineRun(client, {
+			tag: PIPELINE_RESUME_DUPLICATE_UPLOAD_TAG,
+			options: {
+				source_id: source.id,
+				from: firstStep,
+				up_to: null,
+				force,
+				retry: force,
+				trigger: 'duplicate_upload_resume',
+			},
+		});
+		const pipelineJob = await enqueueJob(client, {
+			type: firstStep,
+			payload: {
+				sourceId: source.id,
+				runId: run.id,
+				upTo: 'graph',
+				force,
+				tag: PIPELINE_RESUME_DUPLICATE_UPLOAD_TAG,
+			},
+			maxAttempts: 3,
+		});
+		await upsertPipelineRunSource(client, {
+			runId: run.id,
+			sourceId: source.id,
+			currentStep: failedStep ?? 'ingest',
+			status: 'pending',
+		});
+		await client.query('COMMIT');
+		return {
+			pipeline_job_id: pipelineJob.id,
+			pipeline_run_id: run.id,
+		};
+	} catch (error) {
+		try {
+			await client.query('ROLLBACK');
+		} catch {
+			// Ignore rollback failures and surface the original error.
+		}
+		throw error;
+	} finally {
+		client.release();
+	}
+}
 
 function isProvisionalRawUploadPath(storagePath: string): boolean {
 	return /^raw\/[^/]+\/original\.[a-z0-9][a-z0-9-]*$/u.test(storagePath);
@@ -304,37 +438,41 @@ async function runStoryStepForPayload(
 		pool: import('pg').Pool;
 		log: ReturnType<typeof createChildLogger>;
 	},
-): Promise<{ status: 'success'; story_count: number }> {
+): Promise<{ status: 'success' | 'partial' | 'failed'; story_count: number }> {
 	const { config, services, pool, log } = context;
 	const force = payload.force ?? false;
 
 	if (payload.storyId) {
+		let status: 'success' | 'partial' | 'failed';
 		if (jobType === 'enrich') {
-			await executeEnrich(
+			const result = await executeEnrich(
 				{ storyId: payload.storyId, force, extractionPipelineRun: payload.runId ?? null },
 				config,
 				services,
 				pool,
 				log,
 			);
+			status = result.status;
 		} else if (jobType === 'embed') {
-			await executeEmbed(
+			const result = await executeEmbed(
 				{ storyId: payload.storyId, force, extractionPipelineRun: payload.runId ?? null },
 				config,
 				services,
 				pool,
 				log,
 			);
+			status = result.status;
 		} else {
-			await executeGraph(
+			const result = await executeGraph(
 				{ storyId: payload.storyId, force, extractionPipelineRun: payload.runId ?? null },
 				config,
 				services,
 				pool,
 				log,
 			);
+			status = result.status;
 		}
-		return { status: 'success', story_count: 1 };
+		return { status, story_count: 1 };
 	}
 
 	if (!payload.sourceId) {
@@ -345,37 +483,75 @@ async function runStoryStepForPayload(
 	}
 
 	const stories = await findStoriesBySourceId(pool, payload.sourceId);
-	let processed = 0;
-	for (const story of stories) {
-		if (jobType === 'enrich') {
-			await executeEnrich(
-				{ storyId: story.id, force, extractionPipelineRun: payload.runId ?? null },
-				config,
-				services,
-				pool,
-				log,
-			);
-		} else if (jobType === 'embed') {
-			await executeEmbed(
-				{ storyId: story.id, force, extractionPipelineRun: payload.runId ?? null },
-				config,
-				services,
-				pool,
-				log,
-			);
-		} else {
-			await executeGraph(
-				{ storyId: story.id, force, extractionPipelineRun: payload.runId ?? null },
-				config,
-				services,
-				pool,
-				log,
-			);
-		}
-		processed++;
+	if (stories.length === 0) {
+		log.warn({ sourceId: payload.sourceId, step: jobType }, 'No stories found for story-scoped pipeline step');
+		return { status: 'failed', story_count: 0 };
 	}
 
-	return { status: 'success', story_count: processed };
+	let processed = 0;
+	let failed = 0;
+	let partial = 0;
+	for (const story of stories) {
+		let status: 'success' | 'partial' | 'failed';
+		if (jobType === 'enrich') {
+			const result = await executeEnrich(
+				{ storyId: story.id, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
+			status = result.status;
+		} else if (jobType === 'embed') {
+			const result = await executeEmbed(
+				{ storyId: story.id, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
+			status = result.status;
+		} else {
+			const result = await executeGraph(
+				{ storyId: story.id, force, extractionPipelineRun: payload.runId ?? null },
+				config,
+				services,
+				pool,
+				log,
+			);
+			status = result.status;
+		}
+		processed++;
+		if (status === 'failed') {
+			failed++;
+		} else if (status === 'partial') {
+			partial++;
+		}
+	}
+
+	const status = failed > 0 ? 'failed' : partial > 0 ? 'partial' : 'success';
+	log.info(
+		{ sourceId: payload.sourceId, step: jobType, processed, partial, failed },
+		'Story-scoped step aggregate complete',
+	);
+	if (status === 'success') {
+		const nextSourceStatus = sourceStatusForStoryStep(jobType);
+		await updateSourceStatus(pool, payload.sourceId, nextSourceStatus);
+		await upsertSourceStep(pool, {
+			sourceId: payload.sourceId,
+			stepName: jobType,
+			status: 'completed',
+			configHash: getStepConfigHash(config, jobType),
+		});
+		services.firestore
+			.setDocument('documents', payload.sourceId, {
+				status: nextSourceStatus,
+			})
+			.catch(() => {
+				// Observability projection remains best-effort.
+			});
+	}
+	return { status, story_count: processed };
 }
 
 async function finalizeUploadedDocument(
@@ -394,9 +570,11 @@ async function finalizeUploadedDocument(
 		if (payload.storagePath !== existingSource.storagePath && isProvisionalRawUploadPath(payload.storagePath)) {
 			await services.storage.delete(payload.storagePath);
 		}
+		const pipelineResume = await maybeEnqueueDuplicatePipelineResume(pool, existingSource, payload.startPipeline);
 		return {
 			result_status: 'created',
 			resolved_source_id: existingSource.id,
+			...pipelineResume,
 		};
 	}
 
@@ -504,10 +682,12 @@ async function finalizeUploadedDocument(
 			}),
 		);
 		await services.storage.delete(payload.storagePath);
+		const pipelineResume = await maybeEnqueueDuplicatePipelineResume(pool, duplicateSource, payload.startPipeline);
 		return {
 			result_status: 'duplicate',
 			resolved_source_id: duplicateSource.id,
 			duplicate_of_source_id: duplicateSource.id,
+			...pipelineResume,
 		};
 	}
 
@@ -735,10 +915,16 @@ async function finalizeUploadedDocument(
 				{ sourceId: existingCrossFormatSource.id, crossFormatDedupKey },
 				'Cross-format duplicate upload detected, skipping source creation',
 			);
+			const pipelineResume = await maybeEnqueueDuplicatePipelineResume(
+				pool,
+				existingCrossFormatSource,
+				payload.startPipeline,
+			);
 			return {
 				result_status: 'duplicate',
 				resolved_source_id: existingCrossFormatSource.id,
 				duplicate_of_source_id: existingCrossFormatSource.id,
+				...pipelineResume,
 			};
 		}
 	}
@@ -794,10 +980,12 @@ async function finalizeUploadedDocument(
 			if (shouldCleanupOriginalUpload) {
 				await services.storage.delete(payload.storagePath);
 			}
+			const pipelineResume = await maybeEnqueueDuplicatePipelineResume(pool, source, payload.startPipeline);
 			return {
 				result_status: 'duplicate',
 				resolved_source_id: source.id,
 				duplicate_of_source_id: source.id,
+				...pipelineResume,
 			};
 		}
 

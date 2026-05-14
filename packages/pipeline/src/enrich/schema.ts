@@ -23,6 +23,9 @@ export interface ExtractionSchemaOptions {
 	sensitivityAutoDetectionEnabled?: boolean;
 	sensitivityLevels?: readonly SensitivityLevel[];
 	piiTypes?: readonly PIIType[];
+	strictOntologyEnums?: boolean;
+	strictAttributeSchema?: boolean;
+	boundedConfidence?: boolean;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -124,6 +127,28 @@ function buildAttributesSchemaV3(entityTypes: readonly EntityTypeConfig[]): z3.Z
 	return z3.object(shape);
 }
 
+function useStrictOntologyEnums(options?: ExtractionSchemaOptions): boolean {
+	return options?.strictOntologyEnums ?? true;
+}
+
+function useStrictAttributeSchema(options?: ExtractionSchemaOptions): boolean {
+	return options?.strictAttributeSchema ?? true;
+}
+
+function useBoundedConfidence(options?: ExtractionSchemaOptions): boolean {
+	return options?.boundedConfidence ?? true;
+}
+
+function confidenceSchemaV3(options?: ExtractionSchemaOptions): z3.ZodNumber {
+	const schema = z3.number();
+	return useBoundedConfidence(options) ? schema.min(0).max(1) : schema;
+}
+
+function confidenceSchemaV4(options?: ExtractionSchemaOptions): z.ZodNumber {
+	const schema = z.number();
+	return useBoundedConfidence(options) ? schema.min(0).max(1) : schema;
+}
+
 /**
  * Builds the full extraction response Zod v3 schema for JSON Schema generation.
  */
@@ -187,13 +212,18 @@ function buildExtractionResponseSchemaV3(
 	const entityTypeNames = getEntityTypeNames(ontology);
 	const relationshipNames = ontology.relationships.map((r) => r.name).sort();
 
-	const attributesSchema = buildAttributesSchemaV3(ontology.entity_types);
+	const strictEnums = useStrictOntologyEnums(options);
+	const attributesSchema = useStrictAttributeSchema(options)
+		? buildAttributesSchemaV3(ontology.entity_types)
+		: z3.object({}).passthrough();
 
 	// Entity schema
 	const entityShapeV3: z3.ZodRawShape = {
 		name: z3.string().describe('The canonical name of the entity'),
-		type: z3.enum(entityTypeNames as [string, ...string[]]).describe('The entity type from the ontology'),
-		confidence: z3.number().min(0).max(1).describe('Confidence score for entity extraction (0-1)'),
+		type: strictEnums
+			? z3.enum(entityTypeNames as [string, ...string[]]).describe('The entity type from the ontology')
+			: z3.string().describe('The entity type from the ontology'),
+		confidence: confidenceSchemaV3(options).describe('Confidence score for entity extraction (0-1)'),
 		attributes: attributesSchema.describe('Entity attributes based on its type'),
 		mentions: z3.array(z3.string()).describe('All text mentions/aliases of this entity in the story'),
 	};
@@ -207,10 +237,10 @@ function buildExtractionResponseSchemaV3(
 		source_entity: z3.string().describe('Name of the source entity'),
 		target_entity: z3.string().describe('Name of the target entity'),
 		relationship_type:
-			relationshipNames.length > 0
+			strictEnums && relationshipNames.length > 0
 				? z3.enum(relationshipNames as [string, ...string[]]).describe('Relationship type from the ontology')
 				: z3.string().describe('Relationship type'),
-		confidence: z3.number().min(0).max(1).describe('Confidence score for relationship extraction (0-1)'),
+		confidence: confidenceSchemaV3(options).describe('Confidence score for relationship extraction (0-1)'),
 		attributes: z3.object({}).passthrough().optional().describe('Optional relationship attributes'),
 	};
 	if (options?.sensitivityAutoDetectionEnabled) {
@@ -302,13 +332,16 @@ function buildExtractionResponseSchemaV4(ontology: OntologyConfig, options?: Ext
 	const entityTypeNames = getEntityTypeNames(ontology);
 	const relationshipNames = ontology.relationships.map((r) => r.name).sort();
 
-	const attributesSchema = buildAttributesSchemaV4(ontology.entity_types);
+	const strictEnums = useStrictOntologyEnums(options);
+	const attributesSchema = useStrictAttributeSchema(options)
+		? buildAttributesSchemaV4(ontology.entity_types)
+		: z.object({}).passthrough();
 
 	// Entity schema
 	const entityShapeV4 = {
 		name: z.string(),
-		type: z.enum(entityTypeNames as [string, ...string[]]),
-		confidence: z.number().min(0).max(1),
+		type: strictEnums ? z.enum(entityTypeNames as [string, ...string[]]) : z.string(),
+		confidence: confidenceSchemaV4(options),
 		attributes: attributesSchema,
 		mentions: z.array(z.string()),
 	};
@@ -323,8 +356,9 @@ function buildExtractionResponseSchemaV4(ontology: OntologyConfig, options?: Ext
 	const relationshipShapeV4 = {
 		source_entity: z.string(),
 		target_entity: z.string(),
-		relationship_type: relationshipNames.length > 0 ? z.enum(relationshipNames as [string, ...string[]]) : z.string(),
-		confidence: z.number().min(0).max(1),
+		relationship_type:
+			strictEnums && relationshipNames.length > 0 ? z.enum(relationshipNames as [string, ...string[]]) : z.string(),
+		confidence: confidenceSchemaV4(options),
 		attributes: z.optional(z.record(z.string(), z.unknown())),
 	};
 	const relationshipSchemaV4 = options?.sensitivityAutoDetectionEnabled

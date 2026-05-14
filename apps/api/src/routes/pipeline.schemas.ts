@@ -26,11 +26,22 @@ export const PipelineRunRequestSchema = z
 		}
 	});
 
-export const PipelineRetryRequestSchema = z.object({
-	source_id: z.string().uuid(),
-	step: PipelineStepSchema.optional(),
-	tag: z.string().min(1).max(128).optional(),
-});
+export const PipelineRetryRequestSchema = z
+	.object({
+		source_id: z.string().uuid(),
+		step: PipelineStepSchema.optional(),
+		up_to: PipelineStepSchema.optional(),
+		tag: z.string().min(1).max(128).optional(),
+	})
+	.superRefine((value, ctx) => {
+		if (value.step && value.up_to && stepIndex(value.step) > stepIndex(value.up_to)) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['step'],
+				message: '`step` must not come after `up_to`',
+			});
+		}
+	});
 
 export const PipelineAcceptedJobSchema = z.object({
 	data: z.object({
