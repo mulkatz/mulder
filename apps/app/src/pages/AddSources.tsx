@@ -164,6 +164,7 @@ export function AddSourcesPage() {
 	const [autofillWarnings, setAutofillWarnings] = useState<string[]>([]);
 	const [autofillError, setAutofillError] = useState<string | undefined>();
 	const [autofillPending, setAutofillPending] = useState(false);
+	const [autofillSkipped, setAutofillSkipped] = useState(false);
 
 	const selectedCollection = collections.find((collection) => collection.collection_id === collectionId);
 	const selectedDefaults = collectionDefaultsText(selectedCollection, t);
@@ -196,6 +197,7 @@ export function AddSourcesPage() {
 		setAiSuggestedFields([]);
 		setAutofillWarnings([]);
 		setAutofillError(undefined);
+		setAutofillSkipped(false);
 		upload.reset();
 	}
 
@@ -288,6 +290,7 @@ export function AddSourcesPage() {
 		setAutofillPending(true);
 		setAutofillError(undefined);
 		setAutofillWarnings([]);
+		setAutofillSkipped(false);
 		try {
 			const response = await upload.enrichProvenance(
 				`autofill:${fileSelectionId}:0`,
@@ -438,13 +441,20 @@ export function AddSourcesPage() {
 								<button
 									className="inline-flex h-9 items-center rounded-md px-3 text-sm text-text-muted transition-colors hover:bg-field hover:text-text"
 									onClick={() => {
+										setIntakeSuggestionId(undefined);
+										setAiSuggestedFields([]);
 										setAutofillError(undefined);
 										setAutofillWarnings([]);
+										setAutofillSkipped(true);
 									}}
+									disabled={files.length === 0 || autofillPending || autofillSkipped}
 									type="button"
 								>
-									{t('addSources.continueWithoutSuggestions')}
+									{autofillSkipped ? t('addSources.autofillSkipped') : t('addSources.continueWithoutSuggestions')}
 								</button>
+								{autofillSkipped ? (
+									<span className="text-xs text-text-subtle">{t('addSources.autofillSkippedHelp')}</span>
+								) : null}
 							</div>
 						</div>
 						{autofillError ? <StateNotice tone="error" title={autofillError} /> : null}
