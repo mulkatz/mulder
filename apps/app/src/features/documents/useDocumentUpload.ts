@@ -54,9 +54,31 @@ export interface DocumentUploadRow {
 	error?: string;
 	failedStep?: DocumentUploadFailedStep;
 	jobId?: string;
+	pipelineRunId?: string | null;
+	processingJobId?: string | null;
 	retryMode?: DocumentUploadRetryMode;
 	source?: UploadFinalizationStatusResponse['data']['source'];
 	uploadStatusUrl?: string;
+}
+
+export function mapFinalizationToUploadRowPatch(
+	finalization: UploadFinalizationStatusResponse,
+): Pick<
+	DocumentUploadRow,
+	'failedStep' | 'jobId' | 'pipelineRunId' | 'processingJobId' | 'retryMode' | 'source' | 'status'
+> & { error: undefined } {
+	const resultStatus = finalization.data.result_status;
+	const failed = resultStatus === 'failed' || resultStatus === 'dead_letter';
+	return {
+		error: undefined,
+		failedStep: failed ? 'pipeline_processing' : undefined,
+		jobId: finalization.data.job_id,
+		pipelineRunId: finalization.data.pipeline?.run_id ?? null,
+		processingJobId: finalization.data.pipeline?.job_id ?? null,
+		retryMode: failed ? 'open_processing' : undefined,
+		source: finalization.data.source,
+		status: resultStatus === 'pending' ? 'processing' : resultStatus,
+	};
 }
 
 interface PreparedUpload {
@@ -296,15 +318,7 @@ export function useDocumentUpload() {
 					const finalization = await apiFetch<UploadFinalizationStatusResponse>(uploadStatusUrl);
 					const resultStatus = finalization.data.result_status;
 					if (resultStatus !== 'pending') {
-						updateRow(rowId, {
-							error: undefined,
-							failedStep:
-								resultStatus === 'failed' || resultStatus === 'dead_letter' ? 'pipeline_processing' : undefined,
-							jobId: finalization.data.job_id,
-							retryMode: resultStatus === 'failed' || resultStatus === 'dead_letter' ? 'open_processing' : undefined,
-							source: finalization.data.source,
-							status: resultStatus,
-						});
+						updateRow(rowId, mapFinalizationToUploadRowPatch(finalization));
 						if (resultStatus === 'created' || resultStatus === 'duplicate') {
 							void queryClient.invalidateQueries({ queryKey: ['documents'] });
 						}
@@ -378,6 +392,8 @@ export function useDocumentUpload() {
 				updateRow(row.id, {
 					jobId: completed.data.job_id,
 					failedStep: undefined,
+					pipelineRunId: null,
+					processingJobId: null,
 					retryMode: undefined,
 					status: 'processing',
 					uploadStatusUrl,

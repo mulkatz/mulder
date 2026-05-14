@@ -171,6 +171,11 @@ export interface DocumentDetailRecord extends DocumentRecord {
 		assessed_at: string;
 		assessment_method: string;
 		overall_quality: string;
+		page_coverage: {
+			pages_total: number;
+			pages_readable: number;
+			ratio: number | null;
+		} | null;
 		processable: boolean;
 		recommended_path: string;
 		text_readability_score: number | null;

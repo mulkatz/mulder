@@ -186,11 +186,14 @@ async function findVisibleSourceSummaryMap(
 	}
 
 	const params: unknown[] = [uniqueSourceIds];
-	const conditions = ['id = ANY($1::uuid[])', "deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"];
+	const conditions = [
+		'id = ANY($1::uuid[])',
+		"COALESCE(deletion_status, 'active') NOT IN ('soft_deleted', 'purging', 'purged')",
+	];
 	const allowed = allowedSensitivity(maxSensitivityLevel);
 	if (allowed) {
 		params.push(allowed);
-		conditions.push(`sensitivity_level = ANY($${params.length})`);
+		conditions.push(`sensitivity_level = ANY($${params.length}::text[])`);
 	}
 
 	const result = await pool.query<SourceSummaryRow>(
@@ -218,12 +221,12 @@ async function findVisibleRunSourceSummaryMap(
 	const params: unknown[] = [uniqueRunIds];
 	const conditions = [
 		'prs.run_id = ANY($1::uuid[])',
-		"sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')",
+		"COALESCE(sources.deletion_status, 'active') NOT IN ('soft_deleted', 'purging', 'purged')",
 	];
 	const allowed = allowedSensitivity(options?.maxSensitivityLevel);
 	if (allowed) {
 		params.push(allowed);
-		conditions.push(`sources.sensitivity_level = ANY($${params.length})`);
+		conditions.push(`sources.sensitivity_level = ANY($${params.length}::text[])`);
 	}
 
 	const result = await pool.query<RunSourceSummaryRow>(
@@ -302,6 +305,36 @@ async function resolveJobSubjects(
 		subjects.set(job.id, runId ? subjectFromSources(job, runSourceMap.get(runId)) : defaultJobSubject(job));
 	}
 	return subjects;
+}
+
+async function hasVisibleRunSource(
+	pool: Pool,
+	runId: string,
+	maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity>,
+): Promise<boolean> {
+	const params: unknown[] = [runId];
+	const conditions = [
+		'prs.run_id = $1::uuid',
+		"COALESCE(sources.deletion_status, 'active') NOT IN ('soft_deleted', 'purging', 'purged')",
+	];
+	const allowed = allowedSensitivity(maxSensitivityLevel);
+	if (allowed) {
+		params.push(allowed);
+		conditions.push(`sources.sensitivity_level = ANY($${params.length}::text[])`);
+	}
+
+	const result = await pool.query<{ visible: boolean }>(
+		`
+			SELECT EXISTS (
+				SELECT 1
+				FROM pipeline_run_sources prs
+				JOIN sources ON sources.id = prs.source_id
+				WHERE ${conditions.join(' AND ')}
+			) AS visible
+		`,
+		params,
+	);
+	return result.rows[0]?.visible === true;
 }
 
 function mapJobSummary(job: Job, subject: JobSubject = defaultJobSubject(job)): JobListResponse['data'][number] {
@@ -482,7 +515,11 @@ async function listVisibleJobsForPrincipal(
 	params.push(authPrincipal.userId);
 	const userParam = params.length;
 	const allowed = allowedSensitivity(maxSensitivityLevel);
-	const sensitivityClause = allowed ? `AND sources.sensitivity_level = ANY($${params.push(allowed)})` : '';
+	let sensitivityClause = '';
+	if (allowed) {
+		params.push(allowed);
+		sensitivityClause = `AND sources.sensitivity_level = ANY($${params.length}::text[])`;
+	}
 	conditions.push(`
 		(
 			COALESCE(payload->'submittedBy'->>'userId', payload->'submitted_by'->>'user_id') = $${userParam}
@@ -490,7 +527,15 @@ async function listVisibleJobsForPrincipal(
 				SELECT 1
 				FROM sources
 				WHERE sources.id::text = COALESCE(jobs.payload->>'sourceId', jobs.payload->>'source_id')
-				  AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+				  AND COALESCE(sources.deletion_status, 'active') NOT IN ('soft_deleted', 'purging', 'purged')
+				  ${sensitivityClause}
+			)
+			OR EXISTS (
+				SELECT 1
+				FROM pipeline_run_sources prs
+				JOIN sources ON sources.id = prs.source_id
+				WHERE prs.run_id::text = COALESCE(jobs.payload->>'runId', jobs.payload->>'run_id')
+				  AND COALESCE(sources.deletion_status, 'active') NOT IN ('soft_deleted', 'purging', 'purged')
 				  ${sensitivityClause}
 			)
 		)
@@ -530,7 +575,11 @@ async function canReadJob(
 	}
 	const sourceId = resolveSourceId(job.payload);
 	if (!sourceId) {
-		return false;
+		const runId = resolveRunId(job.payload);
+		if (!runId) {
+			return false;
+		}
+		return await hasVisibleRunSource(pool, runId, maxSensitivityLevel);
 	}
 	return Boolean(await findSourceById(pool, sourceId, { maxSensitivityLevel }));
 }

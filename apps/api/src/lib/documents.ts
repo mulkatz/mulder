@@ -277,6 +277,14 @@ function mapQualitySummary(
 		assessed_at: quality.assessedAt.toISOString(),
 		assessment_method: quality.assessmentMethod,
 		overall_quality: quality.overallQuality,
+		page_coverage: {
+			pages_readable: quality.dimensions.contentCompleteness.pagesReadable,
+			pages_total: quality.dimensions.contentCompleteness.pagesTotal,
+			ratio:
+				quality.dimensions.contentCompleteness.pagesTotal > 0
+					? quality.dimensions.contentCompleteness.pagesReadable / quality.dimensions.contentCompleteness.pagesTotal
+					: null,
+		},
 		processable: quality.processable,
 		recommended_path: quality.recommendedPath,
 		text_readability_score: quality.dimensions.textReadability.score,

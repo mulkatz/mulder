@@ -123,6 +123,10 @@ function uploadRetryLabel(retryMode: DocumentUploadRetryMode | undefined, t: Ret
 	return t('common.retry');
 }
 
+function processingJobLink(row: { jobId?: string; processingJobId?: string | null }) {
+	return row.processingJobId ?? row.jobId;
+}
+
 function AiMarker({ label }: { label: string }) {
 	return (
 		<span className="rounded-sm border border-accent/30 bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent">
@@ -859,10 +863,18 @@ export function AddSourcesPage() {
 													{t('addSources.openSource')}
 												</Link>
 											) : null}
-											{row.retryMode === 'open_processing' && row.jobId ? (
+											{(row.status === 'created' || row.status === 'duplicate') && row.processingJobId ? (
+												<Link
+													className="ml-3 text-sm font-medium text-accent hover:underline"
+													to={`/runs?job=${row.processingJobId}`}
+												>
+													{t('addSources.openProcessing')}
+												</Link>
+											) : null}
+											{row.retryMode === 'open_processing' && processingJobLink(row) ? (
 												<Link
 													className="inline-flex h-8 items-center rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
-													to={`/runs?job=${row.jobId}`}
+													to={`/runs?job=${processingJobLink(row)}`}
 												>
 													{uploadRetryLabel(row.retryMode, t)}
 												</Link>

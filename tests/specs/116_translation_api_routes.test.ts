@@ -138,8 +138,9 @@ async function seedTranslatedStory(
 	translationId: string,
 	storyId: string,
 	sourceId: string,
-): Promise<void> {
-	await pool.query(
+	markdown = 'Translated story markdown',
+): Promise<string> {
+	const result = await pool.query<{ id: string }>(
 		`
 			INSERT INTO translated_stories (
 				translation_id,
@@ -153,10 +154,39 @@ async function seedTranslatedStory(
 				sensitivity_level,
 				sensitivity_metadata
 			)
-			VALUES ($1, $2, $3, 'de', 'en', 'Translated Story', 'Translated story markdown', 'story-hash', 'internal', '{}'::jsonb)
+			VALUES ($1, $2, $3, 'de', 'en', 'Translated Story', $4, 'story-hash', 'internal', '{}'::jsonb)
+			RETURNING id
 		`,
-		[translationId, storyId, sourceId],
+		[translationId, storyId, sourceId, markdown],
 	);
+	return result.rows[0].id;
+}
+
+async function seedTranslatedStoryMention(pool: pg.Pool, translatedStoryId: string): Promise<string> {
+	const entityId = randomUUID();
+	await pool.query(
+		`
+			INSERT INTO entities (id, name, type, attributes, taxonomy_status, source_count)
+			VALUES ($1, 'Varginha case', 'case', $2::jsonb, 'curated', 2)
+		`,
+		[entityId, JSON.stringify({ category: 'uap_case' })],
+	);
+	await pool.query(
+		`
+			INSERT INTO translated_story_entity_mentions (
+				translated_story_id,
+				entity_id,
+				surface_text,
+				start_offset,
+				end_offset,
+				confidence,
+				method
+			)
+			VALUES ($1, $2, 'Varginha case', 11, 24, 0.93, 'llm_structured_verified')
+		`,
+		[translatedStoryId, entityId],
+	);
+	return entityId;
 }
 
 describe('Spec 116: translation API routes', () => {
@@ -269,6 +299,59 @@ describe('Spec 116: translation API routes', () => {
 				sourceId,
 				targetLanguage: 'en',
 				refresh: true,
+			},
+		});
+	});
+
+	it('returns translated stories with persisted verified mentions and entity data', async () => {
+		const app = createApp({ config: TEST_API_CONFIG });
+		const sourceId = await seedSource(pool);
+		const translationId = await seedTranslation(pool, sourceId);
+		const storyId = await seedStory(pool, sourceId);
+		const translatedStoryId = await seedTranslatedStory(
+			pool,
+			translationId,
+			storyId,
+			sourceId,
+			'Observed Varginha case from the archive.',
+		);
+		const entityId = await seedTranslatedStoryMention(pool, translatedStoryId);
+
+		const response = await app.request(`http://localhost/api/translations/${translationId}/stories`, {
+			headers: authorizedHeaders(),
+		});
+		expect(response.status).toBe(200);
+		expect(await readJson(response)).toMatchObject({
+			data: {
+				translation_id: translationId,
+				stories: [
+					{
+						id: translatedStoryId,
+						story_id: storyId,
+						markdown: 'Observed Varginha case from the archive.',
+						mentions: [
+							{
+								translated_story_id: translatedStoryId,
+								entity_id: entityId,
+								surface_text: 'Varginha case',
+								start_offset: 11,
+								end_offset: 24,
+								confidence: 0.93,
+								method: 'llm_structured_verified',
+								entity: {
+									id: entityId,
+									name: 'Varginha case',
+									type: 'case',
+									taxonomy_status: 'curated',
+									source_count: 2,
+								},
+							},
+						],
+					},
+				],
+			},
+			meta: {
+				count: 1,
 			},
 		});
 	});

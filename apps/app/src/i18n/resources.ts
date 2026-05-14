@@ -556,6 +556,7 @@ export const resources = {
 				translationNoVerifiedSpansTitle: 'No verified translated entity spans',
 				translationNoVerifiedSpansBody:
 					'The translated story is shown without highlights because no translated entity offsets were verified.',
+				translationMentionCount: '{{count}} mentions',
 				translationAnnotationsDisabledTitle: 'Entity highlights disabled',
 				translationAnnotationsDisabledBody:
 					'This is source-level translated content. Entity highlights stay off until translated offsets are exposed.',
@@ -604,6 +605,8 @@ export const resources = {
 				qualityTextCoverage: 'Text coverage',
 				qualityTextPresent: 'native text detected',
 				qualityTextNotDetected: 'native text not detected',
+				qualityPageCoverage: 'Page coverage',
+				qualityPageCoverageValue: '{{pagesReadable}}/{{pagesTotal}} pages ({{ratio}})',
 				qualityReadability: 'Readability',
 				qualityLanguageConfidence: 'Language confidence',
 				missingSourceTitle: 'Source missing',
@@ -1312,6 +1315,7 @@ export const resources = {
 				translationNoVerifiedSpansTitle: 'Keine geprüften übersetzten Entitätspositionen',
 				translationNoVerifiedSpansBody:
 					'Der übersetzte Erzählstrang wird ohne Markierungen angezeigt, weil keine übersetzten Entitätspositionen geprüft wurden.',
+				translationMentionCount: '{{count}} Markierungen',
 				translationAnnotationsDisabledTitle: 'Entitätsmarkierungen deaktiviert',
 				translationAnnotationsDisabledBody:
 					'Dies ist quellenbezogener übersetzter Inhalt. Entitätsmarkierungen bleiben aus, bis übersetzte Positionsdaten verfügbar sind.',
@@ -1362,6 +1366,8 @@ export const resources = {
 				qualityTextCoverage: 'Textabdeckung',
 				qualityTextPresent: 'direkt lesbarer Text erkannt',
 				qualityTextNotDetected: 'kein direkt lesbarer Text erkannt',
+				qualityPageCoverage: 'Seitenabdeckung',
+				qualityPageCoverageValue: '{{pagesReadable}}/{{pagesTotal}} Seiten ({{ratio}})',
 				qualityReadability: 'Lesbarkeit',
 				qualityLanguageConfidence: 'Sprachvertrauen',
 				missingSourceTitle: 'Quelle fehlt',

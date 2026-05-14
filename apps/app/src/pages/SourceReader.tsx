@@ -28,6 +28,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { StateNotice } from '@/components/StateNotice';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Toolbar } from '@/components/Toolbar';
+import { TranslatedAnnotatedMarkdown } from '@/components/TranslatedAnnotatedMarkdown';
 import { useDocument } from '@/features/documents/useDocument';
 import { useDocumentLayout } from '@/features/documents/useDocumentLayout';
 import { useDocumentObservability } from '@/features/documents/useDocumentObservability';
@@ -626,83 +627,56 @@ function StoryRail({
 
 function TranslatedStoryRail({
 	onSelect,
+	originalStories,
 	selectedStoryId,
 	stories,
 }: {
 	onSelect: (storyId: string) => void;
+	originalStories: DocumentStoryRecord[];
 	selectedStoryId?: string;
 	stories: TranslatedStoryRecord[];
 }) {
 	const { t, i18n } = useTranslation();
+	const storyById = useMemo(() => new Map(originalStories.map((story) => [story.id, story])), [originalStories]);
 
 	return (
 		<div className="space-y-2 border-b border-border p-3 lg:max-h-[640px] lg:overflow-auto lg:border-r lg:border-b-0">
 			<p className="text-xs font-medium text-text-subtle">{t('reader.storyRailTitle')}</p>
-			{stories.map((story) => (
-				<button
-					className={cn(
-						'w-full rounded-md border border-border bg-panel-raised p-3 text-left transition-colors hover:border-border-strong hover:bg-field',
-						selectedStoryId === story.story_id && 'border-accent bg-accent-soft',
-					)}
-					key={story.id}
-					onClick={() => onSelect(story.story_id)}
-					type="button"
-				>
-					<p className="line-clamp-2 text-sm font-medium text-text">{story.title}</p>
-					<div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-text-subtle">
-						<span>{formatLanguage(story.target_language, i18n.language, t)}</span>
-					</div>
-					<div className="mt-2 flex items-center justify-between gap-2">
-						<StatusBadge status="current" />
-						<span className="font-mono text-[11px] text-text-subtle">{story.mentions.length}</span>
-					</div>
-				</button>
-			))}
+			{stories.map((story) => {
+				const originalStory = storyById.get(story.story_id);
+				return (
+					<button
+						className={cn(
+							'w-full rounded-md border border-border bg-panel-raised p-3 text-left transition-colors hover:border-border-strong hover:bg-field',
+							selectedStoryId === story.story_id && 'border-accent bg-accent-soft',
+						)}
+						key={story.id}
+						onClick={() => onSelect(story.story_id)}
+						type="button"
+					>
+						<p className="line-clamp-2 text-sm font-medium text-text">{story.title}</p>
+						<div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-text-subtle">
+							<span>
+								{originalStory
+									? formatPageRange(originalStory.page_start, originalStory.page_end, t)
+									: formatLanguage(story.target_language, i18n.language, t)}
+							</span>
+							{originalStory ? <span>{formatLanguage(originalStory.language, i18n.language, t)}</span> : null}
+							{originalStory?.category ? <span>{originalStory.category}</span> : null}
+							<span>{formatLanguage(story.target_language, i18n.language, t)}</span>
+						</div>
+						<div className="mt-2 flex items-center justify-between gap-2">
+							<StatusBadge status={originalStory?.status ?? 'current'} />
+							<div className="flex items-center gap-2 font-mono text-[11px] text-text-subtle">
+								{originalStory ? <span>{formatPercent(originalStory.extraction_confidence, t)}</span> : null}
+								<span>{t('reader.translationMentionCount', { count: story.mentions.length })}</span>
+							</div>
+						</div>
+					</button>
+				);
+			})}
 		</div>
 	);
-}
-
-function OffsetAnnotatedText({
-	markdown,
-	mentions,
-	onSelectEntity,
-	selectedEntityId,
-}: {
-	markdown: string;
-	mentions: TranslatedStoryRecord['mentions'];
-	onSelectEntity: (entity: EntityRecord) => void;
-	selectedEntityId?: string;
-}) {
-	const sortedMentions = [...mentions]
-		.filter((mention) => mention.entity && mention.start_offset >= 0 && mention.end_offset > mention.start_offset)
-		.sort((a, b) => a.start_offset - b.start_offset || a.end_offset - b.end_offset);
-	const parts: ReactNode[] = [];
-	let cursor = 0;
-	for (const mention of sortedMentions) {
-		if (!mention.entity || mention.start_offset < cursor || mention.start_offset > markdown.length) continue;
-		if (mention.start_offset > cursor) {
-			parts.push(markdown.slice(cursor, mention.start_offset));
-		}
-		const text = markdown.slice(mention.start_offset, Math.min(mention.end_offset, markdown.length));
-		parts.push(
-			<button
-				className={cn(
-					'rounded-sm bg-accent-soft px-1 text-accent underline decoration-accent/40 decoration-1 underline-offset-2 transition-colors hover:bg-accent hover:text-text-inverse',
-					selectedEntityId === mention.entity_id && 'bg-accent text-text-inverse',
-				)}
-				key={mention.id}
-				onClick={() => mention.entity && onSelectEntity(mention.entity)}
-				type="button"
-			>
-				{text}
-			</button>,
-		);
-		cursor = Math.min(mention.end_offset, markdown.length);
-	}
-	if (cursor < markdown.length) {
-		parts.push(markdown.slice(cursor));
-	}
-	return <div className="whitespace-pre-wrap text-sm leading-7 text-text">{parts}</div>;
 }
 
 function TranslationControls({
@@ -808,6 +782,16 @@ function formatPipelineStep(step: string, t: TFunction) {
 
 function formatQualitySignal(value: number | null | undefined, t: TFunction) {
 	return typeof value === 'number' ? `${Math.round(value * 100)}%` : t('common.notExposed');
+}
+
+function formatPageCoverage(value: NonNullable<DocumentDetailRecord['quality']>['page_coverage'], t: TFunction) {
+	if (!value) return t('common.notExposed');
+	const ratio = typeof value.ratio === 'number' ? formatQualitySignal(value.ratio, t) : t('common.notExposed');
+	return t('reader.qualityPageCoverageValue', {
+		pagesReadable: value.pages_readable,
+		pagesTotal: value.pages_total,
+		ratio,
+	});
 }
 
 function EntityContextPanel({ entity }: { entity?: EntityRecord }) {
@@ -1100,6 +1084,7 @@ function StoryPane({
 					<div className="grid min-h-[640px] lg:grid-cols-[250px_minmax(0,1fr)]">
 						<TranslatedStoryRail
 							onSelect={onSelectStory}
+							originalStories={stories}
 							selectedStoryId={selectedStoryId}
 							stories={translatedStories}
 						/>
@@ -1130,7 +1115,7 @@ function StoryPane({
 												</StateNotice>
 											) : null}
 											<div className="mt-3">
-												<OffsetAnnotatedText
+												<TranslatedAnnotatedMarkdown
 													markdown={selectedTranslatedStory.markdown}
 													mentions={selectedTranslatedStory.mentions}
 													onSelectEntity={onSelectEntity}
@@ -1141,11 +1126,20 @@ function StoryPane({
 									</>
 								) : null}
 							</div>
-							<InspectorPanel title={t('reader.linkedContext')}>
-								<InspectorSection title={t('reader.entityContext')}>
-									<EntityContextPanel entity={selectedEntity} />
-								</InspectorSection>
-							</InspectorPanel>
+							<div className="space-y-4">
+								<InspectorPanel title={t('reader.linkedContext')}>
+									<InspectorSection title={t('reader.entityContext')}>
+										<EntityContextPanel entity={selectedEntity} />
+									</InspectorSection>
+									<InspectorSection title={t('reader.evidenceSignals')}>
+										<EvidenceSignals
+											error={contradictionsError}
+											isLoading={contradictionsIsLoading}
+											signals={signals}
+										/>
+									</InspectorSection>
+								</InspectorPanel>
+							</div>
 						</div>
 					</div>
 				) : (
@@ -1288,10 +1282,14 @@ function ProcessingBackground({
 								})}
 							</p>
 							{source ? (
-								<div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+								<div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
 									<p>
 										<span className="text-text-subtle">{t('reader.qualityTextCoverage')}: </span>
 										{source.has_native_text ? t('reader.qualityTextPresent') : t('reader.qualityTextNotDetected')}
+									</p>
+									<p>
+										<span className="text-text-subtle">{t('reader.qualityPageCoverage')}: </span>
+										{formatPageCoverage(source.quality?.page_coverage ?? null, t)}
 									</p>
 									<p>
 										<span className="text-text-subtle">{t('reader.qualityReadability')}: </span>
