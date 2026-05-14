@@ -797,6 +797,19 @@ function TranslationControls({
 	);
 }
 
+function formatExtractionRoute(path: string | null | undefined, t: TFunction) {
+	if (!path) return t('reader.extractionRoutePending');
+	return path === 'standard' ? t('reader.extractionRouteNative') : t('reader.extractionRouteDocumentAi');
+}
+
+function formatPipelineStep(step: string, t: TFunction) {
+	return t(`pipelineSteps.${step}`, { defaultValue: step });
+}
+
+function formatQualitySignal(value: number | null | undefined, t: TFunction) {
+	return typeof value === 'number' ? `${Math.round(value * 100)}%` : t('common.notExposed');
+}
+
 function EntityContextPanel({ entity }: { entity?: EntityRecord }) {
 	const { t } = useTranslation();
 
@@ -1245,7 +1258,8 @@ function ProcessingBackground({
 	source?: DocumentDetailRecord;
 }) {
 	const { t } = useTranslation();
-	const extractionPath = source?.quality?.recommended_path ?? null;
+	const extractionPath = source?.quality?.recommended_path ?? source?.quality_hint?.recommended_path ?? null;
+	const extractionRoute = formatExtractionRoute(extractionPath, t);
 
 	return (
 		<details className="panel p-4" onToggle={(event) => onToggle(event.currentTarget.open)} open={open}>
@@ -1267,20 +1281,33 @@ function ProcessingBackground({
 				) : null}
 				{observability ? (
 					<>
-						{extractionPath ? (
-							<p className="rounded-md border border-border bg-panel-raised p-3 text-sm text-text-muted">
+						<div className="rounded-md border border-border bg-panel-raised p-3 text-sm text-text-muted">
+							<p>
 								{t('reader.extractionRoute', {
-									route:
-										extractionPath === 'standard'
-											? t('reader.extractionRouteNative')
-											: t('reader.extractionRouteDocumentAi'),
+									route: extractionRoute,
 								})}
 							</p>
-						) : null}
+							{source ? (
+								<div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+									<p>
+										<span className="text-text-subtle">{t('reader.qualityTextCoverage')}: </span>
+										{source.has_native_text ? t('reader.qualityTextPresent') : t('reader.qualityTextNotDetected')}
+									</p>
+									<p>
+										<span className="text-text-subtle">{t('reader.qualityReadability')}: </span>
+										{formatQualitySignal(source.quality?.text_readability_score, t)}
+									</p>
+									<p>
+										<span className="text-text-subtle">{t('reader.qualityLanguageConfidence')}: </span>
+										{formatQualitySignal(source.quality?.language_confidence, t)}
+									</p>
+								</div>
+							) : null}
+						</div>
 						<div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
 							{observability.data.source.steps.map((step) => (
 								<div className="rounded-md bg-field p-3" key={step.step}>
-									<p className="truncate text-sm text-text">{step.step}</p>
+									<p className="truncate text-sm text-text">{formatPipelineStep(step.step, t)}</p>
 									<div className="mt-2">
 										<StatusBadge status={step.status} />
 									</div>
