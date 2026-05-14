@@ -2,7 +2,6 @@ import type {
 	Job,
 	JobStatus,
 	MulderConfig,
-	PersistedSource,
 	PipelineRun,
 	PipelineRunSource,
 	PipelineRunSourceStatus,
@@ -71,6 +70,16 @@ interface JobProgress {
 
 type JobSubject = JobListResponse['data'][number]['subject'];
 type SourceSummary = NonNullable<JobProgress['sources'][number]['source']>;
+
+interface SourceSummaryRow {
+	id: string;
+	filename: string;
+	status: string;
+}
+
+interface RunSourceSummaryRow extends SourceSummaryRow {
+	run_id: string;
+}
 
 function resolveContext(): JobStatusContext {
 	const config = loadConfig();
@@ -158,7 +167,7 @@ function defaultJobSubject(job: Job): JobSubject {
 	};
 }
 
-function mapSourceSummary(source: PersistedSource): SourceSummary {
+function mapSourceSummary(source: SourceSummaryRow): SourceSummary {
 	return {
 		id: source.id,
 		filename: source.filename,
@@ -166,48 +175,83 @@ function mapSourceSummary(source: PersistedSource): SourceSummary {
 	};
 }
 
-async function findVisibleSourceSummary(
+async function findVisibleSourceSummaryMap(
 	pool: Pool,
-	sourceId: string,
+	sourceIds: string[],
 	maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity>,
-): Promise<SourceSummary | null> {
-	const source = await findSourceById(pool, sourceId, { maxSensitivityLevel });
-	return source ? mapSourceSummary(source) : null;
+): Promise<Map<string, SourceSummary>> {
+	const uniqueSourceIds = Array.from(new Set(sourceIds));
+	if (uniqueSourceIds.length === 0) {
+		return new Map();
+	}
+
+	const params: unknown[] = [uniqueSourceIds];
+	const conditions = ['id = ANY($1::uuid[])', "deletion_status NOT IN ('soft_deleted', 'purging', 'purged')"];
+	const allowed = allowedSensitivity(maxSensitivityLevel);
+	if (allowed) {
+		params.push(allowed);
+		conditions.push(`sensitivity_level = ANY($${params.length})`);
+	}
+
+	const result = await pool.query<SourceSummaryRow>(
+		`
+			SELECT id::text AS id, filename, status
+			FROM sources
+			WHERE ${conditions.join(' AND ')}
+		`,
+		params,
+	);
+
+	return new Map(result.rows.map((row) => [row.id, mapSourceSummary(row)]));
 }
 
-async function resolveJobSubject(
+async function findVisibleRunSourceSummaryMap(
 	pool: Pool,
-	job: Job,
+	runIds: string[],
 	options?: { maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity> },
-): Promise<JobSubject> {
-	const sourceId = resolveSourceId(job.payload);
-	if (sourceId) {
-		const source = await findVisibleSourceSummary(pool, sourceId, options?.maxSensitivityLevel);
-		if (source) {
-			return {
-				kind: 'source',
-				label: source.filename,
-				source_id: source.id,
-				source_count: 1,
-			};
-		}
-		return defaultJobSubject(job);
+): Promise<Map<string, SourceSummary[]>> {
+	const uniqueRunIds = Array.from(new Set(runIds));
+	if (uniqueRunIds.length === 0) {
+		return new Map();
 	}
 
-	const runId = resolveRunId(job.payload);
-	if (!runId) {
-		return defaultJobSubject(job);
+	const params: unknown[] = [uniqueRunIds];
+	const conditions = [
+		'prs.run_id = ANY($1::uuid[])',
+		"sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')",
+	];
+	const allowed = allowedSensitivity(options?.maxSensitivityLevel);
+	if (allowed) {
+		params.push(allowed);
+		conditions.push(`sources.sensitivity_level = ANY($${params.length})`);
 	}
 
-	const runSources = await findPipelineRunSourcesByRunId(pool, runId);
-	const sourceSummaries = (
-		await Promise.all(
-			runSources.map((source) => findVisibleSourceSummary(pool, source.sourceId, options?.maxSensitivityLevel)),
-		)
-	).filter((source): source is SourceSummary => Boolean(source));
+	const result = await pool.query<RunSourceSummaryRow>(
+		`
+			SELECT prs.run_id::text AS run_id, sources.id::text AS id, sources.filename, sources.status
+			FROM pipeline_run_sources prs
+			JOIN sources ON sources.id = prs.source_id
+			WHERE ${conditions.join(' AND ')}
+			ORDER BY prs.run_id, prs.updated_at ASC, sources.filename ASC
+		`,
+		params,
+	);
 
-	if (sourceSummaries.length === 1) {
-		const source = sourceSummaries[0];
+	const byRun = new Map<string, SourceSummary[]>();
+	for (const row of result.rows) {
+		const current = byRun.get(row.run_id) ?? [];
+		current.push(mapSourceSummary(row));
+		byRun.set(row.run_id, current);
+	}
+	return byRun;
+}
+
+function subjectFromSources(job: Job, sources: SourceSummary[] | undefined): JobSubject {
+	if (!sources || sources.length === 0) {
+		return defaultJobSubject(job);
+	}
+	if (sources.length === 1) {
+		const source = sources[0];
 		return {
 			kind: 'source',
 			label: source.filename,
@@ -215,16 +259,49 @@ async function resolveJobSubject(
 			source_count: 1,
 		};
 	}
+	return {
+		kind: 'batch',
+		label: `${sources[0].filename} + ${sources.length - 1}`,
+		source_count: sources.length,
+	};
+}
 
-	if (sourceSummaries.length > 1) {
-		return {
-			kind: 'batch',
-			label: `${sourceSummaries[0].filename} + ${sourceSummaries.length - 1}`,
-			source_count: sourceSummaries.length,
-		};
+async function resolveJobSubjects(
+	pool: Pool,
+	jobs: Job[],
+	options?: { maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity> },
+): Promise<Map<string, JobSubject>> {
+	const directSourceIds: string[] = [];
+	const runIds: string[] = [];
+	for (const job of jobs) {
+		const sourceId = resolveSourceId(job.payload);
+		if (sourceId) {
+			directSourceIds.push(sourceId);
+			continue;
+		}
+		const runId = resolveRunId(job.payload);
+		if (runId) {
+			runIds.push(runId);
+		}
 	}
 
-	return defaultJobSubject(job);
+	const [sourceMap, runSourceMap] = await Promise.all([
+		findVisibleSourceSummaryMap(pool, directSourceIds, options?.maxSensitivityLevel),
+		findVisibleRunSourceSummaryMap(pool, runIds, options),
+	]);
+
+	const subjects = new Map<string, JobSubject>();
+	for (const job of jobs) {
+		const sourceId = resolveSourceId(job.payload);
+		if (sourceId) {
+			const source = sourceMap.get(sourceId);
+			subjects.set(job.id, subjectFromSources(job, source ? [source] : []));
+			continue;
+		}
+		const runId = resolveRunId(job.payload);
+		subjects.set(job.id, runId ? subjectFromSources(job, runSourceMap.get(runId)) : defaultJobSubject(job));
+	}
+	return subjects;
 }
 
 function mapJobSummary(job: Job, subject: JobSubject = defaultJobSubject(job)): JobListResponse['data'][number] {
@@ -326,13 +403,13 @@ async function filterVisibleProgressSources(
 }
 
 async function mapProgressSource(
-	pool: Pool,
 	source: PipelineRunSource,
+	sourceSummaries: Map<string, SourceSummary>,
 	options?: { redacted?: boolean; maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity> },
 ): Promise<JobProgress['sources'][number]> {
 	return {
 		source_id: source.sourceId,
-		source: await findVisibleSourceSummary(pool, source.sourceId, options?.maxSensitivityLevel),
+		source: sourceSummaries.get(source.sourceId) ?? null,
 		current_step: source.currentStep,
 		status: source.status,
 		error_message: options?.redacted ? null : source.errorMessage,
@@ -363,12 +440,17 @@ async function resolveProgress(
 	const sources = options?.redacted
 		? await filterVisibleProgressSources(pool, allSources, options.maxSensitivityLevel)
 		: allSources;
+	const sourceSummaries = await findVisibleSourceSummaryMap(
+		pool,
+		sources.map((source) => source.sourceId),
+		options?.maxSensitivityLevel,
+	);
 
 	return {
 		run_id: run.id,
 		run_status: run.status,
 		source_counts: options?.redacted ? countProgressSources(sources) : sourceCounts,
-		sources: await Promise.all(sources.map((source) => mapProgressSource(pool, source, options))),
+		sources: await Promise.all(sources.map((source) => mapProgressSource(source, sourceSummaries, options))),
 	};
 }
 
@@ -427,9 +509,9 @@ async function listVisibleJobsForPrincipal(
 		pageParams,
 	);
 	const jobs = result.rows.map(mapJobRow);
-	const subjects = await Promise.all(jobs.map((job) => resolveJobSubject(pool, job, { maxSensitivityLevel })));
+	const subjects = await resolveJobSubjects(pool, jobs, { maxSensitivityLevel });
 	return {
-		data: jobs.map((job, index) => mapRedactedJobSummary(job, subjects[index])),
+		data: jobs.map((job) => mapRedactedJobSummary(job, subjects.get(job.id))),
 		meta: {
 			count: Number.parseInt(countResult.rows[0]?.count ?? '0', 10) || 0,
 			limit: input.limit,
@@ -468,9 +550,9 @@ export async function listRecentJobs(input: JobListQuery, options?: JobRouteOpti
 				limit: input.limit,
 			}),
 		]);
-		const subjects = await Promise.all(jobs.map((job) => resolveJobSubject(pool, job)));
+		const subjects = await resolveJobSubjects(pool, jobs);
 		return {
-			data: jobs.map((job, index) => mapJobSummary(job, subjects[index])),
+			data: jobs.map((job) => mapJobSummary(job, subjects.get(job.id))),
 			meta: {
 				count,
 				limit: input.limit,
@@ -511,19 +593,19 @@ export async function getJobStatusById(id: string, options?: JobRouteOptions): P
 				context: { id },
 			});
 		}
-		const subject = await resolveJobSubject(pool, job, { maxSensitivityLevel });
+		const subjects = await resolveJobSubjects(pool, [job], { maxSensitivityLevel });
 		return {
 			data: {
-				job: mapRedactedJobDetail(job, subject),
+				job: mapRedactedJobDetail(job, subjects.get(job.id)),
 				progress: await resolveProgress(pool, job, { redacted: true, maxSensitivityLevel }),
 			},
 		};
 	}
 
-	const subject = await resolveJobSubject(pool, job);
+	const subjects = await resolveJobSubjects(pool, [job]);
 	return {
 		data: {
-			job: mapJobDetail(job, subject),
+			job: mapJobDetail(job, subjects.get(job.id)),
 			progress: await resolveProgress(pool, job),
 		},
 	};
