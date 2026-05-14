@@ -1,18 +1,29 @@
 # Mulder — Architecture Principle: Core vs. Domain Configuration
 
-This document defines architectural constraints that apply to **all** Mulder code. It establishes the boundary between the domain-agnostic core and the domain-specific configuration layer. Every data structure, pipeline step, and feature must respect this boundary.
+This document defines architectural constraints that apply to **all** Mulder
+code. It establishes the boundary between the domain-agnostic core and the
+domain-specific configuration layer. Every data structure, pipeline step, and
+feature must respect this boundary.
 
-Referenced by both the functional spec (`docs/functional-spec.md`) and the functional spec addendum (`docs/functional-spec-addendum.md`). All sections use the **§D** prefix to avoid collisions with other spec documents.
+Referenced by both the functional spec (`docs/functional-spec.md`) and the
+functional spec addendum (`docs/functional-spec-addendum.md`). All sections use
+the **§D** prefix to avoid collisions with other spec documents.
 
 ---
 
 ## §D1 — Guiding Principle
 
-> **The core models generic concepts. Domain configuration gives them names, semantics, and constraints.**
+> **The core models generic concepts. Domain configuration gives them names,
+> semantics, and constraints.**
 
-Mulder is a Document Intelligence Platform, not a UAP tool. Every data structure, pipeline step, and feature must be designed so that swapping configuration makes it work in a different domain — without code changes.
+Mulder is a Document Intelligence Platform. It is not tied to a particular
+research subject, customer, corpus, live instance, or deployment environment.
+Every data structure, pipeline step, and feature must be designed so that
+swapping configuration makes it work in a different domain without code changes.
 
-IGAAP is the first instance. Investigative journalism, medical case studies, historical archive research, or legal discovery could be next.
+Example domains include historical archive research, investigative journalism,
+medical case studies, legal discovery, and technical incident analysis. Those
+examples are illustrations only; the public repository must remain neutral.
 
 ---
 
@@ -20,27 +31,41 @@ IGAAP is the first instance. Investigative journalism, medical case studies, his
 
 ### §D2.1 — No Domain Terms in Code
 
-No data type, function, or field name in the core codebase may contain a domain-specific term. Domain terms exist exclusively in config files, ontology definitions, and UI labels.
+No data type, function, or field name in the core codebase may contain a
+domain-specific term. Domain terms exist exclusively in config files, ontology
+definitions, and UI labels outside the public core.
 
-**Test:** A developer with no UAP knowledge reading the codebase must not be able to tell at any point that the system was built for UFO research.
+**Test:** A developer reading the public codebase must not be able to infer any
+specific live research project, private corpus, customer, cloud project, or
+deployment target.
 
 ### §D2.2 — Domain Semantics Live in the Ontology Config
 
-The config-driven ontology is the sole location where domain-specific concepts are defined. It contains:
+The config-driven ontology is the sole location where domain-specific concepts
+are defined. It contains:
 
-- **Entity types** (e.g., IGAAP: `sighting`, `witness`, `phenomenon`. Journalism: `leak`, `source_person`, `institution`)
-- **Relation types** (e.g., IGAAP: `observed_at`, `classified_as`. Journalism: `published_by`, `contradicts`)
-- **Taxonomies** (e.g., IGAAP: Hynek, Vallee. Medicine: ICD-11, DSM-5)
-- **Analysis attributes** (e.g., IGAAP: phenomenon type, physical effects. Journalism: topic area, involved institutions)
-- **Display labels** (e.g., `TemporalAnomalyCluster` displays as "Sighting Wave" in IGAAP, "Publication Wave" in journalism)
+- **Entity types** such as `case`, `person`, `institution`, `location`,
+  `document`, or any instance-specific terms.
+- **Relation types** such as `mentions`, `contradicts`, `supports`,
+  `published_by`, or configured domain relations.
+- **Taxonomies** loaded from configured YAML files.
+- **Analysis attributes** such as topic area, document type, chain of custody,
+  physical evidence categories, or any other instance-specific dimensions.
+- **Display labels** such as whether `TemporalAnomalyCluster` appears as
+  "Publication Wave", "Incident Cluster", or another configured label.
 
-### §D2.3 — Features Are Generic, Examples Are Domain-Specific
+### §D2.3 — Features Are Generic, Examples Are Neutral
 
-Feature specs define generic mechanisms. The IGAAP examples are illustrations of configuration, not part of the feature design. Documentation distinguishes between `[CORE]` (architecture, data model, logic) and `[DOMAIN:IGAAP]` (example configuration).
+Feature specs define generic mechanisms. Public examples must use neutral
+placeholder domains such as `[DOMAIN:ARCHIVE]` or `[DOMAIN:JOURNALISM]`. Live
+instance names, private taxonomies, production domains, cloud resource IDs, and
+customer-specific vocabulary do not belong in tracked public files.
 
 ### §D2.4 — External Data Sources Are Plugins
 
-External time series (Kp-Index, meteor showers, media coverage) are not hard-coded. Every external data source is a configurable plugin with a standardized interface:
+External time series, event calendars, public registries, and reference datasets
+are not hard-coded. Every external data source is a configurable plugin with a
+standardized interface:
 
 ```typescript
 interface ExternalDataSource {
@@ -53,21 +78,32 @@ interface ExternalDataSource {
 }
 ```
 
-The IGAAP instance configures the NOAA Kp-Index and a meteor shower calendar. A journalism instance configures news aggregates and parliamentary records. The core knows neither.
+An archive instance might configure publication calendars and library catalogs.
+A journalism instance might configure news indexes and parliamentary records.
+The core knows neither.
 
 ### §D2.5 — Credibility Dimensions Are Configurable
 
-The five dimensions from F-09 (`institutional_authority`, `domain_track_record`, `conflict_of_interest`, `transparency`, `consistency`) are a sensible default, but not hard-coded. The ontology config defines which dimensions exist, what they are called, and what they mean. A legal discovery instance might need `chain_of_custody` instead of `domain_track_record`.
+The five dimensions from F-09 (`institutional_authority`,
+`domain_track_record`, `conflict_of_interest`, `transparency`, `consistency`)
+are a sensible default, but not hard-coded. The ontology config defines which
+dimensions exist, what they are called, and what they mean. A legal discovery
+instance might need `chain_of_custody` instead of `domain_track_record`.
 
 ### §D2.6 — Similarity Dimensions Are Configurable
 
-The dimensions of Similar Case Discovery (F-11) are not fixed. The core provides four built-in dimensions (`semantic`, `structural`, `geospatial`, `temporal`) and an extensible `domain_attributes` array for domain-specific comparison axes. The concrete attributes come from the ontology.
+The dimensions of Similar Case Discovery (F-11) are not fixed. The core provides
+four built-in dimensions (`semantic`, `structural`, `geospatial`, `temporal`)
+and an extensible `domain_attributes` array for domain-specific comparison axes.
+The concrete attributes come from the ontology.
 
 ---
 
 ## §D3 — Domain-to-Generic Mapping Table
 
-This section maps each feature's domain-specific terms to their generic core equivalents. Features not listed (F-08, F-10) are already domain-agnostic and require no changes.
+This section maps common domain-specific concepts to their generic core
+equivalents. Features not listed (F-08, F-10) are already domain-agnostic and
+require no changes.
 
 ### F-08: Document Translation Service
 
@@ -79,9 +115,9 @@ This section maps each feature's domain-specific terms to their generic core equ
 
 | Domain-Specific | Generic (Core) | Domain Config |
 |---|---|---|
-| 5 fixed dimensions | `CredibilityDimension[]` (dynamic) | Ontology defines dimensions, labels, descriptions |
-| Pentagon example | -- | IGAAP config example, not in core |
-| `"national_security"` as known_motive | `known_motives: string[]` (freely configurable) | Ontology defines motive vocabulary |
+| Fixed credibility dimensions | `CredibilityDimension[]` | Ontology defines dimensions, labels, descriptions |
+| Domain motive examples | `known_motives: string[]` | Ontology defines motive vocabulary |
+| Instance-specific authority labels | Display labels | Config defines labels shown to users |
 
 ### F-10: Source Rollback & Cascading Purge
 
@@ -93,11 +129,11 @@ This section maps each feature's domain-specific terms to their generic core equ
 
 | Domain-Specific | Generic (Core) | Domain Config |
 |---|---|---|
-| `phenomenological` (dimension) | `domain_classification_similarity` | Compares entries using configured taxonomy mappings (F-12). IGAAP: phenomenon type. Journalism: topic area. |
-| `physical_effects` (dimension) | `domain_attribute_similarity` | Compares structured fields from the ontology. IGAAP: EM interference, ground traces. Journalism: document type, involved institutions. |
-| `SimilarCaseResult` | `SimilarEntityResult` | "Case" is IGAAP language. Core operates on configurable entity types. |
+| Domain classification axis | `domain_classification_similarity` | Compares entries using configured taxonomy mappings |
+| Domain attribute axis | `domain_attribute_similarity` | Compares structured fields from the ontology |
+| `SimilarCaseResult` | `SimilarEntityResult` | Core operates on configurable entity types |
 | `dominant_classification` in auto-discovery | `dominant_category` | References the instance's primary taxonomy |
-| Fixed 6 dimensions | 4 core + N domain dimensions | `semantic`, `structural`, `geospatial`, `temporal` are core. Everything else comes from the ontology config. |
+| Fixed dimensions | 4 core + N domain dimensions | `semantic`, `structural`, `geospatial`, `temporal` are core |
 
 **Generic Dimensions Model:**
 
@@ -113,7 +149,7 @@ interface CoreSimilarityDimensions {
 // Domain: from ontology config
 interface DomainSimilarityDimension {
   id: string;            // e.g. "classification_similarity"
-  label: string;         // e.g. "Phenomenon type match" [DOMAIN:IGAAP] or "Topic area" [DOMAIN:JOURNALISM]
+  label: string;         // e.g. "Topic area" or "Document type"
   score: number;
   source: "taxonomy_mapping" | "attribute_comparison" | "custom_scorer";
   config_ref: string;    // Reference to the ontology definition
@@ -129,22 +165,21 @@ interface SimilarityResult {
 
 | Domain-Specific | Generic (Core) | Domain Config |
 |---|---|---|
-| Hynek, Vallee, Ludwiger, GEIPAN (taxonomies) | `ClassificationTaxonomy[]` (dynamically loaded) | IGAAP config supplies the concrete taxonomies as YAML. |
-| `detect_implicit_classifications` (example: "close encounter") | Same mechanism | LLM prompt comes from domain config: "Detect references to the following taxonomies: {taxonomies}" |
-| -- | -- | Core mechanics (taxonomy model, mapping types, confidence) are already generic. |
+| Concrete taxonomy names | `ClassificationTaxonomy[]` | Config supplies concrete taxonomies as YAML |
+| `detect_implicit_classifications` | Same mechanism | LLM prompt comes from domain config |
+| -- | -- | Core mechanics are already generic |
 
-### F-13: Temporal Pattern Detection & Flap Analysis
+### F-13: Temporal Pattern Detection & Cluster Analysis
 
 | Domain-Specific | Generic (Core) | Domain Config |
 |---|---|---|
-| `FlapEvent` | `TemporalAnomalyCluster` | Config defines display label: IGAAP -> "Sighting Wave", Journalism -> "Publication Wave" |
-| `HotspotCluster` | `SpatiotemporalCluster` | Same mechanism, different name |
+| Domain event label | `TemporalAnomalyCluster` | Config defines display label |
+| Domain hotspot label | `SpatiotemporalCluster` | Same mechanism, different display name |
 | `dominant_classification` | `dominant_category` | References primary taxonomy |
-| `known_flap_match` | `known_pattern_match` | Reference to configured "Known Patterns" register |
-| `contributing_cases` | `contributing_entities` | Entity type from config |
-| Kp-Index, meteor showers (ext. time series) | `ExternalDataSource[]` (plugin) | IGAAP configures NOAA APIs. Other instances configure other sources. |
-| Media bias warning | `reporting_bias_correction` | Generic: "Increased frequency correlates with observation intensity". IGAAP config: "Investigator Density". Journalism config: "Editorial Focus". |
-| `persistence: "transient" \| "recurring" \| "permanent"` | Same | Already generic. |
+| `known_pattern_match` | `known_pattern_match` | Reference to configured pattern register |
+| Domain source lists | `ExternalDataSource[]` | Instance config chooses plugins |
+| Reporting bias label | `reporting_bias_correction` | Config defines the correction field and copy |
+| `persistence: "transient" \| "recurring" \| "permanent"` | Same | Already generic |
 
 **Generic Data Model for F-13:**
 
@@ -154,14 +189,14 @@ interface TemporalAnomalyCluster {
   region: GeoJSON;
   time_start: string;                   // ISO 8601
   time_end: string;
-  entity_count: number;                 // Previously: case_count
+  entity_count: number;
   baseline_rate: number;
   observed_rate: number;
   significance: number;
   peak_date: string;
-  dominant_category: string | null;     // Previously: dominant_classification
-  contributing_entity_ids: string[];    // Previously: contributing_cases
-  known_pattern_match: string | null;   // Previously: known_flap_match
+  dominant_category: string | null;
+  contributing_entity_ids: string[];
+  known_pattern_match: string | null;
 }
 
 interface SpatiotemporalCluster {
@@ -181,64 +216,62 @@ interface SpatiotemporalCluster {
 
 ## §D4 — Domain Configuration Structure
 
-A Mulder instance is defined by a domain config. Below is the structure with two example domains demonstrating how the same core maps to different fields.
+A Mulder instance is defined by a domain config. Below are neutral example
+domains demonstrating how the same core maps to different fields.
 
-### [DOMAIN:IGAAP] — UAP Research
+### [DOMAIN:ARCHIVE] — Historical Archive Research
 
 ```yaml
-# domain.yaml — IGAAP instance
+# domain.yaml — archive instance
 domain:
-  id: "igaap"
-  name: "IGAAP UAP Research"
-  default_language: "de"
+  id: "archive_research"
+  name: "Archive Research"
+  default_language: "en"
 
   entity_types:
-    primary: "case"
-    secondary: ["witness", "location", "phenomenon", "researcher", "document"]
+    primary: "record"
+    secondary: ["person", "location", "institution", "event", "document"]
 
   taxonomies:
-    - id: "hynek"
-      source: "taxonomies/hynek.yaml"
-    - id: "vallee"
-      source: "taxonomies/vallee.yaml"
-    - id: "ludwiger"
-      source: "taxonomies/ludwiger.yaml"
+    - id: "topic_taxonomy"
+      source: "taxonomies/topics.yaml"
+    - id: "document_types"
+      source: "taxonomies/document-types.yaml"
 
   similarity:
     domain_dimensions:
-      - id: "classification_similarity"
-        label: "Phenomenon type match"
+      - id: "topic_similarity"
+        label: "Topic overlap"
         source: "taxonomy_mapping"
-        taxonomy_ids: ["hynek", "vallee", "ludwiger"]
+        taxonomy_ids: ["topic_taxonomy"]
         weight: 0.2
-      - id: "physical_effects_similarity"
-        label: "Physical effects"
+      - id: "evidence_similarity"
+        label: "Evidence overlap"
         source: "attribute_comparison"
-        attributes: ["em_interference", "ground_traces", "radiation", "physiological_effects"]
+        attributes: ["document_type", "collection", "provenance_level"]
         weight: 0.1
 
   temporal_analysis:
-    cluster_label: "Sighting Wave"
+    cluster_label: "Record Cluster"
     known_patterns:
-      - id: "belgian_wave_1989"
-        label: "Belgian Wave"
-        time_window: { start: "1989-11-01", end: "1990-04-30" }
-        region: { type: "country", code: "BE" }
+      - id: "example_publication_period"
+        label: "Example publication period"
+        time_window: { start: "1970-01-01", end: "1970-12-31" }
     external_sources:
-      - id: "kp_index"
-        plugin: "noaa_kp"
-      - id: "meteor_showers"
-        plugin: "iau_meteor_calendar"
+      - id: "publication_calendar"
+        plugin: "publication_calendar"
+      - id: "library_catalog"
+        plugin: "library_catalog"
     reporting_bias:
-      correction_field: "investigator_density"
-      label: "Investigator density in the region"
+      correction_field: "collection_density"
+      label: "Collection density in the archive"
 
   credibility:
     dimensions:
       - id: "institutional_authority"
         label: "Institutional authority"
-      - id: "domain_track_record"
-        label: "Reliability in UAP context"
+      - id: "source_track_record"
+        label: "Source track record"
       - id: "conflict_of_interest"
         label: "Conflict of interest"
       - id: "transparency"
@@ -247,16 +280,16 @@ domain:
         label: "Internal consistency over time"
 
   display:
-    temporal_anomaly_cluster: "Sighting Wave"
-    spatiotemporal_cluster: "Geographic Hotspot"
-    similar_entity_result: "Similar Case"
-    primary_entity: "Case"
+    temporal_anomaly_cluster: "Record Cluster"
+    spatiotemporal_cluster: "Geographic Cluster"
+    similar_entity_result: "Related Record"
+    primary_entity: "Record"
 ```
 
 ### [DOMAIN:JOURNALISM] — Investigative Research
 
 ```yaml
-# domain.yaml — Investigative Journalism instance
+# domain.yaml — investigative journalism instance
 domain:
   id: "investigative_journalism"
   name: "Investigative Research Platform"
@@ -268,9 +301,9 @@ domain:
 
   taxonomies:
     - id: "topic_taxonomy"
-      source: "taxonomies/topics.yaml"       # e.g. Finance, Defense, Environment
+      source: "taxonomies/topics.yaml"
     - id: "document_types"
-      source: "taxonomies/doctypes.yaml"     # e.g. Leak, Court Filing, Press Release
+      source: "taxonomies/doctypes.yaml"
 
   similarity:
     domain_dimensions:
@@ -288,8 +321,8 @@ domain:
   temporal_analysis:
     cluster_label: "Publication Wave"
     known_patterns:
-      - id: "panama_papers_2016"
-        label: "Panama Papers"
+      - id: "example_publication_wave"
+        label: "Example publication wave"
         time_window: { start: "2016-04-01", end: "2016-06-30" }
     external_sources:
       - id: "parliamentary_sessions"
@@ -326,9 +359,15 @@ domain:
 
 Before implementing any new feature, verify all of the following:
 
-1. **Does the data model contain domain-specific field names?** Generalize them. Move domain labels into config.
-2. **Does the code reference concrete taxonomies or entity types?** Replace with config references.
-3. **Are external data sources hard-coded?** Model them as plugins with a standardized interface.
-4. **Are analysis dimensions or metrics fixed?** Separate core dimensions (semantic, structural, geospatial, temporal) from domain dimensions.
-5. **Does the feature work with a completely different `domain.yaml`?** If not, refactoring is required.
-6. **Are examples in the spec clearly marked as `[DOMAIN:IGAAP]`?** Ensure separation between core design and domain illustration.
+1. **Does the data model contain domain-specific field names?** Generalize them.
+   Move domain labels into config.
+2. **Does the code reference concrete taxonomies or entity types?** Replace with
+   config references.
+3. **Are external data sources hard-coded?** Model them as plugins with a
+   standardized interface.
+4. **Are analysis dimensions or metrics fixed?** Separate core dimensions
+   (semantic, structural, geospatial, temporal) from domain dimensions.
+5. **Does the feature work with a completely different `domain.yaml`?** If not,
+   refactoring is required.
+6. **Are public examples neutral?** Keep live instance details, real cloud
+   resources, private accounts, and production config out of tracked files.

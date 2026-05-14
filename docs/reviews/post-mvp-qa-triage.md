@@ -30,7 +30,7 @@ assessment. The final tally is:
 
 **Every one of the 14 critical-correctness checks from the M4 review is verified** — including the
 ones that were previously only tested against fake services but were now re-verified against real
-`text-embedding-004` and real Gemini 2.5 Flash in the `mulder-platform` project during Phase 4.
+`text-embedding-004` and real Gemini 2.5 Flash in a private GCP test project during Phase 4.
 The 768-dim Matryoshka contract, HNSW index, `fts_vector` generated column on `chunks`, dedup
 before corroboration, attribute-only contradiction detection, and cursor-based pipeline
 orchestrator all behave as specified.
@@ -361,7 +361,7 @@ post-gate fix PR. See `docs/reviews/post-mvp-qa-triage.md` for the gate verdict.
 | 🟢 | QA-P1 | Baseline & coverage audit — build/typecheck/lint/test + 48-step coverage matrix | `post-mvp-baseline.md`, `post-mvp-coverage-matrix.md` |
 | 🟢 | QA-P2 | Milestone reviews M3 + M4 — spec conformance, cross-cutting conventions, CLAUDE.md consistency | `m3-review.md`, `m4-review.md` |
 | 🟢 | QA-P3 | Test gap closure — golden retrieval set + runner + E2E pipeline test + CLI smoke tests | `eval/golden/retrieval/`, `packages/eval/src/retrieval-{metrics,runner}.ts`, `tests/specs/43_*.test.ts`, `44_*.test.ts`, `45_*.test.ts` |
-| 🟢 | QA-P4 | GCP smoketest — Frontiers of Science PDF through full pipeline on `mulder-platform`, 15 queries, cost ≪ €3 cap | `post-mvp-gcp-smoketest.md` |
+| 🟢 | QA-P4 | GCP smoketest — Frontiers of Science PDF through full pipeline in a private GCP test project, 15 queries, cost ≪ €3 cap | `post-mvp-gcp-smoketest.md` |
 | 🟢 | QA-P5 | Quality evaluation — extraction/segmentation/entity evals vs baseline; zero regression | `post-mvp-phase5-eval.md` |
 | 🟢 | QA-P6 | Documentation audit — README, CLAUDE.md, roadmap, config example, CLI help, error messages, devlog | `post-mvp-docs-audit.md` |
 | 🟢 | QA-P7 | Triage & gate verdict — 47 findings aggregated, classified, prioritized; gate verdict | `post-mvp-qa-triage.md` |
@@ -578,10 +578,10 @@ This is the strongest possible empirical proof that no behavior in the fixture-b
 
 ### 10.5 Real-GCP re-runs — DEFERRED
 
-Two items from the original Phase D plan are deferred for Franz's manual run:
+Two items from the original Phase D plan are deferred for an operator-run validation:
 
 1. **Phase 4 GCP smoketest re-run** with the stripped Frontiers PDF — requires real GCP credentials and ~€0.30 cost. The Document AI region fix is verified at the schema layer (spec 13 QA-09/10/11), and Spec 47 provides the live-GCP regression contract behind `MULDER_E2E_GCP=true`. Re-running the full smoketest is a manual verification step before the first real archive ingest.
-2. **Retrieval baseline generation** against a real-GCP corpus — requires real `text-embedding-004` outputs. Same gate as above. The four retrieval metric functions are independently validated by 28 unit tests in spec 43; the missing piece is the per-query ground-truth numbers, which Franz will capture in his first real-corpus run.
+2. **Retrieval baseline generation** against a real-GCP corpus — requires real `text-embedding-004` outputs. Same gate as above. The four retrieval metric functions are independently validated by 28 unit tests in spec 43; the missing piece is the per-query ground-truth numbers, which an operator will capture in a real-corpus run.
 
 Neither deferral changes the gate verdict — they are quality-baseline measurements, not regression checks.
 

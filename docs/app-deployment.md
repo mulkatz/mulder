@@ -43,8 +43,7 @@ The app must be populated through the Mulder pipeline only:
 Already present:
 
 - API production container via `Dockerfile.api`
-- manual GitHub Actions workflow for API and worker deployment
-- API and worker Cloud Run deployment steps
+- API and worker container/runtime support
 - Resend-backed invite delivery plumbing
 - owner invite helper: `pnpm invite:owner`
 - live smoke helper: `pnpm smoke:live`
@@ -210,7 +209,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 Create Secret Manager entries for:
 
 - `mulder-config-yaml`
-- `resend-api-key` or the selected mail provider key
+- `<mail-provider-api-key-secret>` for the selected mail provider key
 - database password, either inside `mulder-config-yaml` or as a separate secret referenced by private config generation
 - browser session secret
 - operator API key
@@ -249,29 +248,20 @@ The deploy identity needs:
 - Service Usage Admin if the workflow is allowed to enable APIs
 - enough Secret Manager access to attach runtime secrets to Cloud Run
 
-For open-source safety, prefer GitHub Workload Identity Federation over long-lived JSON service-account keys. The current workflow supports `GCP_CREDENTIALS_JSON`; treat that as a temporary deployment shortcut unless a private deployment policy explicitly accepts it.
+For open-source safety, prefer GitHub Workload Identity Federation over long-lived
+service-account key material. Production deployment identity and secret naming
+belong in a private operator repository, not in this public repository.
 
 ## Backend Deploy
 
-Use the manual GitHub Actions workflow `Deploy App`.
+Production deployment is intentionally not defined in the public repository.
+Operators should keep deployment workflows, live config, cloud project IDs,
+bucket names, processor IDs, sender addresses, and smoke credentials in a
+private ops repository.
 
-Required GitHub configuration:
-
-```text
-Secret: GCP_CREDENTIALS_JSON
-Variable: MULDER_MAIL_FROM
-```
-
-Workflow inputs:
-
-```text
-project_id=<gcp-project-id>
-region=<region>
-api_domain=<api-origin>
-app_origin=<app-origin>
-```
-
-The workflow builds `Dockerfile.api`, pushes the image to Artifact Registry, deploys `mulder-api`, deploys `mulder-worker`, and runs the live smoke check.
+The private workflow should accept a public Mulder ref, check out this repository
+at that ref, build `Dockerfile.api`, push the image to Artifact Registry, deploy
+API and worker services, run migrations, and execute opt-in live smoke checks.
 
 Cloud Run API environment:
 
@@ -282,7 +272,7 @@ MULDER_CORS_ORIGINS=<app-origin>
 MULDER_APP_BASE_URL=<app-origin>
 MULDER_INVITE_DELIVERY=resend
 MULDER_MAIL_FROM=<verified sender>
-RESEND_API_KEY=<mounted secret>
+<mail-provider-api-key-env>=<mounted secret>
 ```
 
 The API must allow CORS only for the production frontend origin:
@@ -462,7 +452,7 @@ Engineering-owned:
    - Add a Cloud Run Job or GitHub Actions step that runs `db migrate` with production config.
 
 3. Deployment identity hardening
-   - Replace `GCP_CREDENTIALS_JSON` with GitHub Workload Identity Federation.
+   - Keep production deployment on private Workload Identity Federation.
 
 4. Live QA automation
    - Add Playwright smoke screenshots for desktop and mobile against `<app-origin>`.

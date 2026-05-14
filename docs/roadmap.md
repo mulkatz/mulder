@@ -129,7 +129,7 @@ First version worth showing to anyone.
 | 🟢 | QA-P1 | Baseline & coverage audit — build/typecheck/lint/test + 48-step coverage matrix | `post-mvp-baseline.md`, `post-mvp-coverage-matrix.md` |
 | 🟢 | QA-P2 | Milestone reviews M3 + M4 — spec conformance, cross-cutting conventions, CLAUDE.md consistency | `m3-review.md`, `m4-review.md` |
 | 🟢 | QA-P3 | Test gap closure — golden retrieval set + runner + E2E pipeline test + CLI smoke tests | `eval/golden/retrieval/`, `packages/eval/src/retrieval-{metrics,runner}.ts`, `tests/specs/43/44/45.test.ts` |
-| 🟢 | QA-P4 | GCP smoketest — Frontiers of Science PDF through full pipeline on `mulder-platform`, 15 queries, cost ≪ €3 cap | `post-mvp-gcp-smoketest.md` |
+| 🟢 | QA-P4 | GCP smoketest — Frontiers of Science PDF through full pipeline in a private GCP test project, 15 queries, cost ≪ €3 cap | `post-mvp-gcp-smoketest.md` |
 | 🟢 | QA-P5 | Quality evaluation — extraction/segmentation/entity evals vs baseline; zero regression | `post-mvp-phase5-eval.md` |
 | 🟢 | QA-P6 | Documentation audit — README, CLAUDE.md, roadmap, config example, CLI help, error messages, devlog | `post-mvp-docs-audit.md` |
 | 🟢 | QA-P7 | Triage & gate verdict — 47 findings aggregated, classified, prioritized; gate verdict | `post-mvp-qa-triage.md` |

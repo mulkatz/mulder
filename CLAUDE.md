@@ -324,7 +324,7 @@ mulder/
 
 ## Important Context
 
-- Origin: UFO magazine analysis project, but designed fully **domain-agnostic**
+- Mulder is designed as a fully **domain-agnostic** document intelligence platform
 - `mulder.config.yaml` is the central control — all domain-specific logic lives there
 - No tiers, no paywalls — fully open source. Users enable/disable capabilities via config flags.
 - Gemini is the only LLM provider (native PDF support + structured output) — also used for Web Grounding (`google_search_retrieval`)

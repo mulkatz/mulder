@@ -1,6 +1,6 @@
 # Frontiers of Science 1980 v02-5-6 — Document AI OCR
 
-Source: `.local/frontiers-stripped.pdf` (image-only reconstruction of the original, no text layer) · extracted via Google Document AI Layout Parser at `projects/mulder-platform/locations/eu/processors/66cbfd75679f38a8` · 16 pages, 24.0s wall-clock
+Source: `.local/frontiers-stripped.pdf` (image-only reconstruction of the original, no text layer) · extracted via Google Document AI Layout Parser using a private test processor · 16 pages, 24.0s wall-clock
 
 ---
 

@@ -11,7 +11,7 @@
  *      wasn't bypassing it.
  *
  * Writes two Markdown documents to `docs/reviews/frontiers-docai-comparison/`
- * so Franz can diff them by eye.
+ * so an operator can diff them by eye.
  *
  * Cost: one 16-page Document AI Layout Parser call ≈ €0.15. Real GCP call.
  *
@@ -82,7 +82,7 @@ console.log('(one-time ~€0.15 cost)');
 
 // Bypass mulder's service registry and call DocumentProcessorServiceClient
 // directly. The shared `getDocumentAIClient()` initializes against the
-// default (global → us) endpoint and the processor 66cbfd75679f38a8 lives
+// default (global → us) endpoint and this comparison used a private processor
 // in the eu multi-region — that mismatch is a separate latent bug that the
 // B-7 schema fix did not address. Tracking it as a follow-up; for now this
 // script wires up the client explicitly with the eu endpoint so we get the
