@@ -58,21 +58,26 @@ function Field({
 	description,
 	id,
 	label,
+	marker,
 }: {
 	children: ReactNode;
 	description?: string;
 	id?: string;
 	label: string;
+	marker?: ReactNode;
 }) {
 	return (
 		<div className="block min-w-0">
-			{id ? (
-				<label className="text-sm font-medium text-text" htmlFor={id}>
-					{label}
-				</label>
-			) : (
-				<span className="text-sm font-medium text-text">{label}</span>
-			)}
+			<div className="flex items-center gap-2">
+				{id ? (
+					<label className="text-sm font-medium text-text" htmlFor={id}>
+						{label}
+					</label>
+				) : (
+					<span className="text-sm font-medium text-text">{label}</span>
+				)}
+				{marker}
+			</div>
 			{description ? <span className="mt-0.5 block text-xs text-text-subtle">{description}</span> : null}
 			<div className="mt-2">{children}</div>
 		</div>
@@ -118,6 +123,14 @@ function uploadRetryLabel(retryMode: DocumentUploadRetryMode | undefined, t: Ret
 	return t('common.retry');
 }
 
+function AiMarker({ label }: { label: string }) {
+	return (
+		<span className="rounded-sm border border-accent/30 bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent">
+			{label}
+		</span>
+	);
+}
+
 export function AddSourcesPage() {
 	const { t, i18n } = useTranslation();
 	const sessionQuery = useSession();
@@ -147,6 +160,7 @@ export function AddSourcesPage() {
 	const [newCollectionName, setNewCollectionName] = useState('');
 	const [newCollectionError, setNewCollectionError] = useState<string | undefined>();
 	const [intakeSuggestionId, setIntakeSuggestionId] = useState<string | undefined>();
+	const [aiSuggestedFields, setAiSuggestedFields] = useState<string[]>([]);
 	const [autofillWarnings, setAutofillWarnings] = useState<string[]>([]);
 	const [autofillError, setAutofillError] = useState<string | undefined>();
 	const [autofillPending, setAutofillPending] = useState(false);
@@ -179,9 +193,18 @@ export function AddSourcesPage() {
 		setFiles(Array.from(event.target.files ?? []));
 		setFileSelectionId(createClientId());
 		setIntakeSuggestionId(undefined);
+		setAiSuggestedFields([]);
 		setAutofillWarnings([]);
 		setAutofillError(undefined);
 		upload.reset();
+	}
+
+	function clearSuggestedField(field: string) {
+		setAiSuggestedFields((current) => current.filter((candidate) => candidate !== field));
+	}
+
+	function suggestedMarker(field: string) {
+		return aiSuggestedFields.includes(field) ? <AiMarker label={t('addSources.aiSuggested')} /> : undefined;
 	}
 
 	function buildPayload(): DocumentUploadPayload {
@@ -273,6 +296,7 @@ export function AddSourcesPage() {
 				collectionId || null,
 			);
 			const suggested = response.data.suggested;
+			const appliedFields: string[] = [];
 			const provenance = suggested.provenance;
 			const originalSource = provenance?.original_source;
 			const authenticity = provenance?.authenticity;
@@ -280,19 +304,43 @@ export function AddSourcesPage() {
 			if (originalSource?.language) {
 				setSourceLanguage(originalSource.language);
 				setLanguageTouched(true);
+				appliedFields.push('language');
 			}
-			if (originalSource?.source_type) setSourceType(originalSource.source_type);
-			if (originalSource?.description) setSourceDescription(originalSource.description);
-			if (authenticity?.status) setAuthenticityStatus(authenticity.status);
-			if (authenticity?.notes) setAuthenticityNotes(authenticity.notes);
-			if (acquisition?.channel) setChannel(acquisition.channel);
-			if (acquisition?.notes) setAcquisitionNotes(acquisition.notes);
+			if (originalSource?.source_type) {
+				setSourceType(originalSource.source_type);
+				appliedFields.push('sourceType');
+			}
+			if (originalSource?.description) {
+				setSourceDescription(originalSource.description);
+				appliedFields.push('description');
+			}
+			if (authenticity?.status) {
+				setAuthenticityStatus(authenticity.status);
+				appliedFields.push('authenticityStatus');
+			}
+			if (authenticity?.notes) {
+				setAuthenticityNotes(authenticity.notes);
+				appliedFields.push('authenticityNotes');
+			}
+			if (acquisition?.channel) {
+				setChannel(acquisition.channel);
+				appliedFields.push('channel');
+			}
+			if (acquisition?.notes) {
+				setAcquisitionNotes(acquisition.notes);
+				appliedFields.push('acquisitionNotes');
+			}
 			if (suggested.expected_sensitivity?.level) {
 				setSensitivityLevel(suggested.expected_sensitivity.level);
 				setSensitivityTouched(true);
+				appliedFields.push('sensitivity');
 			}
-			if (suggested.expected_sensitivity?.reason) setSensitivityReason(suggested.expected_sensitivity.reason);
+			if (suggested.expected_sensitivity?.reason) {
+				setSensitivityReason(suggested.expected_sensitivity.reason);
+				appliedFields.push('sensitivityReason');
+			}
 			setIntakeSuggestionId(response.data.suggestion_id);
+			setAiSuggestedFields(appliedFields);
 			setAutofillWarnings(response.data.warnings);
 		} catch (error) {
 			setAutofillError(getErrorMessage(error, t('addSources.autofillFailed')));
@@ -370,22 +418,34 @@ export function AddSourcesPage() {
 								type="file"
 							/>
 						</Field>
-						<div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-panel-raised p-3">
-							<button
-								className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field disabled:text-text-faint"
-								disabled={!canAutofill}
-								onClick={handleAutofill}
-								type="button"
-							>
-								<Wand2 className="size-4" />
-								{autofillPending ? t('addSources.autofilling') : t('addSources.autofill')}
-							</button>
-							<p className="min-w-0 flex-1 text-xs text-text-subtle">
-								{files.length > 1 ? t('addSources.autofillHelpFirstFile') : t('addSources.autofillHelp')}
-							</p>
-							{intakeSuggestionId ? (
-								<span className="text-xs font-medium text-accent">{t('addSources.aiSuggested')}</span>
-							) : null}
+						<div className="rounded-md border border-border bg-panel-raised p-3">
+							<div className="flex flex-wrap items-center gap-3">
+								<div className="min-w-0 flex-1">
+									<p className="text-sm font-medium text-text">{t('addSources.autofillStepTitle')}</p>
+									<p className="mt-1 text-xs text-text-subtle">
+										{files.length > 1 ? t('addSources.autofillHelpFirstFile') : t('addSources.autofillHelp')}
+									</p>
+								</div>
+								<button
+									className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field disabled:text-text-faint"
+									disabled={!canAutofill}
+									onClick={handleAutofill}
+									type="button"
+								>
+									<Wand2 className="size-4" />
+									{autofillPending ? t('addSources.autofilling') : t('addSources.acceptSuggestions')}
+								</button>
+								<button
+									className="inline-flex h-9 items-center rounded-md px-3 text-sm text-text-muted transition-colors hover:bg-field hover:text-text"
+									onClick={() => {
+										setAutofillError(undefined);
+										setAutofillWarnings([]);
+									}}
+									type="button"
+								>
+									{t('addSources.continueWithoutSuggestions')}
+								</button>
+							</div>
 						</div>
 						{autofillError ? <StateNotice tone="error" title={autofillError} /> : null}
 						{autofillWarnings.length > 0 ? (
@@ -395,12 +455,17 @@ export function AddSourcesPage() {
 						) : null}
 
 						<div className="grid gap-4 md:grid-cols-2">
-							<Field id="add-sources-language" label={t('addSources.sourceLanguage')}>
+							<Field
+								id="add-sources-language"
+								label={t('addSources.sourceLanguage')}
+								marker={suggestedMarker('language')}
+							>
 								<select
 									className={fieldClassName()}
 									id="add-sources-language"
 									onChange={(event) => {
 										setLanguageTouched(true);
+										clearSuggestedField('language');
 										setSourceLanguage(event.target.value);
 									}}
 									value={sourceLanguage}
@@ -413,11 +478,18 @@ export function AddSourcesPage() {
 									))}
 								</select>
 							</Field>
-							<Field id="add-sources-source-type" label={t('addSources.sourceType')}>
+							<Field
+								id="add-sources-source-type"
+								label={t('addSources.sourceType')}
+								marker={suggestedMarker('sourceType')}
+							>
 								<select
 									className={fieldClassName()}
 									id="add-sources-source-type"
-									onChange={(event) => setSourceType(event.target.value as UploadOriginalSourceType | '')}
+									onChange={(event) => {
+										clearSuggestedField('sourceType');
+										setSourceType(event.target.value as UploadOriginalSourceType | '');
+									}}
 									value={sourceType}
 								>
 									<option value={autoValue}>{t('common.auto')}</option>
@@ -434,21 +506,32 @@ export function AddSourcesPage() {
 							description={t('addSources.sourceDescriptionHelp')}
 							id="add-sources-description"
 							label={t('addSources.sourceDescription')}
+							marker={suggestedMarker('description')}
 						>
 							<textarea
 								className={fieldClassName('min-h-24 resize-y')}
 								id="add-sources-description"
-								onChange={(event) => setSourceDescription(event.target.value)}
+								onChange={(event) => {
+									clearSuggestedField('description');
+									setSourceDescription(event.target.value);
+								}}
 								value={sourceDescription}
 							/>
 						</Field>
 
 						<div className="grid gap-4 md:grid-cols-2">
-							<Field id="add-sources-acquisition-channel" label={t('addSources.acquisitionChannel')}>
+							<Field
+								id="add-sources-acquisition-channel"
+								label={t('addSources.acquisitionChannel')}
+								marker={suggestedMarker('channel')}
+							>
 								<select
 									className={fieldClassName()}
 									id="add-sources-acquisition-channel"
-									onChange={(event) => setChannel(event.target.value as UploadAcquisitionChannel | '')}
+									onChange={(event) => {
+										clearSuggestedField('channel');
+										setChannel(event.target.value as UploadAcquisitionChannel | '');
+									}}
 									value={channel}
 								>
 									<option value={autoValue}>{t('common.auto')}</option>
@@ -459,11 +542,18 @@ export function AddSourcesPage() {
 									))}
 								</select>
 							</Field>
-							<Field id="add-sources-authenticity-status" label={t('addSources.authenticityStatus')}>
+							<Field
+								id="add-sources-authenticity-status"
+								label={t('addSources.authenticityStatus')}
+								marker={suggestedMarker('authenticityStatus')}
+							>
 								<select
 									className={fieldClassName()}
 									id="add-sources-authenticity-status"
-									onChange={(event) => setAuthenticityStatus(event.target.value as UploadAuthenticityStatus | '')}
+									onChange={(event) => {
+										clearSuggestedField('authenticityStatus');
+										setAuthenticityStatus(event.target.value as UploadAuthenticityStatus | '');
+									}}
 									value={authenticityStatus}
 								>
 									<option value={autoValue}>{t('common.auto')}</option>
@@ -477,19 +567,33 @@ export function AddSourcesPage() {
 						</div>
 
 						<div className="grid gap-4 md:grid-cols-2">
-							<Field id="add-sources-acquisition-notes" label={t('addSources.acquisitionNotes')}>
+							<Field
+								id="add-sources-acquisition-notes"
+								label={t('addSources.acquisitionNotes')}
+								marker={suggestedMarker('acquisitionNotes')}
+							>
 								<textarea
 									className={fieldClassName('min-h-24 resize-y')}
 									id="add-sources-acquisition-notes"
-									onChange={(event) => setAcquisitionNotes(event.target.value)}
+									onChange={(event) => {
+										clearSuggestedField('acquisitionNotes');
+										setAcquisitionNotes(event.target.value);
+									}}
 									value={acquisitionNotes}
 								/>
 							</Field>
-							<Field id="add-sources-authenticity-notes" label={t('addSources.authenticityNotes')}>
+							<Field
+								id="add-sources-authenticity-notes"
+								label={t('addSources.authenticityNotes')}
+								marker={suggestedMarker('authenticityNotes')}
+							>
 								<textarea
 									className={fieldClassName('min-h-24 resize-y')}
 									id="add-sources-authenticity-notes"
-									onChange={(event) => setAuthenticityNotes(event.target.value)}
+									onChange={(event) => {
+										clearSuggestedField('authenticityNotes');
+										setAuthenticityNotes(event.target.value);
+									}}
 									value={authenticityNotes}
 								/>
 							</Field>
@@ -515,12 +619,17 @@ export function AddSourcesPage() {
 						</div>
 
 						<div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
-							<Field id="add-sources-sensitivity-level" label={t('addSources.sensitivityLevel')}>
+							<Field
+								id="add-sources-sensitivity-level"
+								label={t('addSources.sensitivityLevel')}
+								marker={suggestedMarker('sensitivity')}
+							>
 								<select
 									className={fieldClassName()}
 									id="add-sources-sensitivity-level"
 									onChange={(event) => {
 										setSensitivityTouched(true);
+										clearSuggestedField('sensitivity');
 										setSensitivityLevel(event.target.value as SensitivityLevel | '');
 									}}
 									value={sensitivityLevel}
@@ -533,11 +642,18 @@ export function AddSourcesPage() {
 									))}
 								</select>
 							</Field>
-							<Field id="add-sources-sensitivity-reason" label={t('addSources.sensitivityReason')}>
+							<Field
+								id="add-sources-sensitivity-reason"
+								label={t('addSources.sensitivityReason')}
+								marker={suggestedMarker('sensitivityReason')}
+							>
 								<input
 									className={fieldClassName()}
 									id="add-sources-sensitivity-reason"
-									onChange={(event) => setSensitivityReason(event.target.value)}
+									onChange={(event) => {
+										clearSuggestedField('sensitivityReason');
+										setSensitivityReason(event.target.value);
+									}}
 									value={sensitivityReason}
 								/>
 							</Field>
