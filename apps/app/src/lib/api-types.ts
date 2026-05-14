@@ -38,6 +38,12 @@ export interface StatusResponse {
 export interface JobSummary {
 	id: string;
 	type: string;
+	subject: {
+		kind: 'source' | 'batch' | 'job';
+		label: string;
+		source_id?: string;
+		source_count?: number;
+	};
 	status: JobStatus;
 	attempts: number;
 	max_attempts: number;
@@ -59,6 +65,11 @@ export interface JobProgress {
 	source_counts: { pending: number; processing: number; completed: number; failed: number };
 	sources: {
 		source_id: string;
+		source: {
+			id: string;
+			filename: string;
+			status: string;
+		} | null;
 		current_step: string;
 		status: 'pending' | 'processing' | 'completed' | 'failed';
 		error_message: string | null;

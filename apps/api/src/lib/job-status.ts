@@ -2,6 +2,7 @@ import type {
 	Job,
 	JobStatus,
 	MulderConfig,
+	PersistedSource,
 	PipelineRun,
 	PipelineRunSource,
 	PipelineRunSourceStatus,
@@ -56,12 +57,20 @@ interface JobProgress {
 	source_counts: Record<PipelineRunSourceStatus, number>;
 	sources: Array<{
 		source_id: string;
+		source: {
+			id: string;
+			filename: string;
+			status: string;
+		} | null;
 		current_step: string;
 		status: PipelineRunSource['status'];
 		error_message: string | null;
 		updated_at: string;
 	}>;
 }
+
+type JobSubject = JobListResponse['data'][number]['subject'];
+type SourceSummary = NonNullable<JobProgress['sources'][number]['source']>;
 
 function resolveContext(): JobStatusContext {
 	const config = loadConfig();
@@ -142,10 +151,87 @@ function resolveSubmittedByUserId(payload: Job['payload']): string | null {
 	return typeof userId === 'string' && userId.trim().length > 0 ? userId.trim() : null;
 }
 
-function mapJobSummary(job: Job): JobListResponse['data'][number] {
+function defaultJobSubject(job: Job): JobSubject {
+	return {
+		kind: 'job',
+		label: job.type,
+	};
+}
+
+function mapSourceSummary(source: PersistedSource): SourceSummary {
+	return {
+		id: source.id,
+		filename: source.filename,
+		status: source.status,
+	};
+}
+
+async function findVisibleSourceSummary(
+	pool: Pool,
+	sourceId: string,
+	maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity>,
+): Promise<SourceSummary | null> {
+	const source = await findSourceById(pool, sourceId, { maxSensitivityLevel });
+	return source ? mapSourceSummary(source) : null;
+}
+
+async function resolveJobSubject(
+	pool: Pool,
+	job: Job,
+	options?: { maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity> },
+): Promise<JobSubject> {
+	const sourceId = resolveSourceId(job.payload);
+	if (sourceId) {
+		const source = await findVisibleSourceSummary(pool, sourceId, options?.maxSensitivityLevel);
+		if (source) {
+			return {
+				kind: 'source',
+				label: source.filename,
+				source_id: source.id,
+				source_count: 1,
+			};
+		}
+		return defaultJobSubject(job);
+	}
+
+	const runId = resolveRunId(job.payload);
+	if (!runId) {
+		return defaultJobSubject(job);
+	}
+
+	const runSources = await findPipelineRunSourcesByRunId(pool, runId);
+	const sourceSummaries = (
+		await Promise.all(
+			runSources.map((source) => findVisibleSourceSummary(pool, source.sourceId, options?.maxSensitivityLevel)),
+		)
+	).filter((source): source is SourceSummary => Boolean(source));
+
+	if (sourceSummaries.length === 1) {
+		const source = sourceSummaries[0];
+		return {
+			kind: 'source',
+			label: source.filename,
+			source_id: source.id,
+			source_count: 1,
+		};
+	}
+
+	if (sourceSummaries.length > 1) {
+		return {
+			kind: 'batch',
+			label: `${sourceSummaries[0].filename} + ${sourceSummaries.length - 1}`,
+			source_count: sourceSummaries.length,
+		};
+	}
+
+	return defaultJobSubject(job);
+}
+
+function mapJobSummary(job: Job, subject: JobSubject = defaultJobSubject(job)): JobListResponse['data'][number] {
 	return {
 		id: job.id,
 		type: job.type,
+		subject,
 		status: job.status,
 		attempts: job.attempts,
 		max_attempts: job.maxAttempts,
@@ -159,10 +245,14 @@ function mapJobSummary(job: Job): JobListResponse['data'][number] {
 	};
 }
 
-function mapRedactedJobSummary(job: Job): JobListResponse['data'][number] {
+function mapRedactedJobSummary(
+	job: Job,
+	subject: JobSubject = defaultJobSubject(job),
+): JobListResponse['data'][number] {
 	return {
 		id: job.id,
 		type: job.type,
+		subject,
 		status: job.status,
 		attempts: job.attempts,
 		max_attempts: job.maxAttempts,
@@ -175,10 +265,11 @@ function mapRedactedJobSummary(job: Job): JobListResponse['data'][number] {
 	};
 }
 
-function mapJobDetail(job: Job): JobDetailResponse['data']['job'] {
+function mapJobDetail(job: Job, subject: JobSubject = defaultJobSubject(job)): JobDetailResponse['data']['job'] {
 	return {
 		id: job.id,
 		type: job.type,
+		subject,
 		status: job.status,
 		attempts: job.attempts,
 		max_attempts: job.maxAttempts,
@@ -191,9 +282,12 @@ function mapJobDetail(job: Job): JobDetailResponse['data']['job'] {
 	};
 }
 
-function mapRedactedJobDetail(job: Job): JobDetailResponse['data']['job'] {
+function mapRedactedJobDetail(
+	job: Job,
+	subject: JobSubject = defaultJobSubject(job),
+): JobDetailResponse['data']['job'] {
 	return {
-		...mapRedactedJobSummary(job),
+		...mapRedactedJobSummary(job, subject),
 	};
 }
 
@@ -231,6 +325,21 @@ async function filterVisibleProgressSources(
 	return visible.filter((entry) => entry.visible).map((entry) => entry.source);
 }
 
+async function mapProgressSource(
+	pool: Pool,
+	source: PipelineRunSource,
+	options?: { redacted?: boolean; maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity> },
+): Promise<JobProgress['sources'][number]> {
+	return {
+		source_id: source.sourceId,
+		source: await findVisibleSourceSummary(pool, source.sourceId, options?.maxSensitivityLevel),
+		current_step: source.currentStep,
+		status: source.status,
+		error_message: options?.redacted ? null : source.errorMessage,
+		updated_at: source.updatedAt.toISOString(),
+	};
+}
+
 async function resolveProgress(
 	pool: Pool,
 	job: Job,
@@ -259,13 +368,7 @@ async function resolveProgress(
 		run_id: run.id,
 		run_status: run.status,
 		source_counts: options?.redacted ? countProgressSources(sources) : sourceCounts,
-		sources: sources.map((source) => ({
-			source_id: source.sourceId,
-			current_step: source.currentStep,
-			status: source.status,
-			error_message: options?.redacted ? null : source.errorMessage,
-			updated_at: source.updatedAt.toISOString(),
-		})),
+		sources: await Promise.all(sources.map((source) => mapProgressSource(pool, source, options))),
 	};
 }
 
@@ -323,8 +426,10 @@ async function listVisibleJobsForPrincipal(
 		`,
 		pageParams,
 	);
+	const jobs = result.rows.map(mapJobRow);
+	const subjects = await Promise.all(jobs.map((job) => resolveJobSubject(pool, job, { maxSensitivityLevel })));
 	return {
-		data: result.rows.map(mapJobRow).map(mapRedactedJobSummary),
+		data: jobs.map((job, index) => mapRedactedJobSummary(job, subjects[index])),
 		meta: {
 			count: Number.parseInt(countResult.rows[0]?.count ?? '0', 10) || 0,
 			limit: input.limit,
@@ -363,8 +468,9 @@ export async function listRecentJobs(input: JobListQuery, options?: JobRouteOpti
 				limit: input.limit,
 			}),
 		]);
+		const subjects = await Promise.all(jobs.map((job) => resolveJobSubject(pool, job)));
 		return {
-			data: jobs.map(mapJobSummary),
+			data: jobs.map((job, index) => mapJobSummary(job, subjects[index])),
 			meta: {
 				count,
 				limit: input.limit,
@@ -405,17 +511,19 @@ export async function getJobStatusById(id: string, options?: JobRouteOptions): P
 				context: { id },
 			});
 		}
+		const subject = await resolveJobSubject(pool, job, { maxSensitivityLevel });
 		return {
 			data: {
-				job: mapRedactedJobDetail(job),
+				job: mapRedactedJobDetail(job, subject),
 				progress: await resolveProgress(pool, job, { redacted: true, maxSensitivityLevel }),
 			},
 		};
 	}
 
+	const subject = await resolveJobSubject(pool, job);
 	return {
 		data: {
-			job: mapJobDetail(job),
+			job: mapJobDetail(job, subject),
 			progress: await resolveProgress(pool, job),
 		},
 	};
