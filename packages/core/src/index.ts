@@ -772,7 +772,7 @@ export type { RateLimiterOptions } from './shared/rate-limiter.js';
 // ── Rate limiter ────────────────────────────────────────────
 export { RateLimiter } from './shared/rate-limiter.js';
 // ── Service abstraction ─────────────────────────────────────
-export { createServiceRegistry } from './shared/registry.js';
+export { assertProductionServiceConfig, createServiceRegistry } from './shared/registry.js';
 export type { RetryOptions } from './shared/retry.js';
 // ── Retry ───────────────────────────────────────────────────
 export { withRetry } from './shared/retry.js';

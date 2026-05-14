@@ -10,6 +10,7 @@
  */
 
 import type { MulderConfig } from '../config/types.js';
+import { MulderError } from './errors.js';
 import type { Logger } from './logger.js';
 import { createDevServices } from './services.dev.js';
 import { createGcpServices } from './services.gcp.js';
@@ -22,7 +23,23 @@ import type { ServiceMode, Services } from './services.js';
 /**
  * Determines the active service mode based on config and environment.
  */
+export function assertProductionServiceConfig(config: MulderConfig): void {
+	if (process.env.NODE_ENV === 'production') {
+		if (config.dev_mode) {
+			throw new MulderError('Production runtime cannot start with dev_mode enabled.', 'CONFIG_INVALID', {
+				context: { dev_mode: config.dev_mode, node_env: process.env.NODE_ENV },
+			});
+		}
+	}
+}
+
 function resolveServiceMode(config: MulderConfig): ServiceMode {
+	assertProductionServiceConfig(config);
+
+	if (process.env.NODE_ENV === 'production') {
+		return 'gcp';
+	}
+
 	if (config.dev_mode || process.env.NODE_ENV === 'development') {
 		return 'dev';
 	}
@@ -51,7 +68,10 @@ function resolveServiceMode(config: MulderConfig): ServiceMode {
 export function createServiceRegistry(config: MulderConfig, logger: Logger): Services {
 	const mode = resolveServiceMode(config);
 
-	logger.info({ mode }, 'Initializing service registry');
+	logger.info(
+		{ service_mode: mode, dev_mode: config.dev_mode, node_env: process.env.NODE_ENV ?? null },
+		'Initializing service registry',
+	);
 
 	if (mode === 'dev') {
 		return createDevServices(config, logger);
