@@ -17,7 +17,7 @@ import { useDocumentObservability } from '@/features/documents/useDocumentObserv
 import { useJob } from '@/features/jobs/useJob';
 import { useJobs } from '@/features/jobs/useJobs';
 import type { DocumentObservabilityResponse, JobProgress } from '@/lib/api-types';
-import { STABLE_POLL_INTERVAL_MS } from '@/lib/polling';
+import { getRetryAfterDelayMs, STABLE_POLL_INTERVAL_MS } from '@/lib/polling';
 import { getErrorMessage, isApiUnavailableError } from '@/lib/query-state';
 import type { AnalysisRun, RunStatus } from '@/lib/types';
 import { jobDetailToAnalysisRun, jobToAnalysisRun } from '@/lib/view-models';
@@ -292,11 +292,15 @@ export function AnalysisRunsPage() {
 
 	const selectedListRun =
 		filteredRuns.find((run) => run.id === selectedId) ?? runs.find((run) => run.id === selectedId) ?? filteredRuns[0];
-	const selectedJobRefetchInterval =
-		selectedListRun?.status === 'queued' || selectedListRun?.status === 'running' ? STABLE_POLL_INTERVAL_MS : false;
 	const selectedJobId = selectedListRun?.id ?? selectedId;
 	const selectedJobQuery = useJob(selectedJobId, {
-		refetchInterval: selectedJobRefetchInterval,
+		refetchInterval: (query) => {
+			if (!selectedJobId) return false;
+			if (query.state.error) return getRetryAfterDelayMs(query.state.error, STABLE_POLL_INTERVAL_MS);
+			const status = query.state.data?.data.job.status;
+			if (!status) return STABLE_POLL_INTERVAL_MS;
+			return status === 'pending' || status === 'running' ? STABLE_POLL_INTERVAL_MS : false;
+		},
 	});
 	const selectedRun = selectedJobQuery.data
 		? jobDetailToAnalysisRun(selectedJobQuery.data.data, viewModelContext)
