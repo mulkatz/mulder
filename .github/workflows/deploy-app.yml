@@ -10,11 +10,37 @@ on:
         description: Cloud Run and Artifact Registry region
         required: true
       api_domain:
-        description: Public API origin
+        description: Public API origin, for example https://api.igaap.mulder.work
         required: true
       app_origin:
-        description: Public frontend origin
+        description: Public app origin, for example https://igaap.mulder.work
         required: true
+      api_service:
+        description: Cloud Run API service name
+        required: true
+        default: mulder-api
+      worker_service:
+        description: Cloud Run worker service name
+        required: true
+        default: mulder-worker
+      app_service:
+        description: Cloud Run app service name
+        required: true
+        default: mulder-app
+      migrate_job:
+        description: Cloud Run job name for database migrations
+        required: true
+        default: mulder-migrate
+      runtime_service_account:
+        description: Runtime service account email
+        required: true
+      cloudsql_instance:
+        description: Cloud SQL instance connection name
+        required: true
+      config_secret:
+        description: Secret Manager secret name for mulder.config.yaml
+        required: true
+        default: mulder-config-yaml
 
 jobs:
   deploy:
@@ -22,6 +48,12 @@ jobs:
     permissions:
       contents: read
       id-token: write
+
+    env:
+      API_IMAGE: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/mulder/mulder-api:${{ github.sha }}
+      API_IMAGE_RUN: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/mulder/mulder-api:run-${{ github.run_number }}
+      APP_IMAGE: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/mulder/mulder-app:${{ github.sha }}
+      APP_IMAGE_RUN: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/mulder/mulder-app:run-${{ github.run_number }}
 
     steps:
       - uses: actions/checkout@v6
@@ -31,6 +63,17 @@ jobs:
           credentials_json: ${{ secrets.GCP_CREDENTIALS_JSON }}
 
       - uses: google-github-actions/setup-gcloud@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: pnpm/action-setup@v5
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
 
       - name: Enable required services
         run: |
@@ -51,51 +94,108 @@ jobs:
             --project "${{ inputs.project_id }}" \
             --location "${{ inputs.region }}" \
             --repository-format docker \
-            --description "Mulder API and worker containers"
+            --description "Mulder API, worker, and app containers"
 
       - name: Configure Docker auth
         run: gcloud auth configure-docker "${{ inputs.region }}-docker.pkg.dev" --quiet
 
-      - name: Build and push image
-        env:
-          IMAGE: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/mulder/mulder-api:${{ github.sha }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and push API image
         run: |
-          docker build -f Dockerfile.api -t "$IMAGE" .
-          docker push "$IMAGE"
+          docker buildx build \
+            --platform linux/amd64 \
+            -f Dockerfile.api \
+            -t "$API_IMAGE" \
+            -t "$API_IMAGE_RUN" \
+            --push \
+            .
+
+      - name: Update migration job
+        run: |
+          COMMON_FLAGS=(
+            --project "${{ inputs.project_id }}"
+            --region "${{ inputs.region }}"
+            --image "$API_IMAGE"
+            --service-account "${{ inputs.runtime_service_account }}"
+            --set-cloudsql-instances "${{ inputs.cloudsql_instance }}"
+            --set-env-vars "NODE_ENV=production,MULDER_CONFIG=/secrets/mulder.config.yaml"
+            --set-secrets "/secrets/mulder.config.yaml=${{ inputs.config_secret }}:latest,RESEND_API_KEY=resend-api-key:latest"
+            --command node
+            --args apps/cli/dist/index.js,db,migrate
+          )
+          gcloud run jobs describe "${{ inputs.migrate_job }}" \
+            --project "${{ inputs.project_id }}" \
+            --region "${{ inputs.region }}" >/dev/null 2>&1 && \
+          gcloud run jobs update "${{ inputs.migrate_job }}" "${COMMON_FLAGS[@]}" || \
+          gcloud run jobs create "${{ inputs.migrate_job }}" "${COMMON_FLAGS[@]}"
+
+      - name: Execute migration job
+        run: |
+          gcloud run jobs execute "${{ inputs.migrate_job }}" \
+            --project "${{ inputs.project_id }}" \
+            --region "${{ inputs.region }}" \
+            --wait
 
       - name: Deploy API service
-        env:
-          IMAGE: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/mulder/mulder-api:${{ github.sha }}
-          SERVICE_ACCOUNT: mulder-runtime@${{ inputs.project_id }}.iam.gserviceaccount.com
         run: |
-          gcloud run deploy mulder-api \
+          gcloud run deploy "${{ inputs.api_service }}" \
             --project "${{ inputs.project_id }}" \
             --region "${{ inputs.region }}" \
-            --image "$IMAGE" \
-            --service-account "$SERVICE_ACCOUNT" \
+            --image "$API_IMAGE" \
+            --service-account "${{ inputs.runtime_service_account }}" \
             --allow-unauthenticated \
             --port 8080 \
+            --add-cloudsql-instances "${{ inputs.cloudsql_instance }}" \
             --set-env-vars "NODE_ENV=production,MULDER_CONFIG=/secrets/mulder.config.yaml,MULDER_CORS_ORIGINS=${{ inputs.app_origin }},MULDER_APP_BASE_URL=${{ inputs.app_origin }},MULDER_INVITE_DELIVERY=resend,MULDER_MAIL_FROM=${{ vars.MULDER_MAIL_FROM }}" \
-            --set-secrets "/secrets/mulder.config.yaml=mulder-config-yaml:latest,RESEND_API_KEY=resend-api-key:latest"
+            --set-secrets "/secrets/mulder.config.yaml=${{ inputs.config_secret }}:latest,RESEND_API_KEY=resend-api-key:latest"
 
       - name: Deploy worker service
-        env:
-          IMAGE: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/mulder/mulder-api:${{ github.sha }}
-          SERVICE_ACCOUNT: mulder-runtime@${{ inputs.project_id }}.iam.gserviceaccount.com
         run: |
-          gcloud run deploy mulder-worker \
+          gcloud run deploy "${{ inputs.worker_service }}" \
             --project "${{ inputs.project_id }}" \
             --region "${{ inputs.region }}" \
-            --image "$IMAGE" \
-            --service-account "$SERVICE_ACCOUNT" \
+            --image "$API_IMAGE" \
+            --service-account "${{ inputs.runtime_service_account }}" \
             --no-allow-unauthenticated \
             --port 8080 \
             --min-instances 1 \
             --no-cpu-throttling \
+            --add-cloudsql-instances "${{ inputs.cloudsql_instance }}" \
             --command node \
             --args scripts/run-worker-service.mjs \
             --set-env-vars "NODE_ENV=production,MULDER_CONFIG=/secrets/mulder.config.yaml,MULDER_WORKER_CONCURRENCY=1,MULDER_WORKER_POLL_INTERVAL_MS=5000" \
-            --set-secrets "/secrets/mulder.config.yaml=mulder-config-yaml:latest,RESEND_API_KEY=resend-api-key:latest"
+            --set-secrets "/secrets/mulder.config.yaml=${{ inputs.config_secret }}:latest,RESEND_API_KEY=resend-api-key:latest"
+
+      - name: Build app bundle
+        env:
+          VITE_API_BASE_URL: ${{ inputs.api_domain }}
+        run: pnpm --filter @mulder/app build
+
+      - name: Build and push app image
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -f apps/app/Dockerfile \
+            -t "$APP_IMAGE" \
+            -t "$APP_IMAGE_RUN" \
+            --push \
+            apps/app
+
+      - name: Deploy app service
+        run: |
+          gcloud run deploy "${{ inputs.app_service }}" \
+            --project "${{ inputs.project_id }}" \
+            --region "${{ inputs.region }}" \
+            --image "$APP_IMAGE" \
+            --service-account "${{ inputs.runtime_service_account }}" \
+            --allow-unauthenticated \
+            --port 8080
 
       - name: Smoke API
         run: node scripts/smoke-live-api.mjs --api-url "${{ inputs.api_domain }}"
+
+      - name: Smoke app origin
+        run: |
+          curl --fail --silent --show-error --location "${{ inputs.app_origin }}" >/dev/null

@@ -269,9 +269,18 @@ project_id=<gcp-project-id>
 region=<region>
 api_domain=<api-origin>
 app_origin=<app-origin>
+api_service=<cloud-run-api-service>
+worker_service=<cloud-run-worker-service>
+app_service=<cloud-run-frontend-service>
+migrate_job=<cloud-run-migration-job>
+runtime_service_account=<runtime-service-account-email>
+cloudsql_instance=<project:region:instance>
+config_secret=<secret-manager-config-secret>
 ```
 
-The workflow builds `Dockerfile.api`, pushes the image to Artifact Registry, deploys `mulder-api`, deploys `mulder-worker`, and runs the live smoke check.
+The workflow is the recommended deploy path. It builds and pushes the API/worker image from `Dockerfile.api`, runs the migration job with the same image, deploys the API and worker, builds the app bundle with `VITE_API_BASE_URL=<api-origin>`, builds and pushes `apps/app/Dockerfile`, deploys the frontend, and runs unauthenticated smoke checks. Images are tagged with the GitHub commit SHA, with the run number only as an additional trace tag.
+
+Do not deploy production from an uncommitted local working tree. A live revision should always map back to a pushed commit SHA.
 
 Cloud Run API environment:
 
@@ -296,13 +305,7 @@ Methods: app-used methods only
 
 ## Database Migrations
 
-Production migrations are mandatory before first live traffic and before the first upload.
-
-The current deploy workflow does not run migrations. Add one of these before go-live:
-
-- a Cloud Run Job that runs the built CLI against `/secrets/mulder.config.yaml`
-- a dedicated GitHub Actions migration step using the same image and runtime service account
-- a one-off operator command from a trusted environment with production config access
+Production migrations are mandatory before first live traffic and before the first upload. The deploy workflow updates and executes the configured Cloud Run migration job before API, worker, and app deployment continue.
 
 The CLI command is:
 
@@ -317,6 +320,8 @@ node apps/cli/dist/index.js db status /secrets/mulder.config.yaml
 ```
 
 Treat a failed or skipped migration check as a release blocker.
+
+Local Docker deploys are an emergency path only. If used, record the commit SHA, image digest, operator, and reason in the release notes.
 
 ## First Owner Bootstrap
 
