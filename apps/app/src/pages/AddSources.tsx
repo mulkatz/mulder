@@ -8,7 +8,12 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { Toolbar } from '@/components/Toolbar';
 import { useSession } from '@/features/auth/useSession';
 import { useCollections, useCreateCollection } from '@/features/collections/useCollections';
-import { type DocumentUploadPayload, useDocumentUpload } from '@/features/documents/useDocumentUpload';
+import {
+	type DocumentUploadFailedStep,
+	type DocumentUploadPayload,
+	type DocumentUploadRetryMode,
+	useDocumentUpload,
+} from '@/features/documents/useDocumentUpload';
 import { ApiError } from '@/lib/api-client';
 import type {
 	CollectionRecord,
@@ -97,6 +102,20 @@ function collectionDefaultsText(collection: CollectionRecord | undefined, t: Ret
 		language: collection.defaults.default_language,
 		sensitivity: t(`sensitivity.${collection.defaults.sensitivity_level}`),
 	});
+}
+
+function uploadFailureText(
+	failedStep: DocumentUploadFailedStep | undefined,
+	t: ReturnType<typeof useTranslation>['t'],
+) {
+	if (!failedStep) return t('addSources.uploadFailed');
+	return t(`addSources.uploadFailureSteps.${failedStep}`);
+}
+
+function uploadRetryLabel(retryMode: DocumentUploadRetryMode | undefined, t: ReturnType<typeof useTranslation>['t']) {
+	if (retryMode === 'check_status') return t('addSources.checkStatusAgain');
+	if (retryMode === 'open_processing') return t('addSources.openProcessing');
+	return t('common.retry');
 }
 
 export function AddSourcesPage() {
@@ -691,7 +710,10 @@ export function AddSourcesPage() {
 									<tr className="border-b border-border last:border-b-0" key={row.id}>
 										<td className="max-w-[340px] px-3 py-3">
 											<p className="truncate font-medium text-text">{row.file.name}</p>
-											{row.error ? <p className="mt-1 text-xs text-danger">{row.error}</p> : null}
+											{row.failedStep ? (
+												<p className="mt-1 text-xs font-medium text-danger">{uploadFailureText(row.failedStep, t)}</p>
+											) : null}
+											{row.error ? <p className="mt-1 text-xs text-text-subtle">{row.error}</p> : null}
 										</td>
 										<td className="px-3 py-3 font-mono text-xs text-text-muted">{formatBytes(row.file.size)}</td>
 										<td className="px-3 py-3">
@@ -711,7 +733,16 @@ export function AddSourcesPage() {
 													{t('addSources.openSource')}
 												</Link>
 											) : null}
-											{row.status === 'failed' || row.status === 'dead_letter' ? (
+											{row.retryMode === 'open_processing' && row.jobId ? (
+												<Link
+													className="inline-flex h-8 items-center rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
+													to={`/runs?job=${row.jobId}`}
+												>
+													{uploadRetryLabel(row.retryMode, t)}
+												</Link>
+											) : null}
+											{(row.status === 'failed' || row.status === 'dead_letter') &&
+											row.retryMode !== 'open_processing' ? (
 												<button
 													className="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
 													disabled={isUploading || !formIsReady}
@@ -719,7 +750,7 @@ export function AddSourcesPage() {
 													type="button"
 												>
 													<RefreshCcw className="size-3.5" />
-													{t('common.retry')}
+													{uploadRetryLabel(row.retryMode, t)}
 												</button>
 											) : null}
 										</td>

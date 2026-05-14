@@ -227,6 +227,9 @@ export const resources = {
 			auth: {
 				checkingSession: 'Checking session',
 				sessionApiUnavailable: 'Session API unavailable',
+				sessionCheckDelayedTitle: 'Session check is taking longer than expected',
+				sessionCheckDelayedBody: 'Mulder could not confirm your session yet. You can try again or go to sign-in.',
+				goToLogin: 'Go to sign-in',
 				loginTitle: 'Sign in to Mulder',
 				loginDescription: 'Use your Mulder account to access sources, findings, evidence, and research workflows.',
 				loginSubmit: 'Sign in',
@@ -452,6 +455,17 @@ export const resources = {
 				tableResult: 'Result',
 				tableAction: 'Action',
 				completedUnavailable: 'Processing completed, but no readable source is available for this user.',
+				uploadFailed: 'Upload failed',
+				checkStatusAgain: 'Check status again',
+				openProcessing: 'Open processing',
+				uploadFailureSteps: {
+					initiate: 'Upload could not be prepared.',
+					binary_upload: 'File transfer could not be confirmed.',
+					complete: 'Upload could not be completed.',
+					storage_verification: 'The server could not verify the uploaded object.',
+					finalization_poll: 'Processing is running, but the status could not be refreshed just now.',
+					pipeline_processing: 'Processing failed. Open processing details for the source.',
+				},
 				openSource: 'Open source',
 			},
 			reader: {
@@ -557,6 +571,8 @@ export const resources = {
 				entityContext: 'Entity context',
 				evidenceSignals: 'Evidence signals',
 				processingBackground: 'Processing background',
+				rateLimitedTitle: 'Waiting for API allowance',
+				rateLimitedBody: 'Mulder is pausing refreshes briefly because the API asked the reader to slow down.',
 				processingLoadingTitle: 'Loading processing background',
 				processingUnavailableTitle: 'Processing background unavailable',
 				processingErrorTitle: 'Processing background could not be loaded',
@@ -932,6 +948,10 @@ export const resources = {
 			auth: {
 				checkingSession: 'Sitzung wird geprüft',
 				sessionApiUnavailable: 'Sitzungsschnittstelle nicht verfügbar',
+				sessionCheckDelayedTitle: 'Sitzungsprüfung dauert länger als erwartet',
+				sessionCheckDelayedBody:
+					'Mulder konnte deine Sitzung noch nicht bestätigen. Du kannst es erneut versuchen oder zur Anmeldung wechseln.',
+				goToLogin: 'Zur Anmeldung',
 				loginTitle: 'Bei Mulder anmelden',
 				loginDescription: 'Nutze dein Mulder-Konto für Quellen, Funde, Belege und Rechercheabläufe.',
 				loginSubmit: 'Anmelden',
@@ -1160,6 +1180,17 @@ export const resources = {
 				tableAction: 'Aktion',
 				completedUnavailable:
 					'Die Verarbeitung ist abgeschlossen, aber für diese Person ist keine lesbare Quelle verfügbar.',
+				uploadFailed: 'Hochladen fehlgeschlagen',
+				checkStatusAgain: 'Status erneut prüfen',
+				openProcessing: 'Verarbeitung öffnen',
+				uploadFailureSteps: {
+					initiate: 'Das Hochladen konnte nicht vorbereitet werden.',
+					binary_upload: 'Die Dateiübertragung konnte nicht bestätigt werden.',
+					complete: 'Das Hochladen konnte nicht abgeschlossen werden.',
+					storage_verification: 'Der Server konnte das hochgeladene Objekt nicht verifizieren.',
+					finalization_poll: 'Die Verarbeitung läuft, aber der Status konnte gerade nicht aktualisiert werden.',
+					pipeline_processing: 'Die Verarbeitung ist fehlgeschlagen. Öffne die Verarbeitungsdetails zur Quelle.',
+				},
 				openSource: 'Quelle öffnen',
 			},
 			reader: {
@@ -1268,6 +1299,9 @@ export const resources = {
 				entityContext: 'Entitätskontext',
 				evidenceSignals: 'Belegsignale',
 				processingBackground: 'Verarbeitung im Hintergrund',
+				rateLimitedTitle: 'Warten auf Freigabe der Schnittstelle',
+				rateLimitedBody:
+					'Mulder pausiert Aktualisierungen kurz, weil die Schnittstelle eine langsamere Abfrage verlangt.',
 				processingLoadingTitle: 'Hintergrundverarbeitung wird geladen',
 				processingUnavailableTitle: 'Hintergrundverarbeitung nicht verfügbar',
 				processingErrorTitle: 'Hintergrundverarbeitung konnte nicht geladen werden',

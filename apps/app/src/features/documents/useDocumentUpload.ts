@@ -11,6 +11,13 @@ import type {
 	UploadFinalizationStatusResponse,
 	UploadProvenancePayload,
 } from '@/lib/api-types';
+import {
+	ACTIVE_POLL_INTERVAL_MS,
+	getRetryAfterDelayMs,
+	INITIAL_POLL_INTERVAL_MS,
+	jitterDelay,
+	STABLE_POLL_INTERVAL_MS,
+} from '@/lib/polling';
 
 export type DocumentUploadRowStatus =
 	| 'ready'
@@ -24,6 +31,16 @@ export type DocumentUploadRowStatus =
 	| 'failed'
 	| 'dead_letter';
 
+export type DocumentUploadFailedStep =
+	| 'initiate'
+	| 'binary_upload'
+	| 'complete'
+	| 'storage_verification'
+	| 'finalization_poll'
+	| 'pipeline_processing';
+
+export type DocumentUploadRetryMode = 'restart' | 'check_status' | 'open_processing';
+
 export interface DocumentUploadPayload {
 	provenance: UploadProvenancePayload;
 	expected_sensitivity?: UploadExpectedSensitivityPayload;
@@ -35,7 +52,9 @@ export interface DocumentUploadRow {
 	file: File;
 	status: DocumentUploadRowStatus;
 	error?: string;
+	failedStep?: DocumentUploadFailedStep;
 	jobId?: string;
+	retryMode?: DocumentUploadRetryMode;
 	source?: UploadFinalizationStatusResponse['data']['source'];
 	uploadStatusUrl?: string;
 }
@@ -45,8 +64,27 @@ interface PreparedUpload {
 	initiated: InitiateDocumentUploadResponse;
 }
 
-const FINALIZATION_POLL_INTERVAL_MS = 1500;
 const FINALIZATION_TIMEOUT_MS = 120_000;
+const FINALIZATION_WALL_CLOCK_TIMEOUT_MS = 15 * 60_000;
+const MAX_PARALLEL_UPLOADS = 2;
+
+class UploadStepError extends Error {
+	failedStep: DocumentUploadFailedStep;
+	retryMode: DocumentUploadRetryMode;
+
+	constructor(
+		message: string,
+		failedStep: DocumentUploadFailedStep,
+		retryMode: DocumentUploadRetryMode,
+		cause?: unknown,
+	) {
+		super(message);
+		this.name = 'UploadStepError';
+		this.failedStep = failedStep;
+		this.retryMode = retryMode;
+		this.cause = cause;
+	}
+}
 
 function createRow(file: File): DocumentUploadRow {
 	return {
@@ -94,6 +132,37 @@ function inferUploadContentType(file: File) {
 
 function uploadError(response: Response) {
 	return new ApiError(response.status, 'UPLOAD_BINARY_FAILED', response.statusText || 'Upload failed');
+}
+
+function isStorageVerificationError(error: unknown) {
+	return (
+		error instanceof ApiError &&
+		(error.code === 'UPLOAD_OBJECT_NOT_FOUND' ||
+			error.code === 'UPLOAD_OBJECT_MISSING' ||
+			error.code === 'UPLOAD_STORAGE_VERIFICATION_FAILED')
+	);
+}
+
+function toUploadStepError(
+	error: unknown,
+	failedStep: DocumentUploadFailedStep,
+	retryMode: DocumentUploadRetryMode,
+	fallbackMessage: string,
+) {
+	if (error instanceof UploadStepError) return error;
+	return new UploadStepError(error instanceof Error ? error.message : fallbackMessage, failedStep, retryMode, error);
+}
+
+async function runWithConcurrency<T>(items: T[], limit: number, run: (item: T) => Promise<unknown>) {
+	let nextIndex = 0;
+	const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+		while (nextIndex < items.length) {
+			const item = items[nextIndex] as T;
+			nextIndex += 1;
+			await run(item);
+		}
+	});
+	await Promise.allSettled(workers);
 }
 
 async function uploadBinary(upload: InitiateDocumentUploadResponse['data']['upload'], file: File, contentType: string) {
@@ -148,12 +217,21 @@ export function useDocumentUpload() {
 				filename: file.name,
 				size_bytes: file.size,
 			};
-			const initiated = await apiFetch<InitiateDocumentUploadResponse>('/api/uploads/documents/initiate', {
-				body: JSON.stringify(initiateBody),
-				method: 'POST',
-			});
+			let initiated: InitiateDocumentUploadResponse;
+			try {
+				initiated = await apiFetch<InitiateDocumentUploadResponse>('/api/uploads/documents/initiate', {
+					body: JSON.stringify(initiateBody),
+					method: 'POST',
+				});
+			} catch (error) {
+				throw toUploadStepError(error, 'initiate', 'restart', 'Upload could not be prepared.');
+			}
 			onInitiated?.();
-			await uploadBinary(initiated.data.upload, file, contentType);
+			try {
+				await uploadBinary(initiated.data.upload, file, contentType);
+			} catch (error) {
+				throw toUploadStepError(error, 'binary_upload', 'restart', 'File transfer could not be confirmed.');
+			}
 			const prepared = { contentType, initiated };
 			preparedUploads.current.set(scopeKey, prepared);
 			return prepared;
@@ -186,10 +264,89 @@ export function useDocumentUpload() {
 		[prepareFile],
 	);
 
+	const completeUpload = useCallback(async (completeBody: CompleteDocumentUploadRequest) => {
+		try {
+			return await apiFetch<CompleteDocumentUploadResponse>('/api/uploads/documents/complete', {
+				body: JSON.stringify(completeBody),
+				method: 'POST',
+			});
+		} catch (error) {
+			if (isStorageVerificationError(error)) {
+				throw toUploadStepError(
+					error,
+					'storage_verification',
+					'restart',
+					'The server could not verify the uploaded object.',
+				);
+			}
+			throw toUploadStepError(error, 'complete', 'restart', 'Upload could not be completed.');
+		}
+	}, []);
+
+	const pollFinalization = useCallback(
+		async (rowId: string, uploadStatusUrl: string) => {
+			const startedAt = Date.now();
+			let countedWaitMs = 0;
+			let pollDelayMs = INITIAL_POLL_INTERVAL_MS;
+			let pendingCount = 0;
+
+			while (countedWaitMs < FINALIZATION_TIMEOUT_MS && Date.now() - startedAt < FINALIZATION_WALL_CLOCK_TIMEOUT_MS) {
+				let rateLimited = false;
+				try {
+					const finalization = await apiFetch<UploadFinalizationStatusResponse>(uploadStatusUrl);
+					const resultStatus = finalization.data.result_status;
+					if (resultStatus !== 'pending') {
+						updateRow(rowId, {
+							error: undefined,
+							failedStep:
+								resultStatus === 'failed' || resultStatus === 'dead_letter' ? 'pipeline_processing' : undefined,
+							jobId: finalization.data.job_id,
+							retryMode: resultStatus === 'failed' || resultStatus === 'dead_letter' ? 'open_processing' : undefined,
+							source: finalization.data.source,
+							status: resultStatus,
+						});
+						if (resultStatus === 'created' || resultStatus === 'duplicate') {
+							void queryClient.invalidateQueries({ queryKey: ['documents'] });
+						}
+						return finalization;
+					}
+					pendingCount += 1;
+					pollDelayMs = pendingCount >= 3 ? STABLE_POLL_INTERVAL_MS : ACTIVE_POLL_INTERVAL_MS;
+				} catch (error) {
+					if (error instanceof ApiError && error.status === 429) {
+						rateLimited = true;
+						pollDelayMs = getRetryAfterDelayMs(error);
+					} else {
+						throw toUploadStepError(
+							error,
+							'finalization_poll',
+							'check_status',
+							'Upload status could not be refreshed.',
+						);
+					}
+				}
+				const sleepMs = jitterDelay(pollDelayMs);
+				await sleep(sleepMs);
+				if (!rateLimited) {
+					countedWaitMs += sleepMs;
+				}
+			}
+
+			throw new UploadStepError('Upload finalization did not finish in time.', 'finalization_poll', 'check_status');
+		},
+		[queryClient, updateRow],
+	);
+
 	const uploadRow = useCallback(
 		async (row: DocumentUploadRow, payload: DocumentUploadPayload, options?: { forceNew?: boolean }) => {
 			try {
-				updateRow(row.id, { error: undefined, source: null, status: 'initiating' });
+				updateRow(row.id, {
+					error: undefined,
+					failedStep: undefined,
+					retryMode: undefined,
+					source: null,
+					status: 'initiating',
+				});
 				const prepared = await prepareFile(
 					row.id,
 					row.file,
@@ -208,60 +365,45 @@ export function useDocumentUpload() {
 					storage_path: initiated.data.storage_path,
 					tags: payload.tags,
 				};
-				const completed = await apiFetch<CompleteDocumentUploadResponse>('/api/uploads/documents/complete', {
-					body: JSON.stringify(completeBody),
-					method: 'POST',
-				});
+				const completed = await completeUpload(completeBody);
 				const uploadStatusUrl = completed.links.upload_status;
 				if (!uploadStatusUrl) {
-					throw new ApiError(
-						500,
-						'UPLOAD_STATUS_MISSING',
+					throw new UploadStepError(
 						'Upload completed, but the API did not return links.upload_status.',
+						'complete',
+						'restart',
 					);
 				}
 
 				updateRow(row.id, {
 					jobId: completed.data.job_id,
+					failedStep: undefined,
+					retryMode: undefined,
 					status: 'processing',
 					uploadStatusUrl,
 				});
 
-				const startedAt = Date.now();
-				while (Date.now() - startedAt < FINALIZATION_TIMEOUT_MS) {
-					const finalization = await apiFetch<UploadFinalizationStatusResponse>(uploadStatusUrl);
-					const resultStatus = finalization.data.result_status;
-					if (resultStatus !== 'pending') {
-						updateRow(row.id, {
-							jobId: finalization.data.job_id,
-							source: finalization.data.source,
-							status: resultStatus,
-						});
-						if (resultStatus === 'created' || resultStatus === 'duplicate') {
-							void queryClient.invalidateQueries({ queryKey: ['documents'] });
-						}
-						return finalization;
-					}
-					await sleep(FINALIZATION_POLL_INTERVAL_MS);
-				}
-
-				throw new ApiError(0, 'UPLOAD_FINALIZATION_TIMEOUT', 'Upload finalization did not finish in time.');
+				return await pollFinalization(row.id, uploadStatusUrl);
 			} catch (error) {
+				const uploadError =
+					error instanceof UploadStepError ? error : toUploadStepError(error, 'complete', 'restart', 'Upload failed.');
 				updateRow(row.id, {
-					error: error instanceof Error ? error.message : 'Upload failed.',
+					error: uploadError.message,
+					failedStep: uploadError.failedStep,
+					retryMode: uploadError.retryMode,
 					status: 'failed',
 				});
-				throw error;
+				throw uploadError;
 			}
 		},
-		[prepareFile, queryClient, updateRow],
+		[completeUpload, pollFinalization, prepareFile, updateRow],
 	);
 
 	const uploadFiles = useCallback(
 		async (files: File[], payload: DocumentUploadPayload) => {
 			const nextRows = files.map(createRow);
 			setRows(nextRows);
-			await Promise.allSettled(nextRows.map((row) => uploadRow(row, payload)));
+			await runWithConcurrency(nextRows, MAX_PARALLEL_UPLOADS, (row) => uploadRow(row, payload));
 		},
 		[uploadRow],
 	);
@@ -270,9 +412,22 @@ export function useDocumentUpload() {
 		async (rowId: string, payload: DocumentUploadPayload) => {
 			const row = rows.find((candidate) => candidate.id === rowId);
 			if (!row) return;
+			if (row.retryMode === 'check_status' && row.uploadStatusUrl) {
+				updateRow(row.id, {
+					error: undefined,
+					failedStep: undefined,
+					retryMode: undefined,
+					status: 'processing',
+				});
+				await pollFinalization(row.id, row.uploadStatusUrl);
+				return;
+			}
+			if (row.retryMode === 'open_processing') {
+				return;
+			}
 			await uploadRow(row, payload, { forceNew: true });
 		},
-		[rows, uploadRow],
+		[pollFinalization, rows, updateRow, uploadRow],
 	);
 
 	const reset = useCallback(() => {

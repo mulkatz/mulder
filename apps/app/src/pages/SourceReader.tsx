@@ -51,6 +51,13 @@ import type {
 	TranslationRecord,
 } from '@/lib/api-types';
 import { cn } from '@/lib/cn';
+import {
+	CONTENT_POLL_INTERVAL_MS,
+	getNextPollDelayMs,
+	getRetryAfterDelayMs,
+	INITIAL_POLL_INTERVAL_MS,
+	isRateLimited,
+} from '@/lib/polling';
 import { getErrorMessage, isApiUnavailableError } from '@/lib/query-state';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
@@ -62,8 +69,7 @@ const READER_MODE_STORAGE_KEY = 'mulder.reader.viewMode';
 const PDF_MIN_ZOOM = 0.7;
 const PDF_MAX_ZOOM = 2.25;
 const PDF_ZOOM_STEP = 0.15;
-const ACTIVE_PROCESSING_REFETCH_MS = 10_000;
-const TRANSLATION_JOB_REFETCH_MS = 2500;
+const ACTIVE_PROCESSING_REFETCH_MS = 5_000;
 
 function isProcessingActive(observability?: ReturnType<typeof useDocumentObservability>['data']) {
 	if (!observability) return false;
@@ -926,10 +932,11 @@ function StoryPane({
 	const [contentMode, setContentMode] = useState<StoryContentMode>('stories');
 	const [translationJobId, setTranslationJobId] = useState<string | undefined>();
 	const [translationPolling, setTranslationPolling] = useState(false);
+	const [translationPollMs, setTranslationPollMs] = useState(INITIAL_POLL_INTERVAL_MS);
 	const translationsQuery = useDocumentTranslations(sourceId, { status: 'current', targetLanguage });
 	const requestTranslation = useRequestDocumentTranslation(sourceId);
 	const translationJobQuery = useJob(translationJobId, {
-		refetchInterval: translationPolling ? TRANSLATION_JOB_REFETCH_MS : false,
+		refetchInterval: translationPolling ? translationPollMs : false,
 	});
 	const translationJobStatus = translationJobQuery.data?.data.job.status;
 	const isTranslationJobRunning = translationJobStatus === 'pending' || translationJobStatus === 'running';
@@ -956,6 +963,16 @@ function StoryPane({
 		}
 	}, [refetchTranslations, translationJobStatus]);
 
+	useEffect(() => {
+		if (!translationPolling) return;
+		if (isTranslationJobRunning) {
+			setTranslationPollMs(ACTIVE_PROCESSING_REFETCH_MS);
+		}
+		if (translationJobQuery.error && isRateLimited(translationJobQuery.error)) {
+			setTranslationPollMs(getRetryAfterDelayMs(translationJobQuery.error));
+		}
+	}, [isTranslationJobRunning, translationJobQuery.error, translationPolling]);
+
 	function submitTranslation(refresh: boolean) {
 		if (!sourceId) return;
 		setTranslationPolling(false);
@@ -973,6 +990,7 @@ function StoryPane({
 					setContentMode('translation');
 					if ('links' in response) {
 						setTranslationJobId(response.data.job_id);
+						setTranslationPollMs(INITIAL_POLL_INTERVAL_MS);
 						setTranslationPolling(true);
 					} else {
 						setTranslationPolling(false);
@@ -1288,11 +1306,15 @@ export function SourceReaderPage() {
 	const [targetLanguage, setTargetLanguage] = useState<AppLocale>(i18n.language === 'de' ? 'de' : 'en');
 	const [processingOpen, setProcessingOpen] = useState(false);
 	const [observabilityPolling, setObservabilityPolling] = useState(false);
+	const [observabilityPollMs, setObservabilityPollMs] = useState(INITIAL_POLL_INTERVAL_MS);
+	const [contentPollingPaused, setContentPollingPaused] = useState(false);
+	const lastObservabilitySignatureRef = useRef('');
+	const unchangedObservabilityCountRef = useRef(0);
 	const observabilityQuery = useDocumentObservability(sourceId, {
-		refetchInterval: observabilityPolling ? ACTIVE_PROCESSING_REFETCH_MS : false,
+		refetchInterval: observabilityPolling ? observabilityPollMs : false,
 	});
 	const activeProcessing = isProcessingActive(observabilityQuery.data);
-	const processingRefetchInterval = activeProcessing ? ACTIVE_PROCESSING_REFETCH_MS : false;
+	const processingRefetchInterval = activeProcessing && !contentPollingPaused ? CONTENT_POLL_INTERVAL_MS : false;
 	const sourceQuery = useDocument(sourceId, { refetchInterval: processingRefetchInterval });
 	const storiesQuery = useDocumentStories(sourceId, { refetchInterval: processingRefetchInterval });
 	const layoutQuery = useDocumentLayout(sourceId, { refetchInterval: processingRefetchInterval });
@@ -1307,10 +1329,54 @@ export function SourceReaderPage() {
 	const storySignals = selectedStory
 		? (contradictionsQuery.data?.data ?? []).filter((record) => record.story_id === selectedStory.id)
 		: [];
+	const readerRateLimitError = [
+		observabilityQuery.error,
+		sourceQuery.error,
+		storiesQuery.error,
+		layoutQuery.error,
+		pagesQuery.error,
+	].find(isRateLimited);
+	const readerRateLimited = Boolean(readerRateLimitError) || contentPollingPaused;
 
 	useEffect(() => {
 		setObservabilityPolling(activeProcessing);
 	}, [activeProcessing]);
+
+	useEffect(() => {
+		if (!activeProcessing) {
+			setObservabilityPollMs(INITIAL_POLL_INTERVAL_MS);
+			unchangedObservabilityCountRef.current = 0;
+			lastObservabilitySignatureRef.current = '';
+			return;
+		}
+		const source = observabilityQuery.data?.data.source;
+		const signature = source
+			? JSON.stringify({
+					job: observabilityQuery.data?.data.job?.status ?? null,
+					progress: observabilityQuery.data?.data.progress ?? null,
+					steps: source.steps.map((step) => [
+						step.step,
+						step.status,
+						step.completed_at ?? null,
+						step.error_message ?? null,
+					]),
+				})
+			: '';
+		const unchangedCount =
+			signature && signature === lastObservabilitySignatureRef.current ? unchangedObservabilityCountRef.current + 1 : 0;
+		unchangedObservabilityCountRef.current = unchangedCount;
+		if (signature) {
+			lastObservabilitySignatureRef.current = signature;
+		}
+		setObservabilityPollMs(getNextPollDelayMs({ error: observabilityQuery.error, unchangedCount }));
+	}, [activeProcessing, observabilityQuery.data, observabilityQuery.error]);
+
+	useEffect(() => {
+		if (!readerRateLimitError) return;
+		setContentPollingPaused(true);
+		const timeout = window.setTimeout(() => setContentPollingPaused(false), getRetryAfterDelayMs(readerRateLimitError));
+		return () => window.clearTimeout(timeout);
+	}, [readerRateLimitError]);
 
 	useEffect(() => {
 		const linkedStoryId = searchParams.get('story');
@@ -1402,6 +1468,9 @@ export function SourceReaderPage() {
 			/>
 
 			<div className="space-y-4 p-4 sm:p-6">
+				{readerRateLimited ? (
+					<StateNotice title={t('reader.rateLimitedTitle')}>{t('reader.rateLimitedBody')}</StateNotice>
+				) : null}
 				<Toolbar className="justify-between gap-3 rounded-md border border-border">
 					<div className="inline-flex rounded-md border border-border bg-field p-0.5">
 						{!isCompact ? (
