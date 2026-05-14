@@ -121,7 +121,7 @@ function timelineFromJob(job: JobForAnalysis, context: ViewModelContext) {
 			timeline.push({
 				time: formatClock(source.updated_at, context.locale),
 				label: source.current_step,
-				detail: source.error_message ?? source.source_id,
+				detail: source.error_message ?? source.source?.filename ?? source.source_id,
 				status:
 					source.status === 'processing'
 						? 'running'
@@ -156,7 +156,7 @@ export function jobToAnalysisRun(job: JobForAnalysis, contextInput?: Partial<Vie
 
 	return {
 		id: job.id,
-		title: formatJobType(job.type, context),
+		title: job.subject?.label ?? formatJobType(job.type, context),
 		mode: job.type,
 		status: mapJobStatus(job.status),
 		owner: job.worker_id ?? context.t('viewModel.unassigned'),

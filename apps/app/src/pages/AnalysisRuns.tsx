@@ -1,8 +1,8 @@
 import type { TFunction } from 'i18next';
 import { AlertCircle, ChevronDown, ChevronRight, Clock, Download, Filter, PlayCircle } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { CodeBlock } from '@/components/CodeBlock';
 import { type DataColumn, DataTable } from '@/components/DataTable';
 import { IconButton } from '@/components/IconButton';
@@ -14,10 +14,10 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { Tabs } from '@/components/Tabs';
 import { SelectControl, Toolbar } from '@/components/Toolbar';
 import { useDocumentObservability } from '@/features/documents/useDocumentObservability';
-import { useDocuments } from '@/features/documents/useDocuments';
 import { useJob } from '@/features/jobs/useJob';
 import { useJobs } from '@/features/jobs/useJobs';
-import type { DocumentRecord, JobProgress } from '@/lib/api-types';
+import type { DocumentObservabilityResponse, JobProgress } from '@/lib/api-types';
+import { STABLE_POLL_INTERVAL_MS } from '@/lib/polling';
 import { getErrorMessage, isApiUnavailableError } from '@/lib/query-state';
 import type { AnalysisRun, RunStatus } from '@/lib/types';
 import { jobDetailToAnalysisRun, jobToAnalysisRun } from '@/lib/view-models';
@@ -57,14 +57,35 @@ function formatDateTime(value: string | null | undefined, locale: string) {
 	}).format(date);
 }
 
+const orderedPipelineSteps = ['quality', 'extract', 'segment', 'enrich', 'embed', 'graph', 'analyze'] as const;
+
+function formatPipelineStep(step: string, t: TFunction) {
+	return t(`pipelineSteps.${step}`, { defaultValue: step });
+}
+
+function buildDisplaySteps(steps: DocumentObservabilityResponse['data']['source']['steps']) {
+	const byName = new Map(steps.map((step) => [step.step, step]));
+	const ordered = orderedPipelineSteps.map(
+		(step) =>
+			byName.get(step) ?? {
+				completed_at: null,
+				error_message: null,
+				status: 'pending' as const,
+				step,
+			},
+	);
+	const extras = steps.filter(
+		(step) => !orderedPipelineSteps.includes(step.step as (typeof orderedPipelineSteps)[number]),
+	);
+	return [...ordered, ...extras];
+}
+
 function ProcessingDocuments({
-	documentMap,
 	expandedSourceId,
 	locale,
 	onToggleSource,
 	progress,
 }: {
-	documentMap: Map<string, DocumentRecord>;
 	expandedSourceId?: string;
 	locale: string;
 	onToggleSource: (sourceId: string) => void;
@@ -81,8 +102,8 @@ function ProcessingDocuments({
 	return (
 		<div className="space-y-2">
 			{progress.sources.map((source) => {
-				const document = documentMap.get(source.source_id);
 				const expanded = expandedSourceId === source.source_id;
+				const displaySteps = expanded ? buildDisplaySteps(expandedSteps) : [];
 				return (
 					<div className="rounded-md border border-border bg-panel-raised" key={source.source_id}>
 						<button
@@ -98,15 +119,15 @@ function ProcessingDocuments({
 							<div className="min-w-0 flex-1">
 								<div className="flex flex-wrap items-center gap-2">
 									<p className="truncate text-sm font-medium text-text">
-										{document?.filename ?? t('runs.sourceNotVisible')}
+										{source.source?.filename ?? t('runs.sourceNotVisible')}
 									</p>
 									<StatusBadge status={source.status} />
 								</div>
 								<p className="mt-1 truncate text-xs text-text-muted">
-									{t('runs.currentStep')}: {source.current_step}
+									{t('runs.currentStep')}: {formatPipelineStep(source.current_step, t)}
 								</p>
 								<p className="mt-1 text-xs text-text-subtle">
-									{t('runs.started')}: {formatDateTime(source.updated_at, locale)} · {t('runs.elapsed')}:{' '}
+									{t('runs.lastActivity')}: {formatDateTime(source.updated_at, locale)} · {t('runs.elapsed')}:{' '}
 									{formatElapsedSince(source.updated_at, locale)}
 								</p>
 								{source.error_message ? <p className="mt-1 text-xs text-danger">{source.error_message}</p> : null}
@@ -135,18 +156,18 @@ function ProcessingDocuments({
 										{getErrorMessage(observabilityQuery.error, t('common.apiRequestFailed'))}
 									</StateNotice>
 								) : null}
-								{expandedSteps.length > 0 ? (
+								{displaySteps.length > 0 ? (
 									<div className="space-y-2">
-										{expandedSteps.map((step) => (
+										{displaySteps.map((step) => (
 											<div
 												className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md bg-panel px-3 py-2"
 												key={`${source.source_id}-${step.step}`}
 											>
 												<div className="min-w-0">
-													<p className="truncate text-sm text-text">{step.step}</p>
+													<p className="truncate text-sm text-text">{formatPipelineStep(step.step, t)}</p>
 													<p className="mt-1 text-xs text-text-subtle">
 														{step.completed_at
-															? `${t('runs.started')}: ${formatDateTime(step.completed_at, locale)} · ${t('runs.elapsed')}: ${formatElapsedSince(step.completed_at, locale)}`
+															? `${t('runs.completed')}: ${formatDateTime(step.completed_at, locale)} · ${t('runs.elapsed')}: ${formatElapsedSince(step.completed_at, locale)}`
 															: t('runs.stepWaiting')}
 													</p>
 													{step.error_message ? <p className="mt-1 text-xs text-danger">{step.error_message}</p> : null}
@@ -226,16 +247,13 @@ function getRunColumns(t: TFunction): DataColumn<AnalysisRun>[] {
 
 export function AnalysisRunsPage() {
 	const { t, i18n } = useTranslation();
+	const [searchParams] = useSearchParams();
 	const [status, setStatus] = useState<RunStatus | 'all'>('all');
 	const [query, setQuery] = useState('');
 	const [selectedId, setSelectedId] = useState<string | undefined>();
 	const [expandedSourceId, setExpandedSourceId] = useState<string | undefined>();
 	const jobsQuery = useJobs({ limit: 50 });
-	const documentsQuery = useDocuments({ limit: 100 });
 	const viewModelContext = useMemo(() => ({ locale: i18n.language, t }), [i18n.language, t]);
-	const documentMap = useMemo(() => {
-		return new Map((documentsQuery.data?.data ?? []).map((document) => [document.id, document]));
-	}, [documentsQuery.data]);
 
 	const runs = useMemo(
 		() => (jobsQuery.data?.data ?? []).map((job) => jobToAnalysisRun(job, viewModelContext)),
@@ -264,8 +282,22 @@ export function AnalysisRunsPage() {
 		});
 	}, [query, runs, status]);
 
-	const selectedListRun = filteredRuns.find((run) => run.id === selectedId) ?? filteredRuns[0];
-	const selectedJobQuery = useJob(selectedListRun?.id);
+	useEffect(() => {
+		const jobId = searchParams.get('job');
+		if (jobId) {
+			setSelectedId(jobId);
+			setExpandedSourceId(undefined);
+		}
+	}, [searchParams]);
+
+	const selectedListRun =
+		filteredRuns.find((run) => run.id === selectedId) ?? runs.find((run) => run.id === selectedId) ?? filteredRuns[0];
+	const selectedJobRefetchInterval =
+		selectedListRun?.status === 'queued' || selectedListRun?.status === 'running' ? STABLE_POLL_INTERVAL_MS : false;
+	const selectedJobId = selectedListRun?.id ?? selectedId;
+	const selectedJobQuery = useJob(selectedJobId, {
+		refetchInterval: selectedJobRefetchInterval,
+	});
 	const selectedRun = selectedJobQuery.data
 		? jobDetailToAnalysisRun(selectedJobQuery.data.data, viewModelContext)
 		: selectedListRun;
@@ -393,7 +425,6 @@ export function AnalysisRunsPage() {
 						) : null}
 						<InspectorSection title={t('runs.documents')}>
 							<ProcessingDocuments
-								documentMap={documentMap}
 								expandedSourceId={expandedSourceId}
 								locale={i18n.language}
 								onToggleSource={(sourceId) => setExpandedSourceId(expandedSourceId === sourceId ? undefined : sourceId)}
