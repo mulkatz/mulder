@@ -541,6 +541,7 @@ export {
 	markJobCompleted,
 	markJobDeadLetter,
 	markJobFailed,
+	markPipelineRunRunning,
 	markTranslatedDocumentsStaleForSource,
 	mergeEntities,
 	mergeJobPayload,

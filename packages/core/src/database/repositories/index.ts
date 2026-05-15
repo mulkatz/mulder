@@ -379,6 +379,7 @@ export {
 	findPipelineRunById,
 	findPipelineRunSourceById,
 	findPipelineRunSourcesByRunId,
+	markPipelineRunRunning,
 	upsertPipelineRunSource,
 } from './pipeline-run.repository.js';
 export type {

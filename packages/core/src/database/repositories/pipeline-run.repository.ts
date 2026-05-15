@@ -167,6 +167,34 @@ export async function finalizePipelineRun(
 	}
 }
 
+export async function markPipelineRunRunning(pool: Queryable, id: string): Promise<PipelineRun> {
+	const sql = `
+    UPDATE pipeline_runs
+    SET status = 'running', finished_at = NULL
+    WHERE id = $1
+    RETURNING *
+  `;
+
+	try {
+		const result = await pool.query<PipelineRunRow>(sql, [id]);
+		if (result.rows.length === 0) {
+			throw new DatabaseError(`Pipeline run not found: ${id}`, DATABASE_ERROR_CODES.DB_NOT_FOUND, {
+				context: { id, status: 'running' },
+			});
+		}
+		repoLogger.debug({ runId: id }, 'Pipeline run marked running');
+		return mapPipelineRunRow(result.rows[0]);
+	} catch (error: unknown) {
+		if (error instanceof DatabaseError) {
+			throw error;
+		}
+		throw new DatabaseError('Failed to mark pipeline run running', DATABASE_ERROR_CODES.DB_QUERY_FAILED, {
+			cause: error,
+			context: { id },
+		});
+	}
+}
+
 /**
  * Finds a pipeline run by its UUID.
  *

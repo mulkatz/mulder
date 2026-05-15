@@ -46,6 +46,7 @@ import {
 	findStoriesBySourceId,
 	isLayoutSourceType,
 	isPrestructuredSourceType,
+	markPipelineRunRunning,
 	PIPELINE_ERROR_CODES,
 	PIPELINE_STEP_ORDER,
 	PipelineError,
@@ -573,6 +574,7 @@ interface ProcessSourceResult {
 async function processSource(source: Source, ctx: ProcessSourceContext): Promise<ProcessSourceResult> {
 	const sourceLog = createChildLogger(ctx.logger, { sourceId: source.id });
 	let finalStep: PipelineStepName | null = null;
+	let activeStep: PipelineStepName | null = null;
 	let lastError: { message: string; code: string } | null = null;
 	const sourcePlan = getSourcePlan(source, ctx);
 
@@ -611,7 +613,14 @@ async function processSource(source: Source, ctx: ProcessSourceContext): Promise
 		}
 
 		const stepStart = performance.now();
+		activeStep = step;
 		sourceLog.info({ step }, 'pipeline.source.start');
+		await upsertPipelineRunSource(ctx.pool, {
+			runId: ctx.runId,
+			sourceId: currentSource.id,
+			currentStep: step,
+			status: 'processing',
+		});
 
 		try {
 			const stepOutcome = await runStepForSource(step, currentSource, stories, ctx);
@@ -641,7 +650,7 @@ async function processSource(source: Source, ctx: ProcessSourceContext): Promise
 		await upsertPipelineRunSource(ctx.pool, {
 			runId: ctx.runId,
 			sourceId: currentSource.id,
-			currentStep: finalStep ?? 'ingest',
+			currentStep: activeStep ?? finalStep ?? 'ingest',
 			status: 'failed',
 			errorMessage: lastError.message,
 		});
@@ -855,17 +864,22 @@ export async function execute(
 	}
 
 	// 3. Create or reuse the run row.
-	const run = options.runId
-		? await findPipelineRunById(pool, options.runId)
-		: await createPipelineRun(pool, {
-				tag: options.tag ?? null,
-				options: serializeOptions(options),
-			});
-	if (!run) {
-		throw new PipelineError(`Pipeline run not found: ${options.runId}`, PIPELINE_ERROR_CODES.PIPELINE_RUN_NOT_FOUND, {
-			context: { runId: options.runId },
+	const run = await (async () => {
+		if (options.runId) {
+			const reuseRunId = options.runId;
+			const existingRun = await findPipelineRunById(pool, reuseRunId);
+			if (!existingRun) {
+				throw new PipelineError(`Pipeline run not found: ${reuseRunId}`, PIPELINE_ERROR_CODES.PIPELINE_RUN_NOT_FOUND, {
+					context: { runId: reuseRunId },
+				});
+			}
+			return await markPipelineRunRunning(pool, existingRun.id);
+		}
+		return await createPipelineRun(pool, {
+			tag: options.tag ?? null,
+			options: serializeOptions(options),
 		});
-	}
+	})();
 	const runLog = createChildLogger(log, { runId: run.id });
 	runLog.info({ runId: run.id, tag: run.tag, plannedSteps }, 'pipeline.run.start');
 
@@ -895,10 +909,14 @@ export async function execute(
 
 		// Seed pending rows for all enumerated sources.
 		for (const src of sources) {
+			const sourcePlan = sourcePlans.get(src.id);
+			const pendingStep =
+				sourcePlan?.requestedSteps.find((step) => step !== 'ingest' && !sourcePlan.skippedSteps.includes(step)) ??
+				'ingest';
 			await upsertPipelineRunSource(pool, {
 				runId: run.id,
 				sourceId: src.id,
-				currentStep: 'ingest',
+				currentStep: pendingStep,
 				status: 'pending',
 			});
 		}

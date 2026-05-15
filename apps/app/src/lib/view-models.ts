@@ -71,7 +71,8 @@ function formatDuration(
 	return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
 }
 
-function formatJobType(type: string, context: ViewModelContext) {
+export function formatJobType(type: string, contextInput?: Partial<ViewModelContext>) {
+	const context = getContext(contextInput);
 	const key = type.replaceAll('-', '_');
 	return context.t(`jobType.${key}`, {
 		defaultValue: context.t('jobType.unknown', { type }),
@@ -157,7 +158,7 @@ export function jobToAnalysisRun(job: JobForAnalysis, contextInput?: Partial<Vie
 	return {
 		id: job.id,
 		title: job.subject?.label ?? formatJobType(job.type, context),
-		mode: job.type,
+		mode: formatJobType(job.type, context),
 		status: mapJobStatus(job.status),
 		owner: job.worker_id ?? context.t('viewModel.unassigned'),
 		corpus: context.t('viewModel.pipelineQueue'),
