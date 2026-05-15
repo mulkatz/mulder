@@ -147,21 +147,20 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
 	});
 
-	it('QA-04: the repo exposes one canonical opt-in GCP lane', () => {
+	it('QA-04: the repo exposes a local opt-in GCP lane without a public workflow', () => {
 		const packageJson = readFileSync(PACKAGE_JSON, 'utf-8');
-		const gcpWorkflow = readFileSync(GCP_WORKFLOW, 'utf-8');
 
 		expect(packageJson).toContain('"test:gcp"');
-		expect(gcpWorkflow).toContain('MULDER_TEST_GCP: "true"');
-		expect(gcpWorkflow).toContain('pnpm test:gcp');
+		expect(existsSync(GCP_WORKFLOW)).toBe(false);
 	});
 
 	it('QA-05: CI separates fast PR feedback from the full milestone gate', () => {
 		const ciWorkflow = readFileSync(CI_WORKFLOW, 'utf-8');
-		const gcpWorkflow = readFileSync(GCP_WORKFLOW, 'utf-8');
 
 		expect(ciWorkflow).toContain("if: github.event_name == 'pull_request'");
 		expect(ciWorkflow).toContain("startsWith(github.ref, 'refs/heads/milestone/')");
+		expect(ciWorkflow).toContain('workflow_dispatch:');
+		expect(ciWorkflow).toContain('schedule:');
 		expect(ciWorkflow).toContain('pr-affected-plan');
 		expect(ciWorkflow).toContain('pr-affected-schema');
 		expect(ciWorkflow).toContain('pr-affected-db');
@@ -197,8 +196,7 @@ describe('Spec 59 — Hermetic Test Infrastructure', () => {
 		expect(ciWorkflow).toContain('MULDER_TEST_AFFECTED_PR_HEAD_DOCS_ONLY: "true"');
 		expect(ciWorkflow).toContain('MULDER_TEST_AFFECTED_HEAD_REF: ${{ github.event_name ==');
 		expect(readFileSync(TEST_LANES_SCRIPT, 'utf-8')).toContain("const HEAD_REF_ENV = 'MULDER_TEST_AFFECTED_HEAD_REF'");
-		expect(gcpWorkflow).toContain('workflow_dispatch');
-		expect(gcpWorkflow).toContain('schedule:');
+		expect(existsSync(GCP_WORKFLOW)).toBe(false);
 	});
 
 	it('QA-05b: scoped test runs preserve lane isolation and serial DB execution', () => {
