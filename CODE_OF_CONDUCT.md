@@ -59,8 +59,8 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at
-franz.benthin.dev@gmail.com.
+reported to the community leaders through the repository's private maintainer
+contact or GitHub moderation channels.
 
 All complaints will be reviewed and investigated promptly and fairly.
 

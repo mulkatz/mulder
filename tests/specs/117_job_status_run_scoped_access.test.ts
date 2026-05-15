@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { createApp } from '@mulder/api';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createApp } from '../../apps/api/src/app.js';
 import * as db from '../lib/db.js';
 import { ensureSchema, truncateMulderTables } from '../lib/schema.js';
 
@@ -33,6 +33,15 @@ const TEST_API_CONFIG = {
 	},
 	rate_limiting: {
 		enabled: true,
+	},
+	budget: {
+		enabled: true,
+		monthly_limit_usd: 50,
+		extract_per_page_usd: 0.006,
+		segment_per_page_usd: 0.002,
+		enrich_per_source_usd: 0.015,
+		embed_per_source_usd: 0.004,
+		graph_per_source_usd: 0.001,
 	},
 };
 

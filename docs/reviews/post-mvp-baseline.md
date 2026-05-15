@@ -3,7 +3,7 @@ phase: 1
 title: "Post-MVP Baseline & Health Check"
 scope: M1 + M2 + M3 + Pre-Search QA Gate + M4 (48 roadmap steps)
 date: 2026-04-08
-tester: claude + franz
+tester: private operator environment
 verdict: PASS_WITH_FINDINGS
 ---
 

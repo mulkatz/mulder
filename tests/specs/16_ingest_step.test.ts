@@ -64,12 +64,12 @@ function cleanSourceData(): void {
 function writeConfigWithOverrides(overrides: { max_file_size_mb?: number; max_pages?: number }): string {
 	const configContent = `
 project:
-  name: "mulder-ufo-archive"
+  name: "mulder-test-archive"
   description: "test"
   supported_locales: ["en"]
 
 gcp:
-  project_id: "mulder-platform"
+  project_id: "test-gcp-project"
   region: "europe-west1"
   cloud_sql:
     instance_name: "mulder-db"
@@ -79,9 +79,9 @@ gcp:
     port: 5432
     user: "mulder"
   storage:
-    bucket: "mulder-bucket"
+    bucket: "test-bucket"
   document_ai:
-    processor_id: "66cbfd75679f38a8"
+    processor_id: "test-processor-id"
 
 dev_mode: true
 

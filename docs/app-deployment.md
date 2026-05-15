@@ -43,8 +43,7 @@ The app must be populated through the Mulder pipeline only:
 Already present:
 
 - API production container via `Dockerfile.api`
-- manual GitHub Actions workflow for API and worker deployment
-- API and worker Cloud Run deployment steps
+- API and worker container/runtime support
 - Resend-backed invite delivery plumbing
 - owner invite helper: `pnpm invite:owner`
 - live smoke helper: `pnpm smoke:live`
@@ -210,7 +209,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 Create Secret Manager entries for:
 
 - `mulder-config-yaml`
-- `resend-api-key` or the selected mail provider key
+- `<mail-provider-api-key-secret>` for the selected mail provider key
 - database password, either inside `mulder-config-yaml` or as a separate secret referenced by private config generation
 - browser session secret
 - operator API key
@@ -249,38 +248,23 @@ The deploy identity needs:
 - Service Usage Admin if the workflow is allowed to enable APIs
 - enough Secret Manager access to attach runtime secrets to Cloud Run
 
-For open-source safety, prefer GitHub Workload Identity Federation over long-lived JSON service-account keys. The current workflow supports `GCP_CREDENTIALS_JSON`; treat that as a temporary deployment shortcut unless a private deployment policy explicitly accepts it.
+For open-source safety, prefer GitHub Workload Identity Federation over long-lived
+service-account key material. Production deployment identity and secret naming
+belong in a private operator repository, not in this public repository.
 
 ## Backend Deploy
 
-Use the manual GitHub Actions workflow `Deploy App`.
+Production deployment is intentionally not defined in the public repository.
+Operators should keep deployment workflows, live config, cloud project IDs,
+bucket names, processor IDs, sender addresses, and smoke credentials in a
+private ops repository.
 
-Required GitHub configuration:
+The private workflow should accept a public Mulder ref, check out this repository
+at that ref, build `Dockerfile.api`, push the image to Artifact Registry, deploy
+API and worker services, run migrations, and execute opt-in live smoke checks.
 
-```text
-Secret: GCP_CREDENTIALS_JSON
-Variable: MULDER_MAIL_FROM
-```
-
-Workflow inputs:
-
-```text
-project_id=<gcp-project-id>
-region=<region>
-api_domain=<api-origin>
-app_origin=<app-origin>
-api_service=<cloud-run-api-service>
-worker_service=<cloud-run-worker-service>
-app_service=<cloud-run-frontend-service>
-migrate_job=<cloud-run-migration-job>
-runtime_service_account=<runtime-service-account-email>
-cloudsql_instance=<project:region:instance>
-config_secret=<secret-manager-config-secret>
-```
-
-The workflow is the recommended deploy path. It builds and pushes the API/worker image from `Dockerfile.api`, runs the migration job with the same image, deploys the API and worker, builds the app bundle with `VITE_API_BASE_URL=<api-origin>`, builds and pushes `apps/app/Dockerfile`, deploys the frontend, and runs unauthenticated smoke checks. Images are tagged with the GitHub commit SHA, with the run number only as an additional trace tag.
-
-Do not deploy production from an uncommitted local working tree. A live revision should always map back to a pushed commit SHA.
+Do not deploy production from an uncommitted local working tree. A live revision
+should always map back to a pushed public commit SHA.
 
 Cloud Run API environment:
 
@@ -291,7 +275,7 @@ MULDER_CORS_ORIGINS=<app-origin>
 MULDER_APP_BASE_URL=<app-origin>
 MULDER_INVITE_DELIVERY=resend
 MULDER_MAIL_FROM=<verified sender>
-RESEND_API_KEY=<mounted secret>
+<mail-provider-api-key-env>=<mounted secret>
 ```
 
 The API must allow CORS only for the production frontend origin:
@@ -305,7 +289,10 @@ Methods: app-used methods only
 
 ## Database Migrations
 
-Production migrations are mandatory before first live traffic and before the first upload. The deploy workflow updates and executes the configured Cloud Run migration job before API, worker, and app deployment continue.
+Production migrations are mandatory before first live traffic and before the
+first upload. The private deploy workflow should update and execute the
+configured Cloud Run migration job before API, worker, and app deployment
+continue.
 
 The CLI command is:
 
@@ -467,7 +454,7 @@ Engineering-owned:
    - Add a Cloud Run Job or GitHub Actions step that runs `db migrate` with production config.
 
 3. Deployment identity hardening
-   - Replace `GCP_CREDENTIALS_JSON` with GitHub Workload Identity Federation.
+   - Keep production deployment on private Workload Identity Federation.
 
 4. Live QA automation
    - Add Playwright smoke screenshots for desktop and mobile against `<app-origin>`.
