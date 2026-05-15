@@ -46,7 +46,7 @@ Documentation is generally accurate and well-maintained through M4. The progress
 **[P6-DOCS-CLAUDE-01] `terraform/modules/` referenced but directory does not exist**
 - **Severity:** WARNING
 - **File:** `CLAUDE.md` — "Architecture Decisions" section, line: `**Infra**: Terraform, modular (\`terraform/modules/\`)` and "Repo Structure" section listing `terraform/modules/` with submodule list.
-- **Detail:** `ls /Users/franz/Workspace/mulder/terraform/` → directory does not exist. The repo currently has no Terraform code. The Infrastructure section also states "Terraform reads `mulder.config.yaml` directly via `yamldecode()`" — this is planned behaviour, not current reality.
+- **Detail:** `ls <workspace>/mulder/terraform/` -> directory does not exist. The repo currently has no Terraform code. The Infrastructure section also states "Terraform reads `mulder.config.yaml` directly via `yamldecode()`" — this is planned behaviour, not current reality.
 - **Impact:** A contributor following CLAUDE.md to set up or inspect infrastructure will find nothing. Any CI step that tries to apply Terraform will fail immediately.
 - **Fix:** Add a one-line caveat at the top of the Infrastructure section: "Note: Terraform modules are planned for M8 (Operations). The `terraform/` directory does not yet exist in the repository."
 

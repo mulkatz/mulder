@@ -6,7 +6,9 @@ If you discover a security vulnerability in Mulder, please report it responsibly
 
 **Do NOT open a public GitHub issue for security vulnerabilities.**
 
-Instead, please email: franz.benthin.dev@gmail.com
+Use GitHub Security Advisories or private vulnerability reporting for this
+repository. If private reporting is unavailable, contact the maintainers through
+the repository's public maintainer metadata.
 
 Include:
 - Description of the vulnerability
@@ -37,3 +39,8 @@ Include:
 - Use IAM roles with minimal permissions for the Cloud Run service account
 - Enable audit logging in your GCP project
 - Keep dependencies up to date
+
+## Public Repository Hygiene
+
+No instance-specific config, live domains, real cloud resource IDs, private
+accounts, or deployment credentials belong in tracked files.
