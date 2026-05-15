@@ -1,10 +1,9 @@
 import type { TFunction } from 'i18next';
 import { AlertCircle, ChevronDown, ChevronRight, Clock, Download, Filter, PlayCircle } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CodeBlock } from '@/components/CodeBlock';
-import { type DataColumn, DataTable } from '@/components/DataTable';
 import { IconButton } from '@/components/IconButton';
 import { InspectorPanel, InspectorSection } from '@/components/InspectorPanel';
 import { PageHeader } from '@/components/PageHeader';
@@ -17,33 +16,23 @@ import { useDocumentObservability } from '@/features/documents/useDocumentObserv
 import { useJob } from '@/features/jobs/useJob';
 import { useJobs } from '@/features/jobs/useJobs';
 import type { DocumentObservabilityResponse, JobProgress } from '@/lib/api-types';
+import { cn } from '@/lib/cn';
 import { getRetryAfterDelayMs, STABLE_POLL_INTERVAL_MS } from '@/lib/polling';
+import {
+	buildDocumentProcessingSteps,
+	buildDocumentTranslationSteps,
+	createDocumentProcessingGroups,
+	DOCUMENT_PROCESSING_STEPS,
+	type DocumentProcessingCurrentStep,
+	type DocumentProcessingGroup,
+	type DocumentProcessingStepName,
+	findDocumentGroupForJob,
+	preferredJobIdForGroup,
+	progressSourceForGroup,
+} from '@/lib/processing-view-models';
 import { getErrorMessage, isApiUnavailableError } from '@/lib/query-state';
-import type { AnalysisRun, RunStatus } from '@/lib/types';
-import { jobDetailToAnalysisRun, jobToAnalysisRun } from '@/lib/view-models';
-
-function formatElapsedSince(value: string | null | undefined, locale: string) {
-	if (!value) return '—';
-	const startedAt = new Date(value).getTime();
-	if (Number.isNaN(startedAt)) return '—';
-	const totalMinutes = Math.max(1, Math.round((Date.now() - startedAt) / 60000));
-	if (locale.startsWith('de')) {
-		if (totalMinutes < 60) return `${totalMinutes} Min.`;
-		const hours = Math.floor(totalMinutes / 60);
-		const minutes = totalMinutes % 60;
-		if (hours < 24) return minutes > 0 ? `${hours} Std. ${minutes} Min.` : `${hours} Std.`;
-		const days = Math.floor(hours / 24);
-		const remainingHours = hours % 24;
-		return remainingHours > 0 ? `${days} T. ${remainingHours} Std.` : `${days} T.`;
-	}
-	if (totalMinutes < 60) return `${totalMinutes} min`;
-	const hours = Math.floor(totalMinutes / 60);
-	const minutes = totalMinutes % 60;
-	if (hours < 24) return minutes > 0 ? `${hours} h ${minutes} min` : `${hours} h`;
-	const days = Math.floor(hours / 24);
-	const remainingHours = hours % 24;
-	return remainingHours > 0 ? `${days} d ${remainingHours} h` : `${days} d`;
-}
+import type { RunStatus } from '@/lib/types';
+import { jobDetailToAnalysisRun } from '@/lib/view-models';
 
 function formatDateTime(value: string | null | undefined, locale: string) {
 	if (!value) return '—';
@@ -57,15 +46,44 @@ function formatDateTime(value: string | null | undefined, locale: string) {
 	}).format(date);
 }
 
-const orderedPipelineSteps = ['quality', 'extract', 'segment', 'enrich', 'embed', 'graph', 'analyze'] as const;
-
 function formatPipelineStep(step: string, t: TFunction) {
 	return t(`pipelineSteps.${step}`, { defaultValue: step });
 }
 
+function formatDocumentProcessingStep(step: DocumentProcessingStepName, t: TFunction) {
+	if (step === 'upload') return t('runs.uploadStep');
+	return formatPipelineStep(step, t);
+}
+
+function formatCurrentStep(step: DocumentProcessingCurrentStep, t: TFunction) {
+	if (step === 'processing') return t('runs.processingStep');
+	if (step === 'translation') return t('runs.translationStep');
+	if (step === 'unknown') return t('common.unknown');
+	return formatDocumentProcessingStep(step, t);
+}
+
+function formatRelativeActivity(value: string | null | undefined, locale: string) {
+	if (!value) return '—';
+	const startedAt = new Date(value).getTime();
+	if (Number.isNaN(startedAt)) return '—';
+	const totalMinutes = Math.max(1, Math.round((Date.now() - startedAt) / 60000));
+	if (locale.startsWith('de')) {
+		if (totalMinutes < 60) return `vor ${totalMinutes} Min.`;
+		const hours = Math.floor(totalMinutes / 60);
+		if (hours < 24) return `vor ${hours} Std.`;
+		const days = Math.floor(hours / 24);
+		return `vor ${days} T.`;
+	}
+	if (totalMinutes < 60) return `${totalMinutes} min ago`;
+	const hours = Math.floor(totalMinutes / 60);
+	if (hours < 24) return `${hours} h ago`;
+	const days = Math.floor(hours / 24);
+	return `${days} d ago`;
+}
+
 function buildDisplaySteps(steps: DocumentObservabilityResponse['data']['source']['steps']) {
 	const byName = new Map(steps.map((step) => [step.step, step]));
-	const ordered = orderedPipelineSteps.map(
+	const ordered = DOCUMENT_PROCESSING_STEPS.filter((step) => step !== 'upload').map(
 		(step) =>
 			byName.get(step) ?? {
 				completed_at: null,
@@ -75,174 +93,301 @@ function buildDisplaySteps(steps: DocumentObservabilityResponse['data']['source'
 			},
 	);
 	const extras = steps.filter(
-		(step) => !orderedPipelineSteps.includes(step.step as (typeof orderedPipelineSteps)[number]),
+		(step) => !DOCUMENT_PROCESSING_STEPS.includes(step.step as (typeof DOCUMENT_PROCESSING_STEPS)[number]),
 	);
 	return [...ordered, ...extras];
 }
 
-function ProcessingDocuments({
-	expandedSourceId,
-	locale,
-	onToggleSource,
-	progress,
-}: {
-	expandedSourceId?: string;
-	locale: string;
-	onToggleSource: (sourceId: string) => void;
-	progress: JobProgress | null | undefined;
-}) {
+function Stepper({ group, progress }: { group: DocumentProcessingGroup; progress: JobProgress | null | undefined }) {
 	const { t } = useTranslation();
-	const observabilityQuery = useDocumentObservability(expandedSourceId);
-	const expandedSteps = observabilityQuery.data?.data.source.steps ?? [];
-
-	if (!progress || progress.sources.length === 0) {
-		return <p className="text-sm text-text-muted">{t('runs.noDocumentProgress')}</p>;
-	}
+	const progressSource = progressSourceForGroup(progress, group);
+	const steps = buildDocumentProcessingSteps(group, { progressSource });
 
 	return (
-		<div className="space-y-2">
-			{progress.sources.map((source) => {
-				const expanded = expandedSourceId === source.source_id;
-				const displaySteps = expanded ? buildDisplaySteps(expandedSteps) : [];
-				return (
-					<div className="rounded-md border border-border bg-panel-raised" key={source.source_id}>
-						<button
-							className="flex w-full items-start gap-3 p-3 text-left transition-colors hover:bg-field"
-							onClick={() => onToggleSource(source.source_id)}
-							type="button"
-						>
-							{expanded ? (
-								<ChevronDown className="mt-0.5 size-4 shrink-0 text-text-subtle" />
-							) : (
-								<ChevronRight className="mt-0.5 size-4 shrink-0 text-text-subtle" />
-							)}
-							<div className="min-w-0 flex-1">
-								<div className="flex flex-wrap items-center gap-2">
-									<p className="truncate text-sm font-medium text-text">
-										{source.source?.filename ?? t('runs.sourceNotVisible')}
-									</p>
-									<StatusBadge status={source.status} />
-								</div>
-								<p className="mt-1 truncate text-xs text-text-muted">
-									{t('runs.currentStep')}: {formatPipelineStep(source.current_step, t)}
-								</p>
-								<p className="mt-1 text-xs text-text-subtle">
-									{t('runs.lastActivity')}: {formatDateTime(source.updated_at, locale)} · {t('runs.elapsed')}:{' '}
-									{formatElapsedSince(source.updated_at, locale)}
-								</p>
-								{source.error_message ? <p className="mt-1 text-xs text-danger">{source.error_message}</p> : null}
-							</div>
-						</button>
-						{expanded ? (
-							<div className="border-t border-border p-3">
-								<div className="mb-3 flex items-center justify-between gap-3">
-									<p className="text-xs font-medium text-text-subtle">{t('runs.pipelineSteps')}</p>
-									<Link className="text-xs font-medium text-accent hover:underline" to={`/sources/${source.source_id}`}>
-										{t('runs.openSource')}
-									</Link>
-								</div>
-								{observabilityQuery.isLoading ? (
-									<StateNotice tone="loading" title={t('runs.detailLoadingTitle')} />
-								) : null}
-								{observabilityQuery.error ? (
-									<StateNotice
-										tone="error"
-										title={
-											isApiUnavailableError(observabilityQuery.error)
-												? t('runs.detailUnavailableTitle')
-												: t('runs.detailErrorTitle')
-										}
-									>
-										{getErrorMessage(observabilityQuery.error, t('common.apiRequestFailed'))}
-									</StateNotice>
-								) : null}
-								{displaySteps.length > 0 ? (
-									<div className="space-y-2">
-										{displaySteps.map((step) => (
-											<div
-												className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md bg-panel px-3 py-2"
-												key={`${source.source_id}-${step.step}`}
-											>
-												<div className="min-w-0">
-													<p className="truncate text-sm text-text">{formatPipelineStep(step.step, t)}</p>
-													<p className="mt-1 text-xs text-text-subtle">
-														{step.completed_at
-															? `${t('runs.completed')}: ${formatDateTime(step.completed_at, locale)} · ${t('runs.elapsed')}: ${formatElapsedSince(step.completed_at, locale)}`
-															: t('runs.stepWaiting')}
-													</p>
-													{step.error_message ? <p className="mt-1 text-xs text-danger">{step.error_message}</p> : null}
-												</div>
-												<StatusBadge status={step.status} />
-											</div>
-										))}
-									</div>
-								) : !observabilityQuery.isLoading && !observabilityQuery.error ? (
-									<p className="text-sm text-text-muted">{t('runs.noPipelineSteps')}</p>
-								) : null}
-							</div>
-						) : null}
-					</div>
-				);
-			})}
+		<div className="flex flex-wrap gap-1.5" title={t('runs.pipelineSteps')}>
+			{steps.map((step) => (
+				<span
+					className={cn(
+						'h-2.5 w-2.5 rounded-full bg-field ring-1 ring-border',
+						step.status === 'completed' && 'bg-success ring-success/40',
+						step.status === 'running' && 'bg-info ring-info/40',
+						step.status === 'failed' && 'bg-danger ring-danger/40',
+						step.status === 'skipped' && 'bg-warning ring-warning/40',
+						step.status === 'partial' && 'bg-warning ring-warning/40',
+					)}
+					key={`${group.id}-${step.name}`}
+					title={`${formatDocumentProcessingStep(step.name, t)}: ${t(`status.${step.status}`, {
+						defaultValue: step.status,
+					})}`}
+				/>
+			))}
 		</div>
 	);
 }
 
-function getRunColumns(t: TFunction): DataColumn<AnalysisRun>[] {
-	return [
-		{
-			key: 'run',
-			header: t('runs.tableRun'),
-			render: (run) => (
-				<div className="min-w-0">
-					<p className="truncate font-medium text-text">{run.title}</p>
-					<p className="mt-1 truncate font-mono text-xs text-text-subtle">{run.id}</p>
+function DocumentStepsPanel({
+	group,
+	locale,
+	progress,
+	steps,
+}: {
+	group: DocumentProcessingGroup;
+	locale: string;
+	progress: JobProgress | null | undefined;
+	steps: DocumentObservabilityResponse['data']['source']['steps'];
+}) {
+	const { t } = useTranslation();
+	const progressSource = progressSourceForGroup(progress, group);
+	const displaySteps = buildDocumentProcessingSteps(group, {
+		observabilitySteps: buildDisplaySteps(steps),
+		progressSource,
+	});
+	const translationSteps = buildDocumentTranslationSteps(group);
+
+	return (
+		<div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_240px]">
+			<div className="space-y-2">
+				{displaySteps.map((step) => (
+					<div
+						className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md bg-panel px-3 py-2"
+						key={`${group.id}-${step.name}`}
+					>
+						<div className="min-w-0">
+							<p className="truncate text-sm text-text">{formatDocumentProcessingStep(step.name, t)}</p>
+							<p className="mt-1 text-xs text-text-subtle">
+								{step.activityAt
+									? `${formatDateTime(step.activityAt, locale)} · ${formatRelativeActivity(step.activityAt, locale)}`
+									: t('runs.stepWaiting')}
+							</p>
+							{step.errorMessage ? <p className="mt-1 text-xs text-danger">{step.errorMessage}</p> : null}
+						</div>
+						<div className="flex items-center gap-2">
+							{step.attempts ? <span className="font-mono text-xs text-text-subtle">{step.attempts}</span> : null}
+							<StatusBadge status={step.status} />
+						</div>
+					</div>
+				))}
+				{translationSteps.length > 0 ? (
+					<div className="mt-3 border-t border-border pt-3">
+						<p className="mb-2 text-xs font-medium text-text-subtle">{t('runs.translationSteps')}</p>
+						<div className="space-y-2">
+							{translationSteps.map((step) => (
+								<div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md bg-panel px-3 py-2" key={step.id}>
+									<div className="min-w-0">
+										<p className="truncate text-sm text-text">{step.label}</p>
+										<p className="mt-1 text-xs text-text-subtle">
+											{formatDateTime(step.activityAt, locale)} · {formatRelativeActivity(step.activityAt, locale)}
+										</p>
+										{step.errorMessage ? <p className="mt-1 text-xs text-danger">{step.errorMessage}</p> : null}
+									</div>
+									<div className="flex items-center gap-2">
+										<span className="font-mono text-xs text-text-subtle">{step.attempts}</span>
+										<StatusBadge status={step.status} />
+									</div>
+								</div>
+							))}
+						</div>
+					</div>
+				) : null}
+			</div>
+			<div className="space-y-2">
+				{group.sourceId ? (
+					<Link
+						className="block rounded-md border border-border bg-panel px-3 py-2 text-sm font-medium text-accent transition-colors hover:bg-field"
+						to={`/sources/${group.sourceId}`}
+					>
+						{t('runs.openSource')}
+					</Link>
+				) : null}
+				<button
+					className="w-full rounded-md border border-border bg-panel px-3 py-2 text-left text-sm font-medium text-text-subtle"
+					disabled
+					title={t('runs.retryUnavailableTitle')}
+					type="button"
+				>
+					{t('runs.retryProcessing')}
+				</button>
+				<div className="rounded-md border border-border bg-panel px-3 py-2">
+					<p className="text-xs font-medium text-text-subtle">{t('runs.documentJobs')}</p>
+					<p className="mt-1 font-mono text-sm text-text">{group.jobs.length}</p>
 				</div>
-			),
-		},
-		{
-			key: 'status',
-			header: t('common.status'),
-			className: 'w-32',
-			render: (run) => <StatusBadge status={run.status} />,
-		},
-		{ key: 'mode', header: t('common.mode'), render: (run) => <span className="text-text-muted">{run.mode}</span> },
-		{
-			key: 'corpus',
-			header: t('runs.tableCorpus'),
-			render: (run) => <span className="text-text-muted">{run.corpus}</span>,
-		},
-		{
-			key: 'progress',
-			header: t('runs.tableProgress'),
-			render: (run) => (
-				<div className="flex items-center gap-3">
-					{run.progress === null ? (
-						<span className="font-mono text-xs text-text-subtle">{t('common.notExposed')}</span>
-					) : (
-						<>
-							<div className="h-1.5 w-24 overflow-hidden rounded-xs bg-field">
-								<div className="h-full rounded-xs bg-accent" style={{ width: `${run.progress}%` }} />
-							</div>
-							<span className="font-mono text-xs text-text-muted">{run.progress}%</span>
-						</>
-					)}
-				</div>
-			),
-		},
-		{
-			key: 'attempts',
-			header: t('runs.tableAttempts'),
-			className: 'w-24',
-			render: (run) => <span className="font-mono">{run.attempts}</span>,
-		},
-		{
-			key: 'started',
-			header: t('common.started'),
-			className: 'w-32',
-			render: (run) => <span className="font-mono text-xs">{run.startedAt}</span>,
-		},
-	];
+			</div>
+		</div>
+	);
+}
+
+function DocumentProcessingTable({
+	emptyMessage,
+	expandedDocumentId,
+	groups,
+	locale,
+	onOpenDetails,
+	selectedDocumentId,
+	selectedProgress,
+}: {
+	emptyMessage: string;
+	expandedDocumentId?: string;
+	groups: DocumentProcessingGroup[];
+	locale: string;
+	onOpenDetails: (group: DocumentProcessingGroup) => void;
+	selectedDocumentId?: string;
+	selectedProgress: JobProgress | null | undefined;
+}) {
+	const { t } = useTranslation();
+	const expandedGroup = groups.find((group) => group.id === expandedDocumentId);
+	const expandedSourceId = expandedGroup?.sourceId;
+	const observabilityQuery = useDocumentObservability(expandedSourceId);
+	const expandedSteps = observabilityQuery.data?.data.source.steps ?? [];
+
+	if (groups.length === 0) {
+		return <p className="px-4 py-8 text-center text-sm text-text-muted">{emptyMessage}</p>;
+	}
+
+	return (
+		<div className="overflow-x-auto">
+			<table className="w-full min-w-[980px] border-collapse text-left">
+				<thead>
+					<tr className="border-b border-border bg-panel-raised">
+						<th className="px-4 py-3 text-xs font-medium text-text-subtle" scope="col">
+							{t('runs.tableDocument')}
+						</th>
+						<th className="w-32 px-4 py-3 text-xs font-medium text-text-subtle" scope="col">
+							{t('common.status')}
+						</th>
+						<th className="px-4 py-3 text-xs font-medium text-text-subtle" scope="col">
+							{t('runs.tableCurrentStep')}
+						</th>
+						<th className="px-4 py-3 text-xs font-medium text-text-subtle" scope="col">
+							{t('runs.tableProgress')}
+						</th>
+						<th className="w-36 px-4 py-3 text-xs font-medium text-text-subtle" scope="col">
+							{t('runs.tableLastActivity')}
+						</th>
+						<th className="w-44 px-4 py-3 text-xs font-medium text-text-subtle" scope="col">
+							{t('runs.tableActions')}
+						</th>
+					</tr>
+				</thead>
+				<tbody>
+					{groups.map((group) => {
+						const expanded = group.id === expandedDocumentId;
+						const selected = group.id === selectedDocumentId;
+						const rowProgress = selected || expanded ? selectedProgress : null;
+						const progressSource = progressSourceForGroup(rowProgress, group);
+						const currentStep = progressSource?.current_step
+							? formatPipelineStep(progressSource.current_step, t)
+							: formatCurrentStep(group.currentStep, t);
+						return (
+							<Fragment key={group.id}>
+								<tr
+									className={cn(
+										'border-b border-border transition-colors',
+										selected && 'bg-accent-soft',
+										expanded && 'border-b-0',
+									)}
+								>
+									<td className="px-4 py-3 align-top">
+										<div className="flex min-w-0 items-start gap-3">
+											<button
+												className="mt-0.5 rounded-sm text-text-subtle transition-colors hover:text-text"
+												onClick={() => onOpenDetails(group)}
+												title={expanded ? t('runs.collapseDetails') : t('runs.expandDetails')}
+												type="button"
+											>
+												{expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+											</button>
+											<div className="min-w-0">
+												<p className="truncate text-sm font-medium text-text">{group.title}</p>
+												<p className="mt-1 truncate font-mono text-xs text-text-subtle">
+													{group.sourceId ?? group.latestJob.job.id}
+												</p>
+											</div>
+										</div>
+									</td>
+									<td className="px-4 py-3 align-top">
+										<StatusBadge status={group.status} />
+									</td>
+									<td className="px-4 py-3 align-top text-sm text-text-muted">
+										<p>{currentStep}</p>
+										{progressSource?.error_message ? (
+											<p className="mt-1 text-xs text-danger">{progressSource.error_message}</p>
+										) : null}
+									</td>
+									<td className="px-4 py-3 align-top">
+										<Stepper group={group} progress={rowProgress} />
+									</td>
+									<td className="px-4 py-3 align-top">
+										<p className="text-sm text-text">{formatRelativeActivity(group.lastActivity, locale)}</p>
+										<p className="mt-1 font-mono text-xs text-text-subtle">
+											{formatDateTime(group.lastActivity, locale)}
+										</p>
+									</td>
+									<td className="px-4 py-3 align-top">
+										<div className="flex flex-wrap items-center gap-2">
+											<button
+												className="rounded-md border border-border bg-panel px-2.5 py-1 text-xs font-medium text-text transition-colors hover:bg-field"
+												onClick={() => onOpenDetails(group)}
+												type="button"
+											>
+												{t('runs.details')}
+											</button>
+											{group.sourceId ? (
+												<Link
+													className="rounded-md border border-border bg-panel px-2.5 py-1 text-xs font-medium text-accent transition-colors hover:bg-field"
+													to={`/sources/${group.sourceId}`}
+												>
+													{t('runs.openSource')}
+												</Link>
+											) : null}
+											<button
+												className="rounded-md border border-border bg-panel px-2.5 py-1 text-xs font-medium text-text-subtle"
+												disabled
+												title={t('runs.retryUnavailableTitle')}
+												type="button"
+											>
+												{t('runs.retry')}
+											</button>
+										</div>
+									</td>
+								</tr>
+								{expanded ? (
+									<tr className="border-b border-border bg-panel-raised">
+										<td className="px-4 py-4" colSpan={6}>
+											{observabilityQuery.isLoading ? (
+												<div className="mb-3">
+													<StateNotice tone="loading" title={t('runs.detailLoadingTitle')} />
+												</div>
+											) : null}
+											{observabilityQuery.error ? (
+												<div className="mb-3">
+													<StateNotice
+														tone="error"
+														title={
+															isApiUnavailableError(observabilityQuery.error)
+																? t('runs.detailUnavailableTitle')
+																: t('runs.detailErrorTitle')
+														}
+													>
+														{getErrorMessage(observabilityQuery.error, t('common.apiRequestFailed'))}
+													</StateNotice>
+												</div>
+											) : null}
+											<DocumentStepsPanel
+												group={group}
+												locale={locale}
+												progress={selectedProgress}
+												steps={expandedSteps}
+											/>
+										</td>
+									</tr>
+								) : null}
+							</Fragment>
+						);
+					})}
+				</tbody>
+			</table>
+		</div>
+	);
 }
 
 export function AnalysisRunsPage() {
@@ -250,52 +395,83 @@ export function AnalysisRunsPage() {
 	const [searchParams] = useSearchParams();
 	const [status, setStatus] = useState<RunStatus | 'all'>('all');
 	const [query, setQuery] = useState('');
-	const [selectedId, setSelectedId] = useState<string | undefined>();
-	const [expandedSourceId, setExpandedSourceId] = useState<string | undefined>();
+	const [selectedDocumentId, setSelectedDocumentId] = useState<string | undefined>();
+	const [expandedDocumentId, setExpandedDocumentId] = useState<string | undefined>();
+	const [selectedJobId, setSelectedJobId] = useState<string | undefined>();
 	const jobsQuery = useJobs({ limit: 50 });
 	const viewModelContext = useMemo(() => ({ locale: i18n.language, t }), [i18n.language, t]);
 
-	const runs = useMemo(
-		() => (jobsQuery.data?.data ?? []).map((job) => jobToAnalysisRun(job, viewModelContext)),
+	const documentGroups = useMemo(
+		() => createDocumentProcessingGroups(jobsQuery.data?.data ?? [], viewModelContext),
 		[jobsQuery.data, viewModelContext],
 	);
 	const tabs = useMemo(
 		() => [
-			{ value: 'all', label: t('runs.tabAll'), count: runs.length },
-			{ value: 'queued', label: t('runs.tabQueued'), count: runs.filter((run) => run.status === 'queued').length },
-			{ value: 'running', label: t('runs.tabRunning'), count: runs.filter((run) => run.status === 'running').length },
+			{ value: 'all', label: t('runs.tabAll'), count: documentGroups.length },
+			{
+				value: 'queued',
+				label: t('runs.tabQueued'),
+				count: documentGroups.filter((group) => group.status === 'queued').length,
+			},
+			{
+				value: 'running',
+				label: t('runs.tabRunning'),
+				count: documentGroups.filter((group) => group.status === 'running').length,
+			},
 			{
 				value: 'completed',
 				label: t('runs.tabCompleted'),
-				count: runs.filter((run) => run.status === 'completed').length,
+				count: documentGroups.filter((group) => group.status === 'completed').length,
 			},
-			{ value: 'failed', label: t('runs.tabFailed'), count: runs.filter((run) => run.status === 'failed').length },
+			{
+				value: 'failed',
+				label: t('runs.tabFailed'),
+				count: documentGroups.filter((group) => group.status === 'failed').length,
+			},
 		],
-		[runs, t],
+		[documentGroups, t],
 	);
 
-	const filteredRuns = useMemo(() => {
-		return runs.filter((run) => {
-			const statusMatch = status === 'all' || run.status === status;
-			const queryMatch = `${run.title} ${run.id} ${run.mode} ${run.corpus}`.toLowerCase().includes(query.toLowerCase());
+	const filteredGroups = useMemo(() => {
+		return documentGroups.filter((group) => {
+			const statusMatch = status === 'all' || group.status === status;
+			const haystack = [
+				group.title,
+				group.sourceId,
+				group.currentStep,
+				...group.jobs.flatMap(({ job, run }) => [job.id, job.type, run.mode]),
+			]
+				.filter(Boolean)
+				.join(' ')
+				.toLowerCase();
+			const queryMatch = haystack.includes(query.toLowerCase());
 			return statusMatch && queryMatch;
 		});
-	}, [query, runs, status]);
+	}, [documentGroups, query, status]);
 
 	useEffect(() => {
 		const jobId = searchParams.get('job');
 		if (jobId) {
-			setSelectedId(jobId);
-			setExpandedSourceId(undefined);
+			setSelectedJobId(jobId);
 		}
 	}, [searchParams]);
 
-	const selectedListRun =
-		filteredRuns.find((run) => run.id === selectedId) ?? runs.find((run) => run.id === selectedId) ?? filteredRuns[0];
-	const selectedJobId = selectedListRun?.id ?? selectedId;
-	const selectedJobQuery = useJob(selectedJobId, {
+	useEffect(() => {
+		const jobId = searchParams.get('job');
+		const group = findDocumentGroupForJob(documentGroups, jobId);
+		if (!group) return;
+		setSelectedDocumentId(group.id);
+		setExpandedDocumentId(group.id);
+		setSelectedJobId(jobId ?? preferredJobIdForGroup(group));
+	}, [documentGroups, searchParams]);
+
+	const selectedGroup =
+		documentGroups.find((group) => group.id === selectedDocumentId) ?? filteredGroups[0] ?? documentGroups[0];
+	const selectedJobBelongsToGroup = selectedGroup?.jobs.some(({ job }) => job.id === selectedJobId) ?? false;
+	const selectedJobIdForQuery = selectedJobBelongsToGroup ? selectedJobId : preferredJobIdForGroup(selectedGroup);
+	const selectedJobQuery = useJob(selectedJobIdForQuery, {
 		refetchInterval: (query) => {
-			if (!selectedJobId) return false;
+			if (!selectedJobIdForQuery) return false;
 			if (query.state.error) return getRetryAfterDelayMs(query.state.error, STABLE_POLL_INTERVAL_MS);
 			const status = query.state.data?.data.job.status;
 			if (!status) return STABLE_POLL_INTERVAL_MS;
@@ -304,20 +480,24 @@ export function AnalysisRunsPage() {
 	});
 	const selectedRun = selectedJobQuery.data
 		? jobDetailToAnalysisRun(selectedJobQuery.data.data, viewModelContext)
-		: selectedListRun;
+		: (selectedGroup?.jobs.find(({ job }) => job.id === selectedJobIdForQuery)?.run ?? selectedGroup?.latestJob.run);
 	const selectedProgress = selectedJobQuery.data?.data.progress;
-	const runColumns = getRunColumns(t);
 	const hasRunFilters = query.trim().length > 0 || status !== 'all';
-	const runTableRows = jobsQuery.error ? [] : filteredRuns;
-	const runTableEmptyMessage = jobsQuery.error
+	const documentTableRows = jobsQuery.error ? [] : filteredGroups;
+	const documentTableEmptyMessage = jobsQuery.error
 		? t('runs.processingUnavailableShort')
 		: jobsQuery.isLoading
 			? t('runs.noJobsLoaded')
-			: runs.length === 0
+			: documentGroups.length === 0
 				? t('runs.noProcessingRecords')
 				: hasRunFilters
 					? t('runs.noMatchingJobs')
 					: t('runs.noProcessingRecords');
+	const openDetails = (group: DocumentProcessingGroup) => {
+		setSelectedDocumentId(group.id);
+		setSelectedJobId(preferredJobIdForGroup(group));
+		setExpandedDocumentId(expandedDocumentId === group.id ? undefined : group.id);
+	};
 
 	return (
 		<>
@@ -392,22 +572,22 @@ export function AnalysisRunsPage() {
 						<Tabs onChange={(value) => setStatus(value as RunStatus | 'all')} tabs={tabs} value={status} />
 					</div>
 
-					<DataTable
-						columns={runColumns}
-						emptyMessage={runTableEmptyMessage}
-						getRowKey={(run) => run.id}
-						onRowClick={(run) => {
-							setSelectedId(run.id);
-							setExpandedSourceId(undefined);
-						}}
-						rows={runTableRows}
-						selectedKey={selectedRun?.id}
-						minWidth={800}
+					<DocumentProcessingTable
+						emptyMessage={documentTableEmptyMessage}
+						expandedDocumentId={expandedDocumentId}
+						groups={documentTableRows}
+						locale={i18n.language}
+						onOpenDetails={openDetails}
+						selectedDocumentId={selectedGroup?.id}
+						selectedProgress={selectedProgress}
 					/>
 				</section>
 
 				{selectedRun ? (
-					<InspectorPanel subtitle={selectedRun.id} title={selectedRun.title}>
+					<InspectorPanel
+						subtitle={selectedGroup?.sourceId ?? selectedRun.id}
+						title={selectedGroup?.title ?? selectedRun.title}
+					>
 						{selectedJobQuery.isLoading ? (
 							<div className="mb-3">
 								<StateNotice tone="loading" title={t('runs.detailLoadingTitle')} />
@@ -427,14 +607,6 @@ export function AnalysisRunsPage() {
 								</StateNotice>
 							</div>
 						) : null}
-						<InspectorSection title={t('runs.documents')}>
-							<ProcessingDocuments
-								expandedSourceId={expandedSourceId}
-								locale={i18n.language}
-								onToggleSource={(sourceId) => setExpandedSourceId(expandedSourceId === sourceId ? undefined : sourceId)}
-								progress={selectedProgress}
-							/>
-						</InspectorSection>
 						<InspectorSection title={t('runs.execution')}>
 							<div className="grid grid-cols-2 gap-2">
 								<div className="rounded-md bg-field p-3">
@@ -460,6 +632,12 @@ export function AnalysisRunsPage() {
 									<p className="mt-2 font-mono text-sm text-text">{selectedRun.findings ?? t('common.notExposed')}</p>
 								</div>
 							</div>
+							{selectedGroup ? (
+								<div className="mt-3 rounded-md border border-border bg-panel-raised p-3">
+									<p className="text-xs text-text-subtle">{t('runs.documentJobs')}</p>
+									<p className="mt-2 font-mono text-sm text-text">{selectedGroup.jobs.length}</p>
+								</div>
+							) : null}
 							{selectedRun.error ? (
 								<div className="mt-3 rounded-md border border-danger/20 bg-danger-soft p-3 text-sm text-danger">
 									<div className="flex items-start gap-2">
