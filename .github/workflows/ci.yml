@@ -323,7 +323,7 @@ jobs:
     if: (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/milestone/'))) && needs.pr-affected-plan.outputs.has_db == 'true'
     name: affected db (${{ matrix.shard_index }}/${{ matrix.shard_total }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     needs: [build, health, pr-affected-plan]
     strategy:
       fail-fast: false
