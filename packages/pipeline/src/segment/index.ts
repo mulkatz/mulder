@@ -28,8 +28,16 @@ import {
 import type pg from 'pg';
 import type { LayoutDocument, LayoutPage } from '../extract/types.js';
 import { buildCompactDocumentQualitySummary } from '../quality/index.js';
-import { getSegmentationJsonSchema, segmentationResponseSchema } from './schema.js';
+import { getSegmentationJsonSchema, type SegmentationResponse, segmentationResponseSchema } from './schema.js';
 import type { SegmentationData, SegmentedStory, SegmentInput, SegmentResult } from './types.js';
+import {
+	buildPreviousWindowContext,
+	clampStoryToDocument,
+	createSegmentWindows,
+	mergeWindowStories,
+	type SegmentWindow,
+	type WindowedSegmentStory,
+} from './windowing.js';
 
 export type { SegmentationData, SegmentedStory, SegmentInput, SegmentResult } from './types.js';
 
@@ -106,6 +114,92 @@ async function loadPageImages(
 		}
 	}
 	return images;
+}
+
+function buildPageImageMap(pages: LayoutPage[], images: Buffer[]): Map<number, Buffer> {
+	const map = new Map<number, Buffer>();
+	for (let index = 0; index < pages.length; index += 1) {
+		const page = pages[index];
+		if (!page) continue;
+		map.set(page.pageNumber, images[index] ?? Buffer.alloc(0));
+	}
+	return map;
+}
+
+function buildWindowPrompt(
+	basePrompt: string,
+	layoutDoc: LayoutDocument,
+	window: SegmentWindow<LayoutPage>,
+	previousWindowContext: string,
+): string {
+	const lines = [
+		basePrompt,
+		'',
+		'## Segmentation Window',
+		`Pages in this request: ${window.pageStart}-${window.pageEnd} of ${layoutDoc.pageCount}.`,
+		'Use original document page numbers for page_start and page_end.',
+		'Stories may continue across windows. If visible text continues a previous story, keep the same title and include only the text visible in this window.',
+		previousWindowContext,
+		'',
+		'## Page Content',
+	];
+
+	for (const page of window.pages) {
+		lines.push(`### Page ${page.pageNumber}`);
+		lines.push(page.text);
+		lines.push('');
+	}
+
+	return lines.filter((line) => line !== '').join('\n');
+}
+
+function selectWindowMedia(
+	window: SegmentWindow<LayoutPage>,
+	pageImageMap: Map<number, Buffer>,
+	maxMediaPages: number,
+): Array<{ mimeType: string; data: Buffer }> {
+	if (maxMediaPages <= 0) return [];
+	const media: Array<{ mimeType: string; data: Buffer }> = [];
+	for (const page of window.pages) {
+		const image = pageImageMap.get(page.pageNumber);
+		if (!image || image.length === 0) continue;
+		media.push({ mimeType: 'image/png', data: image });
+		if (media.length >= maxMediaPages) break;
+	}
+	return media;
+}
+
+interface SegmentCauseDetails {
+	name?: string;
+	code?: unknown;
+	status?: unknown;
+	retryable?: unknown;
+	message: string;
+}
+
+function errorField(cause: unknown, key: string): unknown {
+	if (cause !== null && typeof cause === 'object' && key in cause) {
+		return (cause as Record<string, unknown>)[key];
+	}
+	return undefined;
+}
+
+function describeSegmentCause(cause: unknown): SegmentCauseDetails {
+	if (cause instanceof Error) {
+		return {
+			name: cause.name,
+			code: errorField(cause, 'code'),
+			status: errorField(cause, 'status'),
+			retryable: errorField(cause, 'retryable'),
+			message: cause.message,
+		};
+	}
+	return {
+		code: errorField(cause, 'code'),
+		status: errorField(cause, 'status'),
+		retryable: errorField(cause, 'retryable'),
+		message: typeof cause === 'string' ? cause : String(cause),
+	};
 }
 
 // ────────────────────────────────────────────────────────────
@@ -250,8 +344,15 @@ export async function execute(
 		);
 	}
 
-	// 5. Load page images from GCS
-	const pageImages = await loadPageImages(input.sourceId, layoutDoc.pages, services, log);
+	const segmentationConfig = config.extraction.segmentation;
+	const sendPageImages =
+		layoutDoc.primaryMethod === 'document_ai'
+			? segmentationConfig.send_page_images_for_document_ai
+			: segmentationConfig.send_page_images_for_native;
+
+	// 5. Load page images only when this extraction path benefits from visual context.
+	const pageImages = sendPageImages ? await loadPageImages(input.sourceId, layoutDoc.pages, services, log) : [];
+	const pageImageMap = buildPageImageMap(layoutDoc.pages, pageImages);
 
 	// 6. Build segmentation prompt
 	const locale = config.project.supported_locales[0] ?? 'en';
@@ -264,70 +365,112 @@ export async function execute(
 		has_native_text: String(layoutDoc.primaryMethod === 'native'),
 	});
 
-	// Append page content from layout JSON
-	const pageContentLines: string[] = ['', '## Page Content'];
-	for (const page of layoutDoc.pages) {
-		pageContentLines.push(`### Page ${page.pageNumber}`);
-		pageContentLines.push(page.text);
-		pageContentLines.push('');
-	}
-
-	const renderedPrompt = basePrompt + pageContentLines.join('\n');
-
-	// 7. Call Gemini structured output
 	const errors: StepError[] = [];
-	let segmentationResponse: {
-		stories: Array<{
-			title: string;
-			subtitle: string | null;
-			language: string;
-			category: string;
-			page_start: number;
-			page_end: number;
-			date_references: string[];
-			geographic_references: string[];
-			confidence: number;
-			content_markdown: string;
-		}>;
-	};
+	const windowedStories: WindowedSegmentStory[] = [];
+	const windows = createSegmentWindows(layoutDoc.pages, {
+		windowPages: segmentationConfig.window_pages,
+		overlapPages: segmentationConfig.window_overlap_pages,
+	});
 
-	try {
-		// Prepare media: non-empty page images
-		const media: Array<{ mimeType: string; data: Buffer }> = [];
-		for (const img of pageImages) {
-			if (img.length > 0) {
-				media.push({ mimeType: 'image/png', data: img });
+	log.info(
+		{
+			pageCount: layoutDoc.pageCount,
+			windows: windows.length,
+			windowPages: segmentationConfig.window_pages,
+			overlapPages: segmentationConfig.window_overlap_pages,
+			sendPageImages,
+			maxMediaPagesPerWindow: segmentationConfig.max_media_pages_per_window,
+			extractionMethod: layoutDoc.primaryMethod,
+		},
+		'Segmenting source in page windows',
+	);
+
+	for (const window of windows) {
+		const previousWindowContext = buildPreviousWindowContext(mergeWindowStories(windowedStories), window);
+		const renderedPrompt = buildWindowPrompt(basePrompt, layoutDoc, window, previousWindowContext);
+		const media = sendPageImages
+			? selectWindowMedia(window, pageImageMap, segmentationConfig.max_media_pages_per_window)
+			: [];
+
+		try {
+			const segmentationResponse = await services.llm.generateStructured<SegmentationResponse>({
+				prompt: renderedPrompt,
+				schema: getSegmentationJsonSchema(),
+				media: media.length > 0 ? media : undefined,
+				responseValidator: (data) => segmentationResponseSchema.parse(data),
+			});
+
+			for (const rawStory of segmentationResponse.stories) {
+				const story = clampStoryToDocument(rawStory, layoutDoc.pageCount);
+				if (story) {
+					windowedStories.push(story);
+				}
 			}
-		}
 
-		segmentationResponse = await services.llm.generateStructured({
-			prompt: renderedPrompt,
-			schema: getSegmentationJsonSchema(),
-			media: media.length > 0 ? media : undefined,
-			responseValidator: (data) => segmentationResponseSchema.parse(data),
-		});
-	} catch (cause: unknown) {
-		throw new SegmentError(
-			`Gemini segmentation failed for source ${input.sourceId}`,
-			SEGMENT_ERROR_CODES.SEGMENT_LLM_FAILED,
-			{ cause, context: { sourceId: input.sourceId } },
-		);
+			log.debug(
+				{
+					window: window.index + 1,
+					pageStart: window.pageStart,
+					pageEnd: window.pageEnd,
+					storyCount: segmentationResponse.stories.length,
+					mediaCount: media.length,
+				},
+				'Segment window completed',
+			);
+		} catch (cause: unknown) {
+			const causeDetails = describeSegmentCause(cause);
+			const pageRange = `${window.pageStart}-${window.pageEnd}`;
+			const message = `Vertex structured generation failed for pages ${pageRange}: ${causeDetails.message}`;
+			errors.push({
+				file: `pages ${pageRange}`,
+				code: SEGMENT_ERROR_CODES.SEGMENT_LLM_FAILED,
+				message,
+			});
+			log.warn(
+				{
+					err: cause,
+					window: window.index + 1,
+					pageStart: window.pageStart,
+					pageEnd: window.pageEnd,
+					errorName: causeDetails.name,
+					errorCode: causeDetails.code,
+					errorStatus: causeDetails.status,
+					retryable: causeDetails.retryable,
+					windowIndex: window.index + 1,
+				},
+				'Segment window failed',
+			);
+		}
 	}
 
 	// 8. Handle zero or missing stories
-	const stories = segmentationResponse.stories;
+	const stories = mergeWindowStories(windowedStories);
 	if (!Array.isArray(stories) || stories.length === 0) {
 		const durationMs = Math.round(performance.now() - startTime);
-		log.warn({ sourceId: input.sourceId }, 'Gemini returned zero stories — not updating source status');
+		log.warn(
+			{ sourceId: input.sourceId, errors: errors.length },
+			'Gemini returned zero stories — not updating source status',
+		);
+		const stepErrors =
+			errors.length > 0
+				? errors
+				: [
+						{
+							code: SEGMENT_ERROR_CODES.SEGMENT_NO_STORIES_FOUND,
+							message: `No stories identified in source ${input.sourceId}`,
+						},
+					];
+		await upsertSourceStep(pool, {
+			sourceId: input.sourceId,
+			stepName: STEP_NAME,
+			status: 'failed',
+			configHash: stepConfigHash,
+			errorMessage: stepErrors[0]?.message,
+		});
 		return {
 			status: 'failed',
 			data: null,
-			errors: [
-				{
-					code: SEGMENT_ERROR_CODES.SEGMENT_NO_STORIES_FOUND,
-					message: `No stories identified in source ${input.sourceId}`,
-				},
-			],
+			errors: stepErrors,
 			metadata: {
 				duration_ms: durationMs,
 				items_processed: 0,
@@ -448,8 +591,9 @@ export async function execute(
 		await upsertSourceStep(pool, {
 			sourceId: input.sourceId,
 			stepName: STEP_NAME,
-			status: 'completed',
+			status: status === 'partial' ? 'partial' : 'completed',
 			configHash: stepConfigHash,
+			errorMessage: status === 'partial' ? errors[0]?.message : undefined,
 		});
 	} else {
 		// All stories failed GCS upload — leave source at 'extracted', mark step as failed
@@ -458,6 +602,7 @@ export async function execute(
 			stepName: STEP_NAME,
 			status: 'failed',
 			configHash: stepConfigHash,
+			errorMessage: errors[0]?.message,
 		});
 	}
 

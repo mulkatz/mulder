@@ -84,7 +84,7 @@ export interface DispatchResult {
 export type DispatchResultKind = DispatchResult['jobType'];
 
 function assertStepSucceeded(job: WorkerJobEnvelope, stepName: string, status: string): void {
-	if (status === 'success' || status === 'skipped') {
+	if (status === 'success' || status === 'partial' || status === 'skipped') {
 		return;
 	}
 

@@ -178,6 +178,11 @@ export const CONFIG_DEFAULTS = {
 		max_vision_pages: 20,
 		segmentation: {
 			model: 'gemini-2.5-flash',
+			window_pages: 8,
+			window_overlap_pages: 1,
+			max_media_pages_per_window: 8,
+			send_page_images_for_native: false,
+			send_page_images_for_document_ai: true,
 		},
 	},
 

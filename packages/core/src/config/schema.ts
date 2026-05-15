@@ -182,9 +182,19 @@ const ingestProvenanceSchema = ingestProvenanceObj.default(defaults(ingestProven
 
 // --- Extraction ---
 
-const segmentationConfigSchema = z.object({
-	model: z.string().default('gemini-2.5-flash'),
-});
+const segmentationConfigSchema = z
+	.object({
+		model: z.string().default('gemini-2.5-flash'),
+		window_pages: z.number().positive().int().default(8),
+		window_overlap_pages: z.number().nonnegative().int().default(1),
+		max_media_pages_per_window: z.number().nonnegative().int().default(8),
+		send_page_images_for_native: z.boolean().default(false),
+		send_page_images_for_document_ai: z.boolean().default(true),
+	})
+	.refine((value) => value.window_overlap_pages < value.window_pages, {
+		path: ['window_overlap_pages'],
+		message: 'window_overlap_pages must be smaller than window_pages',
+	});
 
 const extractionObj = z.object({
 	native_text_threshold: z.number().min(0).max(1).default(0.9),

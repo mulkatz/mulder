@@ -180,7 +180,7 @@ function routeForQuality(config: MulderConfig, quality: DocumentOverallQuality):
 	return config.document_quality.routing[quality].path;
 }
 
-function pdfNativeTextMeetsSkipThreshold(input: {
+export function pdfNativeTextMeetsSkipThreshold(input: {
 	config: MulderConfig;
 	nativeTextRatio: number;
 	pagesWithTextRatio: number;

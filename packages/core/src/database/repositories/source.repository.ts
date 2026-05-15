@@ -720,10 +720,10 @@ export async function deleteSource(pool: pg.Pool, id: string): Promise<boolean> 
 /**
  * Upserts a source step record. Idempotent via (source_id, step_name) primary key.
  *
- * Sets `completed_at = now()` when the status is `completed` or `skipped`.
+ * Sets `completed_at = now()` when the status is terminal and usable.
  */
 export async function upsertSourceStep(pool: Queryable, input: UpsertSourceStepInput): Promise<SourceStep> {
-	const isTerminalSuccess = input.status === 'completed' || input.status === 'skipped';
+	const isTerminalSuccess = input.status === 'completed' || input.status === 'partial' || input.status === 'skipped';
 	const completedAt = isTerminalSuccess ? 'now()' : 'NULL';
 
 	const sql = `
@@ -736,7 +736,7 @@ export async function upsertSourceStep(pool: Queryable, input: UpsertSourceStepI
         ELSE EXCLUDED.config_hash
       END,
       error_message = EXCLUDED.error_message,
-      completed_at = CASE WHEN EXCLUDED.status IN ('completed', 'skipped') THEN now() ELSE source_steps.completed_at END
+      completed_at = CASE WHEN EXCLUDED.status IN ('completed', 'partial', 'skipped') THEN now() ELSE source_steps.completed_at END
     RETURNING *
   `;
 	const params = [input.sourceId, input.stepName, input.status, input.configHash ?? null, input.errorMessage ?? null];
