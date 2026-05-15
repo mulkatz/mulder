@@ -425,7 +425,7 @@ export interface UploadProvenancePayload {
 	};
 	original_source?: {
 		source_type: UploadOriginalSourceType;
-		description: string;
+		description?: string;
 		source_date?: string | null;
 		author?: string | null;
 		language?: string;

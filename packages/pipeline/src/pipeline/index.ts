@@ -24,6 +24,7 @@ import type {
 	Services,
 	Source,
 	SourceStatus,
+	SourceStepStatus,
 	SourceType,
 	StepError,
 	Story,
@@ -51,6 +52,7 @@ import {
 	planPipelineSteps,
 	type StepPlan,
 	type StepPlanInput,
+	updateSourceStatus,
 	upsertPipelineRunSource,
 	upsertSourceStep,
 } from '@mulder/core';
@@ -309,6 +311,66 @@ function summarizeGlobalAnalyzeResult(result: Awaited<ReturnType<typeof executeA
 	}
 
 	return result.status;
+}
+
+function sourceHasReachedGraph(source: Source | null, fallbackFinalStep: PipelineStepName | null): boolean {
+	if (fallbackFinalStep === 'graph') {
+		return true;
+	}
+	if (!source) {
+		return false;
+	}
+	return sourceStatusIndex(source.status) >= sourceStatusIndex('graphed');
+}
+
+async function markGlobalAnalyzeProcessing(pool: pg.Pool, runId: string, sourceIds: string[]): Promise<void> {
+	for (const sourceId of sourceIds) {
+		await upsertPipelineRunSource(pool, {
+			runId,
+			sourceId,
+			currentStep: 'analyze',
+			status: 'processing',
+		});
+	}
+}
+
+function analyzeStepStatus(analysis: PipelineGlobalAnalysisOutcome): SourceStepStatus {
+	switch (analysis.status) {
+		case 'success':
+			return 'completed';
+		case 'skipped':
+			return 'skipped';
+		case 'partial':
+			return 'partial';
+		case 'failed':
+			return 'failed';
+	}
+}
+
+async function finalizeGlobalAnalyzeObservability(input: {
+	pool: pg.Pool;
+	runId: string;
+	sourceIds: string[];
+	analysis: PipelineGlobalAnalysisOutcome;
+}): Promise<void> {
+	const stepStatus = analyzeStepStatus(input.analysis);
+	for (const sourceId of input.sourceIds) {
+		await upsertSourceStep(input.pool, {
+			sourceId,
+			stepName: 'analyze',
+			status: stepStatus,
+			errorMessage: stepStatus === 'failed' || stepStatus === 'partial' ? input.analysis.summary : undefined,
+		});
+		await upsertPipelineRunSource(input.pool, {
+			runId: input.runId,
+			sourceId,
+			currentStep: 'analyze',
+			status: 'completed',
+		});
+		if (stepStatus === 'completed') {
+			await updateSourceStatus(input.pool, sourceId, 'analyzed');
+		}
+	}
 }
 
 function buildSourcePlan(source: Source, options: PipelineRunOptions): StepPlan {
@@ -845,7 +907,7 @@ export async function execute(
 		const sourceOutcomes: PipelineRunSourceOutcome[] = [];
 		let completedCount = 0;
 		let failedCount = 0;
-		let graphCompletedCount = 0;
+		const graphReadySourceIds: string[] = [];
 
 		const ctx: ProcessSourceContext = {
 			runId: run.id,
@@ -873,8 +935,9 @@ export async function execute(
 			});
 			if (result.status === 'completed') {
 				completedCount++;
-				if (result.finalStep === 'graph') {
-					graphCompletedCount++;
+				const latestSource = await findSourceById(pool, src.id);
+				if (sourceHasReachedGraph(latestSource, result.finalStep)) {
+					graphReadySourceIds.push(src.id);
 				}
 			} else {
 				failedCount++;
@@ -892,9 +955,10 @@ export async function execute(
 			globalAnalysis = createSkippedGlobalAnalysis('planned steps stop before graph');
 		} else if (!config.analysis.enabled) {
 			globalAnalysis = createSkippedGlobalAnalysis('analysis disabled by config');
-		} else if (graphCompletedCount === 0) {
+		} else if (graphReadySourceIds.length === 0) {
 			globalAnalysis = createSkippedGlobalAnalysis('no sources reached graph successfully');
 		} else {
+			await markGlobalAnalyzeProcessing(pool, run.id, graphReadySourceIds);
 			const analyzeResult = await executeAnalyze({ full: true }, config, services, pool, runLog);
 			errors.push(...analyzeResult.errors);
 			globalAnalysis = {
@@ -903,6 +967,12 @@ export async function execute(
 				result: analyzeResult,
 			};
 		}
+		await finalizeGlobalAnalyzeObservability({
+			pool,
+			runId: run.id,
+			sourceIds: graphReadySourceIds,
+			analysis: globalAnalysis,
+		});
 
 		// 6. Finalisation (Phase 3).
 		let runStatus: 'success' | 'partial' | 'failed';

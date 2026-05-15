@@ -208,11 +208,11 @@ async function maybeEnqueueDuplicatePipelineResume(
 			},
 		});
 		const pipelineJob = await enqueueJob(client, {
-			type: firstStep,
+			type: 'pipeline_run',
 			payload: {
 				sourceId: source.id,
 				runId: run.id,
-				upTo: 'graph',
+				from: firstStep,
 				force,
 				tag: PIPELINE_RESUME_DUPLICATE_UPLOAD_TAG,
 			},
@@ -1024,11 +1024,11 @@ async function finalizeUploadedDocument(
 				},
 			});
 			const pipelineJob = await enqueueJob(client, {
-				type: 'quality',
+				type: 'pipeline_run',
 				payload: {
 					sourceId: source.id,
 					runId: run.id,
-					upTo: 'graph',
+					from: 'quality',
 					force: false,
 					tag: BROWSER_UPLOAD_PIPELINE_TAG,
 				},

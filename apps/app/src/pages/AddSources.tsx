@@ -8,9 +8,9 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { Toolbar } from '@/components/Toolbar';
 import { useSession } from '@/features/auth/useSession';
 import { useCollections, useCreateCollection } from '@/features/collections/useCollections';
+import { buildDocumentUploadPayload } from '@/features/documents/buildDocumentUploadPayload';
 import {
 	type DocumentUploadFailedStep,
-	type DocumentUploadPayload,
 	type DocumentUploadRetryMode,
 	useDocumentUpload,
 } from '@/features/documents/useDocumentUpload';
@@ -213,73 +213,23 @@ export function AddSourcesPage() {
 		return aiSuggestedFields.includes(field) ? <AiMarker label={t('addSources.aiSuggested')} /> : undefined;
 	}
 
-	function buildPayload(): DocumentUploadPayload {
-		const trimmedDescription = sourceDescription.trim();
-		const trimmedCustodian = custodian.trim();
-		const trimmedCustodyNotes = custodyNotes.trim();
-		const trimmedAcquisitionNotes = acquisitionNotes.trim();
-		const trimmedAuthenticityNotes = authenticityNotes.trim();
-		const acquisition =
-			channel || collectionId || trimmedAcquisitionNotes || noCollectionConfirmed
-				? {
-						...(channel ? { channel } : {}),
-						collection_id: collectionId || null,
-						metadata: {
-							...(intakeSuggestionId ? { intake_suggestion_id: intakeSuggestionId } : {}),
-							no_collection_confirmed: !collectionId && noCollectionConfirmed,
-						},
-						notes: trimmedAcquisitionNotes || null,
-					}
-				: intakeSuggestionId
-					? {
-							collection_id: collectionId || null,
-							metadata: {
-								intake_suggestion_id: intakeSuggestionId,
-								no_collection_confirmed: !collectionId && noCollectionConfirmed,
-							},
-						}
-					: undefined;
-		const originalSource = trimmedDescription
-			? {
-					description: trimmedDescription,
-					source_type: sourceType || 'other',
-					...(sourceLanguage.trim() ? { language: sourceLanguage.trim() } : {}),
-				}
-			: undefined;
-		const authenticity =
-			authenticityStatus || trimmedAuthenticityNotes
-				? {
-						notes: trimmedAuthenticityNotes || null,
-						status: authenticityStatus || 'unverified',
-					}
-				: undefined;
-		const custodyChain = trimmedCustodian
-			? [
-					{
-						holder: trimmedCustodian,
-						holder_type: 'unknown' as const,
-						notes: trimmedCustodyNotes || null,
-						step_order: 1,
-					},
-				]
-			: undefined;
-		const payload: DocumentUploadPayload = {
-			...(sensitivityLevel
-				? {
-						expected_sensitivity: {
-							level: sensitivityLevel,
-							...(sensitivityReason.trim() ? { reason: sensitivityReason.trim() } : {}),
-						},
-					}
-				: {}),
-			provenance: {
-				...(acquisition ? { acquisition } : {}),
-				...(authenticity ? { authenticity } : {}),
-				...(custodyChain ? { custody_chain: custodyChain } : {}),
-				...(originalSource ? { original_source: originalSource } : {}),
-			},
-		};
-		return payload;
+	function buildPayload() {
+		return buildDocumentUploadPayload({
+			acquisitionNotes,
+			authenticityNotes,
+			authenticityStatus,
+			channel,
+			collectionId,
+			custodian,
+			custodyNotes,
+			intakeSuggestionId,
+			noCollectionConfirmed,
+			sensitivityLevel,
+			sensitivityReason,
+			sourceDescription,
+			sourceLanguage,
+			sourceType,
+		});
 	}
 
 	async function handleSubmit(event: FormEvent) {

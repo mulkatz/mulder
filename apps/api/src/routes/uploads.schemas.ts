@@ -180,7 +180,7 @@ export const UploadProvenanceSchema = z.object({
 	original_source: z
 		.object({
 			source_type: UploadOriginalSourceTypeSchema,
-			description: z.string().trim().min(1).max(4000),
+			description: z.string().trim().min(1).max(4000).optional(),
 			source_date: OptionalDateStringSchema,
 			author: z.string().trim().max(512).nullable().optional(),
 			language: z.string().trim().min(2).max(16).optional(),

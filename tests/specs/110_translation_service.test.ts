@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -89,6 +89,10 @@ function stripKnownNodeWarnings(stderr: string): string {
 		.filter((line) => !line.includes('Use `node --trace-deprecation ...` to show where the warning was created'))
 		.join('\n')
 		.trim();
+}
+
+function sha256(content: string): string {
+	return createHash('sha256').update(content, 'utf8').digest('hex');
 }
 
 async function createTextSource(label = 'spec110') {
@@ -314,6 +318,35 @@ describe('Spec 110: translation service', () => {
 		expect(translationOnly.data.translationId).toBe(full.data.translationId);
 		expect(translationOnly.data.document.pipelinePath).toBe('full');
 		expect(generateTextCalls()).toBe(1);
+	});
+
+	it('QA-05a: translated story content hash follows translated markdown', async () => {
+		if (!pgAvailable) return;
+
+		const config = coreModule.loadConfig(writeMinimalConfigWithoutTranslation());
+		const { services } = createCountingServices(config);
+		const logger = coreModule.createLogger();
+		const { source } = await createStoryBackedSource(services, 'story-hash');
+
+		const result = await pipelineModule.executeTranslate(
+			{
+				sourceId: source.id,
+				sourceLanguage: 'de',
+				targetLanguage: 'en',
+			},
+			config,
+			services,
+			pool,
+			logger,
+		);
+
+		const row = await pool.query<{ markdown: string; content_hash: string }>(
+			'SELECT markdown, content_hash FROM translated_stories WHERE translation_id = $1',
+			[result.data.translationId],
+		);
+		expect(row.rows).toHaveLength(1);
+		expect(row.rows[0].content_hash).toBe(sha256(row.rows[0].markdown));
+		expect(row.rows[0].content_hash).not.toBe(sha256('# Quelle\n\nDies ist ein Testdokument.'));
 	});
 
 	it('QA-05b: cache validity respects requested output format', async () => {

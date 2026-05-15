@@ -21,6 +21,8 @@ import type { CreateStoryInput, Story, StoryFilter, StoryStatus, UpdateStoryInpu
 const logger = createLogger();
 const repoLogger = createChildLogger(logger, { module: 'story-repository' });
 
+type Queryable = pg.Pool | pg.PoolClient;
+
 // ────────────────────────────────────────────────────────────
 // Row mapper (snake_case DB → camelCase TS)
 // ────────────────────────────────────────────────────────────
@@ -300,7 +302,7 @@ export async function findAllStories(pool: pg.Pool, filter?: StoryFilter): Promi
 /**
  * Counts stories matching the given filter. For pagination and status overview.
  */
-export async function countStories(pool: pg.Pool, filter?: StoryFilter): Promise<number> {
+export async function countStories(pool: Queryable, filter?: StoryFilter): Promise<number> {
 	const conditions: string[] = [];
 	const params: unknown[] = [];
 	let paramIndex = 1;

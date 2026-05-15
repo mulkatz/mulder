@@ -352,7 +352,10 @@ class DevLlmService implements LlmService {
 
 		let result: T;
 
-		if (hasProperty('markdown') && hasProperty('entity_mentions')) {
+		if (
+			options.prompt.includes('Translate this extracted story.') ||
+			(hasProperty('markdown') && hasProperty('entity_mentions'))
+		) {
 			this.logger.debug('DevLlmService: generateStructured — returning translated story fixture');
 			result = JSON.parse(
 				JSON.stringify({

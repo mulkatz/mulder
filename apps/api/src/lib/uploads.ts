@@ -371,7 +371,7 @@ function safePiiTypes(value: unknown): EnrichmentSuggestedPiiType[] {
 	);
 }
 
-function sanitizeEnrichmentSuggestion(
+export function sanitizeEnrichmentSuggestion(
 	value: unknown,
 	draft: EnrichUploadProvenanceRequest['draft'] | undefined,
 ): EnrichUploadProvenanceResponse['data']['suggested'] {
@@ -410,12 +410,16 @@ function sanitizeEnrichmentSuggestion(
 		!Array.isArray(provenance.original_source)
 	) {
 		const original = provenance.original_source as Record<string, unknown>;
-		if (typeof original.description === 'string' && original.description.trim().length > 0) {
-			const sourceType = safeEnumValue(original.source_type, ALLOWED_UPLOAD_SOURCE_TYPES) ?? 'other';
-			const language = safeLanguage(original.language);
+		const sourceType = safeEnumValue(original.source_type, ALLOWED_UPLOAD_SOURCE_TYPES);
+		const language = safeLanguage(original.language);
+		const description =
+			typeof original.description === 'string' && original.description.trim().length > 0
+				? original.description.trim()
+				: null;
+		if (description || language || sourceType) {
 			safeProvenance.original_source = {
-				source_type: sourceType,
-				description: original.description,
+				source_type: sourceType ?? 'other',
+				...(description ? { description } : {}),
 				...(language ? { language } : {}),
 			};
 		}

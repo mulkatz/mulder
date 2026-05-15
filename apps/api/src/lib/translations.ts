@@ -45,6 +45,16 @@ interface TranslationRouteOptions {
 
 const DOCUMENT_NOT_FOUND_CODE = 'DOCUMENT_NOT_FOUND';
 const TRANSLATION_NOT_FOUND_CODE = 'TRANSLATION_NOT_FOUND';
+type Queryable = pg.Pool | pg.PoolClient;
+
+interface TranslationJobRequest {
+	outputFormat: string;
+	pipelinePath: string;
+	refresh: boolean;
+	sourceId: string;
+	sourceLanguage?: string;
+	targetLanguage: string;
+}
 
 let cachedContext: TranslationContext | null = null;
 let cachedConfigPath: string | null = null;
@@ -190,6 +200,99 @@ function mapTranslatedStory(
 	};
 }
 
+function translationAcceptedResponse(jobId: string): { status: 202; body: TranslationAcceptedResponse } {
+	return {
+		status: 202,
+		body: {
+			data: {
+				job_id: jobId,
+				status: 'pending',
+			},
+			links: {
+				status: `/api/jobs/${jobId}`,
+			},
+		},
+	};
+}
+
+function translationJobLockKey(input: TranslationJobRequest): string {
+	return [
+		'translation',
+		input.sourceId,
+		input.targetLanguage,
+		input.outputFormat,
+		input.pipelinePath,
+		String(input.refresh),
+	].join(':');
+}
+
+async function withTranslationJobLock<T>(
+	pool: pg.Pool,
+	input: TranslationJobRequest,
+	fn: (client: pg.PoolClient) => Promise<T>,
+): Promise<T> {
+	const client = await pool.connect();
+	try {
+		await client.query('BEGIN');
+		await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [translationJobLockKey(input)]);
+		const result = await fn(client);
+		await client.query('COMMIT');
+		return result;
+	} catch (error) {
+		try {
+			await client.query('ROLLBACK');
+		} catch {
+			// Keep the original failure.
+		}
+		throw error;
+	} finally {
+		client.release();
+	}
+}
+
+async function findInFlightTranslationJob(pool: Queryable, input: TranslationJobRequest): Promise<string | null> {
+	const result = await pool.query<{ id: string }>(
+		`
+			SELECT id
+			FROM jobs
+			WHERE type = 'translate'
+				AND status IN ('pending', 'running')
+				AND COALESCE(payload->>'sourceId', payload->>'source_id') = $1
+				AND COALESCE(payload->>'targetLanguage', payload->>'target_language') = $2
+				AND COALESCE(payload->>'outputFormat', payload->>'output_format', $3) = $3
+				AND COALESCE(payload->>'pipelinePath', payload->>'pipeline_path', $4) = $4
+				AND COALESCE(payload->>'refresh', 'false') = $5
+			ORDER BY created_at DESC
+			LIMIT 1
+		`,
+		[input.sourceId, input.targetLanguage, input.outputFormat, input.pipelinePath, String(input.refresh)],
+	);
+	return result.rows[0]?.id ?? null;
+}
+
+async function enqueueOrReuseTranslationJob(
+	pool: Queryable,
+	input: TranslationJobRequest,
+): Promise<{ status: 202; body: TranslationAcceptedResponse }> {
+	const existingJobId = await findInFlightTranslationJob(pool, input);
+	if (existingJobId) {
+		return translationAcceptedResponse(existingJobId);
+	}
+	const job = await enqueueJob(pool, {
+		type: 'translate',
+		payload: {
+			sourceId: input.sourceId,
+			targetLanguage: input.targetLanguage,
+			sourceLanguage: input.sourceLanguage,
+			pipelinePath: input.pipelinePath,
+			outputFormat: input.outputFormat,
+			refresh: input.refresh,
+		},
+		maxAttempts: 3,
+	});
+	return translationAcceptedResponse(job.id);
+}
+
 async function countTranslationsForSource(
 	pool: pg.Pool,
 	sourceId: string,
@@ -333,74 +436,39 @@ export async function requestDocumentTranslation(
 	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal);
 	await requireSource(pool, sourceId, maxSensitivityLevel);
 	const outputFormat = input.output_format ?? config.translation.output_format;
+	const jobRequest: TranslationJobRequest = {
+		outputFormat,
+		pipelinePath: input.pipeline_path ?? 'translation_only',
+		refresh: input.refresh ?? false,
+		sourceId,
+		sourceLanguage: input.source_language,
+		targetLanguage: input.target_language,
+	};
 
-	if (!input.refresh) {
-		const cached = await findCurrentTranslatedDocument(pool, sourceId, input.target_language, { maxSensitivityLevel });
-		if (cached && cached.outputFormat === outputFormat) {
-			const [sourceStoryCount, translatedStoryCount] = await Promise.all([
-				countStories(pool, { sourceId, maxSensitivityLevel }),
-				countTranslatedStoriesForTranslation(pool, cached.id, { maxSensitivityLevel }),
-			]);
-			if (sourceStoryCount > 0 && translatedStoryCount === 0) {
-				const job = await enqueueJob(pool, {
-					type: 'translate',
-					payload: {
-						sourceId,
-						targetLanguage: input.target_language,
-						sourceLanguage: input.source_language,
-						pipelinePath: input.pipeline_path,
-						outputFormat,
-						refresh: false,
-					},
-					maxAttempts: 3,
+	return await withTranslationJobLock(pool, jobRequest, async (client) => {
+		if (!jobRequest.refresh) {
+			const cached = await findCurrentTranslatedDocument(client, sourceId, input.target_language, {
+				maxSensitivityLevel,
+			});
+			if (cached && cached.outputFormat === outputFormat) {
+				const sourceStoryCount = await countStories(client, { sourceId, maxSensitivityLevel });
+				const translatedStoryCount = await countTranslatedStoriesForTranslation(client, cached.id, {
+					maxSensitivityLevel,
 				});
+				if (sourceStoryCount > 0 && translatedStoryCount === 0) {
+					return await enqueueOrReuseTranslationJob(client, { ...jobRequest, refresh: false });
+				}
 				return {
-					status: 202,
+					status: 200,
 					body: {
-						data: {
-							job_id: job.id,
-							status: 'pending',
-						},
-						links: {
-							status: `/api/jobs/${job.id}`,
-						},
+						data: mapTranslation(cached),
 					},
 				};
 			}
-			return {
-				status: 200,
-				body: {
-					data: mapTranslation(cached),
-				},
-			};
 		}
-	}
 
-	const job = await enqueueJob(pool, {
-		type: 'translate',
-		payload: {
-			sourceId,
-			targetLanguage: input.target_language,
-			sourceLanguage: input.source_language,
-			pipelinePath: input.pipeline_path,
-			outputFormat,
-			refresh: input.refresh,
-		},
-		maxAttempts: 3,
+		return await enqueueOrReuseTranslationJob(client, jobRequest);
 	});
-
-	return {
-		status: 202,
-		body: {
-			data: {
-				job_id: job.id,
-				status: 'pending',
-			},
-			links: {
-				status: `/api/jobs/${job.id}`,
-			},
-		},
-	};
 }
 
 export async function getTranslation(

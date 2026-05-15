@@ -303,6 +303,51 @@ describe('Spec 116: translation API routes', () => {
 		});
 	});
 
+	it('reuses in-flight translation jobs for matching requests', async () => {
+		const app = createApp({ config: TEST_API_CONFIG });
+		const sourceId = await seedSource(pool);
+
+		const firstResponse = await app.request(`http://localhost/api/documents/${sourceId}/translations`, {
+			body: JSON.stringify({ target_language: 'en' }),
+			headers: { ...authorizedHeaders(), 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+		const secondResponse = await app.request(`http://localhost/api/documents/${sourceId}/translations`, {
+			body: JSON.stringify({ target_language: 'en' }),
+			headers: { ...authorizedHeaders(), 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+
+		expect(firstResponse.status).toBe(202);
+		expect(secondResponse.status).toBe(202);
+		const firstBody = (await readJson(firstResponse)) as { data: { job_id: string } };
+		const secondBody = (await readJson(secondResponse)) as { data: { job_id: string } };
+		expect(secondBody.data.job_id).toBe(firstBody.data.job_id);
+
+		const refreshResponse = await app.request(`http://localhost/api/documents/${sourceId}/translations`, {
+			body: JSON.stringify({ target_language: 'en', refresh: true }),
+			headers: { ...authorizedHeaders(), 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+		const secondRefreshResponse = await app.request(`http://localhost/api/documents/${sourceId}/translations`, {
+			body: JSON.stringify({ target_language: 'en', refresh: true }),
+			headers: { ...authorizedHeaders(), 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+
+		expect(refreshResponse.status).toBe(202);
+		expect(secondRefreshResponse.status).toBe(202);
+		const refreshBody = (await readJson(refreshResponse)) as { data: { job_id: string } };
+		const secondRefreshBody = (await readJson(secondRefreshResponse)) as { data: { job_id: string } };
+		expect(secondRefreshBody.data.job_id).toBe(refreshBody.data.job_id);
+		expect(refreshBody.data.job_id).not.toBe(firstBody.data.job_id);
+
+		const jobCount = await pool.query<{ count: string }>('SELECT COUNT(*) AS count FROM jobs WHERE type = $1', [
+			'translate',
+		]);
+		expect(Number(jobCount.rows[0]?.count ?? '0')).toBe(2);
+	});
+
 	it('returns translated stories with persisted verified mentions and entity data', async () => {
 		const app = createApp({ config: TEST_API_CONFIG });
 		const sourceId = await seedSource(pool);

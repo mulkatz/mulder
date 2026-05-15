@@ -330,7 +330,7 @@ async function ensureTranslatedStories(input: {
 			title: response.title,
 			subtitle: response.subtitle ?? null,
 			markdown: response.markdown,
-			contentHash: hashText(story.markdown),
+			contentHash: hashText(response.markdown),
 			sensitivityLevel: story.sensitivityLevel,
 			sensitivityMetadata: story.sensitivityMetadata,
 			mentions,

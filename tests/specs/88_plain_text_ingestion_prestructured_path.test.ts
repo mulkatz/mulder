@@ -446,12 +446,17 @@ describe('Spec 88 — Plain Text Ingestion on the Pre-Structured Path', () => {
 			db.runSql(
 				`SELECT COUNT(*) FROM jobs WHERE type = 'quality' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
 			),
-		).toBe('1');
+		).toBe('0');
 		expect(
 			db.runSql(
 				`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
 			),
 		).toBe('0');
+		expect(
+			db.runSql(
+				`SELECT COUNT(*) FROM jobs WHERE type = 'pipeline_run' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
+			),
+		).toBe('1');
 	});
 
 	it('QA-08 regression: API upload finalization reports cross-format text duplicates', async () => {

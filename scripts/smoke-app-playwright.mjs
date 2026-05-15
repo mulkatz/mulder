@@ -134,9 +134,28 @@ async function expectUploadSmoke(filePath) {
 	await page.getByRole('button', { name: /upload/i }).click();
 	await page.waitForLoadState('networkidle');
 
-	const action = page.getByRole('link', { name: /open source|open processing/i }).first();
-	await action.waitFor({ state: 'visible', timeout: 180_000 });
+	const sourceAction = page.getByRole('link', { name: /open source/i }).first();
+	const processingAction = page.getByRole('link', { name: /open processing/i }).first();
+	await sourceAction.waitFor({ state: 'visible', timeout: 180_000 });
+	await processingAction.waitFor({ state: 'visible', timeout: 180_000 });
 	await expectNoBrokenText('/sources/add upload');
+
+	const sourceHref = await sourceAction.getAttribute('href');
+	const processingHref = await processingAction.getAttribute('href');
+	if (!sourceHref) {
+		throw new Error('Upload smoke did not expose an Open source link');
+	}
+	if (!processingHref || !/\/runs\?job=[^&]+/.test(processingHref)) {
+		throw new Error('Upload smoke did not expose a /runs?job=<pipelineJobId> processing link');
+	}
+
+	await page.goto(sourceHref);
+	await page.waitForLoadState('networkidle');
+	await expectNoBrokenText('/sources/:id upload result');
+
+	await page.goto(processingHref);
+	await page.waitForLoadState('networkidle');
+	await expectNoBrokenText('/runs upload processing');
 }
 
 async function expectTranslationSmoke(sourceId) {
