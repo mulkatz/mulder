@@ -88,8 +88,40 @@ function getNestedProperty(obj: unknown, ...keys: string[]): unknown {
  */
 function extractEnumValues(schema: Record<string, unknown>, arrayProp: string, fieldProp: string): string[] {
 	const enumValues = getNestedProperty(schema, 'properties', arrayProp, 'items', 'properties', fieldProp, 'enum');
-	if (!Array.isArray(enumValues)) return [];
-	return enumValues.filter((v): v is string => typeof v === 'string');
+	if (Array.isArray(enumValues)) {
+		return enumValues.filter((v): v is string => typeof v === 'string');
+	}
+
+	const root = getNestedProperty(schema, 'properties', arrayProp);
+	return findNestedEnumValues(root, fieldProp);
+}
+
+function findNestedEnumValues(value: unknown, fieldProp: string): string[] {
+	if (value === null || value === undefined || typeof value !== 'object') {
+		return [];
+	}
+
+	if (Array.isArray(value)) {
+		for (const item of value) {
+			const found = findNestedEnumValues(item, fieldProp);
+			if (found.length > 0) return found;
+		}
+		return [];
+	}
+
+	const field = Object.getOwnPropertyDescriptor(value, fieldProp)?.value;
+	if (field && typeof field === 'object' && !Array.isArray(field)) {
+		const enumValues = Object.getOwnPropertyDescriptor(field, 'enum')?.value;
+		if (Array.isArray(enumValues)) {
+			return enumValues.filter((v): v is string => typeof v === 'string');
+		}
+	}
+
+	for (const nested of Object.values(value)) {
+		const found = findNestedEnumValues(nested, fieldProp);
+		if (found.length > 0) return found;
+	}
+	return [];
 }
 
 function arrayItemRequiresProperty(schema: Record<string, unknown>, arrayProp: string, fieldProp: string): boolean {
@@ -422,6 +454,7 @@ class DevLlmService implements LlmService {
 
 			// Extract valid entity types and relationship types from the JSON Schema
 			const entityTypes = extractEnumValues(options.schema, 'entities', 'type');
+			const effectiveEntityTypes = entityTypes.length > 0 ? entityTypes : ['person'];
 			const relationshipTypes = extractEnumValues(options.schema, 'relationships', 'relationship_type');
 			const requiresEntitySensitivity = arrayItemRequiresProperty(options.schema, 'entities', 'sensitivity');
 			const requiresRelationshipSensitivity = arrayItemRequiresProperty(options.schema, 'relationships', 'sensitivity');
@@ -429,7 +462,7 @@ class DevLlmService implements LlmService {
 
 			// Build entities using valid types from the schema
 			const entities: Array<Record<string, unknown>> = [];
-			if (entityTypes.includes('person')) {
+			if (effectiveEntityTypes.includes('person')) {
 				const entity: Record<string, unknown> = {
 					name: 'Dev Test Person',
 					type: 'person',
@@ -442,7 +475,7 @@ class DevLlmService implements LlmService {
 				}
 				entities.push(entity);
 			}
-			if (entityTypes.includes('location')) {
+			if (effectiveEntityTypes.includes('location')) {
 				const entity: Record<string, unknown> = {
 					name: 'Dev Test Location',
 					type: 'location',
@@ -456,10 +489,10 @@ class DevLlmService implements LlmService {
 				entities.push(entity);
 			}
 			// Fallback: if neither person nor location is in schema, use the first available type
-			if (entities.length === 0 && entityTypes.length > 0) {
+			if (entities.length === 0 && effectiveEntityTypes.length > 0) {
 				const entity: Record<string, unknown> = {
 					name: 'Dev Test Entity',
-					type: entityTypes[0],
+					type: effectiveEntityTypes[0],
 					confidence: 0.9,
 					attributes: {},
 					mentions: ['Dev Test Entity'],
