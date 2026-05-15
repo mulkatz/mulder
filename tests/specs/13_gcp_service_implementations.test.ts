@@ -119,13 +119,13 @@ describe('Spec 13: GCP + Dev Service Implementations', () => {
 	});
 
 	// ─── QA-02: Dev mode preserved ───
-	// Given dev_mode: true, when createServiceRegistry() is called,
+	// Given dev_mode: true outside production, when createServiceRegistry() is called,
 	// then it returns dev (fixture-based) services, not GCP services.
 
 	it('QA-02: Registry returns dev services when dev_mode: true', () => {
 		const devConfig = { ...exampleConfig, dev_mode: true };
 		const savedEnv = process.env.NODE_ENV;
-		process.env.NODE_ENV = 'production'; // ensure NODE_ENV does not help
+		delete process.env.NODE_ENV;
 		try {
 			const services = createServiceRegistry(devConfig, silentLogger);
 			expect(services).toBeDefined();
@@ -141,7 +141,11 @@ describe('Spec 13: GCP + Dev Service Implementations', () => {
 			// Dev services return a Promise that resolves; GCP services would throw/reject
 			expect(existsResult).toBeInstanceOf(Promise);
 		} finally {
-			process.env.NODE_ENV = savedEnv;
+			if (savedEnv !== undefined) {
+				process.env.NODE_ENV = savedEnv;
+			} else {
+				delete process.env.NODE_ENV;
+			}
 		}
 	});
 

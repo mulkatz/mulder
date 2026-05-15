@@ -51,6 +51,9 @@ type Queryable = pg.Pool | pg.PoolClient;
 type EnrichmentSuggestedSensitivity = NonNullable<
 	EnrichUploadProvenanceResponse['data']['suggested']['expected_sensitivity']
 >;
+type EnrichmentSuggestedProvenance = NonNullable<EnrichUploadProvenanceResponse['data']['suggested']['provenance']>;
+type EnrichmentSuggestedOriginalSource = NonNullable<EnrichmentSuggestedProvenance['original_source']>;
+type EnrichmentSuggestedOriginalSourceType = EnrichmentSuggestedOriginalSource['source_type'];
 type EnrichmentSuggestedSensitivityLevel = EnrichmentSuggestedSensitivity['level'];
 type EnrichmentSuggestedPiiType = NonNullable<EnrichmentSuggestedSensitivity['pii_types']>[number];
 
@@ -59,7 +62,7 @@ let cachedConfigPath: string | null = null;
 
 const FINALIZE_JOB_TYPE = 'document_upload_finalize';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ALLOWED_UPLOAD_SOURCE_TYPES = new Set([
+const ALLOWED_UPLOAD_SOURCE_TYPES: ReadonlySet<EnrichmentSuggestedOriginalSourceType> = new Set([
 	'witness_report',
 	'government_document',
 	'academic_paper',
@@ -148,12 +151,17 @@ function readPayloadUuid(payload: Job['payload'], key: string): string | null {
 	return value && UUID_PATTERN.test(value) ? value : null;
 }
 
-function readSubmittedByUserId(payload: Job['payload']): string | null {
-	const submittedBy = payload.submittedBy ?? payload.submitted_by;
-	if (!submittedBy || typeof submittedBy !== 'object' || Array.isArray(submittedBy)) {
+function readRecord(value: unknown): Record<string, unknown> | null {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		return null;
 	}
-	const userId = (submittedBy as Record<string, unknown>).userId ?? (submittedBy as Record<string, unknown>).user_id;
+	return Object.fromEntries(Object.entries(value));
+}
+
+function readSubmittedByUserId(payload: Job['payload']): string | null {
+	const submittedBy = readRecord(payload.submittedBy ?? payload.submitted_by);
+	if (!submittedBy) return null;
+	const userId = submittedBy.userId ?? submittedBy.user_id;
 	return typeof userId === 'string' && userId.trim().length > 0 ? userId.trim() : null;
 }
 
@@ -355,7 +363,11 @@ function previewUploadedObject(content: Buffer, contentType: string | null, file
 }
 
 function safeEnumValue<T extends string>(value: unknown, allowed: ReadonlySet<T>): T | null {
-	return typeof value === 'string' && allowed.has(value as T) ? (value as T) : null;
+	if (typeof value !== 'string') return null;
+	for (const allowedValue of allowed) {
+		if (allowedValue === value) return allowedValue;
+	}
+	return null;
 }
 
 function safeLanguage(value: unknown): string | undefined {
@@ -375,24 +387,14 @@ export function sanitizeEnrichmentSuggestion(
 	value: unknown,
 	draft: EnrichUploadProvenanceRequest['draft'] | undefined,
 ): EnrichUploadProvenanceResponse['data']['suggested'] {
-	const candidate =
-		value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-	const suggested =
-		candidate.suggested && typeof candidate.suggested === 'object' && !Array.isArray(candidate.suggested)
-			? (candidate.suggested as Record<string, unknown>)
-			: candidate;
-	const provenance =
-		suggested.provenance && typeof suggested.provenance === 'object' && !Array.isArray(suggested.provenance)
-			? (suggested.provenance as Record<string, unknown>)
-			: {};
-	const expectedSensitivity =
-		suggested.expected_sensitivity &&
-		typeof suggested.expected_sensitivity === 'object' &&
-		!Array.isArray(suggested.expected_sensitivity)
-			? (suggested.expected_sensitivity as Record<string, unknown>)
-			: null;
+	const candidate = readRecord(value) ?? {};
+	const suggested = readRecord(candidate.suggested) ?? candidate;
+	const provenance = readRecord(suggested.provenance) ?? {};
+	const expectedSensitivity = readRecord(suggested.expected_sensitivity) ?? null;
 
-	const safeProvenance: Record<string, unknown> = {};
+	const safeProvenance: EnrichmentSuggestedProvenance = {
+		custody_chain: [],
+	};
 	const draftProvenance = draft?.provenance;
 	if (
 		draftProvenance?.acquisition?.channel ||
@@ -409,7 +411,7 @@ export function sanitizeEnrichmentSuggestion(
 		typeof provenance.original_source === 'object' &&
 		!Array.isArray(provenance.original_source)
 	) {
-		const original = provenance.original_source as Record<string, unknown>;
+		const original = readRecord(provenance.original_source) ?? {};
 		const sourceType = safeEnumValue(original.source_type, ALLOWED_UPLOAD_SOURCE_TYPES);
 		const language = safeLanguage(original.language);
 		const description =
@@ -432,9 +434,9 @@ export function sanitizeEnrichmentSuggestion(
 		safeProvenance.custody_chain = draftProvenance.custody_chain;
 	}
 
-	const suggestedPayload = {
+	const suggestedPayload: EnrichUploadProvenanceResponse['data']['suggested'] = {
 		provenance: safeProvenance,
-	} as EnrichUploadProvenanceResponse['data']['suggested'];
+	};
 	if (expectedSensitivity && safeEnumValue(expectedSensitivity.level, ALLOWED_UPLOAD_SENSITIVITY_LEVELS) !== null) {
 		const level = safeEnumValue(expectedSensitivity.level, ALLOWED_UPLOAD_SENSITIVITY_LEVELS) ?? 'internal';
 		suggestedPayload.expected_sensitivity = {
@@ -450,8 +452,9 @@ export function sanitizeEnrichmentSuggestion(
 }
 
 function readConfidenceMap(value: unknown): Record<string, number> {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-	const source = (value as Record<string, unknown>).field_confidence;
+	const record = readRecord(value);
+	if (!record) return {};
+	const source = record.field_confidence;
 	if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
 	return Object.fromEntries(
 		Object.entries(source)
@@ -461,8 +464,9 @@ function readConfidenceMap(value: unknown): Record<string, number> {
 }
 
 function readWarnings(value: unknown): string[] {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
-	const warnings = (value as Record<string, unknown>).warnings;
+	const record = readRecord(value);
+	if (!record) return [];
+	const warnings = record.warnings;
 	return Array.isArray(warnings) ? warnings.filter((warning): warning is string => typeof warning === 'string') : [];
 }
 

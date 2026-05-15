@@ -779,6 +779,11 @@ export async function execute(
 		credibilityProfileStatus = credibilityResult.status;
 
 		if (credibilityResult.status === 'failed') {
+			const message = `Source credibility draft generation failed: ${credibilityResult.reason ?? 'unknown reason'}`;
+			errors.push({
+				code: ENRICH_ERROR_CODES.ENRICH_LLM_FAILED,
+				message,
+			});
 			log.warn(
 				{ sourceId: story.sourceId, reason: credibilityResult.reason },
 				'Source credibility draft generation failed non-fatally',
@@ -788,9 +793,12 @@ export async function execute(
 		await upsertSourceStep(pool, {
 			sourceId: story.sourceId,
 			stepName: STEP_NAME,
-			status: 'completed',
+			status: credibilityResult.status === 'failed' ? 'partial' : 'completed',
 			configHash: stepConfigHash,
-			errorMessage: undefined,
+			errorMessage:
+				credibilityResult.status === 'failed'
+					? `Source credibility draft generation failed: ${credibilityResult.reason ?? 'unknown reason'}`
+					: undefined,
 		});
 	} else {
 		await upsertSourceStep(pool, {

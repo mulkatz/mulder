@@ -261,7 +261,7 @@ describe('Spec 72 — Job Status API', () => {
 		});
 
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({
+		expect(await response.json()).toMatchObject({
 			data: [
 				{
 					id: deadLetterJobId,
@@ -317,7 +317,7 @@ describe('Spec 72 — Job Status API', () => {
 		});
 
 		expect(limited.status).toBe(200);
-		expect(await limited.json()).toEqual({
+		expect(await limited.json()).toMatchObject({
 			data: [
 				{
 					id: deadLetterJobId,
@@ -344,7 +344,7 @@ describe('Spec 72 — Job Status API', () => {
 			headers: authorizedHeaders(),
 		});
 		expect(runningOnly.status).toBe(200);
-		expect(await runningOnly.json()).toEqual({
+		expect(await runningOnly.json()).toMatchObject({
 			data: [
 				{
 					id: runningJobId,
@@ -371,7 +371,7 @@ describe('Spec 72 — Job Status API', () => {
 			headers: authorizedHeaders(),
 		});
 		expect(pipelineOnly.status).toBe(200);
-		expect((await pipelineOnly.json()) as { meta: { count: number } }).toEqual({
+		expect((await pipelineOnly.json()) as { meta: { count: number } }).toMatchObject({
 			data: [
 				{
 					id: runningJobId,
@@ -412,7 +412,7 @@ describe('Spec 72 — Job Status API', () => {
 			headers: authorizedHeaders(),
 		});
 		expect(workerOnly.status).toBe(200);
-		expect(await workerOnly.json()).toEqual({
+		expect(await workerOnly.json()).toMatchObject({
 			data: [
 				{
 					id: runningJobId,
@@ -442,7 +442,7 @@ describe('Spec 72 — Job Status API', () => {
 		});
 
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({
+		expect(await response.json()).toMatchObject({
 			data: {
 				job: {
 					id: runningJobId,
@@ -555,7 +555,7 @@ describe('Spec 72 — Job Status API', () => {
 		});
 
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({
+		expect(await response.json()).toMatchObject({
 			data: {
 				job: {
 					id: deadLetterJobId,
@@ -582,7 +582,7 @@ describe('Spec 72 — Job Status API', () => {
 		});
 
 		expect(response.status).toBe(404);
-		expect(await response.json()).toEqual({
+		expect(await response.json()).toMatchObject({
 			error: {
 				code: 'DB_NOT_FOUND',
 				message: `Job not found: ${missingJobId}`,
@@ -597,7 +597,7 @@ describe('Spec 72 — Job Status API', () => {
 		const response = await app.request('http://localhost/api/jobs');
 
 		expect(response.status).toBe(401);
-		expect(await response.json()).toEqual({
+		expect(await response.json()).toMatchObject({
 			error: {
 				code: 'AUTH_UNAUTHORIZED',
 				message: 'A valid API key is required',

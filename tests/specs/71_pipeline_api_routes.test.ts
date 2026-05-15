@@ -351,7 +351,7 @@ describe('Spec 71 — Async Pipeline API Routes', () => {
 		expect(db.runSql('SELECT COUNT(*) FROM jobs;')).toBe(beforeJobs);
 	});
 
-	it('QA-05: retry requests enqueue a forced single-step pipeline job', async () => {
+	it('QA-05: retry requests enqueue a forced job from the retry step', async () => {
 		const sourceId = randomUUID();
 		insertSourceRow(sourceId);
 		insertFailedPipelineStep(sourceId, 'extract');
@@ -372,10 +372,10 @@ describe('Spec 71 — Async Pipeline API Routes', () => {
 		const jobRow = readJsonCell(`SELECT payload::text FROM jobs WHERE id = '${body.data.job_id}';`);
 		expect(jobRow).toMatchObject({
 			sourceId,
-			upTo: 'segment',
 			tag: 'retry-api',
 			force: true,
 		});
+		expect(jobRow).not.toHaveProperty('upTo');
 
 		const runRow = readJsonCell(
 			`SELECT row_to_json(run_row)::text FROM (

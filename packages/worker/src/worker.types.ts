@@ -395,8 +395,9 @@ function readEnumField<T extends string>(
 	if (value === undefined || value === null) {
 		return undefined;
 	}
-	if (typeof value === 'string' && allowed.includes(value as T)) {
-		return value as T;
+	if (typeof value === 'string') {
+		const matched = allowed.find((allowedValue) => allowedValue === value);
+		if (matched) return matched;
 	}
 	throw invalidPayload(jobId, 'document_upload_finalize', `document_upload_finalize jobs require a valid ${field}`, {
 		field,
@@ -587,6 +588,10 @@ function parseUploadProvenance(jobId: string, value: unknown): DocumentUploadPro
 	};
 }
 
+function isPiiType(value: unknown): value is PIIType {
+	return typeof value === 'string' && PII_TYPES.some((piiType) => piiType === value);
+}
+
 function parseExpectedSensitivity(jobId: string, value: unknown): DocumentUploadExpectedSensitivity | undefined {
 	if (value === undefined || value === null) {
 		return undefined;
@@ -603,11 +608,7 @@ function parseExpectedSensitivity(jobId: string, value: unknown): DocumentUpload
 		});
 	}
 	const rawPiiTypes = value.piiTypes ?? value.pii_types;
-	const piiTypes = Array.isArray(rawPiiTypes)
-		? rawPiiTypes
-				.filter((item: unknown): item is PIIType => typeof item === 'string' && PII_TYPES.includes(item as PIIType))
-				.sort()
-		: undefined;
+	const piiTypes = Array.isArray(rawPiiTypes) ? rawPiiTypes.filter(isPiiType).sort() : undefined;
 	return {
 		level,
 		reason: readStringField(value, 'reason') ?? undefined,

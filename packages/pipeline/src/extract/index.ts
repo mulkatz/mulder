@@ -129,6 +129,18 @@ async function extractNativeText(pdfBuffer: Buffer, logger: Logger): Promise<str
 	return pageTexts;
 }
 
+async function appendNativeTextPages(layoutPages: LayoutPage[], pdfBuffer: Buffer, logger: Logger): Promise<void> {
+	const pageTexts = await extractNativeText(pdfBuffer, logger);
+	for (let i = 0; i < pageTexts.length; i++) {
+		layoutPages.push({
+			pageNumber: i + 1,
+			method: 'native',
+			confidence: 1.0,
+			text: pageTexts[i],
+		});
+	}
+}
+
 /**
  * Renders page images from a PDF buffer using pdfjs-dist + @napi-rs/canvas.
  * Returns an array of PNG buffers, one per page.
@@ -2471,16 +2483,7 @@ export async function execute(
 			primaryMethod = 'native';
 
 			try {
-				const pageTexts = await extractNativeText(sourceBuffer, log);
-
-				for (let i = 0; i < pageTexts.length; i++) {
-					layoutPages.push({
-						pageNumber: i + 1,
-						method: 'native',
-						confidence: 1.0,
-						text: pageTexts[i],
-					});
-				}
+				await appendNativeTextPages(layoutPages, sourceBuffer, log);
 			} catch (cause: unknown) {
 				throw new ExtractError(
 					`Native text extraction failed for source ${input.sourceId}`,
@@ -2530,27 +2533,50 @@ export async function execute(
 				});
 			}
 
-			for (const parsed of parsedPages) {
-				layoutPages.push({
-					pageNumber: parsed.pageNumber,
-					method: 'document_ai',
-					confidence: parsed.confidence,
-					text: parsed.text,
-					blocks: parsed.blocks,
-				});
+			const canFallbackToNative =
+				source.sourceType === 'pdf' && source.hasNativeText && nativeTextRatio >= threshold && parsedPages.length === 0;
+
+			if (canFallbackToNative) {
+				log.warn(
+					{ sourceId: input.sourceId, nativeTextRatio },
+					'Document AI returned no pages; falling back to native text extraction',
+				);
+				primaryMethod = 'native';
+				documentAiRaw = undefined;
+				await appendNativeTextPages(layoutPages, sourceBuffer, log);
+				try {
+					pageImages = await renderPageImages(sourceBuffer, log);
+				} catch (cause: unknown) {
+					log.warn({ err: cause }, 'Page image rendering failed — continuing without images');
+				}
+			} else {
+				for (const parsed of parsedPages) {
+					layoutPages.push({
+						pageNumber: parsed.pageNumber,
+						method: 'document_ai',
+						confidence: parsed.confidence,
+						text: parsed.text,
+						blocks: parsed.blocks,
+					});
+				}
+
+				// Run Gemini Vision fallback on low-confidence pages
+				const fallbackResult = await runVisionFallback(
+					layoutPages,
+					pageImages,
+					config.extraction.confidence_threshold,
+					{
+						services,
+						config,
+						logger: log,
+						maxVisionPages: config.extraction.max_vision_pages,
+					},
+				);
+
+				visionFallbackCount = fallbackResult.visionFallbackCount;
+				visionFallbackCapped = fallbackResult.visionFallbackCapped;
+				errors.push(...fallbackResult.errors);
 			}
-
-			// Run Gemini Vision fallback on low-confidence pages
-			const fallbackResult = await runVisionFallback(layoutPages, pageImages, config.extraction.confidence_threshold, {
-				services,
-				config,
-				logger: log,
-				maxVisionPages: config.extraction.max_vision_pages,
-			});
-
-			visionFallbackCount = fallbackResult.visionFallbackCount;
-			visionFallbackCapped = fallbackResult.visionFallbackCapped;
-			errors.push(...fallbackResult.errors);
 		}
 
 		// 5. Build layout document

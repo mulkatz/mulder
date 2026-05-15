@@ -269,10 +269,19 @@ const translatedStoryResponseSchemaV3 = z3.object({
 		.default([]),
 });
 
-const translatedStoryJsonSchema = zodToJsonSchema(translatedStoryResponseSchemaV3, {
-	name: 'TranslatedStoryResponse',
-	$refStrategy: 'none',
-}) as Record<string, unknown>;
+function readJsonObjectSchema(value: unknown): Record<string, unknown> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		return {};
+	}
+	return Object.fromEntries(Object.entries(value));
+}
+
+const translatedStoryJsonSchema = readJsonObjectSchema(
+	zodToJsonSchema(translatedStoryResponseSchemaV3, {
+		name: 'TranslatedStoryResponse',
+		$refStrategy: 'none',
+	}),
+);
 
 async function ensureTranslatedStories(input: {
 	config: MulderConfig;
