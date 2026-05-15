@@ -47,6 +47,7 @@ import {
 	updateSourceStatus,
 	upsertSourceStep,
 } from '@mulder/core';
+import { PDFDocument } from 'pdf-lib';
 import { PDFParse } from 'pdf-parse';
 import type pg from 'pg';
 import { ensureRawDocumentBlob } from '../ingest/raw-blob.js';
@@ -1980,6 +1981,17 @@ export function buildPageBatches(pageCount: number, maxPagesPerBatch: number): n
 	return batches;
 }
 
+export async function extractPdfPageBatch(sourceBuffer: Buffer, pages: number[]): Promise<Buffer> {
+	const sourcePdf = await PDFDocument.load(sourceBuffer);
+	const targetPdf = await PDFDocument.create();
+	const pageIndexes = pages.map((page) => page - 1);
+	const copiedPages = await targetPdf.copyPages(sourcePdf, pageIndexes);
+	for (const page of copiedPages) {
+		targetPdf.addPage(page);
+	}
+	return Buffer.from(await targetPdf.save());
+}
+
 async function processPdfWithDocumentAiBatches(input: {
 	sourceBuffer: Buffer;
 	sourceId: string;
@@ -2020,16 +2032,12 @@ async function processPdfWithDocumentAiBatches(input: {
 			batches: batches.length,
 			maxPagesPerRequest: input.maxPagesPerRequest,
 		},
-		'Document AI extraction using page batches',
+		'Document AI extraction using split page batches',
 	);
 
 	for (const pages of batches) {
-		const result = await input.services.documentAi.processDocument(
-			input.sourceBuffer,
-			input.sourceId,
-			input.sourceMediaType,
-			{ pages },
-		);
+		const batchBuffer = await extractPdfPageBatch(input.sourceBuffer, pages);
+		const result = await input.services.documentAi.processDocument(batchBuffer, input.sourceId, input.sourceMediaType);
 		parsedPages.push(...parseDocumentAiResult(result.document, pages));
 		pageImages.push(...result.pageImages);
 		rawBatches.push({

@@ -1,5 +1,6 @@
+import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
-import { buildPageBatches, parseDocumentAiResult } from './index.js';
+import { buildPageBatches, extractPdfPageBatch, parseDocumentAiResult } from './index.js';
 
 describe('Document AI extraction batching helpers', () => {
 	it('splits large PDFs into Document AI-safe page batches', () => {
@@ -48,5 +49,18 @@ describe('Document AI extraction batching helpers', () => {
 		expect(parsed.map((page) => page.pageNumber)).toEqual([31, 32]);
 		expect(parsed[0]?.text).toContain('Page thirty one text');
 		expect(parsed[1]?.text).toContain('Page thirty two text');
+	});
+
+	it('creates a real partial PDF for each Document AI batch', async () => {
+		const sourcePdf = await PDFDocument.create();
+		for (let pageIndex = 0; pageIndex < 5; pageIndex += 1) {
+			sourcePdf.addPage([200, 200]);
+		}
+		const sourceBuffer = Buffer.from(await sourcePdf.save());
+
+		const batchBuffer = await extractPdfPageBatch(sourceBuffer, [2, 3, 4]);
+		const batchPdf = await PDFDocument.load(batchBuffer);
+
+		expect(batchPdf.getPageCount()).toBe(3);
 	});
 });

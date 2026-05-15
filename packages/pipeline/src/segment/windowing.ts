@@ -165,12 +165,16 @@ export function buildPreviousWindowContext(
 
 	const lines = [
 		'## Previous Window Context',
-		'These candidate stories were detected in earlier overlapping windows. Use this only to continue stories across page boundaries and to avoid duplicate stories; do not invent text that is not visible in the current pages.',
+		'These candidate stories were detected in earlier overlapping windows. Use this only to continue stories across page boundaries and to avoid duplicate stories; do not invent text that is not visible in the current pages. If a story continues, keep the same title and write only the continuation visible in the current pages.',
 	];
 	for (const story of nearby) {
+		const excerpt = story.content_markdown.replace(/\s+/g, ' ').trim().slice(-500).trim();
 		lines.push(
 			`- "${story.title}" pages ${story.page_start}-${story.page_end}, confidence ${story.confidence.toFixed(2)}`,
 		);
+		if (excerpt.length > 0) {
+			lines.push(`  Recent excerpt: ${excerpt}`);
+		}
 	}
 	return lines.join('\n');
 }

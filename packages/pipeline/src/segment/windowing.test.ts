@@ -137,7 +137,7 @@ describe('segment windowing helpers', () => {
 					date_references: [],
 					geographic_references: [],
 					confidence: 0.82,
-					content_markdown: 'Earlier pages.',
+					content_markdown: 'Earlier pages that end with a key witness statement on the final visible page.',
 				},
 			],
 			{ pageStart: 8 },
@@ -146,6 +146,8 @@ describe('segment windowing helpers', () => {
 		expect(context).toContain('Long Article');
 		expect(context).toContain('pages 6-8');
 		expect(context).toContain('avoid duplicate stories');
+		expect(context).toContain('Recent excerpt:');
+		expect(context).toContain('key witness statement');
 	});
 
 	it('clamps page ranges and rejects unusable story payloads', () => {
