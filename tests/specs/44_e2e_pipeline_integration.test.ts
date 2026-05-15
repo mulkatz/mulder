@@ -338,12 +338,22 @@ describe('Spec 44 — End-to-end pipeline integration (QA-Gate Phase 3, D6)', ()
 			expect(steps, `missing step_name=${step} in source_steps`).toContain(step);
 		}
 
-		// All tracked steps should be status=completed (no partial/failed
-		// rows lingering after a clean run).
+		// The credibility profile draft in enrich is intentionally non-fatal:
+		// it can leave enrich as partial while the pipeline still completes.
+		// Other tracked steps should complete, and no failed rows should linger.
 		const badRows = Number(
-			db.runSql(`SELECT count(*) FROM source_steps WHERE source_id = '${sourceId}' AND status NOT IN ('completed');`),
+			db.runSql(
+				`SELECT count(*) FROM source_steps WHERE source_id = '${sourceId}' AND status NOT IN ('completed', 'partial');`,
+			),
 		);
 		expect(badRows).toBe(0);
+
+		const unexpectedPartialRows = Number(
+			db.runSql(
+				`SELECT count(*) FROM source_steps WHERE source_id = '${sourceId}' AND status = 'partial' AND step_name <> 'enrich';`,
+			),
+		);
+		expect(unexpectedPartialRows).toBe(0);
 	});
 
 	// ─── QA-08: Cascading reset via `mulder extract --force` clears downstream ───
