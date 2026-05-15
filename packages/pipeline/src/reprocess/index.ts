@@ -125,7 +125,12 @@ function findStoredStep(steps: SourceStepRecord[], stepName: ReprocessStepName |
 }
 
 function hasCompletedStep(steps: SourceStepRecord[], stepName: ReprocessStepName): boolean {
-	return findStoredStep(steps, stepName)?.status === 'completed';
+	const status = findStoredStep(steps, stepName)?.status;
+	return status === 'completed' || status === 'partial';
+}
+
+function stepHashMatchesCurrent(storedStep: SourceStepRecord, currentHash: string): boolean {
+	return storedStep.configHash === currentHash;
 }
 
 function hasReachedStepPrerequisite(
@@ -186,6 +191,9 @@ function getDirtyTrackedStepReason(
 	if (storedStep.status === 'skipped' && storedStep.configHash === currentHash) {
 		return null;
 	}
+	if (storedStep.status === 'partial' && stepHashMatchesCurrent(storedStep, currentHash)) {
+		return null;
+	}
 	if (storedStep.status !== 'completed') {
 		return 'missing-history';
 	}
@@ -196,6 +204,9 @@ function hasDirtyAnalyzeStep(steps: SourceStepRecord[], currentAnalyzeHash: stri
 	const storedStep = findStoredStep(steps, 'analyze');
 	if (!storedStep) {
 		return true;
+	}
+	if (storedStep.status === 'partial' && stepHashMatchesCurrent(storedStep, currentAnalyzeHash)) {
+		return false;
 	}
 	if (storedStep.status !== 'completed') {
 		return true;

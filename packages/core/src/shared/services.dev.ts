@@ -129,6 +129,14 @@ function arrayItemRequiresProperty(schema: Record<string, unknown>, arrayProp: s
 	return Array.isArray(required) && required.some((value) => value === fieldProp);
 }
 
+function extractCredibilityDimensionIds(prompt: string): string[] {
+	const section = prompt.split('## Configured dimensions')[1]?.split('\n## ')[0] ?? '';
+	return section
+		.split('\n')
+		.map((line) => line.match(/^\s*-\s*([A-Za-z0-9_-]+)\s*:/)?.[1])
+		.filter((id): id is string => typeof id === 'string' && id.length > 0);
+}
+
 function devSensitivityFixture(reason: string): Record<string, unknown> {
 	return {
 		level: 'internal',
@@ -549,7 +557,7 @@ class DevLlmService implements LlmService {
 		// Detect source credibility profile schema by checking for source_type + dimensions.
 		else if (hasProperty('source_type') && hasProperty('dimensions')) {
 			this.logger.debug('DevLlmService: generateStructured — returning source credibility fixture');
-			const dimensionIds = extractEnumValues(options.schema, 'dimensions', 'id');
+			const dimensionIds = extractCredibilityDimensionIds(options.prompt);
 			result = JSON.parse(
 				JSON.stringify({
 					source_type: 'other',
