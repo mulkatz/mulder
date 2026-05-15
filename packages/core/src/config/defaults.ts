@@ -460,6 +460,11 @@ export const CONFIG_DEFAULTS = {
 		},
 	},
 
+	vertex: {
+		max_concurrent_requests: 2,
+		request_timeout_ms: 120_000,
+	},
+
 	safety: {
 		max_pages_without_confirm: 500,
 		max_cost_without_confirm_usd: 20,

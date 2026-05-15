@@ -510,6 +510,7 @@ export function createGcpServices(config: MulderConfig, logger: Logger): Service
 	// Create VertexClient with concurrency limiter and optional cache
 	const vertexClient = createVertexClient(ai, {
 		maxConcurrentRequests: config.vertex.max_concurrent_requests,
+		requestTimeoutMs: config.vertex.request_timeout_ms,
 		cache,
 		logger,
 	});

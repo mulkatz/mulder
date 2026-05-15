@@ -40,6 +40,8 @@ import type {
 export interface VertexClientOptions {
 	/** Maximum concurrent Vertex AI requests per worker process. Default: 2. */
 	maxConcurrentRequests: number;
+	/** Hard timeout for a single Vertex request. */
+	requestTimeoutMs: number;
 	/** LLM response cache (injected in dev mode, undefined in prod). */
 	cache?: LlmCache;
 	/** Logger instance. */
@@ -65,6 +67,24 @@ export interface VertexClient {
 // ────────────────────────────────────────────────────────────
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
+
+class VertexRequestTimeoutError extends Error {
+	constructor(timeoutMs: number) {
+		super(`Vertex request timed out after ${timeoutMs}ms`);
+		this.name = 'VertexRequestTimeoutError';
+	}
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+	if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
+	let timeout: NodeJS.Timeout | undefined;
+	const timeoutPromise = new Promise<never>((_, reject) => {
+		timeout = setTimeout(() => reject(new VertexRequestTimeoutError(timeoutMs)), timeoutMs);
+	});
+	return Promise.race([promise, timeoutPromise]).finally(() => {
+		if (timeout) clearTimeout(timeout);
+	});
+}
 
 /**
  * Converts an unknown JSON-parsed value into a plain `Record<string, unknown>`.
@@ -114,10 +134,13 @@ function buildContents(
  * @returns A `VertexClient` with all Vertex AI methods.
  */
 export function createVertexClient(ai: GoogleGenAI, options: VertexClientOptions): VertexClient {
-	const { maxConcurrentRequests, cache, logger } = options;
+	const { maxConcurrentRequests, requestTimeoutMs, cache, logger } = options;
 	const limiter = pLimit(maxConcurrentRequests);
 
-	logger.debug({ maxConcurrentRequests, cacheEnabled: cache !== undefined }, 'VertexClient: initialized');
+	logger.debug(
+		{ maxConcurrentRequests, requestTimeoutMs, cacheEnabled: cache !== undefined },
+		'VertexClient: initialized',
+	);
 
 	return {
 		async generateStructured<T = unknown>(opts: StructuredGenerateOptions): Promise<T> {
@@ -146,15 +169,18 @@ export function createVertexClient(ai: GoogleGenAI, options: VertexClientOptions
 					const response = await withRetry(
 						async () => {
 							const contents = buildContents(opts.prompt, opts.media);
-							return ai.models.generateContent({
-								model: DEFAULT_MODEL,
-								contents,
-								config: {
-									responseMimeType: 'application/json',
-									responseSchema: opts.schema,
-									systemInstruction: opts.systemInstruction,
-								},
-							});
+							return withTimeout(
+								ai.models.generateContent({
+									model: DEFAULT_MODEL,
+									contents,
+									config: {
+										responseMimeType: 'application/json',
+										responseSchema: opts.schema,
+										systemInstruction: opts.systemInstruction,
+									},
+								}),
+								requestTimeoutMs,
+							);
 						},
 						{
 							onRetry: (err, attempt, delayMs) => {
@@ -183,15 +209,18 @@ export function createVertexClient(ai: GoogleGenAI, options: VertexClientOptions
 				const response = await withRetry(
 					async () => {
 						const contents = buildContents(opts.prompt, opts.media);
-						return ai.models.generateContent({
-							model: DEFAULT_MODEL,
-							contents,
-							config: {
-								responseMimeType: 'application/json',
-								responseSchema: opts.schema,
-								systemInstruction: opts.systemInstruction,
-							},
-						});
+						return withTimeout(
+							ai.models.generateContent({
+								model: DEFAULT_MODEL,
+								contents,
+								config: {
+									responseMimeType: 'application/json',
+									responseSchema: opts.schema,
+									systemInstruction: opts.systemInstruction,
+								},
+							}),
+							requestTimeoutMs,
+						);
 					},
 					{
 						onRetry: (err, attempt, delayMs) => {

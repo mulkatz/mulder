@@ -896,6 +896,7 @@ const pipelineSchema = pipelineObj.default(defaults(pipelineObj));
 
 const vertexObj = z.object({
 	max_concurrent_requests: z.number().int().min(1).max(20).default(2),
+	request_timeout_ms: z.number().positive().int().default(120_000),
 });
 const vertexSchema = vertexObj.default(defaults(vertexObj));
 
