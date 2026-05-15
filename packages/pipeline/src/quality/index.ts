@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type {
 	CompactDocumentQualitySummary,
@@ -72,13 +73,31 @@ function stringArray(value: unknown): string[] {
 }
 
 function metadataSignals(source: Source): Record<string, unknown> {
-	return {
+	const merged = {
 		...source.formatMetadata,
 		...source.metadata,
+	};
+	const nativeTextRatio = readNumber(merged.native_text_ratio) ?? source.nativeTextRatio;
+	const pagesTotal = pageCountForSource(source, { ...merged, page_count: source.pageCount });
+	const textCharsTotal = readNumber(merged.text_chars_total) ?? readNumber(merged.native_text_chars_total);
+	const pagesWithTextRatio =
+		readNumber(merged.pages_with_text_ratio) ?? (source.hasNativeText && nativeTextRatio >= 0.85 ? 1 : nativeTextRatio);
+	const textSample = readString(merged.native_text_sample) ?? readString(merged.text_sample);
+	return {
+		...merged,
 		source_type: source.sourceType,
-		native_text_ratio: source.nativeTextRatio,
+		native_text_ratio: nativeTextRatio,
 		has_native_text: source.hasNativeText,
 		page_count: source.pageCount,
+		text_chars_total: textCharsTotal,
+		text_chars_per_page:
+			textCharsTotal !== null && pagesTotal > 0
+				? Math.round(textCharsTotal / pagesTotal)
+				: readNumber(merged.text_chars_per_page),
+		pages_with_text_ratio: pagesWithTextRatio,
+		language_confidence: readNumber(merged.language_confidence),
+		structure_confidence: readNumber(merged.structure_confidence),
+		native_text_sample_hash: textSample ? createHash('sha256').update(textSample, 'utf8').digest('hex') : null,
 	};
 }
 
@@ -161,6 +180,20 @@ function routeForQuality(config: MulderConfig, quality: DocumentOverallQuality):
 	return config.document_quality.routing[quality].path;
 }
 
+function pdfNativeTextMeetsSkipThreshold(input: {
+	config: MulderConfig;
+	nativeTextRatio: number;
+	pagesWithTextRatio: number;
+	languageConfidence: number;
+}): boolean {
+	const routing = input.config.document_quality.extraction_routing;
+	return (
+		input.nativeTextRatio >= routing.pdf_skip_document_ai_min_native_text_ratio &&
+		input.pagesWithTextRatio >= routing.pdf_skip_document_ai_min_pages_with_text_ratio &&
+		input.languageConfidence >= routing.pdf_skip_document_ai_min_language_confidence
+	);
+}
+
 function scoreForQuality(quality: DocumentOverallQuality): number {
 	switch (quality) {
 		case 'high':
@@ -206,6 +239,8 @@ function buildAutomatedAssessment(input: { source: Source; config: MulderConfig 
 	const missingPages = readBoolean(signals.missing_pages_suspected) ?? false;
 	const truncated = readBoolean(signals.truncated) ?? false;
 	const nativeTextRatio = readNumber(signals.native_text_ratio) ?? source.nativeTextRatio;
+	const pagesWithTextRatio = readNumber(signals.pages_with_text_ratio) ?? (source.hasNativeText ? nativeTextRatio : 0);
+	const languageConfidence = readNumber(signals.language_confidence) ?? 0;
 	const ocrConfidence = readNumber(signals.ocr_confidence);
 	const imageIssues = stringArray(signals.image_quality_issues);
 	const unreadable = pagesTotal > 0 && pagesReadable <= 0;
@@ -228,13 +263,20 @@ function buildAutomatedAssessment(input: { source: Source; config: MulderConfig 
 	}
 
 	if (source.sourceType === 'pdf') {
-		if (nativeTextRatio >= input.config.document_quality.assessment.native_text_ratio_threshold) {
+		if (
+			pdfNativeTextMeetsSkipThreshold({
+				config: input.config,
+				nativeTextRatio,
+				pagesWithTextRatio,
+				languageConfidence,
+			})
+		) {
 			const dimensions = baseDimensions({
 				source,
 				signals,
 				score: nativeTextRatio,
 				method: 'n/a',
-				details: 'native text ratio above threshold',
+				details: 'native PDF text passes Document AI skip thresholds',
 			});
 			return {
 				overallQuality: 'high',
@@ -267,12 +309,18 @@ function buildAutomatedAssessment(input: { source: Source; config: MulderConfig 
 			signals,
 			score: ocrConfidence ?? nativeTextRatio,
 			method: ocrConfidence === null ? 'n/a' : 'ocr_confidence',
-			details: 'weak native text and OCR signals',
+			details: input.config.document_quality.extraction_routing.prefer_document_ai_for_uncertain_pdf
+				? 'uncertain PDF native text routes to Document AI'
+				: 'weak native text and OCR signals',
 		});
 		return {
-			overallQuality: 'low',
+			overallQuality: input.config.document_quality.extraction_routing.prefer_document_ai_for_uncertain_pdf
+				? 'medium'
+				: 'low',
 			processable: true,
-			recommendedPath: routeForQuality(input.config, 'low'),
+			recommendedPath: input.config.document_quality.extraction_routing.prefer_document_ai_for_uncertain_pdf
+				? routeForQuality(input.config, 'medium')
+				: routeForQuality(input.config, 'low'),
 			dimensions,
 			signals,
 		};

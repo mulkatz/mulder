@@ -89,7 +89,7 @@ function sourcePromptContext(source: Source): Record<string, unknown> {
 	};
 }
 
-function jsonSchema(config: CredibilityConfig): Record<string, unknown> {
+function jsonSchema(_config: CredibilityConfig): Record<string, unknown> {
 	return {
 		type: 'object',
 		additionalProperties: false,
@@ -98,16 +98,14 @@ function jsonSchema(config: CredibilityConfig): Record<string, unknown> {
 			source_type: { type: 'string', enum: SOURCE_TYPES },
 			dimensions: {
 				type: 'array',
-				minItems: config.dimensions.length,
-				maxItems: config.dimensions.length,
 				items: {
 					type: 'object',
 					additionalProperties: false,
 					required: ['id', 'score', 'rationale', 'evidence_refs', 'known_factors'],
 					properties: {
-						id: { type: 'string', enum: config.dimensions.map((dimension) => dimension.id) },
-						score: { type: 'number', minimum: 0, maximum: 1 },
-						rationale: { type: 'string', minLength: 1 },
+						id: { type: 'string' },
+						score: { type: 'number' },
+						rationale: { type: 'string' },
 						evidence_refs: { type: 'array', items: { type: 'string' } },
 						known_factors: { type: 'array', items: { type: 'string' } },
 					},

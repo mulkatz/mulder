@@ -8,17 +8,29 @@ interface ApiErrorBody {
 	};
 }
 
+interface ApiErrorMetadata {
+	requestId?: string;
+	retryAfterMs?: number;
+	statusText?: string;
+}
+
 export class ApiError extends Error {
 	status: number;
 	code: string;
 	details?: unknown;
+	requestId?: string;
+	retryAfterMs?: number;
+	statusText?: string;
 
-	constructor(status: number, code: string, message: string, details?: unknown) {
+	constructor(status: number, code: string, message: string, details?: unknown, metadata?: ApiErrorMetadata) {
 		super(message);
 		this.name = 'ApiError';
 		this.status = status;
 		this.code = code;
 		this.details = details;
+		this.requestId = metadata?.requestId;
+		this.retryAfterMs = metadata?.retryAfterMs;
+		this.statusText = metadata?.statusText;
 	}
 }
 
@@ -28,7 +40,29 @@ function toNetworkError(error: unknown) {
 		'NETWORK_ERROR',
 		error instanceof Error ? error.message : 'The API could not be reached.',
 		error instanceof Error ? { name: error.name } : undefined,
+		{ statusText: 'Network error' },
 	);
+}
+
+function parseRetryAfterMs(value: string | null): number | undefined {
+	if (!value) return undefined;
+	const seconds = Number.parseInt(value, 10);
+	if (Number.isFinite(seconds) && seconds >= 0) {
+		return seconds * 1000;
+	}
+	const dateMs = Date.parse(value);
+	if (Number.isFinite(dateMs)) {
+		return Math.max(0, dateMs - Date.now());
+	}
+	return undefined;
+}
+
+function errorMetadata(response: Response): ApiErrorMetadata {
+	return {
+		requestId: response.headers.get('X-Request-Id') ?? undefined,
+		retryAfterMs: parseRetryAfterMs(response.headers.get('Retry-After')),
+		statusText: response.statusText,
+	};
 }
 
 async function parseErrorBody(response: Response): Promise<ApiErrorBody> {
@@ -69,6 +103,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 			body.error?.code ?? 'UNKNOWN',
 			body.error?.message ?? response.statusText,
 			body.error?.details,
+			errorMetadata(response),
 		);
 	}
 
@@ -111,6 +146,7 @@ export async function apiFetchText(path: string, init?: RequestInit): Promise<st
 			body.error?.code ?? 'UNKNOWN',
 			body.error?.message ?? response.statusText,
 			body.error?.details,
+			errorMetadata(response),
 		);
 	}
 
@@ -141,6 +177,7 @@ export async function apiFetchBlob(path: string, init?: RequestInit): Promise<Bl
 			body.error?.code ?? 'UNKNOWN',
 			body.error?.message ?? response.statusText,
 			body.error?.details,
+			errorMetadata(response),
 		);
 	}
 

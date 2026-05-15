@@ -56,11 +56,29 @@ interface JobProgress {
 	source_counts: Record<PipelineRunSourceStatus, number>;
 	sources: Array<{
 		source_id: string;
+		source: {
+			id: string;
+			filename: string;
+			status: string;
+		} | null;
 		current_step: string;
 		status: PipelineRunSource['status'];
 		error_message: string | null;
 		updated_at: string;
 	}>;
+}
+
+type JobSubject = JobListResponse['data'][number]['subject'];
+type SourceSummary = NonNullable<JobProgress['sources'][number]['source']>;
+
+interface SourceSummaryRow {
+	id: string;
+	filename: string;
+	status: string;
+}
+
+interface RunSourceSummaryRow extends SourceSummaryRow {
+	run_id: string;
 }
 
 function resolveContext(): JobStatusContext {
@@ -142,10 +160,188 @@ function resolveSubmittedByUserId(payload: Job['payload']): string | null {
 	return typeof userId === 'string' && userId.trim().length > 0 ? userId.trim() : null;
 }
 
-function mapJobSummary(job: Job): JobListResponse['data'][number] {
+function defaultJobSubject(job: Job): JobSubject {
+	return {
+		kind: 'job',
+		label: job.type,
+	};
+}
+
+function mapSourceSummary(source: SourceSummaryRow): SourceSummary {
+	return {
+		id: source.id,
+		filename: source.filename,
+		status: source.status,
+	};
+}
+
+async function findVisibleSourceSummaryMap(
+	pool: Pool,
+	sourceIds: string[],
+	maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity>,
+): Promise<Map<string, SourceSummary>> {
+	const uniqueSourceIds = Array.from(new Set(sourceIds));
+	if (uniqueSourceIds.length === 0) {
+		return new Map();
+	}
+
+	const params: unknown[] = [uniqueSourceIds];
+	const conditions = [
+		'id = ANY($1::uuid[])',
+		"COALESCE(deletion_status, 'active') NOT IN ('soft_deleted', 'purging', 'purged')",
+	];
+	const allowed = allowedSensitivity(maxSensitivityLevel);
+	if (allowed) {
+		params.push(allowed);
+		conditions.push(`sensitivity_level = ANY($${params.length}::text[])`);
+	}
+
+	const result = await pool.query<SourceSummaryRow>(
+		`
+			SELECT id::text AS id, filename, status
+			FROM sources
+			WHERE ${conditions.join(' AND ')}
+		`,
+		params,
+	);
+
+	return new Map(result.rows.map((row) => [row.id, mapSourceSummary(row)]));
+}
+
+async function findVisibleRunSourceSummaryMap(
+	pool: Pool,
+	runIds: string[],
+	options?: { maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity> },
+): Promise<Map<string, SourceSummary[]>> {
+	const uniqueRunIds = Array.from(new Set(runIds));
+	if (uniqueRunIds.length === 0) {
+		return new Map();
+	}
+
+	const params: unknown[] = [uniqueRunIds];
+	const conditions = [
+		'prs.run_id = ANY($1::uuid[])',
+		"COALESCE(sources.deletion_status, 'active') NOT IN ('soft_deleted', 'purging', 'purged')",
+	];
+	const allowed = allowedSensitivity(options?.maxSensitivityLevel);
+	if (allowed) {
+		params.push(allowed);
+		conditions.push(`sources.sensitivity_level = ANY($${params.length}::text[])`);
+	}
+
+	const result = await pool.query<RunSourceSummaryRow>(
+		`
+			SELECT prs.run_id::text AS run_id, sources.id::text AS id, sources.filename, sources.status
+			FROM pipeline_run_sources prs
+			JOIN sources ON sources.id = prs.source_id
+			WHERE ${conditions.join(' AND ')}
+			ORDER BY prs.run_id, prs.updated_at ASC, sources.filename ASC
+		`,
+		params,
+	);
+
+	const byRun = new Map<string, SourceSummary[]>();
+	for (const row of result.rows) {
+		const current = byRun.get(row.run_id) ?? [];
+		current.push(mapSourceSummary(row));
+		byRun.set(row.run_id, current);
+	}
+	return byRun;
+}
+
+function subjectFromSources(job: Job, sources: SourceSummary[] | undefined): JobSubject {
+	if (!sources || sources.length === 0) {
+		return defaultJobSubject(job);
+	}
+	if (sources.length === 1) {
+		const source = sources[0];
+		return {
+			kind: 'source',
+			label: source.filename,
+			source_id: source.id,
+			source_count: 1,
+		};
+	}
+	return {
+		kind: 'batch',
+		label: `${sources[0].filename} + ${sources.length - 1}`,
+		source_count: sources.length,
+	};
+}
+
+async function resolveJobSubjects(
+	pool: Pool,
+	jobs: Job[],
+	options?: { maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity> },
+): Promise<Map<string, JobSubject>> {
+	const directSourceIds: string[] = [];
+	const runIds: string[] = [];
+	for (const job of jobs) {
+		const sourceId = resolveSourceId(job.payload);
+		if (sourceId) {
+			directSourceIds.push(sourceId);
+			continue;
+		}
+		const runId = resolveRunId(job.payload);
+		if (runId) {
+			runIds.push(runId);
+		}
+	}
+
+	const [sourceMap, runSourceMap] = await Promise.all([
+		findVisibleSourceSummaryMap(pool, directSourceIds, options?.maxSensitivityLevel),
+		findVisibleRunSourceSummaryMap(pool, runIds, options),
+	]);
+
+	const subjects = new Map<string, JobSubject>();
+	for (const job of jobs) {
+		const sourceId = resolveSourceId(job.payload);
+		if (sourceId) {
+			const source = sourceMap.get(sourceId);
+			subjects.set(job.id, subjectFromSources(job, source ? [source] : []));
+			continue;
+		}
+		const runId = resolveRunId(job.payload);
+		subjects.set(job.id, runId ? subjectFromSources(job, runSourceMap.get(runId)) : defaultJobSubject(job));
+	}
+	return subjects;
+}
+
+async function hasVisibleRunSource(
+	pool: Pool,
+	runId: string,
+	maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity>,
+): Promise<boolean> {
+	const params: unknown[] = [runId];
+	const conditions = [
+		'prs.run_id = $1::uuid',
+		"COALESCE(sources.deletion_status, 'active') NOT IN ('soft_deleted', 'purging', 'purged')",
+	];
+	const allowed = allowedSensitivity(maxSensitivityLevel);
+	if (allowed) {
+		params.push(allowed);
+		conditions.push(`sources.sensitivity_level = ANY($${params.length}::text[])`);
+	}
+
+	const result = await pool.query<{ visible: boolean }>(
+		`
+			SELECT EXISTS (
+				SELECT 1
+				FROM pipeline_run_sources prs
+				JOIN sources ON sources.id = prs.source_id
+				WHERE ${conditions.join(' AND ')}
+			) AS visible
+		`,
+		params,
+	);
+	return result.rows[0]?.visible === true;
+}
+
+function mapJobSummary(job: Job, subject: JobSubject = defaultJobSubject(job)): JobListResponse['data'][number] {
 	return {
 		id: job.id,
 		type: job.type,
+		subject,
 		status: job.status,
 		attempts: job.attempts,
 		max_attempts: job.maxAttempts,
@@ -159,10 +355,14 @@ function mapJobSummary(job: Job): JobListResponse['data'][number] {
 	};
 }
 
-function mapRedactedJobSummary(job: Job): JobListResponse['data'][number] {
+function mapRedactedJobSummary(
+	job: Job,
+	subject: JobSubject = defaultJobSubject(job),
+): JobListResponse['data'][number] {
 	return {
 		id: job.id,
 		type: job.type,
+		subject,
 		status: job.status,
 		attempts: job.attempts,
 		max_attempts: job.maxAttempts,
@@ -175,10 +375,11 @@ function mapRedactedJobSummary(job: Job): JobListResponse['data'][number] {
 	};
 }
 
-function mapJobDetail(job: Job): JobDetailResponse['data']['job'] {
+function mapJobDetail(job: Job, subject: JobSubject = defaultJobSubject(job)): JobDetailResponse['data']['job'] {
 	return {
 		id: job.id,
 		type: job.type,
+		subject,
 		status: job.status,
 		attempts: job.attempts,
 		max_attempts: job.maxAttempts,
@@ -191,9 +392,12 @@ function mapJobDetail(job: Job): JobDetailResponse['data']['job'] {
 	};
 }
 
-function mapRedactedJobDetail(job: Job): JobDetailResponse['data']['job'] {
+function mapRedactedJobDetail(
+	job: Job,
+	subject: JobSubject = defaultJobSubject(job),
+): JobDetailResponse['data']['job'] {
 	return {
-		...mapRedactedJobSummary(job),
+		...mapRedactedJobSummary(job, subject),
 	};
 }
 
@@ -231,6 +435,21 @@ async function filterVisibleProgressSources(
 	return visible.filter((entry) => entry.visible).map((entry) => entry.source);
 }
 
+async function mapProgressSource(
+	source: PipelineRunSource,
+	sourceSummaries: Map<string, SourceSummary>,
+	options?: { redacted?: boolean; maxSensitivityLevel?: ReturnType<typeof resolveReadMaxSensitivity> },
+): Promise<JobProgress['sources'][number]> {
+	return {
+		source_id: source.sourceId,
+		source: sourceSummaries.get(source.sourceId) ?? null,
+		current_step: source.currentStep,
+		status: source.status,
+		error_message: options?.redacted ? null : source.errorMessage,
+		updated_at: source.updatedAt.toISOString(),
+	};
+}
+
 async function resolveProgress(
 	pool: Pool,
 	job: Job,
@@ -254,18 +473,17 @@ async function resolveProgress(
 	const sources = options?.redacted
 		? await filterVisibleProgressSources(pool, allSources, options.maxSensitivityLevel)
 		: allSources;
+	const sourceSummaries = await findVisibleSourceSummaryMap(
+		pool,
+		sources.map((source) => source.sourceId),
+		options?.maxSensitivityLevel,
+	);
 
 	return {
 		run_id: run.id,
 		run_status: run.status,
 		source_counts: options?.redacted ? countProgressSources(sources) : sourceCounts,
-		sources: sources.map((source) => ({
-			source_id: source.sourceId,
-			current_step: source.currentStep,
-			status: source.status,
-			error_message: options?.redacted ? null : source.errorMessage,
-			updated_at: source.updatedAt.toISOString(),
-		})),
+		sources: await Promise.all(sources.map((source) => mapProgressSource(source, sourceSummaries, options))),
 	};
 }
 
@@ -297,7 +515,11 @@ async function listVisibleJobsForPrincipal(
 	params.push(authPrincipal.userId);
 	const userParam = params.length;
 	const allowed = allowedSensitivity(maxSensitivityLevel);
-	const sensitivityClause = allowed ? `AND sources.sensitivity_level = ANY($${params.push(allowed)})` : '';
+	let sensitivityClause = '';
+	if (allowed) {
+		params.push(allowed);
+		sensitivityClause = `AND sources.sensitivity_level = ANY($${params.length}::text[])`;
+	}
 	conditions.push(`
 		(
 			COALESCE(payload->'submittedBy'->>'userId', payload->'submitted_by'->>'user_id') = $${userParam}
@@ -305,7 +527,15 @@ async function listVisibleJobsForPrincipal(
 				SELECT 1
 				FROM sources
 				WHERE sources.id::text = COALESCE(jobs.payload->>'sourceId', jobs.payload->>'source_id')
-				  AND sources.deletion_status NOT IN ('soft_deleted', 'purging', 'purged')
+				  AND COALESCE(sources.deletion_status, 'active') NOT IN ('soft_deleted', 'purging', 'purged')
+				  ${sensitivityClause}
+			)
+			OR EXISTS (
+				SELECT 1
+				FROM pipeline_run_sources prs
+				JOIN sources ON sources.id = prs.source_id
+				WHERE prs.run_id::text = COALESCE(jobs.payload->>'runId', jobs.payload->>'run_id')
+				  AND COALESCE(sources.deletion_status, 'active') NOT IN ('soft_deleted', 'purging', 'purged')
 				  ${sensitivityClause}
 			)
 		)
@@ -323,8 +553,10 @@ async function listVisibleJobsForPrincipal(
 		`,
 		pageParams,
 	);
+	const jobs = result.rows.map(mapJobRow);
+	const subjects = await resolveJobSubjects(pool, jobs, { maxSensitivityLevel });
 	return {
-		data: result.rows.map(mapJobRow).map(mapRedactedJobSummary),
+		data: jobs.map((job) => mapRedactedJobSummary(job, subjects.get(job.id))),
 		meta: {
 			count: Number.parseInt(countResult.rows[0]?.count ?? '0', 10) || 0,
 			limit: input.limit,
@@ -343,7 +575,11 @@ async function canReadJob(
 	}
 	const sourceId = resolveSourceId(job.payload);
 	if (!sourceId) {
-		return false;
+		const runId = resolveRunId(job.payload);
+		if (!runId) {
+			return false;
+		}
+		return await hasVisibleRunSource(pool, runId, maxSensitivityLevel);
 	}
 	return Boolean(await findSourceById(pool, sourceId, { maxSensitivityLevel }));
 }
@@ -363,8 +599,9 @@ export async function listRecentJobs(input: JobListQuery, options?: JobRouteOpti
 				limit: input.limit,
 			}),
 		]);
+		const subjects = await resolveJobSubjects(pool, jobs);
 		return {
-			data: jobs.map(mapJobSummary),
+			data: jobs.map((job) => mapJobSummary(job, subjects.get(job.id))),
 			meta: {
 				count,
 				limit: input.limit,
@@ -405,17 +642,19 @@ export async function getJobStatusById(id: string, options?: JobRouteOptions): P
 				context: { id },
 			});
 		}
+		const subjects = await resolveJobSubjects(pool, [job], { maxSensitivityLevel });
 		return {
 			data: {
-				job: mapRedactedJobDetail(job),
+				job: mapRedactedJobDetail(job, subjects.get(job.id)),
 				progress: await resolveProgress(pool, job, { redacted: true, maxSensitivityLevel }),
 			},
 		};
 	}
 
+	const subjects = await resolveJobSubjects(pool, [job]);
 	return {
 		data: {
-			job: mapJobDetail(job),
+			job: mapJobDetail(job, subjects.get(job.id)),
 			progress: await resolveProgress(pool, job),
 		},
 	};

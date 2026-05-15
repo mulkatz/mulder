@@ -121,6 +121,7 @@ function buildRunOptions(input: {
 		? {
 				source_id: input.sourceId,
 				step: input.step,
+				up_to: input.upTo ?? null,
 				force: input.force,
 				retry: true,
 			}
@@ -381,7 +382,7 @@ export async function createPipelineRetryJob(input: PipelineRetryRequest): Promi
 		await assertNoInFlightPipelineJob(client, source.id);
 		const latest = await findLatestPipelineRunSourceForSource(client, source.id);
 		const step = deriveRetryStep(assertRetryableSource(source, latest), input.step);
-		const stepPlan = planSourcePipeline({ source, from: step, upTo: step });
+		const stepPlan = planSourcePipeline({ source, from: step, upTo: input.up_to });
 		const firstStep = firstExecutableStep(stepPlan);
 		const previousReservation = await findLatestMonthlyBudgetReservationForSource(client, source.id);
 		const run = await createPipelineRun(client, {
@@ -391,13 +392,14 @@ export async function createPipelineRetryJob(input: PipelineRetryRequest): Promi
 				force: true,
 				retry: true,
 				step,
+				upTo: input.up_to,
 			}),
 		});
 		const job = await enqueuePipelineJob(client, {
 			sourceId: source.id,
 			runId: run.id,
 			step: firstStep,
-			upTo: step,
+			upTo: input.up_to,
 			tag: input.tag,
 			force: true,
 		});

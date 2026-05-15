@@ -450,6 +450,9 @@ export async function execute(
 		sensitivityAutoDetectionEnabled,
 		sensitivityLevels: sensitivityConfig.levels,
 		piiTypes: sensitivityConfig.pii_types,
+		strictOntologyEnums: false,
+		strictAttributeSchema: false,
+		boundedConfidence: false,
 	};
 	const jsonSchema = generateExtractionSchema(ontology, extractionSchemaOptions);
 	const responseSchema = getExtractionResponseSchema(ontology, extractionSchemaOptions);
@@ -775,14 +778,11 @@ export async function execute(
 		credibilityProfileCreated = credibilityResult.created;
 		credibilityProfileStatus = credibilityResult.status;
 
-		let credibilityErrorMessage: string | undefined;
 		if (credibilityResult.status === 'failed') {
-			credibilityErrorMessage = `Source credibility draft generation failed: ${
-				credibilityResult.reason ?? 'unknown error'
-			}`;
+			const message = `Source credibility draft generation failed: ${credibilityResult.reason ?? 'unknown reason'}`;
 			errors.push({
 				code: ENRICH_ERROR_CODES.ENRICH_LLM_FAILED,
-				message: credibilityErrorMessage,
+				message,
 			});
 			log.warn(
 				{ sourceId: story.sourceId, reason: credibilityResult.reason },
@@ -795,7 +795,10 @@ export async function execute(
 			stepName: STEP_NAME,
 			status: credibilityResult.status === 'failed' ? 'partial' : 'completed',
 			configHash: stepConfigHash,
-			errorMessage: credibilityErrorMessage,
+			errorMessage:
+				credibilityResult.status === 'failed'
+					? `Source credibility draft generation failed: ${credibilityResult.reason ?? 'unknown reason'}`
+					: undefined,
 		});
 	} else {
 		await upsertSourceStep(pool, {

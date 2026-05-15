@@ -8,6 +8,7 @@ import {
 	Languages,
 	PanelLeft,
 	PanelRight,
+	Plus,
 	RefreshCcw,
 	SplitSquareHorizontal,
 	Workflow,
@@ -27,26 +28,62 @@ import { PageHeader } from '@/components/PageHeader';
 import { StateNotice } from '@/components/StateNotice';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Toolbar } from '@/components/Toolbar';
+import { TranslatedAnnotatedMarkdown } from '@/components/TranslatedAnnotatedMarkdown';
 import { useDocument } from '@/features/documents/useDocument';
 import { useDocumentLayout } from '@/features/documents/useDocumentLayout';
 import { useDocumentObservability } from '@/features/documents/useDocumentObservability';
 import { useDocumentPages } from '@/features/documents/useDocumentPages';
 import { useDocumentPdf } from '@/features/documents/useDocumentPdf';
 import { useDocumentStories } from '@/features/documents/useDocumentStories';
+import {
+	useDocumentTranslations,
+	useRequestDocumentTranslation,
+	useTranslationStories,
+} from '@/features/documents/useDocumentTranslations';
 import { useContradictions } from '@/features/evidence/useContradictions';
+import { useJob } from '@/features/jobs/useJob';
 import { type AppLocale, locales } from '@/i18n/resources';
-import type { ContradictionRecord, DocumentStoryRecord, EntityRecord } from '@/lib/api-types';
+import type {
+	ContradictionRecord,
+	DocumentDetailRecord,
+	DocumentStoryRecord,
+	EntityRecord,
+	TranslatedStoryRecord,
+	TranslationRecord,
+} from '@/lib/api-types';
 import { cn } from '@/lib/cn';
+import {
+	CONTENT_POLL_INTERVAL_MS,
+	getNextPollDelayMs,
+	getRetryAfterDelayMs,
+	INITIAL_POLL_INTERVAL_MS,
+	isRateLimited,
+} from '@/lib/polling';
 import { getErrorMessage, isApiUnavailableError } from '@/lib/query-state';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
 type ReaderViewMode = 'split' | 'original' | 'story';
+type StoryContentMode = 'stories' | 'translation';
 
 const READER_MODE_STORAGE_KEY = 'mulder.reader.viewMode';
 const PDF_MIN_ZOOM = 0.7;
 const PDF_MAX_ZOOM = 2.25;
 const PDF_ZOOM_STEP = 0.15;
+const ACTIVE_PROCESSING_REFETCH_MS = 5_000;
+
+function isProcessingActive(observability?: ReturnType<typeof useDocumentObservability>['data']) {
+	if (!observability) return false;
+	const jobStatus = observability.data.job?.status;
+	const progress = observability.data.progress;
+	return (
+		jobStatus === 'pending' ||
+		jobStatus === 'running' ||
+		progress?.source_status === 'pending' ||
+		progress?.source_status === 'processing' ||
+		progress?.run_status === 'running'
+	);
+}
 
 function readInitialReaderMode(): ReaderViewMode {
 	if (typeof window === 'undefined') return 'split';
@@ -269,6 +306,31 @@ function AnnotatedMarkdown({
 	);
 }
 
+function PlainMarkdown({ markdown }: { markdown: string }) {
+	const components: Components = {
+		blockquote: ({ children }) => (
+			<blockquote className="border-l-2 border-border pl-4 text-text-muted">{children}</blockquote>
+		),
+		code: ({ children }) => (
+			<code className="rounded-sm bg-field px-1 py-0.5 font-mono text-[0.9em] text-text">{children}</code>
+		),
+		h1: ({ children }) => <h1 className="text-2xl font-semibold text-text">{children}</h1>,
+		h2: ({ children }) => <h2 className="text-xl font-semibold text-text">{children}</h2>,
+		h3: ({ children }) => <h3 className="text-lg font-semibold text-text">{children}</h3>,
+		li: ({ children }) => <li className="pl-1">{children}</li>,
+		ol: ({ children }) => <ol className="list-decimal space-y-2 pl-5">{children}</ol>,
+		p: ({ children }) => <p>{children}</p>,
+		strong: ({ children }) => <strong className="font-semibold text-text">{children}</strong>,
+		ul: ({ children }) => <ul className="list-disc space-y-2 pl-5">{children}</ul>,
+	};
+
+	return (
+		<div className="space-y-4 text-sm leading-7 text-text">
+			<ReactMarkdown components={components}>{markdown}</ReactMarkdown>
+		</div>
+	);
+}
+
 function ViewModeButton({
 	children,
 	isActive,
@@ -300,6 +362,7 @@ function OriginalPane({
 	pagesError,
 	pagesIsLoading,
 	sourceId,
+	sourceFilename,
 	story,
 }: {
 	layoutError: unknown;
@@ -309,10 +372,12 @@ function OriginalPane({
 	pagesError: unknown;
 	pagesIsLoading: boolean;
 	sourceId: string;
+	sourceFilename?: string;
 	story?: DocumentStoryRecord;
 }) {
 	const { t } = useTranslation();
-	const pdfQuery = useDocumentPdf(sourceId);
+	const isPdf = sourceFilename?.toLowerCase().endsWith('.pdf') ?? true;
+	const pdfQuery = useDocumentPdf(sourceId, { enabled: isPdf });
 	const pdfUrl = useObjectUrl(pdfQuery.data);
 	const [viewerRef, viewerWidth] = useElementWidth<HTMLDivElement>();
 	const [pageNumber, setPageNumber] = useState(story?.page_start ?? 1);
@@ -438,7 +503,12 @@ function OriginalPane({
 					className="min-h-[420px] overflow-auto rounded-md border border-border bg-panel-raised p-3"
 					ref={viewerRef}
 				>
-					{pdfQuery.isLoading ? <StateNotice tone="loading" title={t('reader.pdfLoadingTitle')} /> : null}
+					{!isPdf ? (
+						<StateNotice title={t('reader.originalPreviewUnavailableTitle')}>
+							{t('reader.originalPreviewUnavailableBody')}
+						</StateNotice>
+					) : null}
+					{isPdf && pdfQuery.isLoading ? <StateNotice tone="loading" title={t('reader.pdfLoadingTitle')} /> : null}
 					{pdfQuery.error ? (
 						<StateNotice
 							tone="error"
@@ -555,14 +625,86 @@ function StoryRail({
 	);
 }
 
+function TranslatedStoryRail({
+	onSelect,
+	originalStories,
+	selectedStoryId,
+	stories,
+}: {
+	onSelect: (storyId: string) => void;
+	originalStories: DocumentStoryRecord[];
+	selectedStoryId?: string;
+	stories: TranslatedStoryRecord[];
+}) {
+	const { t, i18n } = useTranslation();
+	const storyById = useMemo(() => new Map(originalStories.map((story) => [story.id, story])), [originalStories]);
+
+	return (
+		<div className="space-y-2 border-b border-border p-3 lg:max-h-[640px] lg:overflow-auto lg:border-r lg:border-b-0">
+			<p className="text-xs font-medium text-text-subtle">{t('reader.storyRailTitle')}</p>
+			{stories.map((story) => {
+				const originalStory = storyById.get(story.story_id);
+				return (
+					<button
+						className={cn(
+							'w-full rounded-md border border-border bg-panel-raised p-3 text-left transition-colors hover:border-border-strong hover:bg-field',
+							selectedStoryId === story.story_id && 'border-accent bg-accent-soft',
+						)}
+						key={story.id}
+						onClick={() => onSelect(story.story_id)}
+						type="button"
+					>
+						<p className="line-clamp-2 text-sm font-medium text-text">{story.title}</p>
+						<div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-text-subtle">
+							<span>
+								{originalStory
+									? formatPageRange(originalStory.page_start, originalStory.page_end, t)
+									: formatLanguage(story.target_language, i18n.language, t)}
+							</span>
+							{originalStory ? <span>{formatLanguage(originalStory.language, i18n.language, t)}</span> : null}
+							{originalStory?.category ? <span>{originalStory.category}</span> : null}
+							<span>{formatLanguage(story.target_language, i18n.language, t)}</span>
+						</div>
+						<div className="mt-2 flex items-center justify-between gap-2">
+							<StatusBadge status={originalStory?.status ?? 'current'} />
+							<div className="flex items-center gap-2 font-mono text-[11px] text-text-subtle">
+								{originalStory ? <span>{formatPercent(originalStory.extraction_confidence, t)}</span> : null}
+								<span>{t('reader.translationMentionCount', { count: story.mentions.length })}</span>
+							</div>
+						</div>
+					</button>
+				);
+			})}
+		</div>
+	);
+}
+
 function TranslationControls({
+	contentMode,
+	isJobRunning,
+	isRequesting,
+	onRefresh,
+	onRequest,
+	onShowStories,
+	onShowTranslation,
 	originalLanguage,
+	requestDisabled,
 	targetLanguage,
 	setTargetLanguage,
+	translation,
 }: {
+	contentMode: StoryContentMode;
+	isJobRunning: boolean;
+	isRequesting: boolean;
+	onRefresh: () => void;
+	onRequest: () => void;
+	onShowStories: () => void;
+	onShowTranslation: () => void;
 	originalLanguage?: string | null;
+	requestDisabled: boolean;
 	targetLanguage: AppLocale;
 	setTargetLanguage: (language: AppLocale) => void;
+	translation?: TranslationRecord;
 }) {
 	const { t, i18n } = useTranslation();
 
@@ -588,17 +730,68 @@ function TranslationControls({
 					</select>
 				</label>
 				<button
-					className="inline-flex h-8 cursor-not-allowed items-center rounded-md border border-border bg-panel px-3 text-sm text-text-muted opacity-70"
-					disabled
-					title={t('reader.translationDisabledTooltip')}
+					className="inline-flex h-8 items-center rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field disabled:text-text-faint"
+					disabled={requestDisabled || isRequesting || isJobRunning}
+					onClick={translation ? onRefresh : onRequest}
 					type="button"
 				>
-					{t('reader.translate')}
+					{translation ? t('reader.translateAgain') : t('reader.translate')}
 				</button>
 			</div>
-			<p className="mt-2 text-xs text-text-muted">{t('reader.translationPrepareOnly')}</p>
+			<div className="mt-3 flex flex-wrap items-center gap-2">
+				<button
+					className={cn(
+						'inline-flex h-8 items-center rounded-sm px-3 text-sm text-text-muted transition-colors hover:text-text',
+						contentMode === 'stories' && 'bg-panel text-text shadow-soft',
+					)}
+					onClick={onShowStories}
+					type="button"
+				>
+					{t('reader.extractedStoriesView')}
+				</button>
+				<button
+					className={cn(
+						'inline-flex h-8 items-center rounded-sm px-3 text-sm text-text-muted transition-colors hover:text-text',
+						contentMode === 'translation' && 'bg-panel text-text shadow-soft',
+					)}
+					onClick={onShowTranslation}
+					type="button"
+				>
+					{t('reader.translatedSourceView')}
+				</button>
+				<span className="text-xs text-text-subtle">
+					{isJobRunning
+						? t('reader.translationJobRunning')
+						: translation
+							? t('reader.translationCurrent')
+							: t('reader.translationNotRequested')}
+				</span>
+			</div>
 		</div>
 	);
+}
+
+function formatExtractionRoute(path: string | null | undefined, t: TFunction) {
+	if (!path) return t('reader.extractionRoutePending');
+	return path === 'standard' ? t('reader.extractionRouteNative') : t('reader.extractionRouteDocumentAi');
+}
+
+function formatPipelineStep(step: string, t: TFunction) {
+	return t(`pipelineSteps.${step}`, { defaultValue: step });
+}
+
+function formatQualitySignal(value: number | null | undefined, t: TFunction) {
+	return typeof value === 'number' ? `${Math.round(value * 100)}%` : t('common.notExposed');
+}
+
+function formatPageCoverage(value: NonNullable<DocumentDetailRecord['quality']>['page_coverage'], t: TFunction) {
+	if (!value) return t('common.notExposed');
+	const ratio = typeof value.ratio === 'number' ? formatQualitySignal(value.ratio, t) : t('common.notExposed');
+	return t('reader.qualityPageCoverageValue', {
+		pagesReadable: value.pages_readable,
+		pagesTotal: value.pages_total,
+		ratio,
+	});
 }
 
 function EntityContextPanel({ entity }: { entity?: EntityRecord }) {
@@ -698,6 +891,7 @@ function EvidenceSignals({
 }
 
 function StoryPane({
+	activeProcessing,
 	contradictionsError,
 	contradictionsIsLoading,
 	onSelectEntity,
@@ -707,11 +901,14 @@ function StoryPane({
 	selectedStoryId,
 	setTargetLanguage,
 	signals,
+	sourceId,
+	sourceLanguage,
 	stories,
 	storiesError,
 	storiesIsLoading,
 	targetLanguage,
 }: {
+	activeProcessing: boolean;
 	contradictionsError: unknown;
 	contradictionsIsLoading: boolean;
 	onSelectEntity: (entity: EntityRecord) => void;
@@ -721,12 +918,86 @@ function StoryPane({
 	selectedStoryId?: string;
 	setTargetLanguage: (language: AppLocale) => void;
 	signals: ContradictionRecord[];
+	sourceId?: string;
+	sourceLanguage?: string | null;
 	stories: DocumentStoryRecord[];
 	storiesError: unknown;
 	storiesIsLoading: boolean;
 	targetLanguage: AppLocale;
 }) {
-	const { t } = useTranslation();
+	const { t, i18n } = useTranslation();
+	const [contentMode, setContentMode] = useState<StoryContentMode>('stories');
+	const [translationJobId, setTranslationJobId] = useState<string | undefined>();
+	const [translationPolling, setTranslationPolling] = useState(false);
+	const [translationPollMs, setTranslationPollMs] = useState(INITIAL_POLL_INTERVAL_MS);
+	const translationsQuery = useDocumentTranslations(sourceId, { status: 'current', targetLanguage });
+	const requestTranslation = useRequestDocumentTranslation(sourceId);
+	const translationJobQuery = useJob(translationJobId, {
+		refetchInterval: translationPolling ? translationPollMs : false,
+	});
+	const translationJobStatus = translationJobQuery.data?.data.job.status;
+	const isTranslationJobRunning = translationJobStatus === 'pending' || translationJobStatus === 'running';
+	const translationFailureLog =
+		translationJobStatus === 'failed' || translationJobStatus === 'dead_letter'
+			? translationJobQuery.data?.data.job.error_log
+			: null;
+	const currentTranslation = translationsQuery.data?.data[0];
+	const translatedStoriesQuery = useTranslationStories(currentTranslation?.id);
+	const translatedStories = translatedStoriesQuery.data?.data.stories ?? [];
+	const selectedTranslatedStory =
+		translatedStories.find((story) => story.story_id === selectedStoryId) ?? translatedStories[0];
+	const refetchTranslations = translationsQuery.refetch;
+
+	useEffect(() => {
+		if (translationJobStatus === 'completed') {
+			setTranslationPolling(false);
+			void refetchTranslations();
+			setContentMode('translation');
+			setTranslationJobId(undefined);
+		}
+		if (translationJobStatus === 'failed' || translationJobStatus === 'dead_letter') {
+			setTranslationPolling(false);
+		}
+	}, [refetchTranslations, translationJobStatus]);
+
+	useEffect(() => {
+		if (!translationPolling) return;
+		if (isTranslationJobRunning) {
+			setTranslationPollMs(ACTIVE_PROCESSING_REFETCH_MS);
+		}
+		if (translationJobQuery.error && isRateLimited(translationJobQuery.error)) {
+			setTranslationPollMs(getRetryAfterDelayMs(translationJobQuery.error));
+		}
+	}, [isTranslationJobRunning, translationJobQuery.error, translationPolling]);
+
+	function submitTranslation(refresh: boolean) {
+		if (!sourceId) return;
+		setTranslationPolling(false);
+		setTranslationJobId(undefined);
+		requestTranslation.mutate(
+			{
+				output_format: 'markdown',
+				pipeline_path: 'translation_only',
+				refresh,
+				source_language: sourceLanguage ?? selectedStory?.language ?? undefined,
+				target_language: targetLanguage,
+			},
+			{
+				onSuccess: (response) => {
+					setContentMode('translation');
+					if ('links' in response) {
+						setTranslationJobId(response.data.job_id);
+						setTranslationPollMs(INITIAL_POLL_INTERVAL_MS);
+						setTranslationPolling(true);
+					} else {
+						setTranslationPolling(false);
+						setTranslationJobId(undefined);
+						void refetchTranslations();
+					}
+				},
+			},
+		);
+	}
 
 	return (
 		<section className="panel min-w-0 overflow-hidden">
@@ -736,6 +1007,54 @@ function StoryPane({
 					<h2 className="font-medium text-text">{t('reader.storyWorkspace')}</h2>
 				</div>
 			</Toolbar>
+			<div className="border-b border-border p-3">
+				<TranslationControls
+					contentMode={contentMode}
+					isJobRunning={isTranslationJobRunning}
+					isRequesting={requestTranslation.isPending}
+					onRefresh={() => submitTranslation(true)}
+					onRequest={() => submitTranslation(false)}
+					onShowStories={() => setContentMode('stories')}
+					onShowTranslation={() => setContentMode('translation')}
+					originalLanguage={sourceLanguage ?? selectedStory?.language}
+					requestDisabled={!sourceId}
+					setTargetLanguage={setTargetLanguage}
+					targetLanguage={targetLanguage}
+					translation={currentTranslation}
+				/>
+			</div>
+			{translationsQuery.error || requestTranslation.error || translationJobQuery.error ? (
+				<div className="border-b border-border p-3">
+					<StateNotice
+						tone="error"
+						title={
+							isApiUnavailableError(translationsQuery.error ?? requestTranslation.error ?? translationJobQuery.error)
+								? t('reader.translationUnavailableTitle')
+								: t('reader.translationErrorTitle')
+						}
+					>
+						{getErrorMessage(
+							translationsQuery.error ?? requestTranslation.error ?? translationJobQuery.error,
+							t('common.apiRequestFailed'),
+						)}
+					</StateNotice>
+				</div>
+			) : null}
+			{translationJobStatus === 'failed' || translationJobStatus === 'dead_letter' ? (
+				<div className="border-b border-border p-3">
+					<StateNotice tone="error" title={t('reader.translationFailedTitle')}>
+						{t('reader.translationFailedBody')}
+						{translationFailureLog ? (
+							<div className="mt-3">
+								<p className="text-xs font-medium text-danger">{t('reader.translationFailureDetailLabel')}</p>
+								<pre className="mt-2 max-h-40 overflow-auto rounded-md border border-border bg-panel-raised p-3 text-xs text-text-muted">
+									{translationFailureLog}
+								</pre>
+							</div>
+						) : null}
+					</StateNotice>
+				</div>
+			) : null}
 			{storiesIsLoading ? (
 				<div className="border-b border-border p-3">
 					<StateNotice tone="loading" title={t('reader.storiesLoadingTitle')} />
@@ -753,12 +1072,120 @@ function StoryPane({
 					</StateNotice>
 				</div>
 			) : null}
-			{!storiesIsLoading && !storiesError && stories.length === 0 ? (
+			{contentMode === 'stories' && !storiesIsLoading && !storiesError && stories.length === 0 ? (
 				<div className="p-3">
-					<StateNotice title={t('reader.noStoriesTitle')}>{t('reader.noStoriesBody')}</StateNotice>
+					<StateNotice title={activeProcessing ? t('reader.storiesProcessingTitle') : t('reader.noStoriesTitle')}>
+						{activeProcessing ? t('reader.storiesProcessingBody') : t('reader.noStoriesBody')}
+					</StateNotice>
 				</div>
 			) : null}
-			{stories.length > 0 ? (
+			{contentMode === 'translation' ? (
+				currentTranslation && translatedStories.length > 0 ? (
+					<div className="grid min-h-[640px] lg:grid-cols-[250px_minmax(0,1fr)]">
+						<TranslatedStoryRail
+							onSelect={onSelectStory}
+							originalStories={stories}
+							selectedStoryId={selectedStoryId}
+							stories={translatedStories}
+						/>
+						<div className="grid min-w-0 gap-4 p-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
+							<div className="min-w-0 space-y-4">
+								{selectedTranslatedStory ? (
+									<>
+										<div className="space-y-3">
+											<div className="flex flex-wrap items-start justify-between gap-3">
+												<div className="min-w-0">
+													<p className="text-xs text-text-subtle">
+														{t('reader.translationMeta', {
+															language: formatLanguage(currentTranslation.target_language, i18n.language, t),
+														})}
+													</p>
+													<h2 className="mt-1 text-2xl font-semibold text-text">{selectedTranslatedStory.title}</h2>
+													{selectedTranslatedStory.subtitle ? (
+														<p className="mt-1 text-sm text-text-muted">{selectedTranslatedStory.subtitle}</p>
+													) : null}
+												</div>
+												<StatusBadge status={currentTranslation.status} />
+											</div>
+										</div>
+										<div className="rounded-md border border-border bg-panel-raised p-5">
+											{selectedTranslatedStory.mentions.length === 0 ? (
+												<StateNotice title={t('reader.translationNoVerifiedSpansTitle')}>
+													{t('reader.translationNoVerifiedSpansBody')}
+												</StateNotice>
+											) : null}
+											<div className="mt-3">
+												<TranslatedAnnotatedMarkdown
+													markdown={selectedTranslatedStory.markdown}
+													mentions={selectedTranslatedStory.mentions}
+													onSelectEntity={onSelectEntity}
+													selectedEntityId={selectedEntity?.id}
+												/>
+											</div>
+										</div>
+									</>
+								) : null}
+							</div>
+							<div className="space-y-4">
+								<InspectorPanel title={t('reader.linkedContext')}>
+									<InspectorSection title={t('reader.entityContext')}>
+										<EntityContextPanel entity={selectedEntity} />
+									</InspectorSection>
+									<InspectorSection title={t('reader.evidenceSignals')}>
+										<EvidenceSignals
+											error={contradictionsError}
+											isLoading={contradictionsIsLoading}
+											signals={signals}
+										/>
+									</InspectorSection>
+								</InspectorPanel>
+							</div>
+						</div>
+					</div>
+				) : (
+					<div className="grid min-h-[640px] gap-4 p-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
+						<div className="min-w-0 space-y-4">
+							{translationsQuery.isLoading || translatedStoriesQuery.isLoading ? (
+								<StateNotice tone="loading" title={t('reader.translationLoadingTitle')} />
+							) : null}
+							{isTranslationJobRunning ? (
+								<StateNotice tone="loading" title={t('reader.translationJobRunning')} />
+							) : null}
+							{currentTranslation ? (
+								<div className="rounded-md border border-border bg-panel-raised p-5">
+									<div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+										<div>
+											<p className="text-xs text-text-subtle">
+												{t('reader.translationMeta', {
+													language: formatLanguage(currentTranslation.target_language, i18n.language, t),
+												})}
+											</p>
+											<h2 className="mt-1 text-xl font-semibold text-text">{t('reader.translatedSourceContent')}</h2>
+										</div>
+										<StatusBadge status={currentTranslation.status} />
+									</div>
+									<StateNotice title={t('reader.translationStoriesUnavailableTitle')}>
+										{t('reader.translationStoriesUnavailableBody')}
+									</StateNotice>
+									<div className="mt-4">
+										<PlainMarkdown markdown={currentTranslation.content || t('reader.translationEmptyBody')} />
+									</div>
+								</div>
+							) : !translationsQuery.isLoading && !isTranslationJobRunning ? (
+								<StateNotice title={t('reader.translationEmptyTitle')}>{t('reader.translationEmptyBody')}</StateNotice>
+							) : null}
+						</div>
+						<InspectorPanel title={t('reader.linkedContext')}>
+							<InspectorSection title={t('reader.entityContext')}>
+								<StateNotice title={t('reader.translationAnnotationsDisabledTitle')}>
+									{t('reader.translationAnnotationsDisabledBody')}
+								</StateNotice>
+							</InspectorSection>
+						</InspectorPanel>
+					</div>
+				)
+			) : null}
+			{contentMode === 'stories' && stories.length > 0 ? (
 				<div className="grid min-h-[640px] lg:grid-cols-[250px_minmax(0,1fr)]">
 					<StoryRail onSelect={onSelectStory} selectedStoryId={selectedStoryId} stories={stories} />
 					<div className="grid min-w-0 gap-4 p-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
@@ -778,11 +1205,6 @@ function StoryPane({
 											</div>
 											<StatusBadge status={selectedStory.status} />
 										</div>
-										<TranslationControls
-											originalLanguage={selectedStory.language}
-											setTargetLanguage={setTargetLanguage}
-											targetLanguage={targetLanguage}
-										/>
 									</div>
 									<div className="rounded-md border border-border bg-panel-raised p-5">
 										<AnnotatedMarkdown
@@ -818,15 +1240,23 @@ function ProcessingBackground({
 	error,
 	isLoading,
 	observability,
+	onToggle,
+	open,
+	source,
 }: {
 	error: unknown;
 	isLoading: boolean;
 	observability?: ReturnType<typeof useDocumentObservability>['data'];
+	onToggle: (open: boolean) => void;
+	open: boolean;
+	source?: DocumentDetailRecord;
 }) {
 	const { t } = useTranslation();
+	const extractionPath = source?.quality?.recommended_path ?? source?.quality_hint?.recommended_path ?? null;
+	const extractionRoute = formatExtractionRoute(extractionPath, t);
 
 	return (
-		<details className="panel p-4">
+		<details className="panel p-4" onToggle={(event) => onToggle(event.currentTarget.open)} open={open}>
 			<summary className="flex cursor-pointer items-center gap-2 text-sm font-medium text-text">
 				<Workflow className="size-4 text-accent" />
 				{t('reader.processingBackground')}
@@ -844,17 +1274,46 @@ function ProcessingBackground({
 					</StateNotice>
 				) : null}
 				{observability ? (
-					<div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-						{observability.data.source.steps.map((step) => (
-							<div className="rounded-md bg-field p-3" key={step.step}>
-								<p className="truncate text-sm text-text">{step.step}</p>
-								<div className="mt-2">
-									<StatusBadge status={step.status} />
+					<>
+						<div className="rounded-md border border-border bg-panel-raised p-3 text-sm text-text-muted">
+							<p>
+								{t('reader.extractionRoute', {
+									route: extractionRoute,
+								})}
+							</p>
+							{source ? (
+								<div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
+									<p>
+										<span className="text-text-subtle">{t('reader.qualityTextCoverage')}: </span>
+										{source.has_native_text ? t('reader.qualityTextPresent') : t('reader.qualityTextNotDetected')}
+									</p>
+									<p>
+										<span className="text-text-subtle">{t('reader.qualityPageCoverage')}: </span>
+										{formatPageCoverage(source.quality?.page_coverage ?? null, t)}
+									</p>
+									<p>
+										<span className="text-text-subtle">{t('reader.qualityReadability')}: </span>
+										{formatQualitySignal(source.quality?.text_readability_score, t)}
+									</p>
+									<p>
+										<span className="text-text-subtle">{t('reader.qualityLanguageConfidence')}: </span>
+										{formatQualitySignal(source.quality?.language_confidence, t)}
+									</p>
 								</div>
-								{step.error_message ? <p className="mt-2 text-xs text-danger">{step.error_message}</p> : null}
-							</div>
-						))}
-					</div>
+							) : null}
+						</div>
+						<div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+							{observability.data.source.steps.map((step) => (
+								<div className="rounded-md bg-field p-3" key={step.step}>
+									<p className="truncate text-sm text-text">{formatPipelineStep(step.step, t)}</p>
+									<div className="mt-2">
+										<StatusBadge status={step.status} />
+									</div>
+									{step.error_message ? <p className="mt-2 text-xs text-danger">{step.error_message}</p> : null}
+								</div>
+							))}
+						</div>
+					</>
 				) : null}
 			</div>
 		</details>
@@ -870,20 +1329,79 @@ export function SourceReaderPage() {
 	const [selectedStoryId, setSelectedStoryId] = useState<string | undefined>(searchParams.get('story') ?? undefined);
 	const [selectedEntity, setSelectedEntity] = useState<EntityRecord | undefined>();
 	const [targetLanguage, setTargetLanguage] = useState<AppLocale>(i18n.language === 'de' ? 'de' : 'en');
-	const sourceQuery = useDocument(sourceId);
-	const storiesQuery = useDocumentStories(sourceId);
-	const layoutQuery = useDocumentLayout(sourceId);
-	const pagesQuery = useDocumentPages(sourceId);
-	const observabilityQuery = useDocumentObservability(sourceId);
+	const [processingOpen, setProcessingOpen] = useState(false);
+	const [observabilityPolling, setObservabilityPolling] = useState(false);
+	const [observabilityPollMs, setObservabilityPollMs] = useState(INITIAL_POLL_INTERVAL_MS);
+	const [contentPollingPaused, setContentPollingPaused] = useState(false);
+	const lastObservabilitySignatureRef = useRef('');
+	const unchangedObservabilityCountRef = useRef(0);
+	const observabilityQuery = useDocumentObservability(sourceId, {
+		refetchInterval: observabilityPolling ? observabilityPollMs : false,
+	});
+	const activeProcessing = isProcessingActive(observabilityQuery.data);
+	const processingRefetchInterval = activeProcessing && !contentPollingPaused ? CONTENT_POLL_INTERVAL_MS : false;
+	const sourceQuery = useDocument(sourceId, { refetchInterval: processingRefetchInterval });
+	const storiesQuery = useDocumentStories(sourceId, { refetchInterval: processingRefetchInterval });
+	const layoutQuery = useDocumentLayout(sourceId, { refetchInterval: processingRefetchInterval });
+	const pagesQuery = useDocumentPages(sourceId, { refetchInterval: processingRefetchInterval });
 	const contradictionsQuery = useContradictions({ status: 'all', limit: 100 });
 	const stories = storiesQuery.data?.data.stories ?? [];
 	const selectedStory = stories.find((story) => story.id === selectedStoryId) ?? stories[0];
 	const source = sourceQuery.data?.data ?? observabilityQuery.data?.data.source;
+	const sourceLanguage = sourceQuery.data?.data.source_language ?? null;
 	const effectiveViewMode = isCompact && viewMode === 'split' ? 'story' : viewMode;
 	const pageCount = pagesQuery.data?.meta.count;
 	const storySignals = selectedStory
 		? (contradictionsQuery.data?.data ?? []).filter((record) => record.story_id === selectedStory.id)
 		: [];
+	const readerRateLimitError = [
+		observabilityQuery.error,
+		sourceQuery.error,
+		storiesQuery.error,
+		layoutQuery.error,
+		pagesQuery.error,
+	].find(isRateLimited);
+	const readerRateLimited = Boolean(readerRateLimitError) || contentPollingPaused;
+
+	useEffect(() => {
+		setObservabilityPolling(activeProcessing);
+	}, [activeProcessing]);
+
+	useEffect(() => {
+		if (!activeProcessing) {
+			setObservabilityPollMs(INITIAL_POLL_INTERVAL_MS);
+			unchangedObservabilityCountRef.current = 0;
+			lastObservabilitySignatureRef.current = '';
+			return;
+		}
+		const source = observabilityQuery.data?.data.source;
+		const signature = source
+			? JSON.stringify({
+					job: observabilityQuery.data?.data.job?.status ?? null,
+					progress: observabilityQuery.data?.data.progress ?? null,
+					steps: source.steps.map((step) => [
+						step.step,
+						step.status,
+						step.completed_at ?? null,
+						step.error_message ?? null,
+					]),
+				})
+			: '';
+		const unchangedCount =
+			signature && signature === lastObservabilitySignatureRef.current ? unchangedObservabilityCountRef.current + 1 : 0;
+		unchangedObservabilityCountRef.current = unchangedCount;
+		if (signature) {
+			lastObservabilitySignatureRef.current = signature;
+		}
+		setObservabilityPollMs(getNextPollDelayMs({ error: observabilityQuery.error, unchangedCount }));
+	}, [activeProcessing, observabilityQuery.data, observabilityQuery.error]);
+
+	useEffect(() => {
+		if (!readerRateLimitError) return;
+		setContentPollingPaused(true);
+		const timeout = window.setTimeout(() => setContentPollingPaused(false), getRetryAfterDelayMs(readerRateLimitError));
+		return () => window.clearTimeout(timeout);
+	}, [readerRateLimitError]);
 
 	useEffect(() => {
 		const linkedStoryId = searchParams.get('story');
@@ -930,13 +1448,44 @@ export function SourceReaderPage() {
 		<>
 			<PageHeader
 				actions={
-					<Link
-						className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
-						to="/sources"
-					>
-						<ArrowLeft className="size-4" />
-						{t('reader.backToSources')}
-					</Link>
+					<>
+						<Link
+							className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
+							to="/sources"
+						>
+							<ArrowLeft className="size-4" />
+							{t('reader.backToSources')}
+						</Link>
+						<Link
+							className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
+							to="/sources/add"
+						>
+							<Plus className="size-4" />
+							{t('reader.addSources')}
+						</Link>
+						<button
+							className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
+							onClick={() => {
+								void sourceQuery.refetch();
+								void storiesQuery.refetch();
+								void layoutQuery.refetch();
+								void pagesQuery.refetch();
+								void observabilityQuery.refetch();
+							}}
+							type="button"
+						>
+							<RefreshCcw className="size-4" />
+							{t('reader.refetchSource')}
+						</button>
+						<button
+							className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
+							onClick={() => setProcessingOpen(true)}
+							type="button"
+						>
+							<Workflow className="size-4" />
+							{t('reader.openProcessing')}
+						</button>
+					</>
 				}
 				description={t('reader.description')}
 				eyebrow={t('reader.eyebrow')}
@@ -944,6 +1493,9 @@ export function SourceReaderPage() {
 			/>
 
 			<div className="space-y-4 p-4 sm:p-6">
+				{readerRateLimited ? (
+					<StateNotice title={t('reader.rateLimitedTitle')}>{t('reader.rateLimitedBody')}</StateNotice>
+				) : null}
 				<Toolbar className="justify-between gap-3 rounded-md border border-border">
 					<div className="inline-flex rounded-md border border-border bg-field p-0.5">
 						{!isCompact ? (
@@ -979,12 +1531,14 @@ export function SourceReaderPage() {
 							pagesError={pagesQuery.error}
 							pagesIsLoading={pagesQuery.isLoading}
 							sourceId={sourceId}
+							sourceFilename={source?.filename}
 							story={selectedStory}
 						/>
 					) : null}
 
 					{effectiveViewMode === 'split' || effectiveViewMode === 'story' ? (
 						<StoryPane
+							activeProcessing={activeProcessing}
 							contradictionsError={contradictionsQuery.error}
 							contradictionsIsLoading={contradictionsQuery.isLoading}
 							onSelectEntity={setSelectedEntity}
@@ -994,6 +1548,8 @@ export function SourceReaderPage() {
 							selectedStoryId={selectedStory?.id}
 							setTargetLanguage={setTargetLanguage}
 							signals={storySignals}
+							sourceId={sourceId}
+							sourceLanguage={sourceLanguage}
 							stories={stories}
 							storiesError={storiesQuery.error}
 							storiesIsLoading={storiesQuery.isLoading}
@@ -1006,6 +1562,9 @@ export function SourceReaderPage() {
 					error={observabilityQuery.error}
 					isLoading={observabilityQuery.isLoading}
 					observability={observabilityQuery.data}
+					onToggle={setProcessingOpen}
+					open={processingOpen}
+					source={sourceQuery.data?.data}
 				/>
 			</div>
 		</>

@@ -458,12 +458,17 @@ describe('Spec 87 — Image Ingestion on the Layout Extraction Path', () => {
 			db.runSql(
 				`SELECT COUNT(*) FROM jobs WHERE type = 'quality' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
 			),
-		).toBe('1');
+		).toBe('0');
 		expect(
 			db.runSql(
 				`SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
 			),
 		).toBe('0');
+		expect(
+			db.runSql(
+				`SELECT COUNT(*) FROM jobs WHERE type = 'pipeline_run' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`,
+			),
+		).toBe('1');
 	});
 
 	it('QA-07b: upload finalization canonicalizes storage paths from detected bytes', async () => {

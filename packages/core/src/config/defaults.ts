@@ -195,6 +195,12 @@ export const CONFIG_DEFAULTS = {
 			low: { path: 'visual_extraction' as const, fallback: 'manual_transcription_required' as const },
 			unusable: { path: 'skip' as const, create_manual_task: false },
 		},
+		extraction_routing: {
+			pdf_skip_document_ai_min_native_text_ratio: 0.85,
+			pdf_skip_document_ai_min_pages_with_text_ratio: 0.95,
+			pdf_skip_document_ai_min_language_confidence: 0.75,
+			prefer_document_ai_for_uncertain_pdf: true,
+		},
 		quality_propagation: {
 			enabled: true,
 			low_quality_embedding_weight: 0.5,

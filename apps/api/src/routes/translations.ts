@@ -1,5 +1,10 @@
 import type { Context } from 'hono';
-import { getTranslation, listDocumentTranslations, requestDocumentTranslation } from '../lib/translations.js';
+import {
+	getTranslation,
+	listDocumentTranslations,
+	listTranslationStories,
+	requestDocumentTranslation,
+} from '../lib/translations.js';
 import {
 	type ApiApp,
 	AUTH_SECURITY,
@@ -16,6 +21,7 @@ import {
 	TranslationListQuerySchema,
 	TranslationListResponseSchema,
 	TranslationParamsSchema,
+	TranslationStoriesResponseSchema,
 } from './translations.schemas.js';
 
 function readTranslationListQuery(url: string): Record<string, string | undefined> {
@@ -118,6 +124,30 @@ export function registerTranslationRoutes(app: ApiApp): void {
 			const { translationId } = TranslationIdParamsSchema.parse({ translationId: c.req.param('translationId') });
 			const response = await getTranslation(translationId, readRouteOptions(c));
 			TranslationDetailResponseSchema.parse(response);
+			return c.json(response, 200);
+		},
+	);
+
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'get',
+			path: '/api/translations/{translationId}/stories',
+			operationId: 'listTranslationStories',
+			tags: ['Translations'],
+			security: AUTH_SECURITY,
+			request: {
+				params: TranslationIdParamsSchema,
+			},
+			responses: {
+				200: jsonResponse(TranslationStoriesResponseSchema, 'Translated stories'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const { translationId } = TranslationIdParamsSchema.parse({ translationId: c.req.param('translationId') });
+			const response = await listTranslationStories(translationId, readRouteOptions(c));
+			TranslationStoriesResponseSchema.parse(response);
 			return c.json(response, 200);
 		},
 	);

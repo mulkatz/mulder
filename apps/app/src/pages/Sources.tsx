@@ -38,6 +38,23 @@ function formatPageRange(start: number | null, end: number | null, t: TFunction)
 	return t('sources.singlePage', { page: start ?? end });
 }
 
+function formatPipelineStep(step: string, t: TFunction) {
+	return t(`pipelineSteps.${step}`, { defaultValue: step });
+}
+
+function formatExtractionRoute(path: string | null | undefined, t: TFunction) {
+	if (!path) return t('sources.extractionRoutePending');
+	return path === 'standard' ? t('sources.extractionRouteNative') : t('sources.extractionRouteDocumentAi');
+}
+
+function hasActiveProcessing(observability: ReturnType<typeof useDocumentObservability>['data'] | undefined) {
+	const data = observability?.data;
+	if (!data) return false;
+	if (data.job?.status === 'pending' || data.job?.status === 'running') return true;
+	if (data.progress?.source_status === 'pending' || data.progress?.source_status === 'processing') return true;
+	return false;
+}
+
 function getSourceColumns(t: TFunction, locale: string): DataColumn<DocumentRecord>[] {
 	return [
 		{
@@ -121,6 +138,8 @@ function SelectedSourceInspector({ source }: { source?: DocumentRecord }) {
 	const observabilityQuery = useDocumentObservability(source?.id);
 	const stories = storiesQuery.data?.data.stories ?? [];
 	const observability = observabilityQuery.data?.data;
+	const activeProcessing = hasActiveProcessing(observabilityQuery.data);
+	const extractionRoute = formatExtractionRoute(source?.quality_hint?.recommended_path, t);
 
 	if (!source) {
 		return (
@@ -151,8 +170,8 @@ function SelectedSourceInspector({ source }: { source?: DocumentRecord }) {
 					/>
 					<SourceMetric
 						icon={<Image className="size-3.5" />}
-						label={t('sources.images')}
-						value={t('sources.imageCount', { count: source.page_image_count })}
+						label={t('sources.extractionRouteLabel')}
+						value={extractionRoute}
 					/>
 				</div>
 				<div className="mt-3 rounded-md border border-border bg-panel-raised p-3 text-xs text-text-muted">
@@ -182,7 +201,9 @@ function SelectedSourceInspector({ source }: { source?: DocumentRecord }) {
 					</StateNotice>
 				) : null}
 				{storiesQuery.isSuccess && stories.length === 0 ? (
-					<StateNotice title={t('sources.noStoriesTitle')}>{t('sources.noStoriesBody')}</StateNotice>
+					<StateNotice title={activeProcessing ? t('sources.storiesProcessingTitle') : t('sources.noStoriesTitle')}>
+						{activeProcessing ? t('sources.storiesProcessingBody') : t('sources.noStoriesBody')}
+					</StateNotice>
 				) : null}
 				{stories.length > 0 ? (
 					<div className="space-y-2">
@@ -235,7 +256,7 @@ function SelectedSourceInspector({ source }: { source?: DocumentRecord }) {
 							{observability.source.steps.map((step) => (
 								<div className="flex items-center justify-between gap-3 rounded-md bg-field p-2" key={step.step}>
 									<div className="min-w-0">
-										<p className="truncate text-sm text-text">{step.step}</p>
+										<p className="truncate text-sm text-text">{formatPipelineStep(step.step, t)}</p>
 										{step.error_message ? <p className="mt-1 text-xs text-danger">{step.error_message}</p> : null}
 									</div>
 									<StatusBadge status={step.status} />
@@ -244,7 +265,12 @@ function SelectedSourceInspector({ source }: { source?: DocumentRecord }) {
 						</div>
 						{observability.progress ? (
 							<div className="rounded-md border border-border bg-panel-raised p-3 text-xs text-text-muted">
-								<p>{t('sources.currentStep', { step: observability.progress.current_step })}</p>
+								<p>{t('sources.currentStep', { step: formatPipelineStep(observability.progress.current_step, t) })}</p>
+								<p className="mt-1">
+									{t('sources.extractionRoute', {
+										route: extractionRoute,
+									})}
+								</p>
 								<p className="mt-1 font-mono">{observability.progress.run_id}</p>
 							</div>
 						) : null}
@@ -303,15 +329,14 @@ export function SourcesPage() {
 		<>
 			<PageHeader
 				actions={
-					<button
-						className="inline-flex h-9 items-center gap-2 rounded-md bg-field px-3 text-sm font-medium text-text-subtle"
-						disabled
+					<Link
+						className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm font-medium text-text transition-colors hover:bg-field"
 						title={t('sources.addSourcesTitle')}
-						type="button"
+						to="/sources/add"
 					>
 						<Plus className="size-4" />
 						{t('common.addSources')}
-					</button>
+					</Link>
 				}
 				description={t('sources.description')}
 				eyebrow={t('sources.eyebrow')}

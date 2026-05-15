@@ -3,7 +3,14 @@
 import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { serve } from '@hono/node-server';
-import { type ApiConfig, CONFIG_DEFAULTS, createLogger, loadConfig } from '@mulder/core';
+import {
+	type ApiConfig,
+	assertProductionServiceConfig,
+	CONFIG_DEFAULTS,
+	createLogger,
+	loadConfig,
+	type MulderConfig,
+} from '@mulder/core';
 import { createApp } from './app.js';
 
 export const DEFAULT_API_PORT = 8080;
@@ -24,25 +31,37 @@ export function resolveApiPort(config?: ApiConfig): number {
 	return DEFAULT_API_PORT;
 }
 
-function resolveRuntimeApiConfig(): ApiConfig {
+function resolveRuntimeConfig(): {
+	apiConfig: ApiConfig;
+	configExists: boolean;
+	configPath: string;
+	mulderConfig?: Readonly<MulderConfig>;
+} {
 	const configPath = process.env.MULDER_CONFIG ?? 'mulder.config.yaml';
 
 	if (existsSync(configPath)) {
-		return loadConfig(configPath).api;
+		const mulderConfig = loadConfig(configPath);
+		return { apiConfig: mulderConfig.api, configExists: true, configPath, mulderConfig };
 	}
 
-	return CONFIG_DEFAULTS.api;
+	return { apiConfig: CONFIG_DEFAULTS.api, configExists: false, configPath };
 }
 
 export function startApiServer(): ReturnType<typeof serve> {
 	const logger = createLogger();
-	const apiConfig = resolveRuntimeApiConfig();
+	const { apiConfig, configExists, configPath, mulderConfig } = resolveRuntimeConfig();
+	if (mulderConfig) {
+		assertProductionServiceConfig(mulderConfig);
+	}
 	const app = createApp({ logger, config: apiConfig });
 	const port = resolveApiPort(apiConfig);
 	const server = serve({ fetch: app.fetch, port });
 	let shuttingDown = false;
 
-	logger.info({ port }, 'API server started');
+	logger.info(
+		{ config_exists: configExists, config_path: configPath, node_env: process.env.NODE_ENV ?? null, port },
+		'API server started',
+	);
 
 	function shutdown(signal: NodeJS.Signals) {
 		if (shuttingDown) {

@@ -263,6 +263,9 @@ The private workflow should accept a public Mulder ref, check out this repositor
 at that ref, build `Dockerfile.api`, push the image to Artifact Registry, deploy
 API and worker services, run migrations, and execute opt-in live smoke checks.
 
+Do not deploy production from an uncommitted local working tree. A live revision
+should always map back to a pushed public commit SHA.
+
 Cloud Run API environment:
 
 ```text
@@ -286,13 +289,10 @@ Methods: app-used methods only
 
 ## Database Migrations
 
-Production migrations are mandatory before first live traffic and before the first upload.
-
-The current deploy workflow does not run migrations. Add one of these before go-live:
-
-- a Cloud Run Job that runs the built CLI against `/secrets/mulder.config.yaml`
-- a dedicated GitHub Actions migration step using the same image and runtime service account
-- a one-off operator command from a trusted environment with production config access
+Production migrations are mandatory before first live traffic and before the
+first upload. The private deploy workflow should update and execute the
+configured Cloud Run migration job before API, worker, and app deployment
+continue.
 
 The CLI command is:
 
@@ -307,6 +307,8 @@ node apps/cli/dist/index.js db status /secrets/mulder.config.yaml
 ```
 
 Treat a failed or skipped migration check as a release blocker.
+
+Local Docker deploys are an emergency path only. If used, record the commit SHA, image digest, operator, and reason in the release notes.
 
 ## First Owner Bootstrap
 

@@ -129,6 +129,18 @@ async function extractNativeText(pdfBuffer: Buffer, logger: Logger): Promise<str
 	return pageTexts;
 }
 
+async function appendNativeTextPages(layoutPages: LayoutPage[], pdfBuffer: Buffer, logger: Logger): Promise<void> {
+	const pageTexts = await extractNativeText(pdfBuffer, logger);
+	for (let i = 0; i < pageTexts.length; i++) {
+		layoutPages.push({
+			pageNumber: i + 1,
+			method: 'native',
+			confidence: 1.0,
+			text: pageTexts[i],
+		});
+	}
+}
+
 /**
  * Renders page images from a PDF buffer using pdfjs-dist + @napi-rs/canvas.
  * Returns an array of PNG buffers, one per page.
@@ -2423,12 +2435,34 @@ export async function execute(
 			);
 		}
 		const nativeTextRatio = source.sourceType === 'image' ? 0 : source.nativeTextRatio;
-		const threshold = config.extraction.native_text_threshold;
-		const isNativePath = source.sourceType === 'pdf' && nativeTextRatio >= threshold;
+		const threshold = config.document_quality.extraction_routing.pdf_skip_document_ai_min_native_text_ratio;
+		const qualitySignals = latestQuality?.signals ?? {};
+		const pagesWithTextRatio =
+			typeof qualitySignals.pages_with_text_ratio === 'number'
+				? qualitySignals.pages_with_text_ratio
+				: source.hasNativeText
+					? nativeTextRatio
+					: 0;
+		const languageConfidence =
+			typeof qualitySignals.language_confidence === 'number' ? qualitySignals.language_confidence : 0;
+		const qualityAllowsNative =
+			latestQuality?.recommendedPath === 'standard' &&
+			nativeTextRatio >= config.document_quality.extraction_routing.pdf_skip_document_ai_min_native_text_ratio &&
+			pagesWithTextRatio >= config.document_quality.extraction_routing.pdf_skip_document_ai_min_pages_with_text_ratio &&
+			languageConfidence >= config.document_quality.extraction_routing.pdf_skip_document_ai_min_language_confidence;
+		const noQualityNativeAllowed =
+			!latestQuality &&
+			!config.document_quality.extraction_routing.prefer_document_ai_for_uncertain_pdf &&
+			source.hasNativeText &&
+			nativeTextRatio >= threshold;
+		const isNativePath = source.sourceType === 'pdf' && (qualityAllowsNative || noQualityNativeAllowed);
 
 		log.info(
 			{
 				nativeTextRatio,
+				pagesWithTextRatio,
+				languageConfidence,
+				qualityPath: latestQuality?.recommendedPath ?? null,
 				threshold,
 				sourceType: source.sourceType,
 				mediaType: sourceMediaType,
@@ -2449,16 +2483,7 @@ export async function execute(
 			primaryMethod = 'native';
 
 			try {
-				const pageTexts = await extractNativeText(sourceBuffer, log);
-
-				for (let i = 0; i < pageTexts.length; i++) {
-					layoutPages.push({
-						pageNumber: i + 1,
-						method: 'native',
-						confidence: 1.0,
-						text: pageTexts[i],
-					});
-				}
+				await appendNativeTextPages(layoutPages, sourceBuffer, log);
 			} catch (cause: unknown) {
 				throw new ExtractError(
 					`Native text extraction failed for source ${input.sourceId}`,
@@ -2508,27 +2533,50 @@ export async function execute(
 				});
 			}
 
-			for (const parsed of parsedPages) {
-				layoutPages.push({
-					pageNumber: parsed.pageNumber,
-					method: 'document_ai',
-					confidence: parsed.confidence,
-					text: parsed.text,
-					blocks: parsed.blocks,
-				});
+			const canFallbackToNative =
+				source.sourceType === 'pdf' && source.hasNativeText && nativeTextRatio >= threshold && parsedPages.length === 0;
+
+			if (canFallbackToNative) {
+				log.warn(
+					{ sourceId: input.sourceId, nativeTextRatio },
+					'Document AI returned no pages; falling back to native text extraction',
+				);
+				primaryMethod = 'native';
+				documentAiRaw = undefined;
+				await appendNativeTextPages(layoutPages, sourceBuffer, log);
+				try {
+					pageImages = await renderPageImages(sourceBuffer, log);
+				} catch (cause: unknown) {
+					log.warn({ err: cause }, 'Page image rendering failed — continuing without images');
+				}
+			} else {
+				for (const parsed of parsedPages) {
+					layoutPages.push({
+						pageNumber: parsed.pageNumber,
+						method: 'document_ai',
+						confidence: parsed.confidence,
+						text: parsed.text,
+						blocks: parsed.blocks,
+					});
+				}
+
+				// Run Gemini Vision fallback on low-confidence pages
+				const fallbackResult = await runVisionFallback(
+					layoutPages,
+					pageImages,
+					config.extraction.confidence_threshold,
+					{
+						services,
+						config,
+						logger: log,
+						maxVisionPages: config.extraction.max_vision_pages,
+					},
+				);
+
+				visionFallbackCount = fallbackResult.visionFallbackCount;
+				visionFallbackCapped = fallbackResult.visionFallbackCapped;
+				errors.push(...fallbackResult.errors);
 			}
-
-			// Run Gemini Vision fallback on low-confidence pages
-			const fallbackResult = await runVisionFallback(layoutPages, pageImages, config.extraction.confidence_threshold, {
-				services,
-				config,
-				logger: log,
-				maxVisionPages: config.extraction.max_vision_pages,
-			});
-
-			visionFallbackCount = fallbackResult.visionFallbackCount;
-			visionFallbackCapped = fallbackResult.visionFallbackCapped;
-			errors.push(...fallbackResult.errors);
 		}
 
 		// 5. Build layout document

@@ -143,6 +143,7 @@ export type {
 	CreateEntityInput,
 	CreateEvidenceChainInput,
 	CreateExternalCorrelationInput,
+	CreateIntakeEnrichmentSuggestionInput,
 	CreateMonthlyBudgetReservationInput,
 	CreatePipelineRunInput,
 	CreateSourceInput,
@@ -314,6 +315,9 @@ export type {
 	TemporalPatternReviewStatus,
 	TemporalPatternSignalStrength,
 	TranslatedDocument,
+	TranslatedMentionMethod,
+	TranslatedStory,
+	TranslatedStoryEntityMention,
 	TranslationOutputFormat,
 	TranslationPipelinePath,
 	TranslationStatus,
@@ -371,6 +375,7 @@ export {
 	countTaxonomyEntries,
 	countTaxonomyMappings,
 	countTemporalAnomalyClusters,
+	countTranslatedStoriesForTranslation,
 	createArchive,
 	createChunk,
 	createChunks,
@@ -382,12 +387,14 @@ export {
 	createEntity,
 	createEntityAlias,
 	createEvidenceChains,
+	createIntakeEnrichmentSuggestion,
 	createMonthlyBudgetReservation,
 	createPipelineRun,
 	createSource,
 	createSpatioTemporalClusters,
 	createStory,
 	createTaxonomyEntry,
+	createTranslatedStoryBundle,
 	deleteAliasesByEntityId,
 	deleteAllSpatioTemporalClusters,
 	deleteAutoTaxonomyEntries,
@@ -455,6 +462,7 @@ export {
 	findEntityGroundingByEntityId,
 	findEvidenceChainsByThesis,
 	findExternalCorrelation,
+	findIntakeEnrichmentSuggestionById,
 	findJobById,
 	findJobs,
 	findLatestDocumentQualityAssessment,
@@ -524,6 +532,7 @@ export {
 	listTaxonomyMappings,
 	listTemporalAnomalyClusters,
 	listTranslatedDocumentsForSource,
+	listTranslatedStoriesForTranslation,
 	loadClusterableEntityEvents,
 	loadTemporalPatternEntityEvents,
 	mapArtifactProvenanceFromDb,
@@ -763,7 +772,7 @@ export type { RateLimiterOptions } from './shared/rate-limiter.js';
 // ── Rate limiter ────────────────────────────────────────────
 export { RateLimiter } from './shared/rate-limiter.js';
 // ── Service abstraction ─────────────────────────────────────
-export { createServiceRegistry } from './shared/registry.js';
+export { assertProductionServiceConfig, createServiceRegistry } from './shared/registry.js';
 export type { RetryOptions } from './shared/retry.js';
 // ── Retry ───────────────────────────────────────────────────
 export { withRetry } from './shared/retry.js';

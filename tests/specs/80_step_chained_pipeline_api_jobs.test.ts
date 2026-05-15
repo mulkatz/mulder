@@ -238,8 +238,8 @@ describe('Spec 80: Step-chained async pipeline API jobs', () => {
 			>,
 		).toMatchObject({
 			sourceId,
-			upTo: 'embed',
 			force: true,
 		});
+		expect(db.runSql(`SELECT payload ? 'upTo' FROM jobs WHERE id = '${body.data.job_id}';`)).toBe('f');
 	});
 });

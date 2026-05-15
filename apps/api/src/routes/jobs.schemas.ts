@@ -8,6 +8,19 @@ export const JobStatusSchema = z.enum(JOB_STATUS_VALUES);
 export const PipelineRunStatusSchema = z.enum(PIPELINE_RUN_STATUS_VALUES);
 export const PipelineRunSourceStatusSchema = z.enum(PIPELINE_RUN_SOURCE_STATUS_VALUES);
 
+export const JobSubjectSchema = z.object({
+	kind: z.enum(['source', 'batch', 'job']),
+	label: z.string(),
+	source_id: z.string().uuid().optional(),
+	source_count: z.number().int().nonnegative().optional(),
+});
+
+export const JobProgressSourceSummarySchema = z.object({
+	id: z.string().uuid(),
+	filename: z.string(),
+	status: z.string(),
+});
+
 export const JobListQuerySchema = z.object({
 	status: JobStatusSchema.optional(),
 	type: z.string().min(1).max(128).optional(),
@@ -22,6 +35,7 @@ export const JobDetailParamsSchema = z.object({
 export const JobSummarySchema = z.object({
 	id: z.string().uuid(),
 	type: z.string(),
+	subject: JobSubjectSchema,
 	status: JobStatusSchema,
 	attempts: z.number().int().nonnegative(),
 	max_attempts: z.number().int().positive(),
@@ -45,6 +59,7 @@ export const JobListResponseSchema = z.object({
 export const JobDetailSchema = z.object({
 	id: z.string().uuid(),
 	type: z.string(),
+	subject: JobSubjectSchema,
 	status: JobStatusSchema,
 	attempts: z.number().int().nonnegative(),
 	max_attempts: z.number().int().positive(),
@@ -58,6 +73,7 @@ export const JobDetailSchema = z.object({
 
 export const JobProgressSourceSchema = z.object({
 	source_id: z.string().uuid(),
+	source: JobProgressSourceSummarySchema.nullable(),
 	current_step: z.string(),
 	status: PipelineRunSourceStatusSchema,
 	error_message: z.string().nullable(),

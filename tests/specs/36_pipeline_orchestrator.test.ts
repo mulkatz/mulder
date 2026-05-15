@@ -209,13 +209,16 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		const runStatus = db.runSql('SELECT status FROM pipeline_runs ORDER BY created_at DESC LIMIT 1;');
 		expect(runStatus).toBe('completed');
 
-		// pipeline_run_sources for the latest run shows current_step = graph, status completed
+		// pipeline_run_sources for the latest run shows the global analyze phase.
 		const rowState = db.runSql(
 			"SELECT current_step || '|' || status FROM pipeline_run_sources " +
 				'WHERE run_id = (SELECT id FROM pipeline_runs ORDER BY created_at DESC LIMIT 1) ' +
 				`AND source_id = '${sourceId}';`,
 		);
-		expect(rowState).toBe('graph|completed');
+		expect(rowState).toBe('analyze|completed');
+		expect(['completed', 'skipped']).toContain(
+			db.runSql(`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'analyze';`),
+		);
 	}, 900000);
 
 	// ─── QA-02: --up-to enrich stops mid-pipeline ───
@@ -294,13 +297,13 @@ describe('Spec 36 — Pipeline Orchestrator', () => {
 		const postStatus = db.runSql(`SELECT DISTINCT status FROM stories WHERE source_id = '${sourceId}';`);
 		expect(postStatus).toBe('graphed');
 
-		// pipeline_run_sources current_step should be 'graph' for the latest run
+		// pipeline_run_sources current_step should include the skipped global analyze phase for the latest run.
 		const currentStep = db.runSql(
 			'SELECT current_step FROM pipeline_run_sources ' +
 				'WHERE run_id = (SELECT id FROM pipeline_runs ORDER BY created_at DESC LIMIT 1) ' +
 				`AND source_id = '${sourceId}';`,
 		);
-		expect(currentStep).toBe('graph');
+		expect(currentStep).toBe('analyze');
 	}, 900000);
 
 	// ─── QA-04: Failed source does not crash batch ───

@@ -21,6 +21,10 @@ const appUrl = normalizeBaseUrl(readOption('app-url') ?? process.env.MULDER_APP_
 const email = readOption('email') ?? process.env.MULDER_SMOKE_EMAIL;
 const password = readOption('password') ?? process.env.MULDER_SMOKE_PASSWORD;
 const configuredSourceId = readOption('source-id') ?? process.env.MULDER_SMOKE_SOURCE_ID;
+const uploadFile = readOption('upload-file') ?? process.env.MULDER_SMOKE_UPLOAD_FILE;
+const translateSmoke = (readOption('translate') ?? process.env.MULDER_SMOKE_TRANSLATE ?? 'false') === 'true';
+const documentAiFile = readOption('document-ai-file') ?? process.env.MULDER_SMOKE_DOCUMENT_AI_FILE;
+const documentAiSmoke = (readOption('document-ai') ?? process.env.MULDER_SMOKE_DOCUMENT_AI ?? 'false') === 'true';
 const headless = (process.env.MULDER_PLAYWRIGHT_HEADLESS ?? 'true') !== 'false';
 
 if (!email || !password) {
@@ -33,6 +37,10 @@ if (!email || !password) {
 			'  MULDER_SMOKE_EMAIL=user@example.test',
 			'  MULDER_SMOKE_PASSWORD=<password>',
 			'  MULDER_SMOKE_SOURCE_ID=<optional-source-id>',
+			'  MULDER_SMOKE_UPLOAD_FILE=<optional-upload-file>',
+			'  MULDER_SMOKE_TRANSLATE=true',
+			'  MULDER_SMOKE_DOCUMENT_AI=true',
+			'  MULDER_SMOKE_DOCUMENT_AI_FILE=<optional-document-ai-file>',
 		].join('\n'),
 	);
 	process.exit(2);
@@ -116,6 +124,57 @@ async function expectReaderHappyPath(sourceId) {
 	}
 }
 
+async function expectUploadSmoke(filePath) {
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await page.goto('/sources/add');
+	await page.waitForLoadState('networkidle');
+	await page.locator('#add-sources-files').setInputFiles(filePath);
+	await page.locator('#add-sources-no-collection-confirmed').check();
+	await page.locator('#add-sources-provenance-confirmed').check();
+	await page.getByRole('button', { name: /upload/i }).click();
+	await page.waitForLoadState('networkidle');
+
+	const sourceAction = page.getByRole('link', { name: /open source/i }).first();
+	const processingAction = page.getByRole('link', { name: /open processing/i }).first();
+	await sourceAction.waitFor({ state: 'visible', timeout: 180_000 });
+	await processingAction.waitFor({ state: 'visible', timeout: 180_000 });
+	await expectNoBrokenText('/sources/add upload');
+
+	const sourceHref = await sourceAction.getAttribute('href');
+	const processingHref = await processingAction.getAttribute('href');
+	if (!sourceHref) {
+		throw new Error('Upload smoke did not expose an Open source link');
+	}
+	if (!processingHref || !/\/runs\?job=[^&]+/.test(processingHref)) {
+		throw new Error('Upload smoke did not expose a /runs?job=<pipelineJobId> processing link');
+	}
+
+	await page.goto(sourceHref);
+	await page.waitForLoadState('networkidle');
+	await expectNoBrokenText('/sources/:id upload result');
+
+	await page.goto(processingHref);
+	await page.waitForLoadState('networkidle');
+	await expectNoBrokenText('/runs upload processing');
+}
+
+async function expectTranslationSmoke(sourceId) {
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await page.goto(`/sources/${sourceId}`);
+	await page.waitForLoadState('networkidle');
+	await expectNoBrokenText('/sources/:id pre-translation');
+
+	const translationButton = page.getByRole('button', { name: /translate|translate again/i }).first();
+	if ((await translationButton.count()) > 0) {
+		await translationButton.click();
+		await page.waitForTimeout(750);
+		await page.waitForLoadState('networkidle');
+	}
+
+	await page.getByRole('button', { name: /translated/i }).click({ timeout: 30_000 });
+	await expectNoBrokenText('/sources/:id translated');
+}
+
 try {
 	await page.addInitScript(() => {
 		try {
@@ -137,7 +196,7 @@ try {
 		{ width: 1024, height: 900 },
 		{ width: 390, height: 860 },
 	];
-	const routes = ['/', '/sources', '/evidence', '/runs'];
+	const routes = ['/', '/sources', '/sources/add', '/evidence', '/runs'];
 
 	for (const viewport of viewports) {
 		for (const route of routes) {
@@ -149,6 +208,25 @@ try {
 		await expectReaderHappyPath(configuredSourceId);
 	}
 
+	if (uploadFile) {
+		await expectUploadSmoke(uploadFile);
+	}
+
+	if (translateSmoke) {
+		if (!configuredSourceId) {
+			throw new Error('Translation smoke requires MULDER_SMOKE_SOURCE_ID or --source-id.');
+		}
+		await expectTranslationSmoke(configuredSourceId);
+	}
+
+	if (documentAiSmoke) {
+		if (!documentAiFile) {
+			console.log('document_ai_smoke environment gap: set MULDER_SMOKE_DOCUMENT_AI_FILE to run the Document AI smoke.');
+		} else {
+			await expectUploadSmoke(documentAiFile);
+		}
+	}
+
 	if (pageErrors.length > 0) {
 		throw new Error(`Page errors:\n${pageErrors.join('\n')}`);
 	}
@@ -158,7 +236,7 @@ try {
 	}
 
 	console.log(
-		`app_smoke ok: ${routes.length} routes x ${viewports.length} viewports${configuredSourceId ? ' + reader source' : ''}`,
+		`app_smoke ok: ${routes.length} routes x ${viewports.length} viewports${configuredSourceId ? ' + reader source' : ''}${uploadFile ? ' + upload' : ''}${translateSmoke ? ' + translation' : ''}${documentAiSmoke ? ' + document-ai' : ''}`,
 	);
 } finally {
 	await browser.close();

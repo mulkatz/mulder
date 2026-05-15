@@ -320,6 +320,14 @@ export type {
 	SubmittedByType,
 } from './ingest-provenance.types.js';
 export {
+	createIntakeEnrichmentSuggestion,
+	findIntakeEnrichmentSuggestionById,
+} from './intake-enrichment.repository.js';
+export type {
+	CreateIntakeEnrichmentSuggestionInput,
+	IntakeEnrichmentSuggestion,
+} from './intake-enrichment.types.js';
+export {
 	countJobs,
 	dequeueJob,
 	enqueueJob,
@@ -639,6 +647,19 @@ export type {
 	TranslationPipelinePath,
 	TranslationStatus,
 } from './translated-document.types.js';
+export {
+	countTranslatedStoriesForTranslation,
+	createTranslatedStoryBundle,
+	listTranslatedStoriesForTranslation,
+} from './translated-story.repository.js';
+export type {
+	CreateTranslatedStoryBundleInput,
+	CreateTranslatedStoryInput,
+	CreateTranslatedStoryMentionInput,
+	TranslatedMentionMethod,
+	TranslatedStory,
+	TranslatedStoryEntityMention,
+} from './translated-story.types.js';
 export type {
 	RecordUrlHostLifecycleInput,
 	RecordUrlLifecycleFetchInput,

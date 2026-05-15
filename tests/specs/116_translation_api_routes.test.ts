@@ -112,6 +112,83 @@ async function seedTranslation(pool: pg.Pool, sourceId: string): Promise<string>
 	return result.rows[0].id;
 }
 
+async function seedStory(pool: pg.Pool, sourceId: string): Promise<string> {
+	const result = await pool.query<{ id: string }>(
+		`
+			INSERT INTO stories (
+				source_id,
+				title,
+				language,
+				page_start,
+				page_end,
+				gcs_markdown_uri,
+				gcs_metadata_uri,
+				status
+			)
+			VALUES ($1, 'Story', 'de', 1, 1, 'stories/story.md', 'stories/story.json', 'enriched')
+			RETURNING id
+		`,
+		[sourceId],
+	);
+	return result.rows[0].id;
+}
+
+async function seedTranslatedStory(
+	pool: pg.Pool,
+	translationId: string,
+	storyId: string,
+	sourceId: string,
+	markdown = 'Translated story markdown',
+): Promise<string> {
+	const result = await pool.query<{ id: string }>(
+		`
+			INSERT INTO translated_stories (
+				translation_id,
+				story_id,
+				source_document_id,
+				source_language,
+				target_language,
+				title,
+				markdown,
+				content_hash,
+				sensitivity_level,
+				sensitivity_metadata
+			)
+			VALUES ($1, $2, $3, 'de', 'en', 'Translated Story', $4, 'story-hash', 'internal', '{}'::jsonb)
+			RETURNING id
+		`,
+		[translationId, storyId, sourceId, markdown],
+	);
+	return result.rows[0].id;
+}
+
+async function seedTranslatedStoryMention(pool: pg.Pool, translatedStoryId: string): Promise<string> {
+	const entityId = randomUUID();
+	await pool.query(
+		`
+			INSERT INTO entities (id, name, type, attributes, taxonomy_status, source_count)
+			VALUES ($1, 'Varginha case', 'case', $2::jsonb, 'curated', 2)
+		`,
+		[entityId, JSON.stringify({ category: 'uap_case' })],
+	);
+	await pool.query(
+		`
+			INSERT INTO translated_story_entity_mentions (
+				translated_story_id,
+				entity_id,
+				surface_text,
+				start_offset,
+				end_offset,
+				confidence,
+				method
+			)
+			VALUES ($1, $2, 'Varginha case', 11, 24, 0.93, 'llm_structured_verified')
+		`,
+		[translatedStoryId, entityId],
+	);
+	return entityId;
+}
+
 describe('Spec 116: translation API routes', () => {
 	let pool: pg.Pool;
 	const originalConfig = process.env.MULDER_CONFIG;
@@ -189,6 +266,8 @@ describe('Spec 116: translation API routes', () => {
 		const app = createApp({ config: TEST_API_CONFIG });
 		const sourceId = await seedSource(pool);
 		const translationId = await seedTranslation(pool, sourceId);
+		const storyId = await seedStory(pool, sourceId);
+		await seedTranslatedStory(pool, translationId, storyId, sourceId);
 
 		const cachedResponse = await app.request(`http://localhost/api/documents/${sourceId}/translations`, {
 			body: JSON.stringify({ target_language: 'en' }),
@@ -222,6 +301,153 @@ describe('Spec 116: translation API routes', () => {
 				refresh: true,
 			},
 		});
+	});
+
+	it('reuses in-flight translation jobs for matching requests', async () => {
+		const app = createApp({ config: TEST_API_CONFIG });
+		const sourceId = await seedSource(pool);
+
+		const firstResponse = await app.request(`http://localhost/api/documents/${sourceId}/translations`, {
+			body: JSON.stringify({ target_language: 'en' }),
+			headers: { ...authorizedHeaders(), 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+		const secondResponse = await app.request(`http://localhost/api/documents/${sourceId}/translations`, {
+			body: JSON.stringify({ target_language: 'en' }),
+			headers: { ...authorizedHeaders(), 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+
+		expect(firstResponse.status).toBe(202);
+		expect(secondResponse.status).toBe(202);
+		const firstBody = (await readJson(firstResponse)) as { data: { job_id: string } };
+		const secondBody = (await readJson(secondResponse)) as { data: { job_id: string } };
+		expect(secondBody.data.job_id).toBe(firstBody.data.job_id);
+
+		const refreshResponse = await app.request(`http://localhost/api/documents/${sourceId}/translations`, {
+			body: JSON.stringify({ target_language: 'en', refresh: true }),
+			headers: { ...authorizedHeaders(), 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+		const secondRefreshResponse = await app.request(`http://localhost/api/documents/${sourceId}/translations`, {
+			body: JSON.stringify({ target_language: 'en', refresh: true }),
+			headers: { ...authorizedHeaders(), 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+
+		expect(refreshResponse.status).toBe(202);
+		expect(secondRefreshResponse.status).toBe(202);
+		const refreshBody = (await readJson(refreshResponse)) as { data: { job_id: string } };
+		const secondRefreshBody = (await readJson(secondRefreshResponse)) as { data: { job_id: string } };
+		expect(secondRefreshBody.data.job_id).toBe(refreshBody.data.job_id);
+		expect(refreshBody.data.job_id).not.toBe(firstBody.data.job_id);
+
+		const jobCount = await pool.query<{ count: string }>('SELECT COUNT(*) AS count FROM jobs WHERE type = $1', [
+			'translate',
+		]);
+		expect(Number(jobCount.rows[0]?.count ?? '0')).toBe(2);
+	});
+
+	it('returns translated stories with persisted verified mentions and entity data', async () => {
+		const app = createApp({ config: TEST_API_CONFIG });
+		const sourceId = await seedSource(pool);
+		const translationId = await seedTranslation(pool, sourceId);
+		const storyId = await seedStory(pool, sourceId);
+		const translatedStoryId = await seedTranslatedStory(
+			pool,
+			translationId,
+			storyId,
+			sourceId,
+			'Observed Varginha case from the archive.',
+		);
+		const entityId = await seedTranslatedStoryMention(pool, translatedStoryId);
+
+		const response = await app.request(`http://localhost/api/translations/${translationId}/stories`, {
+			headers: authorizedHeaders(),
+		});
+		expect(response.status).toBe(200);
+		expect(await readJson(response)).toMatchObject({
+			data: {
+				translation_id: translationId,
+				stories: [
+					{
+						id: translatedStoryId,
+						story_id: storyId,
+						markdown: 'Observed Varginha case from the archive.',
+						mentions: [
+							{
+								translated_story_id: translatedStoryId,
+								entity_id: entityId,
+								surface_text: 'Varginha case',
+								start_offset: 11,
+								end_offset: 24,
+								confidence: 0.93,
+								method: 'llm_structured_verified',
+								entity: {
+									id: entityId,
+									name: 'Varginha case',
+									type: 'case',
+									taxonomy_status: 'curated',
+									source_count: 2,
+								},
+							},
+						],
+					},
+				],
+			},
+			meta: {
+				count: 1,
+			},
+		});
+	});
+
+	it('enqueues translation backfill when a cached translation has no translated stories', async () => {
+		const app = createApp({ config: TEST_API_CONFIG });
+		const sourceId = await seedSource(pool);
+		await seedTranslation(pool, sourceId);
+		await seedStory(pool, sourceId);
+
+		const response = await app.request(`http://localhost/api/documents/${sourceId}/translations`, {
+			body: JSON.stringify({ target_language: 'en' }),
+			headers: { ...authorizedHeaders(), 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+		expect(response.status).toBe(202);
+		const body = (await readJson(response)) as { data: { job_id: string }; links: { status: string } };
+		expect(body.links.status).toBe(`/api/jobs/${body.data.job_id}`);
+
+		const job = await pool.query<{ type: string; payload: Record<string, unknown> }>('SELECT type, payload FROM jobs');
+		expect(job.rows).toHaveLength(1);
+		expect(job.rows[0]).toMatchObject({
+			type: 'translate',
+			payload: {
+				sourceId,
+				targetLanguage: 'en',
+				refresh: false,
+			},
+		});
+	});
+
+	it('returns cached source translations when there are no original stories to backfill', async () => {
+		const app = createApp({ config: TEST_API_CONFIG });
+		const sourceId = await seedSource(pool);
+		const translationId = await seedTranslation(pool, sourceId);
+
+		const response = await app.request(`http://localhost/api/documents/${sourceId}/translations`, {
+			body: JSON.stringify({ target_language: 'en' }),
+			headers: { ...authorizedHeaders(), 'Content-Type': 'application/json' },
+			method: 'POST',
+		});
+		expect(response.status).toBe(200);
+		expect(await readJson(response)).toMatchObject({
+			data: {
+				id: translationId,
+				status: 'current',
+			},
+		});
+
+		const job = await pool.query<{ type: string; payload: Record<string, unknown> }>('SELECT type, payload FROM jobs');
+		expect(job.rows).toHaveLength(0);
 	});
 
 	it('protects routes and validates request bodies', async () => {

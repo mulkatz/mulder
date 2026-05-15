@@ -2,6 +2,7 @@ import { type Logger, MulderError } from '@mulder/core';
 import type { Context } from 'hono';
 import {
 	completeDocumentUpload,
+	enrichUploadProvenance,
 	getDocumentUploadFinalizationStatus,
 	handleDevUploadProxy,
 	initiateDocumentUpload,
@@ -19,6 +20,8 @@ import {
 	CompleteDocumentUploadRequestSchema,
 	CompleteDocumentUploadResponseSchema,
 	DevUploadQuerySchema,
+	EnrichUploadProvenanceRequestSchema,
+	EnrichUploadProvenanceResponseSchema,
 	InitiateDocumentUploadRequestSchema,
 	InitiateDocumentUploadResponseSchema,
 	UploadFinalizationParamsSchema,
@@ -63,6 +66,30 @@ export function registerUploadRoutes(app: ApiApp): void {
 			const response = await initiateDocumentUpload(body, readRequestLogger(c));
 			InitiateDocumentUploadResponseSchema.parse(response);
 			return c.json(response, 201);
+		},
+	);
+
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'post',
+			path: '/api/uploads/documents/enrich-provenance',
+			operationId: 'enrichUploadProvenance',
+			tags: ['Uploads'],
+			security: AUTH_SECURITY,
+			request: {
+				body: jsonRequestBody(EnrichUploadProvenanceRequestSchema, 'Provenance enrichment request'),
+			},
+			responses: {
+				200: jsonResponse(EnrichUploadProvenanceResponseSchema, 'Provenance suggestions'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const body = EnrichUploadProvenanceRequestSchema.parse(await readJsonBody(c));
+			const response = await enrichUploadProvenance(body, readRequestLogger(c), readRouteOptions(c));
+			EnrichUploadProvenanceResponseSchema.parse(response);
+			return c.json(response, 200);
 		},
 	);
 

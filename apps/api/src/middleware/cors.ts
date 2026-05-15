@@ -38,5 +38,9 @@ export function createCorsMiddleware(): MiddlewareHandler {
 		}
 
 		await next();
+
+		if (origin && isAllowedOrigin) {
+			setCorsHeaders(c, origin);
+		}
 	};
 }

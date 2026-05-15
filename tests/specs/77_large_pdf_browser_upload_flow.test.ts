@@ -484,9 +484,9 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 		expect(db.runSql(`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'ingest';`)).toBe(
 			'completed',
 		);
-		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'quality' AND status = 'pending';"))).toBe(1);
+		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'quality' AND status = 'pending';"))).toBe(0);
 		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending';"))).toBe(0);
-		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'pipeline_run';"))).toBe(0);
+		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'pipeline_run';"))).toBe(1);
 
 		const finalizePayload = readJsonCell(`SELECT payload::text FROM jobs WHERE id = '${jobId}';`);
 		expect(finalizePayload).toMatchObject({
@@ -498,13 +498,30 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 			pipeline_job_id: expect.any(String),
 			pipeline_run_id: expect.any(String),
 		});
-		const pipelineJobPayload = readJsonCell(
-			`SELECT payload::text FROM jobs WHERE id = '${String(finalizePayload.pipeline_job_id)}';`,
+		const pipelineJobRow = readJsonCell(
+			`SELECT row_to_json(job_row)::text FROM (
+				SELECT type, payload
+				FROM jobs
+				WHERE id = '${String(finalizePayload.pipeline_job_id)}'
+			) AS job_row;`,
 		);
+		expect(pipelineJobRow).toMatchObject({
+			type: 'pipeline_run',
+			payload: {
+				sourceId,
+				runId: finalizePayload.pipeline_run_id,
+				from: 'quality',
+				force: false,
+				tag: 'browser-upload',
+			},
+		});
+		expect(pipelineJobRow.payload).not.toHaveProperty('upTo');
+
+		const pipelineJobPayload = pipelineJobRow.payload as Record<string, unknown>;
 		expect(pipelineJobPayload).toMatchObject({
 			sourceId,
 			runId: finalizePayload.pipeline_run_id,
-			upTo: 'graph',
+			from: 'quality',
 			force: false,
 			tag: 'browser-upload',
 		});
@@ -630,6 +647,112 @@ describe('Spec 77 — Large PDF Browser Upload Flow', () => {
 					filename: 'native-text-sample.pdf',
 				},
 				pipeline: null,
+			},
+			links: {
+				source: `/api/documents/${firstSourceId}`,
+			},
+		});
+	});
+
+	it('QA-04a: duplicate finalize resumes a failed source through a pipeline run', async () => {
+		const firstInitiate = await apiPost(app, '/api/uploads/documents/initiate', {
+			filename: 'native-text-sample.pdf',
+			size_bytes: fixturePdf.byteLength,
+			content_type: 'application/pdf',
+		});
+		const firstBody = await readJson(firstInitiate);
+		const firstSourceId = String((firstBody.data as Record<string, unknown>).source_id);
+		const firstStoragePath = String((firstBody.data as Record<string, unknown>).storage_path);
+		writeUploadedObject(firstSourceId, fixturePdf);
+
+		const firstComplete = await apiPost(app, '/api/uploads/documents/complete', {
+			source_id: firstSourceId,
+			filename: 'native-text-sample.pdf',
+			storage_path: firstStoragePath,
+			start_pipeline: false,
+		});
+		expect(firstComplete.status).toBe(202);
+		await processOneJob(workerContext, workerModule);
+
+		const failedRunId = randomUUID();
+		db.runSql(
+			[
+				'INSERT INTO pipeline_runs (id, tag, options, status)',
+				`VALUES ('${failedRunId}', 'failed-browser-upload', '{"source_id":"${firstSourceId}"}'::jsonb, 'failed');`,
+				'INSERT INTO pipeline_run_sources (run_id, source_id, current_step, status, error_message, updated_at)',
+				`VALUES ('${failedRunId}', '${firstSourceId}', 'segment', 'failed', 'segment failed', now() + interval '1 second');`,
+			].join(' '),
+		);
+
+		const secondInitiate = await apiPost(app, '/api/uploads/documents/initiate', {
+			filename: 'native-text-sample.pdf',
+			size_bytes: fixturePdf.byteLength,
+			content_type: 'application/pdf',
+		});
+		const secondBody = await readJson(secondInitiate);
+		const secondSourceId = String((secondBody.data as Record<string, unknown>).source_id);
+		const secondStoragePath = String((secondBody.data as Record<string, unknown>).storage_path);
+		writeUploadedObject(secondSourceId, fixturePdf);
+
+		const secondComplete = await apiPost(app, '/api/uploads/documents/complete', {
+			source_id: secondSourceId,
+			filename: 'native-text-sample.pdf',
+			storage_path: secondStoragePath,
+			start_pipeline: true,
+		});
+		expect(secondComplete.status).toBe(202);
+		const secondCompleteBody = await readJson(secondComplete);
+		const secondJobId = String((secondCompleteBody.data as Record<string, unknown>).job_id);
+
+		const processed = await processOneJob(workerContext, workerModule);
+		expect(processed.state).toBe('completed');
+
+		const finalizePayload = readJsonCell(`SELECT payload::text FROM jobs WHERE id = '${secondJobId}';`);
+		expect(finalizePayload).toMatchObject({
+			sourceId: secondSourceId,
+			result_status: 'duplicate',
+			resolved_source_id: firstSourceId,
+			duplicate_of_source_id: firstSourceId,
+			pipeline_job_id: expect.any(String),
+			pipeline_run_id: expect.any(String),
+		});
+
+		const pipelineJobRow = readJsonCell(
+			`SELECT row_to_json(job_row)::text FROM (
+				SELECT type, payload
+				FROM jobs
+				WHERE id = '${String(finalizePayload.pipeline_job_id)}'
+			) AS job_row;`,
+		);
+		expect(pipelineJobRow).toMatchObject({
+			type: 'pipeline_run',
+			payload: {
+				sourceId: firstSourceId,
+				runId: finalizePayload.pipeline_run_id,
+				from: 'segment',
+				force: true,
+				tag: 'duplicate-upload-resume',
+			},
+		});
+		expect(pipelineJobRow.payload).not.toHaveProperty('upTo');
+
+		const duplicateStatus = await apiGet(
+			app,
+			String((secondCompleteBody.links as Record<string, unknown>).upload_status),
+		);
+		expect(duplicateStatus.status).toBe(200);
+		expect(await readJson(duplicateStatus)).toMatchObject({
+			data: {
+				job_id: secondJobId,
+				requested_source_id: secondSourceId,
+				result_status: 'duplicate',
+				source: {
+					id: firstSourceId,
+				},
+				pipeline: {
+					job_id: finalizePayload.pipeline_job_id,
+					run_id: finalizePayload.pipeline_run_id,
+				},
 			},
 			links: {
 				source: `/api/documents/${firstSourceId}`,

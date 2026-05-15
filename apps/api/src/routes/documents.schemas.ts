@@ -105,6 +105,13 @@ export const DocumentQualitySummarySchema = z.object({
 	assessed_at: z.string(),
 	assessment_method: z.string(),
 	overall_quality: z.string(),
+	page_coverage: z
+		.object({
+			pages_total: z.number().int().nonnegative(),
+			pages_readable: z.number().int().nonnegative(),
+			ratio: z.number().nullable(),
+		})
+		.nullable(),
 	processable: z.boolean(),
 	recommended_path: z.string(),
 	text_readability_score: z.number().nullable(),

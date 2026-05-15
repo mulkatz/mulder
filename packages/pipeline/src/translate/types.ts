@@ -23,6 +23,7 @@ export interface TranslateData {
 	contentHash: string;
 	content: string;
 	document: TranslatedDocument;
+	translatedStoryCount?: number;
 }
 
 export interface TranslateResult {

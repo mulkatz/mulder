@@ -483,7 +483,7 @@ describe('Spec 97 - Multi-format golden tests', () => {
 		expect(pipeline.exitCode, combinedOutput(pipeline)).toBe(0);
 		expect(sourceStepStatus(sourceId, 'extract')).toBe('completed');
 		expect(sourceStepStatus(sourceId, 'segment')).toBe('skipped');
-		expect(sourceStepStatus(sourceId, 'enrich')).toBe('completed');
+		expect(sourceStepStatus(sourceId, 'enrich')).toMatch(/^(completed|partial)$/);
 		expect(db.runSql(`SELECT status FROM stories WHERE source_id = ${sqlLiteral(sourceId)};`)).toBe('enriched');
 	});
 

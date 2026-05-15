@@ -232,6 +232,13 @@ const documentQualityRoutingSchema = z.object({
 	unusable: unusableQualityRouteSchema.default({ path: 'skip', create_manual_task: false }),
 });
 
+const documentQualityExtractionRoutingSchema = z.object({
+	pdf_skip_document_ai_min_native_text_ratio: z.number().min(0).max(1).default(0.85),
+	pdf_skip_document_ai_min_pages_with_text_ratio: z.number().min(0).max(1).default(0.95),
+	pdf_skip_document_ai_min_language_confidence: z.number().min(0).max(1).default(0.75),
+	prefer_document_ai_for_uncertain_pdf: z.boolean().default(true),
+});
+
 const documentQualityPropagationSchema = z.object({
 	enabled: z.boolean().default(true),
 	low_quality_embedding_weight: z.number().min(0).max(1).default(0.5),
@@ -248,6 +255,7 @@ const documentQualityObj = z.object({
 	enabled: z.boolean().default(true),
 	assessment: documentQualityAssessmentSchema.default(defaults(documentQualityAssessmentSchema)),
 	routing: documentQualityRoutingSchema.default(defaults(documentQualityRoutingSchema)),
+	extraction_routing: documentQualityExtractionRoutingSchema.default(defaults(documentQualityExtractionRoutingSchema)),
 	quality_propagation: documentQualityPropagationSchema.default(defaults(documentQualityPropagationSchema)),
 	manual_queue: documentQualityManualQueueSchema.default(defaults(documentQualityManualQueueSchema)),
 });

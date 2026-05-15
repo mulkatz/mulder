@@ -1,19 +1,26 @@
 import {
 	type AccessPrincipal,
 	allowedSensitivityLevelsForMax,
+	countProcessedSources,
+	countStories,
+	countTranslatedStoriesForTranslation,
 	DATABASE_ERROR_CODES,
 	DatabaseError,
+	type Entity,
 	enqueueJob,
 	findCurrentTranslatedDocument,
 	findSourceById,
 	getWorkerPool,
 	listTranslatedDocumentsForSource,
+	listTranslatedStoriesForTranslation,
 	loadConfig,
 	type MulderConfig,
 	MulderError,
 	normalizeSensitivityMetadata,
+	presentCorroborationScore,
 	resolveAccessPolicy,
 	type TranslatedDocument,
+	type TranslatedStory,
 } from '@mulder/core';
 import type pg from 'pg';
 import type { AuthPrincipal } from '../middleware/auth.js';
@@ -24,6 +31,7 @@ import type {
 	TranslationListQuery,
 	TranslationListResponse,
 	TranslationResponse,
+	TranslationStoriesResponse,
 } from '../routes/translations.schemas.js';
 
 interface TranslationContext {
@@ -37,6 +45,16 @@ interface TranslationRouteOptions {
 
 const DOCUMENT_NOT_FOUND_CODE = 'DOCUMENT_NOT_FOUND';
 const TRANSLATION_NOT_FOUND_CODE = 'TRANSLATION_NOT_FOUND';
+type Queryable = pg.Pool | pg.PoolClient;
+
+interface TranslationJobRequest {
+	outputFormat: string;
+	pipelinePath: string;
+	refresh: boolean;
+	sourceId: string;
+	sourceLanguage?: string;
+	targetLanguage: string;
+}
 
 let cachedContext: TranslationContext | null = null;
 let cachedConfigPath: string | null = null;
@@ -122,6 +140,157 @@ function mapTranslation(document: TranslatedDocument): TranslationResponse {
 		created_at: document.createdAt.toISOString(),
 		updated_at: document.updatedAt.toISOString(),
 	};
+}
+
+function mapEntity(
+	entity: Entity,
+	config: MulderConfig,
+	corpusSize: number,
+): NonNullable<TranslationStoriesResponse['data']['stories'][number]['mentions'][number]['entity']> {
+	const corroboration = presentCorroborationScore(entity.corroborationScore, {
+		corpusSize,
+		threshold: config.thresholds.corroboration_meaningful,
+	});
+	return {
+		id: entity.id,
+		canonical_id: entity.canonicalId,
+		name: entity.name,
+		type: entity.type,
+		taxonomy_status: entity.taxonomyStatus,
+		taxonomy_id: entity.taxonomyId,
+		corroboration_score: corroboration.score,
+		corroboration_status: corroboration.status,
+		source_count: entity.sourceCount,
+		attributes: entity.attributes ?? {},
+		created_at: entity.createdAt.toISOString(),
+		updated_at: entity.updatedAt.toISOString(),
+	};
+}
+
+function mapTranslatedStory(
+	story: TranslatedStory,
+	config: MulderConfig,
+	corpusSize: number,
+): TranslationStoriesResponse['data']['stories'][number] {
+	return {
+		id: story.id,
+		translation_id: story.translationId,
+		story_id: story.storyId,
+		source_document_id: story.sourceDocumentId,
+		source_language: story.sourceLanguage,
+		target_language: story.targetLanguage,
+		title: story.title,
+		subtitle: story.subtitle,
+		markdown: story.markdown,
+		content_hash: story.contentHash,
+		sensitivity_level: story.sensitivityLevel,
+		created_at: story.createdAt.toISOString(),
+		updated_at: story.updatedAt.toISOString(),
+		mentions: story.mentions.map((mention) => ({
+			id: mention.id,
+			translated_story_id: mention.translatedStoryId,
+			entity_id: mention.entityId,
+			surface_text: mention.surfaceText,
+			start_offset: mention.startOffset,
+			end_offset: mention.endOffset,
+			confidence: mention.confidence,
+			method: mention.method,
+			...(mention.entity ? { entity: mapEntity(mention.entity, config, corpusSize) } : {}),
+		})),
+	};
+}
+
+function translationAcceptedResponse(jobId: string): { status: 202; body: TranslationAcceptedResponse } {
+	return {
+		status: 202,
+		body: {
+			data: {
+				job_id: jobId,
+				status: 'pending',
+			},
+			links: {
+				status: `/api/jobs/${jobId}`,
+			},
+		},
+	};
+}
+
+function translationJobLockKey(input: TranslationJobRequest): string {
+	return [
+		'translation',
+		input.sourceId,
+		input.targetLanguage,
+		input.outputFormat,
+		input.pipelinePath,
+		String(input.refresh),
+	].join(':');
+}
+
+async function withTranslationJobLock<T>(
+	pool: pg.Pool,
+	input: TranslationJobRequest,
+	fn: (client: pg.PoolClient) => Promise<T>,
+): Promise<T> {
+	const client = await pool.connect();
+	try {
+		await client.query('BEGIN');
+		await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [translationJobLockKey(input)]);
+		const result = await fn(client);
+		await client.query('COMMIT');
+		return result;
+	} catch (error) {
+		try {
+			await client.query('ROLLBACK');
+		} catch {
+			// Keep the original failure.
+		}
+		throw error;
+	} finally {
+		client.release();
+	}
+}
+
+async function findInFlightTranslationJob(pool: Queryable, input: TranslationJobRequest): Promise<string | null> {
+	const result = await pool.query<{ id: string }>(
+		`
+			SELECT id
+			FROM jobs
+			WHERE type = 'translate'
+				AND status IN ('pending', 'running')
+				AND COALESCE(payload->>'sourceId', payload->>'source_id') = $1
+				AND COALESCE(payload->>'targetLanguage', payload->>'target_language') = $2
+				AND COALESCE(payload->>'outputFormat', payload->>'output_format', $3) = $3
+				AND COALESCE(payload->>'pipelinePath', payload->>'pipeline_path', $4) = $4
+				AND COALESCE(payload->>'refresh', 'false') = $5
+			ORDER BY created_at DESC
+			LIMIT 1
+		`,
+		[input.sourceId, input.targetLanguage, input.outputFormat, input.pipelinePath, String(input.refresh)],
+	);
+	return result.rows[0]?.id ?? null;
+}
+
+async function enqueueOrReuseTranslationJob(
+	pool: Queryable,
+	input: TranslationJobRequest,
+): Promise<{ status: 202; body: TranslationAcceptedResponse }> {
+	const existingJobId = await findInFlightTranslationJob(pool, input);
+	if (existingJobId) {
+		return translationAcceptedResponse(existingJobId);
+	}
+	const job = await enqueueJob(pool, {
+		type: 'translate',
+		payload: {
+			sourceId: input.sourceId,
+			targetLanguage: input.targetLanguage,
+			sourceLanguage: input.sourceLanguage,
+			pipelinePath: input.pipelinePath,
+			outputFormat: input.outputFormat,
+			refresh: input.refresh,
+		},
+		maxAttempts: 3,
+	});
+	return translationAcceptedResponse(job.id);
 }
 
 async function countTranslationsForSource(
@@ -267,44 +436,39 @@ export async function requestDocumentTranslation(
 	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal);
 	await requireSource(pool, sourceId, maxSensitivityLevel);
 	const outputFormat = input.output_format ?? config.translation.output_format;
-
-	if (!input.refresh) {
-		const cached = await findCurrentTranslatedDocument(pool, sourceId, input.target_language, { maxSensitivityLevel });
-		if (cached && cached.outputFormat === outputFormat) {
-			return {
-				status: 200,
-				body: {
-					data: mapTranslation(cached),
-				},
-			};
-		}
-	}
-
-	const job = await enqueueJob(pool, {
-		type: 'translate',
-		payload: {
-			sourceId,
-			targetLanguage: input.target_language,
-			sourceLanguage: input.source_language,
-			pipelinePath: input.pipeline_path,
-			outputFormat,
-			refresh: input.refresh,
-		},
-		maxAttempts: 3,
-	});
-
-	return {
-		status: 202,
-		body: {
-			data: {
-				job_id: job.id,
-				status: 'pending',
-			},
-			links: {
-				status: `/api/jobs/${job.id}`,
-			},
-		},
+	const jobRequest: TranslationJobRequest = {
+		outputFormat,
+		pipelinePath: input.pipeline_path ?? 'translation_only',
+		refresh: input.refresh ?? false,
+		sourceId,
+		sourceLanguage: input.source_language,
+		targetLanguage: input.target_language,
 	};
+
+	return await withTranslationJobLock(pool, jobRequest, async (client) => {
+		if (!jobRequest.refresh) {
+			const cached = await findCurrentTranslatedDocument(client, sourceId, input.target_language, {
+				maxSensitivityLevel,
+			});
+			if (cached && cached.outputFormat === outputFormat) {
+				const sourceStoryCount = await countStories(client, { sourceId, maxSensitivityLevel });
+				const translatedStoryCount = await countTranslatedStoriesForTranslation(client, cached.id, {
+					maxSensitivityLevel,
+				});
+				if (sourceStoryCount > 0 && translatedStoryCount === 0) {
+					return await enqueueOrReuseTranslationJob(client, { ...jobRequest, refresh: false });
+				}
+				return {
+					status: 200,
+					body: {
+						data: mapTranslation(cached),
+					},
+				};
+			}
+		}
+
+		return await enqueueOrReuseTranslationJob(client, jobRequest);
+	});
 }
 
 export async function getTranslation(
@@ -321,5 +485,32 @@ export async function getTranslation(
 	}
 	return {
 		data: mapTranslation(translation),
+	};
+}
+
+export async function listTranslationStories(
+	translationId: string,
+	options?: TranslationRouteOptions,
+): Promise<TranslationStoriesResponse> {
+	const { config, pool } = resolveContext();
+	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal);
+	const translation = await findTranslationById(pool, translationId, maxSensitivityLevel);
+	if (!translation) {
+		throw new MulderError(`Translation not found: ${translationId}`, TRANSLATION_NOT_FOUND_CODE, {
+			context: { translationId },
+		});
+	}
+	const [stories, corpusSize] = await Promise.all([
+		listTranslatedStoriesForTranslation(pool, translationId, { maxSensitivityLevel }),
+		countProcessedSources(pool),
+	]);
+	return {
+		data: {
+			translation_id: translationId,
+			stories: stories.map((story) => mapTranslatedStory(story, config, corpusSize)),
+		},
+		meta: {
+			count: stories.length,
+		},
 	};
 }

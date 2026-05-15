@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Bell, HelpCircle, LogOut, Menu, Plus, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { IconButton } from '@/components/IconButton';
 import { LanguageSelect, ThemeToggle } from '@/components/PreferenceControls';
 import { SearchInput } from '@/components/SearchInput';
@@ -49,15 +49,14 @@ export function Topbar({ onOpenSidebar }: { onOpenSidebar: () => void }) {
 				<IconButton className="hidden sm:inline-flex" label={t('common.help')}>
 					<HelpCircle className="size-4" />
 				</IconButton>
-				<button
-					className="hidden h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text-subtle sm:inline-flex"
-					disabled
+				<Link
+					className="hidden h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field sm:inline-flex"
 					title={t('topbar.runCreationTitle')}
-					type="button"
+					to="/sources/add"
 				>
 					<Plus className="size-4 text-accent" />
 					{t('common.addSources')}
-				</button>
+				</Link>
 				<button
 					className="hidden h-9 max-w-[220px] items-center gap-2 rounded-md border border-border bg-field px-2 text-sm text-text transition-colors hover:bg-field-hover min-[480px]:flex sm:px-3"
 					disabled={logout.isPending}

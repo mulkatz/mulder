@@ -167,7 +167,13 @@ describe.sequential('Spec 65 — Analyze Full Orchestrator', () => {
 			'SELECT current_step FROM pipeline_run_sources WHERE run_id = (SELECT id FROM pipeline_runs ORDER BY created_at DESC LIMIT 1) ' +
 				`AND source_id = '${sourceId}';`,
 		);
-		expect(sourceStep).toBe('graph');
+		expect(sourceStep).toBe('analyze');
+
+		const analyzeStep = db.runSql(
+			`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'analyze';`,
+		);
+		expect(analyzeStep).toBe('completed');
+		expect(db.runSql(`SELECT status FROM sources WHERE id = '${sourceId}';`)).toBe('analyzed');
 	}, 900_000);
 
 	it('QA-07: --up-to graph intentionally skips the global analyze phase', () => {
@@ -192,5 +198,8 @@ describe.sequential('Spec 65 — Analyze Full Orchestrator', () => {
 		expect(stage2.exitCode).toBe(0);
 		expect(stage2.stdout).toContain('Global analyze: skipped');
 		expect(stage2.stdout).toContain('pipeline stopped before global analyze');
+		expect(
+			db.runSql(`SELECT status FROM source_steps WHERE source_id = '${sourceId}' AND step_name = 'analyze';`),
+		).toBe('skipped');
 	}, 900_000);
 });

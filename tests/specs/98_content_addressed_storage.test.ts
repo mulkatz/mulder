@@ -588,12 +588,21 @@ describe('Spec 98 - Content-addressed raw blob storage', () => {
 		);
 		expect(existsSync(storageObjectPath(expectedPath))).toBe(true);
 		expect(existsSync(storageObjectPath(finalized.provisionalPath))).toBe(false);
-		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'quality' AND status = 'pending';"))).toBe(1);
+		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'quality' AND status = 'pending';"))).toBe(0);
 		expect(Number(db.runSql("SELECT COUNT(*) FROM jobs WHERE type = 'extract' AND status = 'pending';"))).toBe(0);
+		expect(
+			Number(
+				db.runSql(
+					`SELECT COUNT(*) FROM jobs WHERE type = 'pipeline_run' AND status = 'pending' AND payload->>'sourceId' = ${sqlLiteral(finalized.sourceId)};`,
+				),
+			),
+		).toBe(1);
 		expect(finalized.finalizePayload).toMatchObject({
 			sourceId: finalized.sourceId,
 			result_status: 'created',
 			resolved_source_id: finalized.sourceId,
+			pipeline_job_id: expect.any(String),
+			pipeline_run_id: expect.any(String),
 		});
 	});
 

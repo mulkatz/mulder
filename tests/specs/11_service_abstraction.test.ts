@@ -42,7 +42,7 @@ describe('Spec 11: Service Abstraction', () => {
 		// Create config with dev_mode: true
 		const devConfig = { ...exampleConfig, dev_mode: true };
 		const savedEnv = process.env.NODE_ENV;
-		process.env.NODE_ENV = 'production'; // ensure env does NOT help
+		process.env.NODE_ENV = 'development';
 		try {
 			const services = createServiceRegistry(devConfig, silentLogger);
 			expect(services).toBeDefined();
@@ -56,6 +56,17 @@ describe('Spec 11: Service Abstraction', () => {
 			expect(services.embedding).not.toBeNull();
 			expect(services.firestore).toBeDefined();
 			expect(services.firestore).not.toBeNull();
+		} finally {
+			process.env.NODE_ENV = savedEnv;
+		}
+	});
+
+	it('QA-01b: Registry rejects dev mode in production', () => {
+		const devConfig = { ...exampleConfig, dev_mode: true };
+		const savedEnv = process.env.NODE_ENV;
+		process.env.NODE_ENV = 'production';
+		try {
+			expect(() => createServiceRegistry(devConfig, silentLogger)).toThrow(/dev_mode/);
 		} finally {
 			process.env.NODE_ENV = savedEnv;
 		}
