@@ -25,6 +25,7 @@ import { createOfficeDocumentExtractorService } from './office-document-extracto
 import { withRetry } from './retry.js';
 import type {
 	CreateStorageUploadSessionOptions,
+	DocumentAiProcessOptions,
 	DocumentAiResult,
 	DocumentAiService,
 	EmbeddingResult,
@@ -257,11 +258,12 @@ class GcpDocumentAiService implements DocumentAiService {
 		documentContent: Buffer,
 		sourceId: string,
 		mediaType = 'application/pdf',
+		options: DocumentAiProcessOptions = {},
 	): Promise<DocumentAiResult> {
 		return withRetry(
 			async () => {
 				this.logger.info(
-					{ sourceId, processorName: this.processorName, mediaType },
+					{ sourceId, processorName: this.processorName, mediaType, pages: options.pages },
 					'GcpDocumentAiService: processing',
 				);
 
@@ -272,6 +274,13 @@ class GcpDocumentAiService implements DocumentAiService {
 						mimeType: mediaType,
 					},
 				};
+				if (options.pages && options.pages.length > 0) {
+					request.processOptions = {
+						individualPageSelector: {
+							pages: options.pages,
+						},
+					};
+				}
 
 				const [result] = await this.client.processDocument(request);
 				const document = result.document;
@@ -296,6 +305,8 @@ class GcpDocumentAiService implements DocumentAiService {
 							} else {
 								pageImages.push(Buffer.from(imageContent));
 							}
+						} else {
+							pageImages.push(Buffer.alloc(0));
 						}
 					}
 				}

@@ -799,6 +799,7 @@ export {
 } from './shared/sensitivity.js';
 export { createGcpServices } from './shared/services.gcp.js';
 export type {
+	DocumentAiProcessOptions,
 	DocumentAiResult,
 	DocumentAiService,
 	EmailAddress,

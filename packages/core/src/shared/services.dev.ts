@@ -17,6 +17,7 @@ import type { Logger } from './logger.js';
 import { createOfficeDocumentExtractorService } from './office-document-extractor.js';
 import type {
 	CreateStorageUploadSessionOptions,
+	DocumentAiProcessOptions,
 	DocumentAiResult,
 	DocumentAiService,
 	EmbeddingResult,
@@ -318,8 +319,9 @@ class DevDocumentAiService implements DocumentAiService {
 		documentContent: Buffer,
 		sourceId: string,
 		mediaType = 'application/pdf',
+		options: DocumentAiProcessOptions = {},
 	): Promise<DocumentAiResult> {
-		this.logger.debug({ sourceId, mediaType }, 'DevDocumentAiService: returning fixture data');
+		this.logger.debug({ sourceId, mediaType, pages: options.pages }, 'DevDocumentAiService: returning fixture data');
 
 		// Look for a layout.json in the source's fixture directory
 		const layoutPath = join(this.basePath, sourceId, 'layout.json');

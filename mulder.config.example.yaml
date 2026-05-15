@@ -141,6 +141,7 @@ ingest_provenance:
 extraction:
   native_text_threshold: 0.9         # Skip Document AI if >= 90% pages have native text
   max_vision_pages: 20               # Circuit breaker: max pages sent to Gemini Vision fallback
+  document_ai_max_pages_per_request: 30
   segmentation:
     model: "gemini-2.5-flash"
     window_pages: 8                  # Segment long documents in bounded page windows

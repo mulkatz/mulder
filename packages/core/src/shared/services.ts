@@ -86,13 +86,23 @@ export interface DocumentAiResult {
 	pageImages: Buffer[];
 }
 
+export interface DocumentAiProcessOptions {
+	/** Optional 1-indexed page numbers to process with Document AI. */
+	pages?: number[];
+}
+
 /**
  * Abstraction over Google Document AI Layout Parser.
  * Processes a layout-oriented document and returns structured layout data with spatial information.
  */
 export interface DocumentAiService {
 	/** Process a layout-oriented document and return structured layout data + page images. */
-	processDocument(documentContent: Buffer, sourceId: string, mediaType?: string): Promise<DocumentAiResult>;
+	processDocument(
+		documentContent: Buffer,
+		sourceId: string,
+		mediaType?: string,
+		options?: DocumentAiProcessOptions,
+	): Promise<DocumentAiResult>;
 }
 
 // ────────────────────────────────────────────────────────────

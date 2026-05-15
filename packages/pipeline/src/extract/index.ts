@@ -16,7 +16,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type {
 	CompactDocumentQualitySummary,
-	DocumentAiResult,
 	EmailAttachmentSummary,
 	EmailExtractionResult,
 	Logger,
@@ -1875,7 +1874,10 @@ function getNumber(obj: Record<string, unknown>, key: string, fallback: number):
  * Parses a Document AI result into per-page extraction data.
  * Extracts text, confidence, and block-level bounding boxes from the raw JSON.
  */
-function parseDocumentAiResult(document: Record<string, unknown>): ParsedDocumentAiPage[] {
+export function parseDocumentAiResult(
+	document: Record<string, unknown>,
+	pageNumbers?: number[],
+): ParsedDocumentAiPage[] {
 	const pages: ParsedDocumentAiPage[] = [];
 
 	// Document AI response has a 'pages' array and a top-level 'text' field
@@ -1954,7 +1956,7 @@ function parseDocumentAiResult(document: Record<string, unknown>): ParsedDocumen
 		const pageText = blocks.length > 0 ? blocks.map((b) => b.text).join('\n') : '';
 
 		pages.push({
-			pageNumber: i + 1,
+			pageNumber: pageNumbers?.[i] ?? getNumber(rawPage, 'pageNumber', i + 1),
 			text: pageText,
 			confidence: pageConfidence,
 			blocks,
@@ -1962,6 +1964,100 @@ function parseDocumentAiResult(document: Record<string, unknown>): ParsedDocumen
 	}
 
 	return pages;
+}
+
+export function buildPageBatches(pageCount: number, maxPagesPerBatch: number): number[][] {
+	if (pageCount <= 0) return [];
+	const batchSize = Math.max(1, maxPagesPerBatch);
+	const batches: number[][] = [];
+	for (let page = 1; page <= pageCount; page += batchSize) {
+		const batch: number[] = [];
+		for (let current = page; current <= Math.min(page + batchSize - 1, pageCount); current += 1) {
+			batch.push(current);
+		}
+		batches.push(batch);
+	}
+	return batches;
+}
+
+async function processPdfWithDocumentAiBatches(input: {
+	sourceBuffer: Buffer;
+	sourceId: string;
+	sourcePageCount: number | null;
+	sourceMediaType: string;
+	maxPagesPerRequest: number;
+	services: Services;
+	logger: Logger;
+}): Promise<{
+	parsedPages: ParsedDocumentAiPage[];
+	pageImages: Buffer[];
+	documentAiRaw: Record<string, unknown>;
+}> {
+	const pageCount = input.sourcePageCount ?? 0;
+	const shouldBatch = pageCount > input.maxPagesPerRequest;
+	if (!shouldBatch) {
+		const result = await input.services.documentAi.processDocument(
+			input.sourceBuffer,
+			input.sourceId,
+			input.sourceMediaType,
+		);
+		return {
+			parsedPages: parseDocumentAiResult(result.document),
+			pageImages: result.pageImages,
+			documentAiRaw: result.document,
+		};
+	}
+
+	const batches = buildPageBatches(pageCount, input.maxPagesPerRequest);
+	const parsedPages: ParsedDocumentAiPage[] = [];
+	const pageImages: Buffer[] = [];
+	const rawBatches: Array<{ page_start: number; page_end: number; document: Record<string, unknown> }> = [];
+
+	input.logger.info(
+		{
+			sourceId: input.sourceId,
+			pageCount,
+			batches: batches.length,
+			maxPagesPerRequest: input.maxPagesPerRequest,
+		},
+		'Document AI extraction using page batches',
+	);
+
+	for (const pages of batches) {
+		const result = await input.services.documentAi.processDocument(
+			input.sourceBuffer,
+			input.sourceId,
+			input.sourceMediaType,
+			{ pages },
+		);
+		parsedPages.push(...parseDocumentAiResult(result.document, pages));
+		pageImages.push(...result.pageImages);
+		rawBatches.push({
+			page_start: pages[0] ?? 1,
+			page_end: pages[pages.length - 1] ?? 1,
+			document: result.document,
+		});
+		input.logger.info(
+			{
+				sourceId: input.sourceId,
+				pageStart: pages[0],
+				pageEnd: pages[pages.length - 1],
+				parsedPages: result.pageImages.length,
+			},
+			'Document AI page batch completed',
+		);
+	}
+
+	return {
+		parsedPages: parsedPages.sort((left, right) => left.pageNumber - right.pageNumber),
+		pageImages,
+		documentAiRaw: {
+			batched: true,
+			page_count: pageCount,
+			max_pages_per_request: input.maxPagesPerRequest,
+			batches: rawBatches,
+		},
+	};
 }
 
 // ────────────────────────────────────────────────────────────
@@ -2502,9 +2598,30 @@ export async function execute(
 			// ── Path B: Document AI ───────────────────────────
 			primaryMethod = 'document_ai';
 
-			let docAiResult: DocumentAiResult;
+			let docAiResult: {
+				parsedPages: ParsedDocumentAiPage[];
+				pageImages: Buffer[];
+				documentAiRaw: Record<string, unknown>;
+			};
 			try {
-				docAiResult = await services.documentAi.processDocument(sourceBuffer, input.sourceId, sourceMediaType);
+				if (source.sourceType === 'pdf') {
+					docAiResult = await processPdfWithDocumentAiBatches({
+						sourceBuffer,
+						sourceId: input.sourceId,
+						sourcePageCount: source.pageCount,
+						sourceMediaType,
+						maxPagesPerRequest: config.extraction.document_ai_max_pages_per_request,
+						services,
+						logger: log,
+					});
+				} else {
+					const result = await services.documentAi.processDocument(sourceBuffer, input.sourceId, sourceMediaType);
+					docAiResult = {
+						parsedPages: parseDocumentAiResult(result.document),
+						pageImages: result.pageImages,
+						documentAiRaw: result.document,
+					};
+				}
 			} catch (cause: unknown) {
 				throw new ExtractError(
 					`Document AI processing failed for source ${input.sourceId}`,
@@ -2513,7 +2630,7 @@ export async function execute(
 				);
 			}
 
-			documentAiRaw = docAiResult.document;
+			documentAiRaw = docAiResult.documentAiRaw;
 			pageImages = docAiResult.pageImages;
 			if (source.sourceType === 'image' && pageImages.length === 0) {
 				const imagePage = await renderImagePageImage(sourceBuffer, sourceMediaType, log);
@@ -2523,7 +2640,7 @@ export async function execute(
 			}
 
 			// Parse the Document AI result into per-page data
-			const parsedPages = parseDocumentAiResult(docAiResult.document);
+			const parsedPages = docAiResult.parsedPages;
 			if (source.sourceType === 'image' && parsedPages.length === 0) {
 				parsedPages.push({
 					pageNumber: 1,

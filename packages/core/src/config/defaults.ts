@@ -176,6 +176,7 @@ export const CONFIG_DEFAULTS = {
 	extraction: {
 		native_text_threshold: 0.9,
 		max_vision_pages: 20,
+		document_ai_max_pages_per_request: 30,
 		segmentation: {
 			model: 'gemini-2.5-flash',
 			window_pages: 8,
