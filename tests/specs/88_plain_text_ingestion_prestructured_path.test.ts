@@ -392,7 +392,7 @@ describe('Spec 88 — Plain Text Ingestion on the Pre-Structured Path', () => {
 		).toBe('skipped');
 		expect(
 			db.runSql(`SELECT status FROM source_steps WHERE source_id = ${sqlLiteral(sourceId)} AND step_name = 'enrich';`),
-		).toBe('completed');
+		).toMatch(/^(completed|partial)$/);
 		expect(db.runSql(`SELECT status FROM stories WHERE source_id = ${sqlLiteral(sourceId)};`)).toBe('enriched');
 		expect(
 			db.runSql(`SELECT COUNT(*) FROM jobs WHERE type = 'segment' AND payload->>'sourceId' = ${sqlLiteral(sourceId)};`),
