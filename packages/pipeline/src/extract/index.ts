@@ -1871,6 +1871,81 @@ function getNumber(obj: Record<string, unknown>, key: string, fallback: number):
 	return fallback;
 }
 
+function collectTextFields(value: unknown, texts: string[] = []): string[] {
+	if (typeof value === 'string') {
+		const text = value.trim();
+		if (text.length > 0) {
+			texts.push(text);
+		}
+		return texts;
+	}
+	if (Array.isArray(value)) {
+		for (const item of value) {
+			collectTextFields(item, texts);
+		}
+		return texts;
+	}
+	if (!isRecord(value)) return texts;
+	for (const [key, nested] of Object.entries(value)) {
+		if (key === 'text' || key.endsWith('Text')) {
+			collectTextFields(nested, texts);
+		} else if (key.endsWith('Block') || key.endsWith('Blocks') || key === 'cells' || key === 'rows') {
+			collectTextFields(nested, texts);
+		}
+	}
+	return texts;
+}
+
+function parseDocumentLayoutResult(document: Record<string, unknown>, pageNumbers?: number[]): ParsedDocumentAiPage[] {
+	const documentLayout = isRecord(document.documentLayout) ? document.documentLayout : null;
+	const rawBlocks = documentLayout && Array.isArray(documentLayout.blocks) ? documentLayout.blocks : [];
+	if (rawBlocks.length === 0) return [];
+
+	const blocksByPage = new Map<number, LayoutBlock[]>();
+	let maxPage = 0;
+
+	for (const rawBlock of rawBlocks) {
+		if (!isRecord(rawBlock)) continue;
+		const pageSpan = isRecord(rawBlock.pageSpan) ? rawBlock.pageSpan : {};
+		const pageStart = Math.max(1, getNumber(pageSpan, 'pageStart', 1));
+		const pageEnd = Math.max(pageStart, getNumber(pageSpan, 'pageEnd', pageStart));
+		const mappedStart = pageNumbers?.[pageStart - 1] ?? pageStart;
+		const mappedEnd = pageNumbers ? (pageNumbers[pageEnd - 1] ?? mappedStart) : pageEnd;
+		const text = Array.from(new Set(collectTextFields(rawBlock)))
+			.join('\n')
+			.trim();
+		if (text.length === 0) continue;
+
+		for (let pageNumber = mappedStart; pageNumber <= mappedEnd; pageNumber += 1) {
+			const blocks = blocksByPage.get(pageNumber) ?? [];
+			blocks.push({
+				text,
+				type: 'paragraph',
+				confidence: 0.8,
+			});
+			blocksByPage.set(pageNumber, blocks);
+			maxPage = Math.max(maxPage, pageNumber);
+		}
+	}
+
+	if (blocksByPage.size === 0) return [];
+
+	const outputPageNumbers =
+		pageNumbers && pageNumbers.length > 0 ? pageNumbers : Array.from({ length: maxPage }, (_, index) => index + 1);
+
+	return outputPageNumbers
+		.map((pageNumber) => {
+			const blocks = blocksByPage.get(pageNumber) ?? [];
+			return {
+				pageNumber,
+				text: blocks.map((block) => block.text).join('\n'),
+				confidence: blocks.length > 0 ? 0.8 : 0.5,
+				blocks,
+			};
+		})
+		.filter((page) => page.text.trim().length > 0 || pageNumbers);
+}
+
 /**
  * Parses a Document AI result into per-page extraction data.
  * Extracts text, confidence, and block-level bounding boxes from the raw JSON.
@@ -1884,6 +1959,9 @@ export function parseDocumentAiResult(
 	// Document AI response has a 'pages' array and a top-level 'text' field
 	const docText = typeof document.text === 'string' ? document.text : '';
 	const rawPages = Array.isArray(document.pages) ? document.pages : [];
+	if (rawPages.length === 0 && isRecord(document.documentLayout)) {
+		return parseDocumentLayoutResult(document, pageNumbers);
+	}
 
 	for (let i = 0; i < rawPages.length; i++) {
 		const rawPage = isRecord(rawPages[i]) ? rawPages[i] : {};

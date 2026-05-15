@@ -56,6 +56,57 @@ describe('Document AI extraction batching helpers', () => {
 		expect(parsed[1]?.text).toContain('Page thirty two text');
 	});
 
+	it('parses Layout Parser documentLayout blocks when Document AI pages are absent', () => {
+		const parsed = parseDocumentAiResult(
+			{
+				documentLayout: {
+					blocks: [
+						{
+							textBlock: {
+								text: 'Norman Mesa Nevada UFO report.',
+								type: 'paragraph',
+							},
+							pageSpan: { pageStart: 1, pageEnd: 1 },
+						},
+						{
+							textBlock: {
+								text: 'Continuation on the following page.',
+								type: 'paragraph',
+							},
+							pageSpan: { pageStart: 2, pageEnd: 2 },
+						},
+					],
+				},
+			},
+			[31, 32],
+		);
+
+		expect(parsed.map((page) => page.pageNumber)).toEqual([31, 32]);
+		expect(parsed[0]?.text).toContain('Norman Mesa');
+		expect(parsed[1]?.text).toContain('following page');
+		expect(parsed[0]?.blocks[0]?.type).toBe('paragraph');
+	});
+
+	it('preserves multi-page Layout Parser blocks across page spans', () => {
+		const parsed = parseDocumentAiResult({
+			documentLayout: {
+				blocks: [
+					{
+						textBlock: {
+							text: 'A long sighting report spans two scanned pages.',
+							type: 'paragraph',
+						},
+						pageSpan: { pageStart: 1, pageEnd: 2 },
+					},
+				],
+			},
+		});
+
+		expect(parsed.map((page) => page.pageNumber)).toEqual([1, 2]);
+		expect(parsed[0]?.text).toContain('spans two scanned pages');
+		expect(parsed[1]?.text).toContain('spans two scanned pages');
+	});
+
 	it('creates a real partial PDF for each Document AI batch', async () => {
 		const sourcePdf = await PDFDocument.create();
 		for (let pageIndex = 0; pageIndex < 5; pageIndex += 1) {
