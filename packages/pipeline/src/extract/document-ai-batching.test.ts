@@ -1,6 +1,11 @@
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
-import { buildPageBatches, extractPdfPageBatch, parseDocumentAiResult } from './index.js';
+import {
+	buildPageBatches,
+	canFallbackToNativeAfterEmptyDocumentAi,
+	extractPdfPageBatch,
+	parseDocumentAiResult,
+} from './index.js';
 
 describe('Document AI extraction batching helpers', () => {
 	it('splits large PDFs into Document AI-safe page batches', () => {
@@ -62,5 +67,29 @@ describe('Document AI extraction batching helpers', () => {
 		const batchPdf = await PDFDocument.load(batchBuffer);
 
 		expect(batchPdf.getPageCount()).toBe(3);
+	});
+
+	it('does not fall back to native text when quality requires enhanced OCR', () => {
+		expect(
+			canFallbackToNativeAfterEmptyDocumentAi({
+				sourceType: 'pdf',
+				hasNativeText: true,
+				nativeTextRatio: 0.98,
+				nativeTextThreshold: 0.85,
+				latestRecommendedPath: 'enhanced_ocr',
+				preferDocumentAiForUncertainPdf: true,
+			}),
+		).toBe(false);
+
+		expect(
+			canFallbackToNativeAfterEmptyDocumentAi({
+				sourceType: 'pdf',
+				hasNativeText: true,
+				nativeTextRatio: 0.98,
+				nativeTextThreshold: 0.85,
+				latestRecommendedPath: 'standard',
+				preferDocumentAiForUncertainPdf: true,
+			}),
+		).toBe(true);
 	});
 });

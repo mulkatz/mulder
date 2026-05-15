@@ -1992,6 +1992,23 @@ export async function extractPdfPageBatch(sourceBuffer: Buffer, pages: number[])
 	return Buffer.from(await targetPdf.save());
 }
 
+export function canFallbackToNativeAfterEmptyDocumentAi(input: {
+	sourceType: string;
+	hasNativeText: boolean;
+	nativeTextRatio: number;
+	nativeTextThreshold: number;
+	latestRecommendedPath: string | null;
+	preferDocumentAiForUncertainPdf: boolean;
+}): boolean {
+	if (input.sourceType !== 'pdf' || !input.hasNativeText || input.nativeTextRatio < input.nativeTextThreshold) {
+		return false;
+	}
+	if (input.latestRecommendedPath === 'standard') {
+		return true;
+	}
+	return !input.latestRecommendedPath && !input.preferDocumentAiForUncertainPdf;
+}
+
 async function processPdfWithDocumentAiBatches(input: {
 	sourceBuffer: Buffer;
 	sourceId: string;
@@ -2038,7 +2055,8 @@ async function processPdfWithDocumentAiBatches(input: {
 	for (const pages of batches) {
 		const batchBuffer = await extractPdfPageBatch(input.sourceBuffer, pages);
 		const result = await input.services.documentAi.processDocument(batchBuffer, input.sourceId, input.sourceMediaType);
-		parsedPages.push(...parseDocumentAiResult(result.document, pages));
+		const batchParsedPages = parseDocumentAiResult(result.document, pages);
+		parsedPages.push(...batchParsedPages);
 		pageImages.push(...result.pageImages);
 		rawBatches.push({
 			page_start: pages[0] ?? 1,
@@ -2050,7 +2068,8 @@ async function processPdfWithDocumentAiBatches(input: {
 				sourceId: input.sourceId,
 				pageStart: pages[0],
 				pageEnd: pages[pages.length - 1],
-				parsedPages: result.pageImages.length,
+				parsedPages: batchParsedPages.length,
+				pageImages: result.pageImages.length,
 			},
 			'Document AI page batch completed',
 		);
@@ -2659,7 +2678,16 @@ export async function execute(
 			}
 
 			const canFallbackToNative =
-				source.sourceType === 'pdf' && source.hasNativeText && nativeTextRatio >= threshold && parsedPages.length === 0;
+				parsedPages.length === 0 &&
+				canFallbackToNativeAfterEmptyDocumentAi({
+					sourceType: source.sourceType,
+					hasNativeText: source.hasNativeText,
+					nativeTextRatio,
+					nativeTextThreshold: threshold,
+					latestRecommendedPath: latestQuality?.recommendedPath ?? null,
+					preferDocumentAiForUncertainPdf:
+						config.document_quality.extraction_routing.prefer_document_ai_for_uncertain_pdf,
+				});
 
 			if (canFallbackToNative) {
 				log.warn(
@@ -2675,6 +2703,21 @@ export async function execute(
 					log.warn({ err: cause }, 'Page image rendering failed — continuing without images');
 				}
 			} else {
+				if (parsedPages.length === 0) {
+					throw new ExtractError(
+						`Document AI returned no pages for source ${input.sourceId}`,
+						EXTRACT_ERROR_CODES.EXTRACT_DOCUMENT_AI_FAILED,
+						{
+							context: {
+								sourceId: input.sourceId,
+								qualityPath: latestQuality?.recommendedPath ?? null,
+								nativeTextRatio,
+								pagesWithTextRatio,
+								languageConfidence,
+							},
+						},
+					);
+				}
 				for (const parsed of parsedPages) {
 					layoutPages.push({
 						pageNumber: parsed.pageNumber,

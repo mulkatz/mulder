@@ -311,7 +311,10 @@ class GcpDocumentAiService implements DocumentAiService {
 					}
 				}
 
-				this.logger.info({ sourceId, pageCount: pageImages.length }, 'GcpDocumentAiService: processing complete');
+				this.logger.info(
+					{ sourceId, documentPageCount: document.pages?.length ?? 0, pageImageCount: pageImages.length },
+					'GcpDocumentAiService: processing complete',
+				);
 
 				return { document: documentJson, pageImages };
 			},
