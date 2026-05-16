@@ -15,8 +15,6 @@ import {
 } from '@mulder/core';
 import type pg from 'pg';
 import { z } from 'zod';
-import { z as z3 } from 'zod/v3';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { TranslateData, TranslateInput, TranslateResult } from './types.js';
 
 export type { TranslateData, TranslateInput, TranslateResult, TranslationOutcome } from './types.js';
@@ -79,6 +77,69 @@ function errorField(error: unknown, key: string): unknown {
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+function errorCause(error: unknown): unknown {
+	return errorField(error, 'cause');
+}
+
+function errorContext(error: unknown): Record<string, unknown> | null {
+	const context = errorField(error, 'context');
+	return context && typeof context === 'object' && !Array.isArray(context)
+		? (context as Record<string, unknown>)
+		: null;
+}
+
+function errorChain(error: unknown): unknown[] {
+	const chain: unknown[] = [];
+	let current = error;
+	for (let index = 0; current && index < 8; index += 1) {
+		chain.push(current);
+		current = errorCause(current);
+	}
+	return chain;
+}
+
+function parseApiErrorMessage(message: string): Record<string, unknown> | null {
+	try {
+		const parsed = JSON.parse(message);
+		const apiError = parsed && typeof parsed === 'object' ? Reflect.get(parsed, 'error') : null;
+		return apiError && typeof apiError === 'object' && !Array.isArray(apiError)
+			? (apiError as Record<string, unknown>)
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+function describeStructuredGenerationCause(error: unknown): {
+	code: unknown;
+	httpStatus: unknown;
+	message: string;
+	originalMessage: string | null;
+	status: unknown;
+} {
+	const chain = errorChain(error);
+	const originalMessage =
+		chain
+			.map((item) => errorContext(item)?.originalMessage)
+			.find((value): value is string => typeof value === 'string' && value.length > 0) ?? null;
+	const parsedApiError = chain
+		.map((item) => parseApiErrorMessage(errorMessage(item)))
+		.find((value): value is Record<string, unknown> => value !== null);
+	const parsedOriginal = originalMessage ? parseApiErrorMessage(originalMessage) : null;
+	const apiError = parsedApiError ?? parsedOriginal;
+	const message =
+		typeof apiError?.message === 'string' && apiError.message.trim().length > 0
+			? apiError.message
+			: errorMessage(error);
+	return {
+		code: chain.map((item) => errorField(item, 'code')).find((value) => value !== undefined),
+		httpStatus: apiError?.code,
+		message,
+		originalMessage,
+		status: apiError?.status,
+	};
 }
 
 function hashText(content: string): string {
@@ -255,45 +316,72 @@ const translatedStoryResponseSchema = z.object({
 	title: z.string().min(1),
 	subtitle: z.string().nullable().optional(),
 	markdown: z.string().min(1),
-	entity_mentions: z
-		.array(
-			z.object({
-				entity_id: z.string().uuid(),
-				surface_text: z.string().min(1),
-				confidence: z.number().min(0).max(1).nullable().optional(),
-			}),
-		)
-		.default([]),
+	entity_mentions: z.unknown().optional(),
 });
 
-const translatedStoryResponseSchemaV3 = z3.object({
-	title: z3.string().min(1),
-	subtitle: z3.string().nullable().optional(),
-	markdown: z3.string().min(1),
-	entity_mentions: z3
-		.array(
-			z3.object({
-				entity_id: z3.string().uuid(),
-				surface_text: z3.string().min(1),
-				confidence: z3.number().min(0).max(1).nullable().optional(),
-			}),
-		)
-		.default([]),
-});
-
-function readJsonObjectSchema(value: unknown): Record<string, unknown> {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) {
-		return {};
-	}
-	return Object.fromEntries(Object.entries(value));
+export function buildTranslatedStoryJsonSchema(): Record<string, unknown> {
+	return {
+		type: 'object',
+		properties: {
+			title: { type: 'string' },
+			subtitle: { type: 'string' },
+			markdown: { type: 'string' },
+			entity_mentions: {
+				type: 'array',
+				items: {
+					type: 'object',
+					properties: {
+						entity_id: { type: 'string' },
+						surface_text: { type: 'string' },
+						confidence: { type: 'number' },
+					},
+					required: ['entity_id', 'surface_text'],
+				},
+			},
+		},
+		required: ['title', 'markdown'],
+	};
 }
 
-const translatedStoryJsonSchema = readJsonObjectSchema(
-	zodToJsonSchema(translatedStoryResponseSchemaV3, {
-		name: 'TranslatedStoryResponse',
-		$refStrategy: 'none',
-	}),
-);
+const translatedStoryJsonSchema = buildTranslatedStoryJsonSchema();
+
+function translatedStoryMentions(
+	rawMentions: unknown,
+	story: StoryMaterial,
+	markdown: string,
+): PreparedTranslatedStoryBundle['mentions'] {
+	if (!Array.isArray(rawMentions)) return [];
+	return rawMentions
+		.map((mention) => {
+			if (!mention || typeof mention !== 'object' || Array.isArray(mention)) return null;
+			const entityId = Reflect.get(mention, 'entity_id');
+			const surfaceText = Reflect.get(mention, 'surface_text');
+			if (typeof entityId !== 'string' || typeof surfaceText !== 'string') return null;
+			const entity = story.entities.find((candidate) => candidate.id === entityId);
+			const offsets = entity ? findUniqueOffset(markdown, surfaceText) : null;
+			if (!entity || !offsets) return null;
+			const rawConfidence = Reflect.get(mention, 'confidence');
+			const confidence =
+				typeof rawConfidence === 'number' && rawConfidence >= 0 && rawConfidence <= 1 ? rawConfidence : null;
+			return {
+				entityId,
+				surfaceText: surfaceText.trim(),
+				startOffset: offsets.start,
+				endOffset: offsets.end,
+				confidence,
+				method: 'llm_structured_verified' as const,
+			};
+		})
+		.filter((mention): mention is NonNullable<typeof mention> => mention !== null);
+}
+
+function translationStoryErrorMessage(causeDetails: ReturnType<typeof describeStructuredGenerationCause>): string {
+	const schemaMessage = `${causeDetails.originalMessage ?? ''}\n${causeDetails.message}`;
+	if (causeDetails.status === 'INVALID_ARGUMENT' && schemaMessage.includes('response_json_schema')) {
+		return 'Vertex rejected translation story schema: INVALID_ARGUMENT';
+	}
+	return causeDetails.message;
+}
 
 async function prepareTranslatedStoryBundles(input: {
 	config: MulderConfig;
@@ -328,21 +416,25 @@ async function prepareTranslatedStoryBundles(input: {
 				responseValidator: (data) => translatedStoryResponseSchema.parse(data),
 			});
 		} catch (cause) {
+			const causeDetails = describeStructuredGenerationCause(cause);
+			const message = translationStoryErrorMessage(causeDetails);
 			input.logger.warn(
 				{
 					sourceId: input.material.source.id,
 					storyId: story.storyId,
 					targetLanguage: input.targetLanguage,
 					err: {
-						name: errorField(cause, 'name'),
-						code: errorField(cause, 'code'),
-						message: errorMessage(cause),
+						code: causeDetails.code,
+						httpStatus: causeDetails.httpStatus,
+						message,
+						originalMessage: causeDetails.originalMessage,
+						status: causeDetails.status,
 					},
 				},
 				'Translated story generation failed',
 			);
 			throw new PipelineError(
-				`Translated story generation failed for story ${story.storyId}: ${errorMessage(cause)}`,
+				`Translated story generation failed for story ${story.storyId}: ${message}`,
 				PIPELINE_ERROR_CODES.PIPELINE_STEP_FAILED,
 				{
 					cause,
@@ -351,25 +443,13 @@ async function prepareTranslatedStoryBundles(input: {
 						storyId: story.storyId,
 						targetLanguage: input.targetLanguage,
 						causeCode: errorField(cause, 'code'),
+						causeStatus: causeDetails.status,
+						httpStatus: causeDetails.httpStatus,
 					},
 				},
 			);
 		}
-		const mentions = response.entity_mentions
-			.map((mention) => {
-				const entity = story.entities.find((candidate) => candidate.id === mention.entity_id);
-				const offsets = entity ? findUniqueOffset(response.markdown, mention.surface_text) : null;
-				if (!entity || !offsets) return null;
-				return {
-					entityId: mention.entity_id,
-					surfaceText: mention.surface_text,
-					startOffset: offsets.start,
-					endOffset: offsets.end,
-					confidence: mention.confidence ?? null,
-					method: 'llm_structured_verified' as const,
-				};
-			})
-			.filter((mention): mention is NonNullable<typeof mention> => mention !== null);
+		const mentions = translatedStoryMentions(response.entity_mentions, story, response.markdown);
 		bundles.push({
 			storyId: story.storyId,
 			sourceDocumentId: input.material.source.id,

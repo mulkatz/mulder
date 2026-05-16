@@ -151,6 +151,21 @@ describe('translate pipeline', () => {
 		expect(mocks.createCurrentTranslatedDocument).not.toHaveBeenCalled();
 	});
 
+	it('uses a Vertex-compatible inline schema for translated stories', async () => {
+		const { buildTranslatedStoryJsonSchema } = await import('./index.js');
+		const schema = buildTranslatedStoryJsonSchema();
+		const serialized = JSON.stringify(schema);
+
+		expect(schema).toMatchObject({
+			type: 'object',
+			required: ['title', 'markdown'],
+		});
+		expect(serialized).not.toContain('$ref');
+		expect(serialized).not.toContain('definitions');
+		expect(serialized).not.toContain('$schema');
+		expect(serialized).not.toContain('"format":"uuid"');
+	});
+
 	it('does not mark a translation current when story translation fails', async () => {
 		const { execute } = await import('./index.js');
 		const failingServices = services({
@@ -164,6 +179,116 @@ describe('translate pipeline', () => {
 				{ sourceId: 'source-1', targetLanguage: 'de' },
 				config() as never,
 				failingServices as never,
+				pool() as never,
+				{ warn: vi.fn(), info: vi.fn() } as never,
+			),
+		).rejects.toThrow('Translated story generation failed');
+
+		expect(mocks.createCurrentTranslatedDocument).not.toHaveBeenCalled();
+		expect(mocks.createTranslatedStoryBundle).not.toHaveBeenCalled();
+	});
+
+	it('persists translated stories when entity mentions are omitted', async () => {
+		const { buildTranslatedStoryJsonSchema, execute } = await import('./index.js');
+		const generateStructured = vi.fn(async (options: { responseValidator?: (data: unknown) => unknown }) => {
+			const data = {
+				markdown: 'Übersetzter Text ohne Markierungen',
+				title: 'Übersetzte Story',
+			};
+			options.responseValidator?.(data);
+			return data;
+		});
+		const mentionlessServices = services({
+			generateStructured,
+		});
+
+		const result = await execute(
+			{ sourceId: 'source-1', targetLanguage: 'de' },
+			config() as never,
+			mentionlessServices as never,
+			pool() as never,
+			{ warn: vi.fn(), info: vi.fn() } as never,
+		);
+
+		expect(result.status).toBe('success');
+		expect(generateStructured).toHaveBeenCalledWith(
+			expect.objectContaining({ schema: buildTranslatedStoryJsonSchema() }),
+		);
+		expect(mocks.createTranslatedStoryBundle).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({
+				markdown: 'Übersetzter Text ohne Markierungen',
+				mentions: [],
+			}),
+		);
+	});
+
+	it('drops invalid translated entity mentions without failing the translation', async () => {
+		const { execute } = await import('./index.js');
+		const validEntityId = '00000000-0000-4000-8000-000000000111';
+		mocks.findEntitiesByStoryId.mockResolvedValue([
+			{
+				id: validEntityId,
+				name: 'Light',
+				type: 'phenomenon',
+			},
+		]);
+		const mentionServices = services({
+			generateStructured: vi.fn(async () => ({
+				entity_mentions: [
+					{ confidence: 0.8, entity_id: validEntityId, surface_text: 'Licht' },
+					{ confidence: 0.7, entity_id: validEntityId, surface_text: 'Nevada' },
+					{ confidence: 0.9, entity_id: 'not-a-uuid', surface_text: 'Zeuge' },
+					{ confidence: 0.6, entity_id: '00000000-0000-4000-8000-000000000222', surface_text: 'Zeuge' },
+					{ confidence: 0.5, entity_id: validEntityId, surface_text: '' },
+				],
+				markdown: 'Nevada Nevada. Ein Zeuge sah ein Licht.',
+				title: 'Übersetzte Story',
+			})),
+		});
+
+		await execute(
+			{ sourceId: 'source-1', targetLanguage: 'de' },
+			config() as never,
+			mentionServices as never,
+			pool() as never,
+			{ warn: vi.fn(), info: vi.fn() } as never,
+		);
+
+		expect(mocks.createTranslatedStoryBundle).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({
+				mentions: [
+					expect.objectContaining({
+						confidence: 0.8,
+						entityId: validEntityId,
+						surfaceText: 'Licht',
+					}),
+				],
+			}),
+		);
+	});
+
+	it('does not mark a translation current when translated story markdown is empty', async () => {
+		const { execute } = await import('./index.js');
+		const generateStructured = vi.fn(async (options: { responseValidator?: (data: unknown) => unknown }) => {
+			const data = {
+				entity_mentions: [],
+				markdown: '',
+				title: 'Übersetzte Story',
+			};
+			options.responseValidator?.(data);
+			return data;
+		});
+		const invalidServices = services({
+			generateStructured,
+		});
+
+		await expect(
+			execute(
+				{ sourceId: 'source-1', targetLanguage: 'de' },
+				config() as never,
+				invalidServices as never,
 				pool() as never,
 				{ warn: vi.fn(), info: vi.fn() } as never,
 			),
