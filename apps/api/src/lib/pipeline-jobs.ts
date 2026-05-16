@@ -13,7 +13,6 @@ import {
 	loadConfig,
 	PIPELINE_ERROR_CODES,
 	PipelineError,
-	type PipelinePlanStep,
 	type PipelineStep,
 	planPipelineSteps,
 	type StepPlan,
@@ -31,6 +30,7 @@ type Queryable = Pool | PoolClient;
 type StepJobPayload = {
 	sourceId: string;
 	runId: string;
+	from?: PipelineStep;
 	upTo?: PipelineStep;
 	tag?: string;
 	force: boolean;
@@ -97,6 +97,7 @@ async function runInTransaction<T>(pool: Pool, fn: (client: Queryable) => Promis
 function buildJobPayload(input: {
 	sourceId: string;
 	runId: string;
+	from?: PipelineStep;
 	upTo?: PipelineStep;
 	tag?: string;
 	force: boolean;
@@ -104,6 +105,7 @@ function buildJobPayload(input: {
 	return {
 		sourceId: input.sourceId,
 		runId: input.runId,
+		from: input.from,
 		upTo: input.upTo,
 		tag: input.tag,
 		force: input.force,
@@ -188,22 +190,6 @@ function planSourcePipeline(input: { source: Source; from?: PipelineStep; upTo?:
 		from: input.from ?? 'quality',
 		upTo: input.upTo,
 	});
-}
-
-function requireExecutablePipelineStep(step: PipelinePlanStep): PipelineStep {
-	if (isPipelineStep(step)) {
-		return step;
-	}
-
-	throw new PipelineError(
-		`Pipeline job cannot enqueue non-worker step "${step}"`,
-		PIPELINE_ERROR_CODES.PIPELINE_INVALID_STEP_RANGE,
-		{ context: { step } },
-	);
-}
-
-function firstExecutableStep(plan: StepPlan): PipelineStep {
-	return requireExecutablePipelineStep(plan.executableSteps[0]);
 }
 
 function budgetableExecutableSteps(plan: StepPlan): BudgetablePipelineStep[] {
@@ -318,14 +304,14 @@ async function enqueuePipelineJob(
 	input: {
 		sourceId: string;
 		runId: string;
-		step: PipelineStep;
+		from?: PipelineStep;
 		upTo?: PipelineStep;
 		tag?: string;
 		force: boolean;
 	},
 ): Promise<Job> {
 	return await enqueueJob(pool, {
-		type: input.step,
+		type: 'pipeline_run',
 		payload: buildJobPayload(input),
 		maxAttempts: 3,
 	});
@@ -337,7 +323,6 @@ export async function createPipelineRunJob(input: PipelineRunRequest): Promise<P
 		const source = await requireSource(client, input.source_id);
 		await assertNoInFlightPipelineJob(client, source.id);
 		const stepPlan = planSourcePipeline({ source, from: input.from, upTo: input.up_to });
-		const firstStep = firstExecutableStep(stepPlan);
 		const run = await createPipelineRun(client, {
 			tag: input.tag ?? null,
 			options: buildRunOptions({
@@ -350,7 +335,7 @@ export async function createPipelineRunJob(input: PipelineRunRequest): Promise<P
 		const job = await enqueuePipelineJob(client, {
 			sourceId: source.id,
 			runId: run.id,
-			step: firstStep,
+			from: input.from,
 			upTo: input.up_to,
 			tag: input.tag,
 			force: input.force ?? false,
@@ -383,7 +368,6 @@ export async function createPipelineRetryJob(input: PipelineRetryRequest): Promi
 		const latest = await findLatestPipelineRunSourceForSource(client, source.id);
 		const step = deriveRetryStep(assertRetryableSource(source, latest), input.step);
 		const stepPlan = planSourcePipeline({ source, from: step, upTo: input.up_to });
-		const firstStep = firstExecutableStep(stepPlan);
 		const previousReservation = await findLatestMonthlyBudgetReservationForSource(client, source.id);
 		const run = await createPipelineRun(client, {
 			tag: input.tag ?? null,
@@ -398,7 +382,7 @@ export async function createPipelineRetryJob(input: PipelineRetryRequest): Promi
 		const job = await enqueuePipelineJob(client, {
 			sourceId: source.id,
 			runId: run.id,
-			step: firstStep,
+			from: step,
 			upTo: input.up_to,
 			tag: input.tag,
 			force: true,

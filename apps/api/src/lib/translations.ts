@@ -10,6 +10,7 @@ import {
 	enqueueJob,
 	findCurrentTranslatedDocument,
 	findSourceById,
+	findStoriesBySourceId,
 	getWorkerPool,
 	listTranslatedDocumentsForSource,
 	listTranslatedStoriesForTranslation,
@@ -45,6 +46,7 @@ interface TranslationRouteOptions {
 
 const DOCUMENT_NOT_FOUND_CODE = 'DOCUMENT_NOT_FOUND';
 const TRANSLATION_NOT_FOUND_CODE = 'TRANSLATION_NOT_FOUND';
+const TRANSLATION_SAME_LANGUAGE_CODE = 'TRANSLATION_SAME_LANGUAGE';
 type Queryable = pg.Pool | pg.PoolClient;
 
 interface TranslationJobRequest {
@@ -224,6 +226,58 @@ function translationJobLockKey(input: TranslationJobRequest): string {
 		input.pipelinePath,
 		String(input.refresh),
 	].join(':');
+}
+
+function normalizeLanguage(value: string | null | undefined): string | null {
+	const normalized = value?.trim().toLowerCase();
+	return normalized ? normalized : null;
+}
+
+function sourceMetadataLanguage(source: NonNullable<Awaited<ReturnType<typeof findSourceById>>>): string | null {
+	return normalizeLanguage(
+		typeof source.metadata.language === 'string'
+			? source.metadata.language
+			: typeof source.metadata.source_language === 'string'
+				? source.metadata.source_language
+				: typeof source.metadata.original_language === 'string'
+					? source.metadata.original_language
+					: null,
+	);
+}
+
+async function resolveRequestSourceLanguage(
+	pool: pg.Pool,
+	source: NonNullable<Awaited<ReturnType<typeof findSourceById>>>,
+	explicitLanguage: string | undefined,
+): Promise<string | null> {
+	const explicit = normalizeLanguage(explicitLanguage);
+	if (explicit && explicit !== 'und') return explicit;
+	const stories = await findStoriesBySourceId(pool, source.id);
+	const storyLanguage = stories
+		.map((story) => normalizeLanguage(story.language))
+		.find((language): language is string => Boolean(language && language !== 'und'));
+	return storyLanguage ?? sourceMetadataLanguage(source);
+}
+
+async function assertNotSameLanguageTranslation(
+	pool: pg.Pool,
+	source: NonNullable<Awaited<ReturnType<typeof findSourceById>>>,
+	input: TranslationJobRequest,
+): Promise<void> {
+	const sourceLanguage = await resolveRequestSourceLanguage(pool, source, input.sourceLanguage);
+	const targetLanguage = normalizeLanguage(input.targetLanguage);
+	if (!sourceLanguage || sourceLanguage === 'und' || !targetLanguage || sourceLanguage !== targetLanguage) return;
+	throw new MulderError(
+		`Source is already in ${targetLanguage}; choose a different target language`,
+		TRANSLATION_SAME_LANGUAGE_CODE,
+		{
+			context: {
+				sourceId: source.id,
+				sourceLanguage,
+				targetLanguage,
+			},
+		},
+	);
 }
 
 async function withTranslationJobLock<T>(
@@ -434,7 +488,7 @@ export async function requestDocumentTranslation(
 ): Promise<{ status: 200; body: TranslationDetailResponse } | { status: 202; body: TranslationAcceptedResponse }> {
 	const { config, pool } = resolveContext();
 	const maxSensitivityLevel = resolveReadMaxSensitivity(config, options?.authPrincipal);
-	await requireSource(pool, sourceId, maxSensitivityLevel);
+	const source = await requireSource(pool, sourceId, maxSensitivityLevel);
 	const outputFormat = input.output_format ?? config.translation.output_format;
 	const jobRequest: TranslationJobRequest = {
 		outputFormat,
@@ -444,6 +498,7 @@ export async function requestDocumentTranslation(
 		sourceLanguage: input.source_language,
 		targetLanguage: input.target_language,
 	};
+	await assertNotSameLanguageTranslation(pool, source, jobRequest);
 
 	return await withTranslationJobLock(pool, jobRequest, async (client) => {
 		if (!jobRequest.refresh) {
@@ -455,7 +510,7 @@ export async function requestDocumentTranslation(
 				const translatedStoryCount = await countTranslatedStoriesForTranslation(client, cached.id, {
 					maxSensitivityLevel,
 				});
-				if (sourceStoryCount > 0 && translatedStoryCount === 0) {
+				if (sourceStoryCount > 0 && translatedStoryCount < sourceStoryCount) {
 					return await enqueueOrReuseTranslationJob(client, { ...jobRequest, refresh: false });
 				}
 				return {

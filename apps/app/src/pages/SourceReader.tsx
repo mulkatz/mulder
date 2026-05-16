@@ -691,6 +691,7 @@ function TranslationControls({
 	requestDisabled,
 	targetLanguage,
 	setTargetLanguage,
+	setTargetLanguageTouched,
 	translation,
 }: {
 	contentMode: StoryContentMode;
@@ -704,6 +705,7 @@ function TranslationControls({
 	requestDisabled: boolean;
 	targetLanguage: AppLocale;
 	setTargetLanguage: (language: AppLocale) => void;
+	setTargetLanguageTouched: (touched: boolean) => void;
 	translation?: TranslationRecord;
 }) {
 	const { t, i18n } = useTranslation();
@@ -719,7 +721,10 @@ function TranslationControls({
 					<span className="text-text-subtle">{t('reader.targetLanguage')}</span>
 					<select
 						className="bg-transparent text-text outline-none"
-						onChange={(event) => setTargetLanguage(event.target.value as AppLocale)}
+						onChange={(event) => {
+							setTargetLanguageTouched(true);
+							setTargetLanguage(event.target.value as AppLocale);
+						}}
 						value={targetLanguage}
 					>
 						{locales.map((locale) => (
@@ -778,6 +783,20 @@ function formatExtractionRoute(path: string | null | undefined, t: TFunction) {
 
 function formatPipelineStep(step: string, t: TFunction) {
 	return t(`pipelineSteps.${step}`, { defaultValue: step });
+}
+
+function firstKnownStoryLanguage(stories: DocumentStoryRecord[]): string | null {
+	return (
+		stories.map((story) => story.language?.trim().toLowerCase()).find((language) => language && language !== 'und') ??
+		null
+	);
+}
+
+function defaultTargetForSourceLanguage(sourceLanguage: string | null | undefined, uiLanguage: string): AppLocale {
+	const normalized = sourceLanguage?.trim().toLowerCase();
+	if (normalized === 'de') return 'en';
+	if (normalized === 'en') return 'de';
+	return uiLanguage === 'de' ? 'de' : 'en';
 }
 
 function formatQualitySignal(value: number | null | undefined, t: TFunction) {
@@ -900,6 +919,7 @@ function StoryPane({
 	selectedStory,
 	selectedStoryId,
 	setTargetLanguage,
+	setTargetLanguageTouched,
 	signals,
 	sourceId,
 	sourceLanguage,
@@ -917,6 +937,7 @@ function StoryPane({
 	selectedStory?: DocumentStoryRecord;
 	selectedStoryId?: string;
 	setTargetLanguage: (language: AppLocale) => void;
+	setTargetLanguageTouched: (touched: boolean) => void;
 	signals: ContradictionRecord[];
 	sourceId?: string;
 	sourceLanguage?: string | null;
@@ -979,7 +1000,6 @@ function StoryPane({
 				output_format: 'markdown',
 				pipeline_path: 'translation_only',
 				refresh,
-				source_language: sourceLanguage ?? selectedStory?.language ?? undefined,
 				target_language: targetLanguage,
 			},
 			{
@@ -1019,6 +1039,7 @@ function StoryPane({
 					originalLanguage={sourceLanguage ?? selectedStory?.language}
 					requestDisabled={!sourceId}
 					setTargetLanguage={setTargetLanguage}
+					setTargetLanguageTouched={setTargetLanguageTouched}
 					targetLanguage={targetLanguage}
 					translation={currentTranslation}
 				/>
@@ -1328,7 +1349,10 @@ export function SourceReaderPage() {
 	const [viewMode, setViewMode] = useState<ReaderViewMode>(readInitialReaderMode);
 	const [selectedStoryId, setSelectedStoryId] = useState<string | undefined>(searchParams.get('story') ?? undefined);
 	const [selectedEntity, setSelectedEntity] = useState<EntityRecord | undefined>();
-	const [targetLanguage, setTargetLanguage] = useState<AppLocale>(i18n.language === 'de' ? 'de' : 'en');
+	const [targetLanguage, setTargetLanguage] = useState<AppLocale>(() =>
+		defaultTargetForSourceLanguage(null, i18n.language),
+	);
+	const [targetLanguageTouched, setTargetLanguageTouched] = useState(false);
 	const [processingOpen, setProcessingOpen] = useState(false);
 	const [observabilityPolling, setObservabilityPolling] = useState(false);
 	const [observabilityPollMs, setObservabilityPollMs] = useState(INITIAL_POLL_INTERVAL_MS);
@@ -1349,6 +1373,7 @@ export function SourceReaderPage() {
 	const selectedStory = stories.find((story) => story.id === selectedStoryId) ?? stories[0];
 	const source = sourceQuery.data?.data ?? observabilityQuery.data?.data.source;
 	const sourceLanguage = sourceQuery.data?.data.source_language ?? null;
+	const storySourceLanguage = firstKnownStoryLanguage(stories);
 	const effectiveViewMode = isCompact && viewMode === 'split' ? 'story' : viewMode;
 	const pageCount = pagesQuery.data?.meta.count;
 	const storySignals = selectedStory
@@ -1428,6 +1453,11 @@ export function SourceReaderPage() {
 			setViewMode('story');
 		}
 	}, [isCompact, viewMode]);
+
+	useEffect(() => {
+		if (targetLanguageTouched) return;
+		setTargetLanguage(defaultTargetForSourceLanguage(storySourceLanguage, i18n.language));
+	}, [i18n.language, storySourceLanguage, targetLanguageTouched]);
 
 	function handleStorySelection(storyId: string) {
 		setSelectedStoryId(storyId);
@@ -1547,9 +1577,10 @@ export function SourceReaderPage() {
 							selectedStory={selectedStory}
 							selectedStoryId={selectedStory?.id}
 							setTargetLanguage={setTargetLanguage}
+							setTargetLanguageTouched={setTargetLanguageTouched}
 							signals={storySignals}
 							sourceId={sourceId}
-							sourceLanguage={sourceLanguage}
+							sourceLanguage={storySourceLanguage ?? sourceLanguage}
 							stories={stories}
 							storiesError={storiesQuery.error}
 							storiesIsLoading={storiesQuery.isLoading}

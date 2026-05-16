@@ -14,7 +14,13 @@ export const DOCUMENT_PROCESSING_STEPS = [
 ] as const;
 
 export type DocumentProcessingStepName = (typeof DOCUMENT_PROCESSING_STEPS)[number];
-export type DocumentProcessingCurrentStep = DocumentProcessingStepName | 'processing' | 'translation' | 'unknown';
+export type DocumentProcessingCurrentStep =
+	| DocumentProcessingStepName
+	| 'analyze_pending'
+	| 'completed'
+	| 'processing'
+	| 'translation'
+	| 'unknown';
 export type DocumentProcessingStepStatus =
 	| 'not_started'
 	| 'queued'
@@ -72,6 +78,7 @@ type ObservabilityStep = {
 type ProgressSource = JobProgress['sources'][number] | null | undefined;
 
 const singleStepJobTypes = new Set(['quality', 'extract', 'segment', 'enrich', 'embed', 'graph', 'analyze']);
+const mainPipelineJobTypes = new Set(['document_upload_finalize', 'pipeline_run', ...singleStepJobTypes]);
 
 function mapRunStatus(status: JobSummary['status']): RunStatus {
 	if (status === 'pending') return 'queued';
@@ -94,6 +101,23 @@ export function mapJobTypeToCurrentStep(type: string): DocumentProcessingCurrent
 	return 'unknown';
 }
 
+function isMainPipelineJob(job: JobSummary): boolean {
+	return mainPipelineJobTypes.has(job.type);
+}
+
+function isPipelineExecutionJob(job: JobSummary): boolean {
+	return job.type === 'pipeline_run' || singleStepJobTypes.has(job.type);
+}
+
+function relevantAttempts(job: JobSummary): string | null {
+	const attempts = job.attempts ?? 0;
+	const maxAttempts = job.max_attempts ?? 0;
+	if (attempts <= 1 && job.status === 'completed') return null;
+	if (attempts <= 1 && job.status === 'pending') return null;
+	if (attempts <= 0 || maxAttempts <= 0) return null;
+	return `${attempts}/${maxAttempts}`;
+}
+
 export function jobActivityTimestamp(job: JobSummary): string {
 	return job.finished_at ?? job.started_at ?? job.created_at;
 }
@@ -107,19 +131,22 @@ function compareActivityDesc(left: DocumentProcessingJob, right: DocumentProcess
 }
 
 export function aggregateDocumentStatus(jobs: DocumentProcessingJob[]): RunStatus {
-	const statuses = jobs.map(({ job }) => mapRunStatus(job.status));
+	const mainJobs = jobs.filter(({ job }) => isMainPipelineJob(job));
+	const statuses = mainJobs.map(({ job }) => mapRunStatus(job.status));
 	if (statuses.includes('running')) return 'running';
 	if (statuses.includes('queued')) return 'queued';
-	if (statuses.includes('failed')) return 'failed';
-	if (statuses.length > 0 && statuses.every((status) => status === 'completed')) return 'completed';
+	const latestMain = [...mainJobs].sort(compareActivityDesc)[0];
+	if (latestMain) return mapRunStatus(latestMain.job.status);
 	return statuses[0] ?? 'queued';
 }
 
 function chooseCurrentJob(jobs: DocumentProcessingJob[]): DocumentProcessingJob {
+	const mainJobs = jobs.filter(({ job }) => isMainPipelineJob(job));
+	const candidates = mainJobs.length > 0 ? mainJobs : jobs;
 	return (
-		jobs.find(({ run }) => run.status === 'running') ??
-		jobs.find(({ run }) => run.status === 'queued') ??
-		jobs.find(({ run }) => run.status === 'failed') ??
+		candidates.find(({ run }) => run.status === 'running') ??
+		candidates.find(({ run }) => run.status === 'queued') ??
+		[...candidates].sort(compareActivityDesc)[0] ??
 		jobs[0]
 	);
 }
@@ -160,9 +187,7 @@ function sourceIdForGroup(jobs: DocumentProcessingJob[]): string | undefined {
 }
 
 function latestPipelineJob(jobs: DocumentProcessingJob[]): DocumentProcessingJob | undefined {
-	return jobs
-		.filter(({ job }) => job.type === 'pipeline_run' || singleStepJobTypes.has(job.type))
-		.sort(compareActivityDesc)[0];
+	return jobs.filter(({ job }) => isPipelineExecutionJob(job)).sort(compareActivityDesc)[0];
 }
 
 export function createDocumentProcessingGroups(
@@ -204,7 +229,7 @@ export function createDocumentProcessingGroups(
 				status: aggregateDocumentStatus(orderedJobs),
 				currentStep: mapJobTypeToCurrentStep(currentJob.job.type),
 				lastActivity: jobActivityTimestamp(latestJob.job),
-				attempts: latestJob.run.attempts,
+				attempts: relevantAttempts(latestJob.job) ?? '',
 			};
 		})
 		.sort((a, b) => {
@@ -263,7 +288,7 @@ export function buildDocumentProcessingSteps(
 				status: group.uploadJob ? mapJobStatusToStepStatus(group.uploadJob.job.status) : 'not_started',
 				activityAt: group.uploadJob ? jobActivityTimestamp(group.uploadJob.job) : null,
 				errorMessage: group.uploadJob?.run.error ?? null,
-				attempts: group.uploadJob?.run.attempts ?? null,
+				attempts: group.uploadJob ? relevantAttempts(group.uploadJob.job) : null,
 			};
 		}
 
@@ -291,7 +316,8 @@ export function buildDocumentProcessingSteps(
 			errorMessage: status === 'failed' ? errorMessage : null,
 			attempts:
 				status === 'failed' || status === 'running'
-					? (group.pipelineJob?.run.attempts ?? explicitJob?.run.attempts ?? null)
+					? ((explicitJob ? relevantAttempts(explicitJob.job) : null) ??
+						(group.pipelineJob ? relevantAttempts(group.pipelineJob.job) : null))
 					: null,
 		};
 	});
@@ -301,9 +327,45 @@ export function buildDocumentTranslationSteps(group: DocumentProcessingGroup): D
 	return group.translationJobs.map(({ job, run }) => ({
 		id: job.id,
 		status: run.status,
-		label: run.mode,
+		label: job.type,
 		activityAt: jobActivityTimestamp(job),
 		errorMessage: run.status === 'failed' ? (run.error ?? null) : null,
-		attempts: run.attempts,
+		attempts: relevantAttempts(job) ?? '',
 	}));
+}
+
+export function currentStepForDocument(
+	group: DocumentProcessingGroup,
+	input: {
+		observabilitySteps?: ObservabilityStep[];
+		progressSource?: ProgressSource;
+	} = {},
+): DocumentProcessingCurrentStep {
+	const progressSource = input.progressSource;
+	if (progressSource?.status === 'processing' || progressSource?.status === 'failed') {
+		return DOCUMENT_PROCESSING_STEPS.includes(progressSource.current_step as DocumentProcessingStepName)
+			? (progressSource.current_step as DocumentProcessingStepName)
+			: group.currentStep;
+	}
+
+	const steps = buildDocumentProcessingSteps(group, input);
+	const running = steps.find((step) => step.status === 'running');
+	if (running) return running.name;
+	const failed = steps.find((step) => step.status === 'failed');
+	if (failed) return failed.name;
+	const queued = steps.find((step) => step.status === 'queued');
+	if (queued) return queued.name;
+
+	const graph = steps.find((step) => step.name === 'graph');
+	const analyze = steps.find((step) => step.name === 'analyze');
+	if (graph?.status === 'completed' && analyze?.status === 'not_started') return 'analyze_pending';
+	if (
+		steps.every((step) => step.status === 'completed' || step.status === 'skipped') &&
+		steps.some((step) => step.status === 'completed')
+	) {
+		return 'completed';
+	}
+
+	const active = steps.find((step) => step.status !== 'not_started' && step.status !== 'skipped');
+	return active?.name ?? group.currentStep;
 }

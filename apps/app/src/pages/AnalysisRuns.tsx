@@ -22,6 +22,7 @@ import {
 	buildDocumentProcessingSteps,
 	buildDocumentTranslationSteps,
 	createDocumentProcessingGroups,
+	currentStepForDocument,
 	DOCUMENT_PROCESSING_STEPS,
 	type DocumentProcessingCurrentStep,
 	type DocumentProcessingGroup,
@@ -56,10 +57,17 @@ function formatDocumentProcessingStep(step: DocumentProcessingStepName, t: TFunc
 }
 
 function formatCurrentStep(step: DocumentProcessingCurrentStep, t: TFunction) {
+	if (step === 'analyze_pending') return t('runs.analyzePendingStep');
+	if (step === 'completed') return t('status.completed');
 	if (step === 'processing') return t('runs.processingStep');
 	if (step === 'translation') return t('runs.translationStep');
 	if (step === 'unknown') return t('common.unknown');
 	return formatDocumentProcessingStep(step, t);
+}
+
+function formatTranslationStepLabel(label: string, t: TFunction) {
+	if (label === 'translate') return t('runs.translationStep');
+	return label;
 }
 
 function formatRelativeActivity(value: string | null | undefined, locale: string) {
@@ -107,6 +115,9 @@ function Stepper({ group, progress }: { group: DocumentProcessingGroup; progress
 		<div className="flex flex-wrap gap-1.5" title={t('runs.pipelineSteps')}>
 			{steps.map((step) => (
 				<span
+					aria-label={`${formatDocumentProcessingStep(step.name, t)}: ${t(`status.${step.status}`, {
+						defaultValue: step.status,
+					})}`}
 					className={cn(
 						'h-2.5 w-2.5 rounded-full bg-field ring-1 ring-border',
 						step.status === 'completed' && 'bg-success ring-success/40',
@@ -116,6 +127,7 @@ function Stepper({ group, progress }: { group: DocumentProcessingGroup; progress
 						step.status === 'partial' && 'bg-warning ring-warning/40',
 					)}
 					key={`${group.id}-${step.name}`}
+					role="img"
 					title={`${formatDocumentProcessingStep(step.name, t)}: ${t(`status.${step.status}`, {
 						defaultValue: step.status,
 					})}`}
@@ -174,7 +186,7 @@ function DocumentStepsPanel({
 							{translationSteps.map((step) => (
 								<div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md bg-panel px-3 py-2" key={step.id}>
 									<div className="min-w-0">
-										<p className="truncate text-sm text-text">{step.label}</p>
+										<p className="truncate text-sm text-text">{formatTranslationStepLabel(step.label, t)}</p>
 										<p className="mt-1 text-xs text-text-subtle">
 											{formatDateTime(step.activityAt, locale)} · {formatRelativeActivity(step.activityAt, locale)}
 										</p>
@@ -274,9 +286,13 @@ function DocumentProcessingTable({
 						const selected = group.id === selectedDocumentId;
 						const rowProgress = selected || expanded ? selectedProgress : null;
 						const progressSource = progressSourceForGroup(rowProgress, group);
-						const currentStep = progressSource?.current_step
-							? formatPipelineStep(progressSource.current_step, t)
-							: formatCurrentStep(group.currentStep, t);
+						const currentStep = formatCurrentStep(
+							currentStepForDocument(group, {
+								observabilitySteps: expanded ? buildDisplaySteps(expandedSteps) : undefined,
+								progressSource,
+							}),
+							t,
+						);
 						return (
 							<Fragment key={group.id}>
 								<tr

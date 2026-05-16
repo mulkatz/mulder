@@ -41,6 +41,10 @@ interface StoryMaterial {
 	entities: Array<{ id: string; name: string; type: string }>;
 }
 
+type Queryable = pg.Pool | pg.PoolClient;
+type TranslatedStoryBundleInput = Parameters<typeof createTranslatedStoryBundle>[1];
+type PreparedTranslatedStoryBundle = Omit<TranslatedStoryBundleInput, 'translationId'>;
+
 const DEFAULT_SOURCE_LANGUAGE = 'und';
 const TEXT_SOURCE_TYPES = new Set(['text', 'url']);
 
@@ -67,6 +71,14 @@ function validateLanguage(
 		);
 	}
 	return normalized;
+}
+
+function errorField(error: unknown, key: string): unknown {
+	return error && typeof error === 'object' ? Reflect.get(error, key) : undefined;
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 function hashText(content: string): string {
@@ -283,17 +295,15 @@ const translatedStoryJsonSchema = readJsonObjectSchema(
 	}),
 );
 
-async function ensureTranslatedStories(input: {
+async function prepareTranslatedStoryBundles(input: {
 	config: MulderConfig;
 	services: Services;
-	pool: pg.Pool;
 	material: ResolvedSourceMaterial;
-	translationId: string;
 	targetLanguage: string;
 	logger: Logger;
-}): Promise<number> {
-	if (input.material.stories.length === 0) return 0;
-	let count = 0;
+}): Promise<PreparedTranslatedStoryBundle[]> {
+	if (input.material.stories.length === 0) return [];
+	const bundles: PreparedTranslatedStoryBundle[] = [];
 	for (const story of input.material.stories) {
 		const prompt = [
 			'Translate this extracted story. Preserve markdown structure and meaning.',
@@ -308,13 +318,43 @@ async function ensureTranslatedStories(input: {
 		]
 			.filter(Boolean)
 			.join('\n\n');
-		const response = await input.services.llm.generateStructured<z.infer<typeof translatedStoryResponseSchema>>({
-			prompt,
-			systemInstruction:
-				'Translate faithfully. Entity mention offsets will be verified by exact surface matching; omit uncertain mentions.',
-			schema: translatedStoryJsonSchema,
-			responseValidator: (data) => translatedStoryResponseSchema.parse(data),
-		});
+		let response: z.infer<typeof translatedStoryResponseSchema>;
+		try {
+			response = await input.services.llm.generateStructured<z.infer<typeof translatedStoryResponseSchema>>({
+				prompt,
+				systemInstruction:
+					'Translate faithfully. Entity mention offsets will be verified by exact surface matching; omit uncertain mentions.',
+				schema: translatedStoryJsonSchema,
+				responseValidator: (data) => translatedStoryResponseSchema.parse(data),
+			});
+		} catch (cause) {
+			input.logger.warn(
+				{
+					sourceId: input.material.source.id,
+					storyId: story.storyId,
+					targetLanguage: input.targetLanguage,
+					err: {
+						name: errorField(cause, 'name'),
+						code: errorField(cause, 'code'),
+						message: errorMessage(cause),
+					},
+				},
+				'Translated story generation failed',
+			);
+			throw new PipelineError(
+				`Translated story generation failed for story ${story.storyId}: ${errorMessage(cause)}`,
+				PIPELINE_ERROR_CODES.PIPELINE_STEP_FAILED,
+				{
+					cause,
+					context: {
+						sourceId: input.material.source.id,
+						storyId: story.storyId,
+						targetLanguage: input.targetLanguage,
+						causeCode: errorField(cause, 'code'),
+					},
+				},
+			);
+		}
 		const mentions = response.entity_mentions
 			.map((mention) => {
 				const entity = story.entities.find((candidate) => candidate.id === mention.entity_id);
@@ -330,8 +370,7 @@ async function ensureTranslatedStories(input: {
 				};
 			})
 			.filter((mention): mention is NonNullable<typeof mention> => mention !== null);
-		await createTranslatedStoryBundle(input.pool, {
-			translationId: input.translationId,
+		bundles.push({
 			storyId: story.storyId,
 			sourceDocumentId: input.material.source.id,
 			sourceLanguage: input.material.sourceLanguage,
@@ -344,10 +383,42 @@ async function ensureTranslatedStories(input: {
 			sensitivityMetadata: story.sensitivityMetadata,
 			mentions,
 		});
-		count++;
 	}
-	input.logger.info({ sourceId: input.material.source.id, count }, 'Translated story records ensured');
-	return count;
+	return bundles;
+}
+
+async function persistTranslatedStoryBundles(
+	pool: Queryable,
+	translationId: string,
+	bundles: PreparedTranslatedStoryBundle[],
+): Promise<number> {
+	for (const bundle of bundles) {
+		await createTranslatedStoryBundle(pool, {
+			translationId,
+			...bundle,
+		});
+	}
+	return bundles.length;
+}
+
+async function persistCurrentTranslationWithStories(
+	pool: pg.Pool,
+	documentInput: Parameters<typeof createCurrentTranslatedDocument>[1],
+	bundles: PreparedTranslatedStoryBundle[],
+): Promise<{ document: Awaited<ReturnType<typeof createCurrentTranslatedDocument>>; translatedStoryCount: number }> {
+	const client = await pool.connect();
+	try {
+		await client.query('BEGIN');
+		const document = await createCurrentTranslatedDocument(client, documentInput);
+		const translatedStoryCount = await persistTranslatedStoryBundles(client, document.id, bundles);
+		await client.query('COMMIT');
+		return { document, translatedStoryCount };
+	} catch (error) {
+		await client.query('ROLLBACK').catch(() => undefined);
+		throw error;
+	} finally {
+		client.release();
+	}
 }
 
 export async function execute(
@@ -370,23 +441,43 @@ export async function execute(
 	const outputFormat = input.outputFormat ?? config.translation.output_format;
 	const pipelinePath = input.pipelinePath ?? 'translation_only';
 	const material = await resolveSourceMaterial(input, config, services, pool);
+	if (material.sourceLanguage !== DEFAULT_SOURCE_LANGUAGE && material.sourceLanguage === targetLanguage) {
+		throw new PipelineError(
+			`Source language and target language are both ${targetLanguage}`,
+			PIPELINE_ERROR_CODES.PIPELINE_WRONG_STATUS,
+			{ context: { sourceId: input.sourceId, sourceLanguage: material.sourceLanguage, targetLanguage } },
+		);
+	}
 
 	if (config.translation.cache_enabled && input.refresh !== true) {
 		const cached = await findCurrentTranslatedDocument(pool, input.sourceId, targetLanguage);
 		if (cached && cached.contentHash === material.contentHash && cached.outputFormat === outputFormat) {
 			const existingStoryCount = await countTranslatedStoriesForTranslation(pool, cached.id);
+			const expectedStoryCount = material.stories.length;
 			const translatedStoryCount =
-				existingStoryCount > 0
+				expectedStoryCount === 0 || existingStoryCount >= expectedStoryCount
 					? existingStoryCount
-					: await ensureTranslatedStories({
-							config,
-							services,
-							pool,
-							material,
-							translationId: cached.id,
-							targetLanguage,
-							logger,
-						});
+					: await (async () => {
+							const bundles = await prepareTranslatedStoryBundles({
+								config,
+								services,
+								material,
+								targetLanguage,
+								logger,
+							});
+							const client = await pool.connect();
+							try {
+								await client.query('BEGIN');
+								const count = await persistTranslatedStoryBundles(client, cached.id, bundles);
+								await client.query('COMMIT');
+								return count;
+							} catch (error) {
+								await client.query('ROLLBACK').catch(() => undefined);
+								throw error;
+							} finally {
+								client.release();
+							}
+						})();
 			logger.info({ sourceId: input.sourceId, targetLanguage }, 'Translation cache hit');
 			const data: TranslateData = {
 				sourceId: input.sourceId,
@@ -435,28 +526,29 @@ export async function execute(
 		systemInstruction: 'Translate faithfully. Preserve structure and do not add commentary.',
 		media: material.media,
 	});
-
-	const document = await createCurrentTranslatedDocument(pool, {
-		sourceDocumentId: input.sourceId,
-		sourceLanguage: material.sourceLanguage,
-		targetLanguage,
-		translationEngine: config.translation.engine,
-		content: translatedContent,
-		contentHash: material.contentHash,
-		pipelinePath,
-		outputFormat,
-		sensitivityLevel: material.source.sensitivityLevel,
-		sensitivityMetadata: material.source.sensitivityMetadata,
-	});
-	const translatedStoryCount = await ensureTranslatedStories({
+	const bundles = await prepareTranslatedStoryBundles({
 		config,
 		services,
-		pool,
 		material,
-		translationId: document.id,
 		targetLanguage,
 		logger,
 	});
+	const { document, translatedStoryCount } = await persistCurrentTranslationWithStories(
+		pool,
+		{
+			sourceDocumentId: input.sourceId,
+			sourceLanguage: material.sourceLanguage,
+			targetLanguage,
+			translationEngine: config.translation.engine,
+			content: translatedContent,
+			contentHash: material.contentHash,
+			pipelinePath,
+			outputFormat,
+			sensitivityLevel: material.source.sensitivityLevel,
+			sensitivityMetadata: material.source.sensitivityMetadata,
+		},
+		bundles,
+	);
 
 	const data: TranslateData = {
 		sourceId: input.sourceId,

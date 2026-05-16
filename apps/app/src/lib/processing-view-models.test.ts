@@ -4,6 +4,7 @@ import {
 	buildDocumentProcessingSteps,
 	buildDocumentTranslationSteps,
 	createDocumentProcessingGroups,
+	currentStepForDocument,
 	DOCUMENT_PROCESSING_STEPS,
 	findDocumentGroupForJob,
 } from './processing-view-models';
@@ -76,14 +77,35 @@ describe('processing document view models', () => {
 				job({ type: 'pipeline_run', status: 'completed' }),
 				job({ id: '00000000-0000-4000-8000-000000000021', type: 'translate', status: 'dead_letter' }),
 			])[0].status,
-		).toBe('failed');
+		).toBe('completed');
 		expect(
 			createDocumentProcessingGroups([
 				job({ type: 'pipeline_run', status: 'failed' }),
 				job({ id: '00000000-0000-4000-8000-000000000022', type: 'translate', status: 'running' }),
 			])[0].status,
-		).toBe('running');
+		).toBe('failed');
 		expect(createDocumentProcessingGroups([job({ type: 'pipeline_run', status: 'pending' })])[0].status).toBe('queued');
+	});
+
+	it('does not let older dead-letter pipeline jobs override newer completed steps', () => {
+		const group = createDocumentProcessingGroups([
+			job({
+				id: '00000000-0000-4000-8000-000000000023',
+				created_at: '2026-05-15T12:00:00.000Z',
+				finished_at: '2026-05-15T12:01:00.000Z',
+				status: 'dead_letter',
+				type: 'pipeline_run',
+			}),
+			job({
+				id: '00000000-0000-4000-8000-000000000024',
+				created_at: '2026-05-15T12:10:00.000Z',
+				finished_at: '2026-05-15T12:11:00.000Z',
+				status: 'completed',
+				type: 'graph',
+			}),
+		])[0];
+
+		expect(group.status).toBe('completed');
 	});
 
 	it('never exposes pipeline_run as the current document step', () => {
@@ -119,6 +141,36 @@ describe('processing document view models', () => {
 		expect(steps.find((step) => step.name === 'segment')?.status).toBe('running');
 		expect(translations).toHaveLength(1);
 		expect(translations[0].status).toBe('failed');
+		expect(translations[0].label).toBe('translate');
+		expect(steps.find((step) => step.name === 'upload')?.attempts).toBeNull();
+	});
+
+	it('shows analyze pending when graph completed but analyze is missing', () => {
+		const group = createDocumentProcessingGroups([job({ type: 'graph', status: 'completed' })])[0];
+
+		expect(
+			currentStepForDocument(group, {
+				observabilitySteps: [
+					{ completed_at: '2026-05-15T12:01:00.000Z', error_message: null, status: 'completed', step: 'graph' },
+				],
+			}),
+		).toBe('analyze_pending');
+	});
+
+	it('keeps retry attempts only when they are meaningful', () => {
+		const group = createDocumentProcessingGroups([
+			job({ type: 'document_upload_finalize' }),
+			job({
+				attempts: 2,
+				id: '00000000-0000-4000-8000-000000000033',
+				status: 'running',
+				type: 'segment',
+			}),
+		])[0];
+		const steps = buildDocumentProcessingSteps(group, {});
+
+		expect(steps.find((step) => step.name === 'upload')?.attempts).toBeNull();
+		expect(steps.find((step) => step.name === 'segment')?.attempts).toBe('2/3');
 	});
 
 	it('finds the document group for a job deep link', () => {
