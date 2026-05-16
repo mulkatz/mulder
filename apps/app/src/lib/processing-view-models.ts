@@ -47,6 +47,7 @@ export interface DocumentTranslationStep {
 	id: string;
 	status: RunStatus;
 	label: string;
+	targetLanguage: string | null;
 	activityAt: string | null;
 	errorMessage: string | null;
 	attempts: string;
@@ -328,6 +329,7 @@ export function buildDocumentTranslationSteps(group: DocumentProcessingGroup): D
 		id: job.id,
 		status: run.status,
 		label: job.type,
+		targetLanguage: job.metadata?.target_language ?? null,
 		activityAt: jobActivityTimestamp(job),
 		errorMessage: run.status === 'failed' ? (run.error ?? null) : null,
 		attempts: relevantAttempts(job) ?? '',

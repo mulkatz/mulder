@@ -19,6 +19,7 @@ import { registerHealthRoute } from './routes/health.js';
 import { registerJobRoutes } from './routes/jobs.js';
 import { registerPipelineRoutes } from './routes/pipeline.js';
 import { registerReviewRoutes } from './routes/review.js';
+import { registerRuntimeConfigRoute } from './routes/runtime-config.js';
 import { registerSearchRoute } from './routes/search.js';
 import { registerSourceInsightRoutes } from './routes/source-insights.js';
 import { registerStatusRoute } from './routes/status.js';
@@ -87,6 +88,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono {
 	registerUploadRoutes(app);
 	registerSearchRoute(app);
 	registerStatusRoute(app);
+	registerRuntimeConfigRoute(app);
 	registerTranslationRoutes(app);
 	registerReviewRoutes(app);
 	registerCollectionRoutes(app);

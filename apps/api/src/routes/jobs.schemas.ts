@@ -36,6 +36,11 @@ export const JobSummarySchema = z.object({
 	id: z.string().uuid(),
 	type: z.string(),
 	subject: JobSubjectSchema,
+	metadata: z
+		.object({
+			target_language: z.string().optional(),
+		})
+		.optional(),
 	status: JobStatusSchema,
 	attempts: z.number().int().nonnegative(),
 	max_attempts: z.number().int().positive(),
@@ -60,6 +65,11 @@ export const JobDetailSchema = z.object({
 	id: z.string().uuid(),
 	type: z.string(),
 	subject: JobSubjectSchema,
+	metadata: z
+		.object({
+			target_language: z.string().optional(),
+		})
+		.optional(),
 	status: JobStatusSchema,
 	attempts: z.number().int().nonnegative(),
 	max_attempts: z.number().int().positive(),

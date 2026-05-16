@@ -215,6 +215,58 @@ export const DocumentParamsSchema = z.object({
 	id: z.string().uuid(),
 });
 
+export const DocumentActionRequestSchema = z.object({
+	reason: z.string().trim().min(3).max(500),
+});
+
+export const DocumentPurgeRequestSchema = z.object({
+	reason: z.string().trim().min(3).max(500),
+	confirm: z.boolean(),
+});
+
+export const SourceDeletionSchema = z.object({
+	id: z.string().uuid(),
+	source_id: z.string().uuid(),
+	deleted_by: z.string(),
+	deleted_at: z.string(),
+	reason: z.string(),
+	status: z.enum(['soft_deleted', 'purging', 'purged', 'restored']),
+	undo_deadline: z.string(),
+	restored_at: z.string().nullable(),
+	purged_at: z.string().nullable(),
+	created_at: z.string(),
+	updated_at: z.string(),
+});
+
+export const SourcePurgeSubsystemCountSchema = z.object({
+	subsystem: z.string(),
+	exclusive: z.number().int().nonnegative(),
+	shared: z.number().int().nonnegative(),
+	total: z.number().int().nonnegative(),
+});
+
+export const SourcePurgePlanSchema = z.object({
+	source_id: z.string().uuid(),
+	deletion: SourceDeletionSchema.nullable(),
+	counts: z.array(SourcePurgeSubsystemCountSchema),
+	total_exclusive: z.number().int().nonnegative(),
+	total_shared: z.number().int().nonnegative(),
+	can_purge: z.boolean(),
+});
+
+export const SourcePurgeEffectsSchema = z.record(z.string(), z.number().int().nonnegative());
+
+export const DocumentActionResponseSchema = z.object({
+	data: z.object({
+		source_id: z.string().uuid(),
+		action: z.enum(['soft_deleted', 'restored', 'purge_plan', 'purged']),
+		deletion: SourceDeletionSchema.nullable().optional(),
+		plan: SourcePurgePlanSchema.optional(),
+		effects: SourcePurgeEffectsSchema.optional(),
+		purged_at: z.string().optional(),
+	}),
+});
+
 export const DocumentPageParamsSchema = z.object({
 	id: z.string().uuid(),
 	num: z.coerce.number().int().positive(),
@@ -321,6 +373,9 @@ export const DocumentArtifactSchema = z.object({
 });
 
 export type DocumentListQuery = z.infer<typeof DocumentListQuerySchema>;
+export type DocumentActionRequest = z.infer<typeof DocumentActionRequestSchema>;
+export type DocumentPurgeRequest = z.infer<typeof DocumentPurgeRequestSchema>;
+export type DocumentActionResponse = z.infer<typeof DocumentActionResponseSchema>;
 export type DocumentListResponse = z.infer<typeof DocumentListResponseSchema>;
 export type DocumentListItem = z.infer<typeof DocumentListItemSchema>;
 export type DocumentDetailResponse = z.infer<typeof DocumentDetailResponseSchema>;

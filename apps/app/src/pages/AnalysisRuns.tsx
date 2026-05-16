@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import { AlertCircle, ChevronDown, ChevronRight, Clock, Download, Filter, PlayCircle } from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronRight, Clock, Download, Filter, PlayCircle, Trash2 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -12,9 +12,11 @@ import { StateNotice } from '@/components/StateNotice';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Tabs } from '@/components/Tabs';
 import { SelectControl, Toolbar } from '@/components/Toolbar';
+import { useDeleteDocument } from '@/features/documents/useDocumentActions';
 import { useDocumentObservability } from '@/features/documents/useDocumentObservability';
 import { useJob } from '@/features/jobs/useJob';
 import { useJobs } from '@/features/jobs/useJobs';
+import { type PipelineRestartStep, useRunPipeline } from '@/features/pipeline/usePipelineActions';
 import type { DocumentObservabilityResponse, JobProgress } from '@/lib/api-types';
 import { cn } from '@/lib/cn';
 import { getRetryAfterDelayMs, STABLE_POLL_INTERVAL_MS } from '@/lib/polling';
@@ -68,6 +70,24 @@ function formatCurrentStep(step: DocumentProcessingCurrentStep, t: TFunction) {
 function formatTranslationStepLabel(label: string, t: TFunction) {
 	if (label === 'translate') return t('runs.translationStep');
 	return label;
+}
+
+function formatTranslationJobLabel(label: string, targetLanguage: string | null, locale: string, t: TFunction) {
+	const base = formatTranslationStepLabel(label, t);
+	if (!targetLanguage) return base;
+	return t('runs.translationStepWithLanguage', {
+		language: formatLanguage(targetLanguage, locale, t),
+	});
+}
+
+function formatLanguage(value: string | null | undefined, locale: string, t: TFunction) {
+	if (!value) return t('common.unknown');
+	try {
+		const displayNames = new Intl.DisplayNames([locale], { type: 'language' });
+		return displayNames.of(value) ?? value;
+	} catch {
+		return value;
+	}
 }
 
 function formatRelativeActivity(value: string | null | undefined, locale: string) {
@@ -149,12 +169,53 @@ function DocumentStepsPanel({
 	steps: DocumentObservabilityResponse['data']['source']['steps'];
 }) {
 	const { t } = useTranslation();
+	const [restartStep, setRestartStep] = useState<PipelineRestartStep>('extract');
 	const progressSource = progressSourceForGroup(progress, group);
 	const displaySteps = buildDocumentProcessingSteps(group, {
 		observabilitySteps: buildDisplaySteps(steps),
 		progressSource,
 	});
 	const translationSteps = buildDocumentTranslationSteps(group);
+	const runPipeline = useRunPipeline(group.sourceId);
+	const deleteDocument = useDeleteDocument(group.sourceId);
+	const currentStep = currentStepForDocument(group, {
+		observabilitySteps: buildDisplaySteps(steps),
+		progressSource,
+	});
+	const failedStep = displaySteps.find((step) => step.status === 'failed');
+	const restartOptions = DOCUMENT_PROCESSING_STEPS.filter(
+		(step) => step !== 'upload' && step !== 'analyze',
+	) as PipelineRestartStep[];
+	const canContinueAnalyze = Boolean(group.sourceId && currentStep === 'analyze_pending');
+	const canRestart = Boolean(group.sourceId);
+	const actionPending = runPipeline.isPending || deleteDocument.isPending;
+
+	function continueAnalyze() {
+		runPipeline.mutate({ force: false, from: 'graph', tag: 'ui-continue-analyze' });
+	}
+
+	function restartSelectedStep() {
+		runPipeline.mutate({ force: true, from: restartStep, tag: `ui-restart-${restartStep}` });
+	}
+
+	function restartFailedStep() {
+		const step = failedStep?.name;
+		if (!step || step === 'upload' || step === 'analyze') return;
+		runPipeline.mutate({ force: true, from: step, tag: `ui-restart-${step}` });
+	}
+
+	function deleteSource() {
+		if (!group.sourceId) return;
+		if (!window.confirm(t('runs.deleteConfirm', { document: group.title }))) return;
+		const reason = window.prompt(t('runs.deleteReasonPrompt'));
+		if (!reason) return;
+		const trimmedReason = reason.trim();
+		if (trimmedReason.length < 3) {
+			window.alert(t('runs.deleteReasonRequired'));
+			return;
+		}
+		deleteDocument.mutate({ reason: trimmedReason });
+	}
 
 	return (
 		<div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_240px]">
@@ -186,7 +247,9 @@ function DocumentStepsPanel({
 							{translationSteps.map((step) => (
 								<div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md bg-panel px-3 py-2" key={step.id}>
 									<div className="min-w-0">
-										<p className="truncate text-sm text-text">{formatTranslationStepLabel(step.label, t)}</p>
+										<p className="truncate text-sm text-text">
+											{formatTranslationJobLabel(step.label, step.targetLanguage, locale, t)}
+										</p>
 										<p className="mt-1 text-xs text-text-subtle">
 											{formatDateTime(step.activityAt, locale)} · {formatRelativeActivity(step.activityAt, locale)}
 										</p>
@@ -211,14 +274,68 @@ function DocumentStepsPanel({
 						{t('runs.openSource')}
 					</Link>
 				) : null}
+				{canContinueAnalyze ? (
+					<button
+						className="w-full rounded-md border border-accent bg-accent px-3 py-2 text-left text-sm font-medium text-text-inverse transition-colors hover:bg-accent-hover disabled:opacity-60"
+						disabled={actionPending}
+						onClick={continueAnalyze}
+						type="button"
+					>
+						{t('runs.continueAnalyze')}
+					</button>
+				) : null}
+				{failedStep && failedStep.name !== 'upload' && failedStep.name !== 'analyze' ? (
+					<button
+						className="w-full rounded-md border border-border bg-panel px-3 py-2 text-left text-sm font-medium text-text transition-colors hover:bg-field disabled:text-text-faint"
+						disabled={actionPending}
+						onClick={restartFailedStep}
+						type="button"
+					>
+						{t('runs.restartFailedStep')}
+					</button>
+				) : null}
+				<div className="rounded-md border border-border bg-panel p-2">
+					<label className="block text-xs font-medium text-text-subtle" htmlFor={`restart-${group.id}`}>
+						{t('runs.restartFromStep')}
+					</label>
+					<div className="mt-2 flex gap-2">
+						<select
+							className="field min-w-0 flex-1 px-2 py-1 text-sm"
+							disabled={!canRestart || actionPending}
+							id={`restart-${group.id}`}
+							onChange={(event) => setRestartStep(event.target.value as PipelineRestartStep)}
+							value={restartStep}
+						>
+							{restartOptions.map((step) => (
+								<option key={step} value={step}>
+									{formatDocumentProcessingStep(step, t)}
+								</option>
+							))}
+						</select>
+						<button
+							className="rounded-md border border-border px-2 text-sm font-medium text-text transition-colors hover:bg-field disabled:text-text-faint"
+							disabled={!canRestart || actionPending}
+							onClick={restartSelectedStep}
+							type="button"
+						>
+							{t('runs.restart')}
+						</button>
+					</div>
+				</div>
 				<button
-					className="w-full rounded-md border border-border bg-panel px-3 py-2 text-left text-sm font-medium text-text-subtle"
-					disabled
-					title={t('runs.retryUnavailableTitle')}
+					className="flex w-full items-center gap-2 rounded-md border border-danger/30 bg-panel px-3 py-2 text-left text-sm font-medium text-danger transition-colors hover:bg-danger-soft disabled:opacity-60"
+					disabled={!group.sourceId || actionPending}
+					onClick={deleteSource}
 					type="button"
 				>
-					{t('runs.retryProcessing')}
+					<Trash2 className="size-4" />
+					{t('runs.deleteSource')}
 				</button>
+				{runPipeline.error || deleteDocument.error ? (
+					<p className="text-xs text-danger">
+						{getErrorMessage(runPipeline.error ?? deleteDocument.error, t('common.apiRequestFailed'))}
+					</p>
+				) : null}
 				<div className="rounded-md border border-border bg-panel px-3 py-2">
 					<p className="text-xs font-medium text-text-subtle">{t('runs.documentJobs')}</p>
 					<p className="mt-1 font-mono text-sm text-text">{group.jobs.length}</p>

@@ -11,6 +11,7 @@ import {
 	Plus,
 	RefreshCcw,
 	SplitSquareHorizontal,
+	Trash2,
 	Workflow,
 	ZoomIn,
 	ZoomOut,
@@ -30,6 +31,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { Toolbar } from '@/components/Toolbar';
 import { TranslatedAnnotatedMarkdown } from '@/components/TranslatedAnnotatedMarkdown';
 import { useDocument } from '@/features/documents/useDocument';
+import { useDeleteDocument, useRestoreDocument } from '@/features/documents/useDocumentActions';
 import { useDocumentLayout } from '@/features/documents/useDocumentLayout';
 import { useDocumentObservability } from '@/features/documents/useDocumentObservability';
 import { useDocumentPages } from '@/features/documents/useDocumentPages';
@@ -42,7 +44,8 @@ import {
 } from '@/features/documents/useDocumentTranslations';
 import { useContradictions } from '@/features/evidence/useContradictions';
 import { useJob } from '@/features/jobs/useJob';
-import { type AppLocale, locales } from '@/i18n/resources';
+import { useRuntimeConfig } from '@/features/runtime/useRuntimeConfig';
+import { locales } from '@/i18n/resources';
 import type {
 	ContradictionRecord,
 	DocumentDetailRecord,
@@ -169,6 +172,18 @@ function formatLanguage(value: string | null | undefined, locale: string, t: TFu
 	} catch {
 		return value;
 	}
+}
+
+function formatDateTime(value: string | null | undefined, locale: string) {
+	if (!value) return '';
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return value;
+	return new Intl.DateTimeFormat(locale, {
+		month: 'short',
+		day: '2-digit',
+		hour: '2-digit',
+		minute: '2-digit',
+	}).format(date);
 }
 
 function entityMatchCandidates(entities: EntityRecord[]) {
@@ -690,6 +705,7 @@ function TranslationControls({
 	originalLanguage,
 	requestDisabled,
 	targetLanguage,
+	targetLanguages,
 	setTargetLanguage,
 	setTargetLanguageTouched,
 	translation,
@@ -703,8 +719,9 @@ function TranslationControls({
 	onShowTranslation: () => void;
 	originalLanguage?: string | null;
 	requestDisabled: boolean;
-	targetLanguage: AppLocale;
-	setTargetLanguage: (language: AppLocale) => void;
+	targetLanguage: string;
+	targetLanguages: string[];
+	setTargetLanguage: (language: string) => void;
 	setTargetLanguageTouched: (touched: boolean) => void;
 	translation?: TranslationRecord;
 }) {
@@ -723,13 +740,13 @@ function TranslationControls({
 						className="bg-transparent text-text outline-none"
 						onChange={(event) => {
 							setTargetLanguageTouched(true);
-							setTargetLanguage(event.target.value as AppLocale);
+							setTargetLanguage(event.target.value);
 						}}
 						value={targetLanguage}
 					>
-						{locales.map((locale) => (
-							<option key={locale} value={locale}>
-								{formatLanguage(locale, i18n.language, t)}
+						{targetLanguages.map((language) => (
+							<option key={language} value={language}>
+								{formatLanguage(language, i18n.language, t)}
 							</option>
 						))}
 					</select>
@@ -792,11 +809,18 @@ function firstKnownStoryLanguage(stories: DocumentStoryRecord[]): string | null 
 	);
 }
 
-function defaultTargetForSourceLanguage(sourceLanguage: string | null | undefined, uiLanguage: string): AppLocale {
+function defaultTargetForSourceLanguage(
+	sourceLanguage: string | null | undefined,
+	uiLanguage: string,
+	targetLanguages: string[],
+	configDefault?: string,
+): string {
 	const normalized = sourceLanguage?.trim().toLowerCase();
-	if (normalized === 'de') return 'en';
-	if (normalized === 'en') return 'de';
-	return uiLanguage === 'de' ? 'de' : 'en';
+	const supported = targetLanguages.length > 0 ? targetLanguages : [...locales];
+	const preferred = [configDefault, uiLanguage.startsWith('de') ? 'de' : 'en', 'de', 'en'].filter(
+		(value): value is string => Boolean(value),
+	);
+	return preferred.find((language) => supported.includes(language) && language !== normalized) ?? supported[0] ?? 'en';
 }
 
 function formatQualitySignal(value: number | null | undefined, t: TFunction) {
@@ -927,6 +951,7 @@ function StoryPane({
 	storiesError,
 	storiesIsLoading,
 	targetLanguage,
+	targetLanguages,
 }: {
 	activeProcessing: boolean;
 	contradictionsError: unknown;
@@ -936,7 +961,7 @@ function StoryPane({
 	selectedEntity?: EntityRecord;
 	selectedStory?: DocumentStoryRecord;
 	selectedStoryId?: string;
-	setTargetLanguage: (language: AppLocale) => void;
+	setTargetLanguage: (language: string) => void;
 	setTargetLanguageTouched: (touched: boolean) => void;
 	signals: ContradictionRecord[];
 	sourceId?: string;
@@ -944,7 +969,8 @@ function StoryPane({
 	stories: DocumentStoryRecord[];
 	storiesError: unknown;
 	storiesIsLoading: boolean;
-	targetLanguage: AppLocale;
+	targetLanguage: string;
+	targetLanguages: string[];
 }) {
 	const { t, i18n } = useTranslation();
 	const [contentMode, setContentMode] = useState<StoryContentMode>('stories');
@@ -1037,10 +1063,11 @@ function StoryPane({
 					onShowStories={() => setContentMode('stories')}
 					onShowTranslation={() => setContentMode('translation')}
 					originalLanguage={sourceLanguage ?? selectedStory?.language}
-					requestDisabled={!sourceId}
+					requestDisabled={!sourceId || targetLanguages.length === 0}
 					setTargetLanguage={setTargetLanguage}
 					setTargetLanguageTouched={setTargetLanguageTouched}
 					targetLanguage={targetLanguage}
+					targetLanguages={targetLanguages}
 					translation={currentTranslation}
 				/>
 			</div>
@@ -1349,8 +1376,8 @@ export function SourceReaderPage() {
 	const [viewMode, setViewMode] = useState<ReaderViewMode>(readInitialReaderMode);
 	const [selectedStoryId, setSelectedStoryId] = useState<string | undefined>(searchParams.get('story') ?? undefined);
 	const [selectedEntity, setSelectedEntity] = useState<EntityRecord | undefined>();
-	const [targetLanguage, setTargetLanguage] = useState<AppLocale>(() =>
-		defaultTargetForSourceLanguage(null, i18n.language),
+	const [targetLanguage, setTargetLanguage] = useState<string>(() =>
+		defaultTargetForSourceLanguage(null, i18n.language, [...locales]),
 	);
 	const [targetLanguageTouched, setTargetLanguageTouched] = useState(false);
 	const [processingOpen, setProcessingOpen] = useState(false);
@@ -1369,11 +1396,20 @@ export function SourceReaderPage() {
 	const layoutQuery = useDocumentLayout(sourceId, { refetchInterval: processingRefetchInterval });
 	const pagesQuery = useDocumentPages(sourceId, { refetchInterval: processingRefetchInterval });
 	const contradictionsQuery = useContradictions({ status: 'all', limit: 100 });
+	const runtimeConfigQuery = useRuntimeConfig();
+	const deleteDocument = useDeleteDocument(sourceId);
+	const restoreDocument = useRestoreDocument(sourceId);
+	const translationConfig = runtimeConfigQuery.data?.data.translation;
+	const targetLanguages = useMemo(
+		() => (translationConfig?.enabled === false ? [] : (translationConfig?.supported_languages ?? [...locales])),
+		[translationConfig?.enabled, translationConfig?.supported_languages],
+	);
 	const stories = storiesQuery.data?.data.stories ?? [];
 	const selectedStory = stories.find((story) => story.id === selectedStoryId) ?? stories[0];
 	const source = sourceQuery.data?.data ?? observabilityQuery.data?.data.source;
 	const sourceLanguage = sourceQuery.data?.data.source_language ?? null;
 	const storySourceLanguage = firstKnownStoryLanguage(stories);
+	const pendingDeletion = restoreDocument.data ? undefined : deleteDocument.data;
 	const effectiveViewMode = isCompact && viewMode === 'split' ? 'story' : viewMode;
 	const pageCount = pagesQuery.data?.meta.count;
 	const storySignals = selectedStory
@@ -1455,13 +1491,46 @@ export function SourceReaderPage() {
 	}, [isCompact, viewMode]);
 
 	useEffect(() => {
-		if (targetLanguageTouched) return;
-		setTargetLanguage(defaultTargetForSourceLanguage(storySourceLanguage, i18n.language));
-	}, [i18n.language, storySourceLanguage, targetLanguageTouched]);
+		if (targetLanguages.length === 0) return;
+		if (targetLanguageTouched && targetLanguages.includes(targetLanguage)) return;
+		setTargetLanguage(
+			defaultTargetForSourceLanguage(
+				storySourceLanguage,
+				i18n.language,
+				targetLanguages,
+				translationConfig?.default_target_language,
+			),
+		);
+	}, [
+		i18n.language,
+		storySourceLanguage,
+		targetLanguage,
+		targetLanguageTouched,
+		targetLanguages,
+		translationConfig?.default_target_language,
+	]);
 
 	function handleStorySelection(storyId: string) {
 		setSelectedStoryId(storyId);
 		setSelectedEntity(undefined);
+	}
+
+	function deleteSource() {
+		if (!sourceId) return;
+		if (!window.confirm(t('reader.deleteConfirm', { document: source?.filename ?? sourceId }))) return;
+		const reason = window.prompt(t('reader.deleteReasonPrompt'));
+		if (!reason) return;
+		const trimmedReason = reason.trim();
+		if (trimmedReason.length < 3) {
+			window.alert(t('reader.deleteReasonRequired'));
+			return;
+		}
+		deleteDocument.mutate({ reason: trimmedReason });
+	}
+
+	function restoreSource() {
+		if (!sourceId) return;
+		restoreDocument.mutate();
 	}
 
 	if (!sourceId) {
@@ -1515,6 +1584,15 @@ export function SourceReaderPage() {
 							<Workflow className="size-4" />
 							{t('reader.openProcessing')}
 						</button>
+						<button
+							className="inline-flex h-9 items-center gap-2 rounded-md border border-danger/30 bg-panel px-3 text-sm text-danger transition-colors hover:bg-danger-soft disabled:opacity-60"
+							disabled={deleteDocument.isPending || restoreDocument.isPending}
+							onClick={deleteSource}
+							type="button"
+						>
+							<Trash2 className="size-4" />
+							{t('reader.deleteSource')}
+						</button>
 					</>
 				}
 				description={t('reader.description')}
@@ -1525,6 +1603,36 @@ export function SourceReaderPage() {
 			<div className="space-y-4 p-4 sm:p-6">
 				{readerRateLimited ? (
 					<StateNotice title={t('reader.rateLimitedTitle')}>{t('reader.rateLimitedBody')}</StateNotice>
+				) : null}
+				{deleteDocument.error || restoreDocument.error ? (
+					<StateNotice tone="error" title={t('reader.documentActionErrorTitle')}>
+						{getErrorMessage(deleteDocument.error ?? restoreDocument.error, t('common.apiRequestFailed'))}
+					</StateNotice>
+				) : null}
+				{pendingDeletion ? (
+					<StateNotice title={t('reader.documentDeletedTitle')}>
+						{t('reader.documentDeletedBody', {
+							deadline: formatDateTime(pendingDeletion.data.deletion?.undo_deadline, i18n.language),
+						})}
+					</StateNotice>
+				) : null}
+				{restoreDocument.data ? (
+					<StateNotice title={t('reader.documentRestoredTitle')}>{t('reader.documentRestoredBody')}</StateNotice>
+				) : null}
+				{pendingDeletion ? (
+					<div className="rounded-md border border-border bg-panel p-3">
+						<div className="flex flex-wrap items-center justify-between gap-3">
+							<p className="text-sm text-text-subtle">{t('reader.restoreAvailableBody')}</p>
+							<button
+								className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text transition-colors hover:bg-field disabled:opacity-60"
+								disabled={restoreDocument.isPending}
+								onClick={restoreSource}
+								type="button"
+							>
+								{t('reader.restoreSource')}
+							</button>
+						</div>
+					</div>
 				) : null}
 				<Toolbar className="justify-between gap-3 rounded-md border border-border">
 					<div className="inline-flex rounded-md border border-border bg-field p-0.5">
@@ -1585,6 +1693,7 @@ export function SourceReaderPage() {
 							storiesError={storiesQuery.error}
 							storiesIsLoading={storiesQuery.isLoading}
 							targetLanguage={targetLanguage}
+							targetLanguages={targetLanguages}
 						/>
 					) : null}
 				</div>

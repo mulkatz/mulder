@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { deleteDocument, getDocumentPurgePlan, purgeDocument, restoreDocument } from '../lib/document-actions.js';
 import {
 	getDocumentDetail,
 	getDocumentObservability,
@@ -10,6 +11,8 @@ import {
 	streamDocumentPdf,
 } from '../lib/documents.js';
 import {
+	DocumentActionRequestSchema,
+	DocumentActionResponseSchema,
 	DocumentDetailResponseSchema,
 	DocumentListQuerySchema,
 	DocumentListResponseSchema,
@@ -17,6 +20,7 @@ import {
 	DocumentPageParamsSchema,
 	DocumentPagesResponseSchema,
 	DocumentParamsSchema,
+	DocumentPurgeRequestSchema,
 	DocumentStoriesResponseSchema,
 } from './documents.schemas.js';
 import {
@@ -24,6 +28,7 @@ import {
 	AUTH_SECURITY,
 	binaryResponse,
 	COMMON_ERROR_RESPONSES,
+	jsonRequestBody,
 	jsonResponse,
 	registerOpenApiRoute,
 	textResponse,
@@ -46,6 +51,14 @@ function readRequestLogger(c: Context) {
 
 function readRouteOptions(c: Context) {
 	return { authPrincipal: c.get('authPrincipal') };
+}
+
+async function readJsonBody(c: Context): Promise<unknown> {
+	try {
+		return await c.req.json();
+	} catch {
+		return {};
+	}
 }
 
 export function registerDocumentRoutes(app: ApiApp): void {
@@ -235,6 +248,106 @@ export function registerDocumentRoutes(app: ApiApp): void {
 				num: c.req.param('num'),
 			});
 			return await streamDocumentPage(id, num, readRequestLogger(c), readRouteOptions(c));
+		},
+	);
+
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'delete',
+			path: '/api/documents/{id}',
+			operationId: 'deleteDocument',
+			tags: ['Documents'],
+			security: AUTH_SECURITY,
+			request: {
+				params: DocumentParamsSchema,
+				body: jsonRequestBody(DocumentActionRequestSchema, 'Document delete request'),
+			},
+			responses: {
+				200: jsonResponse(DocumentActionResponseSchema, 'Document soft deletion'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const { id } = DocumentParamsSchema.parse({ id: c.req.param('id') });
+			const input = DocumentActionRequestSchema.parse(await readJsonBody(c));
+			const response = await deleteDocument(id, input, readRequestLogger(c), readRouteOptions(c));
+			DocumentActionResponseSchema.parse(response);
+			return c.json(response, 200);
+		},
+	);
+
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'post',
+			path: '/api/documents/{id}/restore',
+			operationId: 'restoreDocument',
+			tags: ['Documents'],
+			security: AUTH_SECURITY,
+			request: {
+				params: DocumentParamsSchema,
+			},
+			responses: {
+				200: jsonResponse(DocumentActionResponseSchema, 'Document restore'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const { id } = DocumentParamsSchema.parse({ id: c.req.param('id') });
+			const response = await restoreDocument(id, readRequestLogger(c), readRouteOptions(c));
+			DocumentActionResponseSchema.parse(response);
+			return c.json(response, 200);
+		},
+	);
+
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'get',
+			path: '/api/documents/{id}/purge-plan',
+			operationId: 'getDocumentPurgePlan',
+			tags: ['Documents'],
+			security: AUTH_SECURITY,
+			request: {
+				params: DocumentParamsSchema,
+			},
+			responses: {
+				200: jsonResponse(DocumentActionResponseSchema, 'Document purge plan'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const { id } = DocumentParamsSchema.parse({ id: c.req.param('id') });
+			const response = await getDocumentPurgePlan(id, readRequestLogger(c), readRouteOptions(c));
+			DocumentActionResponseSchema.parse(response);
+			return c.json(response, 200);
+		},
+	);
+
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'post',
+			path: '/api/documents/{id}/purge',
+			operationId: 'purgeDocument',
+			tags: ['Documents'],
+			security: AUTH_SECURITY,
+			request: {
+				params: DocumentParamsSchema,
+				body: jsonRequestBody(DocumentPurgeRequestSchema, 'Document purge request'),
+			},
+			responses: {
+				200: jsonResponse(DocumentActionResponseSchema, 'Document purge'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const { id } = DocumentParamsSchema.parse({ id: c.req.param('id') });
+			const input = DocumentPurgeRequestSchema.parse(await readJsonBody(c));
+			const response = await purgeDocument(id, input, readRequestLogger(c), readRouteOptions(c));
+			DocumentActionResponseSchema.parse(response);
+			return c.json(response, 200);
 		},
 	);
 }

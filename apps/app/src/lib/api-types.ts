@@ -35,6 +35,16 @@ export interface StatusResponse {
 	};
 }
 
+export interface RuntimeConfigResponse {
+	data: {
+		translation: {
+			enabled: boolean;
+			default_target_language: string;
+			supported_languages: string[];
+		};
+	};
+}
+
 export interface JobSummary {
 	id: string;
 	type: string;
@@ -43,6 +53,9 @@ export interface JobSummary {
 		label: string;
 		source_id?: string;
 		source_count?: number;
+	};
+	metadata?: {
+		target_language?: string;
 	};
 	status: JobStatus;
 	attempts: number;
@@ -204,6 +217,47 @@ export interface DocumentDetailRecord extends DocumentRecord {
 		average_score: number | null;
 		sensitivity_level: SensitivityLevel;
 	} | null;
+}
+
+export interface SourceDeletionRecord {
+	id: string;
+	source_id: string;
+	deleted_by: string;
+	deleted_at: string;
+	reason: string;
+	status: 'soft_deleted' | 'purging' | 'purged' | 'restored';
+	undo_deadline: string;
+	restored_at: string | null;
+	purged_at: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface SourcePurgeSubsystemCount {
+	subsystem: string;
+	exclusive: number;
+	shared: number;
+	total: number;
+}
+
+export interface SourcePurgePlan {
+	source_id: string;
+	deletion: SourceDeletionRecord | null;
+	counts: SourcePurgeSubsystemCount[];
+	total_exclusive: number;
+	total_shared: number;
+	can_purge: boolean;
+}
+
+export interface DocumentActionResponse {
+	data: {
+		source_id: string;
+		action: 'soft_deleted' | 'restored' | 'purge_plan' | 'purged';
+		deletion?: SourceDeletionRecord | null;
+		plan?: SourcePurgePlan;
+		effects?: Record<string, number>;
+		purged_at?: string;
+	};
 }
 
 export interface DocumentDetailResponse {

@@ -337,11 +337,20 @@ async function hasVisibleRunSource(
 	return result.rows[0]?.visible === true;
 }
 
+function jobMetadata(job: Job): JobListResponse['data'][number]['metadata'] {
+	if (job.type !== 'translate') {
+		return undefined;
+	}
+	const targetLanguage = readPayloadString(job.payload, 'targetLanguage', 'target_language');
+	return targetLanguage ? { target_language: targetLanguage } : undefined;
+}
+
 function mapJobSummary(job: Job, subject: JobSubject = defaultJobSubject(job)): JobListResponse['data'][number] {
 	return {
 		id: job.id,
 		type: job.type,
 		subject,
+		metadata: jobMetadata(job),
 		status: job.status,
 		attempts: job.attempts,
 		max_attempts: job.maxAttempts,
@@ -363,6 +372,7 @@ function mapRedactedJobSummary(
 		id: job.id,
 		type: job.type,
 		subject,
+		metadata: jobMetadata(job),
 		status: job.status,
 		attempts: job.attempts,
 		max_attempts: job.maxAttempts,
@@ -380,6 +390,7 @@ function mapJobDetail(job: Job, subject: JobSubject = defaultJobSubject(job)): J
 		id: job.id,
 		type: job.type,
 		subject,
+		metadata: jobMetadata(job),
 		status: job.status,
 		attempts: job.attempts,
 		max_attempts: job.maxAttempts,

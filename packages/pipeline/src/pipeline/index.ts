@@ -438,7 +438,7 @@ function eligibleStatusesForFirstStep(firstStep: PipelineStepName): SourceStatus
 		case 'embed':
 			return ['enriched', 'segmented', 'extracted'];
 		case 'graph':
-			return ['embedded', 'enriched', 'segmented', 'extracted'];
+			return ['graphed', 'analyzed', 'embedded', 'enriched', 'segmented', 'extracted'];
 		default:
 			return ['ingested'];
 	}

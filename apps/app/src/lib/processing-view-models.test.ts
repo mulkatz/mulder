@@ -119,7 +119,12 @@ describe('processing document view models', () => {
 		const group = createDocumentProcessingGroups([
 			job({ type: 'document_upload_finalize' }),
 			job({ id: '00000000-0000-4000-8000-000000000031', type: 'pipeline_run', status: 'running' }),
-			job({ id: '00000000-0000-4000-8000-000000000032', type: 'translate', status: 'failed' }),
+			job({
+				id: '00000000-0000-4000-8000-000000000032',
+				metadata: { target_language: 'fr' },
+				type: 'translate',
+				status: 'failed',
+			}),
 		])[0];
 		const steps = buildDocumentProcessingSteps(group, {
 			progressSource: {
@@ -142,6 +147,7 @@ describe('processing document view models', () => {
 		expect(translations).toHaveLength(1);
 		expect(translations[0].status).toBe('failed');
 		expect(translations[0].label).toBe('translate');
+		expect(translations[0].targetLanguage).toBe('fr');
 		expect(steps.find((step) => step.name === 'upload')?.attempts).toBeNull();
 	});
 

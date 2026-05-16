@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DocumentQualitySummarySchema } from './documents.schemas.js';
+import { DocumentActionRequestSchema, DocumentQualitySummarySchema } from './documents.schemas.js';
 
 describe('documents schemas', () => {
 	it('accepts page coverage on document quality summaries', () => {
@@ -38,5 +38,11 @@ describe('documents schemas', () => {
 		});
 
 		expect(parsed.page_coverage).toBeNull();
+	});
+
+	it('requires a reason for document soft-delete requests', () => {
+		expect(() => DocumentActionRequestSchema.parse({})).toThrow();
+		expect(() => DocumentActionRequestSchema.parse({ reason: '  ' })).toThrow();
+		expect(DocumentActionRequestSchema.parse({ reason: 'duplicate upload' }).reason).toBe('duplicate upload');
 	});
 });
