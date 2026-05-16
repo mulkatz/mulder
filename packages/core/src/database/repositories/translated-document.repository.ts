@@ -35,8 +35,10 @@ interface TranslatedDocumentRow {
 	updated_at: Date;
 }
 
-function hasConnect(queryable: Queryable): queryable is pg.Pool {
-	return typeof Reflect.get(queryable, 'connect') === 'function';
+function isPool(queryable: Queryable): queryable is pg.Pool {
+	return (
+		typeof Reflect.get(queryable, 'connect') === 'function' && typeof Reflect.get(queryable, 'release') !== 'function'
+	);
 }
 
 function mapTranslatedDocumentRow(row: TranslatedDocumentRow): TranslatedDocument {
@@ -116,7 +118,7 @@ export async function createCurrentTranslatedDocument(
 	input: CreateCurrentTranslatedDocumentInput,
 ): Promise<TranslatedDocument> {
 	try {
-		if (!hasConnect(pool)) {
+		if (!isPool(pool)) {
 			const row = await insertCurrentTranslatedDocument(pool, input);
 			repoLogger.debug(
 				{ sourceId: input.sourceDocumentId, targetLanguage: input.targetLanguage },
