@@ -141,6 +141,49 @@ async function appendNativeTextPages(layoutPages: LayoutPage[], pdfBuffer: Buffe
 	}
 }
 
+function normalizedTextLength(value: string | undefined): number {
+	return (value ?? '').replace(/\s+/g, ' ').trim().length;
+}
+
+export function backfillSparseDocumentAiPagesFromNative(input: {
+	pages: Array<{ pageNumber: number; text: string; confidence: number; blocks?: LayoutBlock[] }>;
+	nativePageTexts: string[];
+	minNativeChars?: number;
+	maxDocumentAiChars?: number;
+	minNativeToDocumentAiRatio?: number;
+}): number {
+	const minNativeChars = input.minNativeChars ?? 500;
+	const maxDocumentAiChars = input.maxDocumentAiChars ?? 120;
+	const minNativeToDocumentAiRatio = input.minNativeToDocumentAiRatio ?? 4;
+	let replaced = 0;
+
+	for (const page of input.pages) {
+		const nativeText = input.nativePageTexts[page.pageNumber - 1]?.trim() ?? '';
+		const nativeLength = normalizedTextLength(nativeText);
+		if (nativeLength < minNativeChars) continue;
+
+		const documentAiLength = normalizedTextLength(page.text);
+		const sparseByAbsoluteSize = documentAiLength <= maxDocumentAiChars;
+		const sparseByRelativeSize =
+			documentAiLength > 0 && nativeLength / Math.max(1, documentAiLength) >= minNativeToDocumentAiRatio;
+		const emptyDocumentAi = documentAiLength === 0;
+		if (!emptyDocumentAi && !sparseByAbsoluteSize && !sparseByRelativeSize) continue;
+
+		page.text = nativeText;
+		page.confidence = Math.min(page.confidence, 0.55);
+		page.blocks = [
+			{
+				text: nativeText,
+				type: 'native_text_backfill',
+				confidence: page.confidence,
+			},
+		];
+		replaced++;
+	}
+
+	return replaced;
+}
+
 /**
  * Renders page images from a PDF buffer using pdfjs-dist + @napi-rs/canvas.
  * Returns an array of PNG buffers, one per page.
@@ -2737,6 +2780,24 @@ export async function execute(
 
 			documentAiRaw = docAiResult.documentAiRaw;
 			pageImages = docAiResult.pageImages;
+			if (source.sourceType === 'pdf' && pageImages.length < (source.pageCount ?? 0)) {
+				try {
+					const renderedPageImages = await renderPageImages(sourceBuffer, log);
+					if (renderedPageImages.length > pageImages.length) {
+						pageImages = renderedPageImages;
+						log.info(
+							{
+								sourceId: input.sourceId,
+								pageImages: pageImages.length,
+								documentAiPageImages: docAiResult.pageImages.length,
+							},
+							'Rendered local PDF page images for Document AI fallback',
+						);
+					}
+				} catch (cause: unknown) {
+					log.warn({ err: cause }, 'Local PDF page image rendering failed after Document AI extraction');
+				}
+			}
 			if (source.sourceType === 'image' && pageImages.length === 0) {
 				const imagePage = await renderImagePageImage(sourceBuffer, sourceMediaType, log);
 				if (imagePage) {
@@ -2804,6 +2865,28 @@ export async function execute(
 						text: parsed.text,
 						blocks: parsed.blocks,
 					});
+				}
+
+				if (source.sourceType === 'pdf' && source.hasNativeText) {
+					try {
+						const nativePageTexts = await extractNativeText(sourceBuffer, log);
+						const backfilledPages = backfillSparseDocumentAiPagesFromNative({
+							pages: layoutPages,
+							nativePageTexts,
+						});
+						if (backfilledPages > 0) {
+							log.warn(
+								{
+									sourceId: input.sourceId,
+									backfilledPages,
+									pageCount: layoutPages.length,
+								},
+								'Document AI page text was sparse; backfilled pages from embedded PDF text',
+							);
+						}
+					} catch (cause: unknown) {
+						log.warn({ err: cause, sourceId: input.sourceId }, 'Native text backfill after Document AI failed');
+					}
 				}
 
 				// Run Gemini Vision fallback on low-confidence pages

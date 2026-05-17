@@ -1,6 +1,7 @@
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 import {
+	backfillSparseDocumentAiPagesFromNative,
 	buildPageBatches,
 	canFallbackToNativeAfterEmptyDocumentAi,
 	extractPdfPageBatch,
@@ -142,5 +143,34 @@ describe('Document AI extraction batching helpers', () => {
 				preferDocumentAiForUncertainPdf: true,
 			}),
 		).toBe(true);
+	});
+
+	it('backfills sparse Document AI pages from embedded PDF text without replacing useful pages', () => {
+		const pages = [
+			{
+				pageNumber: 1,
+				text: 'A complete Document AI page with enough extracted narrative text to keep.',
+				confidence: 0.8,
+				blocks: [],
+			},
+			{
+				pageNumber: 2,
+				text: 'REMARQUES-CONCLUSION',
+				confidence: 0.8,
+				blocks: [{ text: 'REMARQUES-CONCLUSION', type: 'paragraph', confidence: 0.8 }],
+			},
+		];
+		const nativePageTexts = [
+			'Short native text.',
+			`REMARQUES-CONCLUSION\n\n${'Full paragraph text recovered from embedded PDF OCR. '.repeat(20)}`,
+		];
+
+		const replaced = backfillSparseDocumentAiPagesFromNative({ pages, nativePageTexts });
+
+		expect(replaced).toBe(1);
+		expect(pages[0]?.text).toContain('complete Document AI page');
+		expect(pages[1]?.text).toContain('Full paragraph text recovered');
+		expect(pages[1]?.confidence).toBeLessThan(0.8);
+		expect(pages[1]?.blocks?.[0]?.type).toBe('native_text_backfill');
 	});
 });
