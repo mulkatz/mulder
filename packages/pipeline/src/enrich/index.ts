@@ -100,7 +100,7 @@ export type {
 const STEP_NAME = 'enrich';
 
 /** Default max tokens per story before pre-chunking kicks in. */
-const DEFAULT_MAX_STORY_TOKENS = 4_000;
+const DEFAULT_MAX_STORY_TOKENS = 2_000;
 
 /** Target tokens per pre-chunk. */
 const TARGET_CHUNK_TOKENS = 10_000;
