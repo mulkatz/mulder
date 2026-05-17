@@ -100,7 +100,7 @@ export type {
 const STEP_NAME = 'enrich';
 
 /** Default max tokens per story before pre-chunking kicks in. */
-const DEFAULT_MAX_STORY_TOKENS = 15_000;
+const DEFAULT_MAX_STORY_TOKENS = 4_000;
 
 /** Target tokens per pre-chunk. */
 const TARGET_CHUNK_TOKENS = 10_000;
@@ -430,13 +430,15 @@ export async function execute(
 	const maxTokens = config.enrichment?.max_story_tokens ?? DEFAULT_MAX_STORY_TOKENS;
 	const tokenCount = await services.llm.countTokens(markdown);
 	const needsChunking = tokenCount > maxTokens;
+	const targetChunkTokens = Math.min(maxTokens, TARGET_CHUNK_TOKENS);
 
-	const textChunks = needsChunking ? preChunkMarkdown(markdown, TARGET_CHUNK_TOKENS) : [markdown];
+	const textChunks = needsChunking ? preChunkMarkdown(markdown, targetChunkTokens) : [markdown];
 
 	log.debug(
 		{
 			tokenCount,
 			maxTokens,
+			targetChunkTokens,
 			needsChunking,
 			chunkCount: textChunks.length,
 		},

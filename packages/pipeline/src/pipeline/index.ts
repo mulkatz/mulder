@@ -716,18 +716,50 @@ async function runStepForSource(
 
 	if (step === 'enrich') {
 		const target = storyStatusIndex('enriched');
+		let failedStoryCount = 0;
+		let partialStoryCount = 0;
+		const failedStoryIds: string[] = [];
 		for (const story of freshStories) {
 			if (storyStatusIndex(story.status) >= target && !force) {
 				continue;
 			}
-			await executeEnrich(
+			const result = await executeEnrich(
 				{ storyId: story.id, force, extractionPipelineRun: ctx.runId },
 				ctx.config,
 				ctx.services,
 				ctx.pool,
 				ctx.logger,
 			);
+			if (result.status === 'failed') {
+				failedStoryCount++;
+				failedStoryIds.push(story.id);
+			} else if (result.status === 'partial') {
+				partialStoryCount++;
+			}
 			collectGarbageAfterWork(ctx.logger, { step, storyId: story.id, sourceId: source.id });
+		}
+		if (failedStoryCount > 0) {
+			await upsertSourceStep(ctx.pool, {
+				sourceId: source.id,
+				stepName: step,
+				status: 'failed',
+				errorMessage: `${failedStoryCount} stories failed during enrich: ${failedStoryIds.join(', ')}`,
+			});
+			throw new PipelineError(
+				`${failedStoryCount} stories failed during enrich`,
+				PIPELINE_ERROR_CODES.PIPELINE_STEP_FAILED,
+				{
+					context: { sourceId: source.id, failedStoryIds },
+				},
+			);
+		}
+		if (partialStoryCount > 0) {
+			await upsertSourceStep(ctx.pool, {
+				sourceId: source.id,
+				stepName: step,
+				status: 'partial',
+				errorMessage: `${partialStoryCount} stories partially enriched`,
+			});
 		}
 		return 'completed';
 	}
