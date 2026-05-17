@@ -188,30 +188,72 @@ function detectedSensitivityMetadata(value: unknown, fallbackLevel: SensitivityL
 // Pre-chunking
 // ────────────────────────────────────────────────────────────
 
+function splitOversizedParagraph(paragraph: string, targetTokens: number): string[] {
+	if (estimateParagraphTokens(paragraph) <= targetTokens) {
+		return [paragraph];
+	}
+
+	const maxChars = Math.max(1, targetTokens * PARAGRAPH_CHARS_PER_TOKEN);
+	const sentences = paragraph.split(/(?<=[.!?])\s+/);
+	const chunks: string[] = [];
+	let current: string[] = [];
+	let currentTokens = 0;
+
+	for (const sentence of sentences) {
+		const sentenceTokens = estimateParagraphTokens(sentence);
+		if (sentenceTokens > targetTokens) {
+			if (current.length > 0) {
+				chunks.push(current.join(' '));
+				current = [];
+				currentTokens = 0;
+			}
+			for (let offset = 0; offset < sentence.length; offset += maxChars) {
+				chunks.push(sentence.slice(offset, offset + maxChars).trim());
+			}
+			continue;
+		}
+		if (currentTokens + sentenceTokens > targetTokens && current.length > 0) {
+			chunks.push(current.join(' '));
+			current = [];
+			currentTokens = 0;
+		}
+		current.push(sentence);
+		currentTokens += sentenceTokens;
+	}
+
+	if (current.length > 0) {
+		chunks.push(current.join(' '));
+	}
+
+	return chunks.filter((chunk) => chunk.length > 0);
+}
+
 /**
- * Splits story Markdown at paragraph boundaries into chunks of
- * approximately `targetTokens` tokens each.
+ * Splits story Markdown into chunks of approximately `targetTokens`.
  *
- * Paragraphs are never split — if a single paragraph exceeds the
- * target, it becomes its own chunk.
+ * Paragraph boundaries are preferred, but OCR text can contain very large
+ * paragraphs. Those are split at sentence boundaries, then by character
+ * budget as a final guardrail.
  */
-function preChunkMarkdown(markdown: string, targetTokens: number): string[] {
+export function preChunkMarkdown(markdown: string, targetTokens: number): string[] {
 	const paragraphs = markdown.split(/\n\n+/);
 	const chunks: string[] = [];
 	let currentChunk: string[] = [];
 	let currentTokens = 0;
 
 	for (const paragraph of paragraphs) {
-		const paragraphTokens = estimateParagraphTokens(paragraph);
+		for (const part of splitOversizedParagraph(paragraph, targetTokens)) {
+			const paragraphTokens = estimateParagraphTokens(part);
 
-		if (currentTokens + paragraphTokens > targetTokens && currentChunk.length > 0) {
-			chunks.push(currentChunk.join('\n\n'));
-			currentChunk = [];
-			currentTokens = 0;
+			if (currentTokens + paragraphTokens > targetTokens && currentChunk.length > 0) {
+				chunks.push(currentChunk.join('\n\n'));
+				currentChunk = [];
+				currentTokens = 0;
+			}
+
+			currentChunk.push(part);
+			currentTokens += paragraphTokens;
 		}
-
-		currentChunk.push(paragraph);
-		currentTokens += paragraphTokens;
 	}
 
 	if (currentChunk.length > 0) {
@@ -429,7 +471,8 @@ export async function execute(
 	// 5. Token count check (real tokenizer) and pre-chunking
 	const maxTokens = config.enrichment?.max_story_tokens ?? DEFAULT_MAX_STORY_TOKENS;
 	const tokenCount = await services.llm.countTokens(markdown);
-	const needsChunking = tokenCount > maxTokens;
+	const estimatedTokenCount = estimateParagraphTokens(markdown);
+	const needsChunking = tokenCount > maxTokens || estimatedTokenCount > maxTokens;
 	const targetChunkTokens = Math.min(maxTokens, TARGET_CHUNK_TOKENS);
 
 	const textChunks = needsChunking ? preChunkMarkdown(markdown, targetChunkTokens) : [markdown];
@@ -437,6 +480,7 @@ export async function execute(
 	log.debug(
 		{
 			tokenCount,
+			estimatedTokenCount,
 			maxTokens,
 			targetChunkTokens,
 			needsChunking,
