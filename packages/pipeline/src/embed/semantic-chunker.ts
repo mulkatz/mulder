@@ -355,6 +355,7 @@ export function chunkStory(
 	let textOffset = 0; // Running character offset into the original text
 
 	while (blockIndex < blocks.length) {
+		const chunkStartBlockIndex = blockIndex;
 		const chunkBlocks: SemanticBlock[] = [];
 		let chunkTokens = 0;
 		const startOffset = textOffset;
@@ -417,7 +418,11 @@ export function chunkStory(
 			}
 
 			if (overlapBlocksBack > 0) {
-				blockIndex = blockIndex - overlapBlocksBack;
+				const nextBlockIndex = blockIndex - overlapBlocksBack;
+				// The overlap must never rewind to the current chunk's first block.
+				// Otherwise a chunk made from one large block can repeat forever and
+				// exhaust the worker heap before embedding even starts.
+				blockIndex = Math.max(nextBlockIndex, chunkStartBlockIndex + 1);
 				// Recalculate text offset for the overlap start
 				textOffset = 0;
 				for (let i = 0; i < blockIndex; i++) {
