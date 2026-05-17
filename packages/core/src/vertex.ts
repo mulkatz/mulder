@@ -380,13 +380,16 @@ export function createVertexClient(ai: GoogleGenAI, options: VertexClientOptions
 				return limiter(async () => {
 					const response = await withRetry(
 						async () => {
-							return ai.models.embedContent({
-								model,
-								contents: texts,
-								config: {
-									outputDimensionality: dimensions,
-								},
-							});
+							return withTimeout(
+								ai.models.embedContent({
+									model,
+									contents: texts,
+									config: {
+										outputDimensionality: dimensions,
+									},
+								}),
+								requestTimeoutMs,
+							);
 						},
 						{
 							onRetry: (err, attempt, delayMs) => {
@@ -414,13 +417,16 @@ export function createVertexClient(ai: GoogleGenAI, options: VertexClientOptions
 			return limiter(async () => {
 				const response = await withRetry(
 					async () => {
-						return ai.models.embedContent({
-							model,
-							contents: texts,
-							config: {
-								outputDimensionality: dimensions,
-							},
-						});
+						return withTimeout(
+							ai.models.embedContent({
+								model,
+								contents: texts,
+								config: {
+									outputDimensionality: dimensions,
+								},
+							}),
+							requestTimeoutMs,
+						);
 					},
 					{
 						onRetry: (err, attempt, delayMs) => {
