@@ -324,6 +324,27 @@ function sourceHasReachedGraph(source: Source | null, fallbackFinalStep: Pipelin
 	return sourceStatusIndex(source.status) >= sourceStatusIndex('graphed');
 }
 
+function collectGarbageAfterWork(logger: Logger, context: Record<string, unknown>): void {
+	const gc = (globalThis as { gc?: () => void }).gc;
+	if (typeof gc !== 'function') {
+		return;
+	}
+
+	const before = process.memoryUsage();
+	gc();
+	const after = process.memoryUsage();
+	logger.debug(
+		{
+			...context,
+			heapUsedBeforeMb: Math.round(before.heapUsed / 1024 / 1024),
+			heapUsedAfterMb: Math.round(after.heapUsed / 1024 / 1024),
+			rssBeforeMb: Math.round(before.rss / 1024 / 1024),
+			rssAfterMb: Math.round(after.rss / 1024 / 1024),
+		},
+		'pipeline.memory.gc',
+	);
+}
+
 async function markGlobalAnalyzeProcessing(pool: pg.Pool, runId: string, sourceIds: string[]): Promise<void> {
 	for (const sourceId of sourceIds) {
 		await upsertPipelineRunSource(pool, {
@@ -643,6 +664,8 @@ async function processSource(source: Source, ctx: ProcessSourceContext): Promise
 			lastError = { message, code };
 			sourceLog.warn({ step, errorCode: code, errorMessage: message }, 'pipeline.source.step.failed');
 			break;
+		} finally {
+			collectGarbageAfterWork(sourceLog, { step, sourceId: currentSource.id });
 		}
 	}
 
@@ -704,6 +727,7 @@ async function runStepForSource(
 				ctx.pool,
 				ctx.logger,
 			);
+			collectGarbageAfterWork(ctx.logger, { step, storyId: story.id, sourceId: source.id });
 		}
 		return 'completed';
 	}
@@ -720,6 +744,7 @@ async function runStepForSource(
 				ctx.pool,
 				ctx.logger,
 			);
+			collectGarbageAfterWork(ctx.logger, { step, storyId: story.id, sourceId: source.id });
 		}
 		return 'completed';
 	}
@@ -736,6 +761,7 @@ async function runStepForSource(
 				ctx.pool,
 				ctx.logger,
 			);
+			collectGarbageAfterWork(ctx.logger, { step, storyId: story.id, sourceId: source.id });
 		}
 		return 'completed';
 	}
