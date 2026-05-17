@@ -732,8 +732,18 @@ async function runStepForSource(
 		return 'completed';
 	}
 	if (step === 'embed') {
+		const minimum = storyStatusIndex('enriched');
 		const target = storyStatusIndex('embedded');
+		let skippedPrerequisiteCount = 0;
 		for (const story of freshStories) {
+			if (storyStatusIndex(story.status) < minimum) {
+				skippedPrerequisiteCount++;
+				ctx.logger.warn(
+					{ step, storyId: story.id, storyStatus: story.status },
+					'pipeline.story.step.skipped_missing_prerequisite',
+				);
+				continue;
+			}
 			if (storyStatusIndex(story.status) >= target && !force) {
 				continue;
 			}
@@ -746,11 +756,29 @@ async function runStepForSource(
 			);
 			collectGarbageAfterWork(ctx.logger, { step, storyId: story.id, sourceId: source.id });
 		}
+		if (skippedPrerequisiteCount > 0) {
+			await upsertSourceStep(ctx.pool, {
+				sourceId: source.id,
+				stepName: step,
+				status: 'partial',
+				errorMessage: `${skippedPrerequisiteCount} stories skipped because enrich did not complete`,
+			});
+		}
 		return 'completed';
 	}
 	if (step === 'graph') {
+		const minimum = storyStatusIndex('embedded');
 		const target = storyStatusIndex('graphed');
+		let skippedPrerequisiteCount = 0;
 		for (const story of freshStories) {
+			if (storyStatusIndex(story.status) < minimum) {
+				skippedPrerequisiteCount++;
+				ctx.logger.warn(
+					{ step, storyId: story.id, storyStatus: story.status },
+					'pipeline.story.step.skipped_missing_prerequisite',
+				);
+				continue;
+			}
 			if (storyStatusIndex(story.status) >= target && !force) {
 				continue;
 			}
@@ -762,6 +790,14 @@ async function runStepForSource(
 				ctx.logger,
 			);
 			collectGarbageAfterWork(ctx.logger, { step, storyId: story.id, sourceId: source.id });
+		}
+		if (skippedPrerequisiteCount > 0) {
+			await upsertSourceStep(ctx.pool, {
+				sourceId: source.id,
+				stepName: step,
+				status: 'partial',
+				errorMessage: `${skippedPrerequisiteCount} stories skipped because embed did not complete`,
+			});
 		}
 		return 'completed';
 	}
