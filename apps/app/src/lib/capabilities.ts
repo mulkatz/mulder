@@ -160,7 +160,7 @@ export const capabilities = {
 	},
 	'admin.members': {
 		id: 'admin.members',
-		state: 'mounted-partial',
+		state: 'mounted-api',
 	},
 	'admin.policies': {
 		id: 'admin.policies',

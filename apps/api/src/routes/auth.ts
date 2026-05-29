@@ -5,6 +5,7 @@ import {
 	acceptInvitation,
 	createInvitation,
 	getBrowserAuthCookieSettings,
+	listMembersAccess,
 	loginWithPassword,
 	logoutSession,
 	validateSessionToken,
@@ -16,6 +17,7 @@ import {
 	CreateInvitationRequestSchema,
 	CreateInvitationResponseSchema,
 	LoginRequestSchema,
+	MembersAccessResponseSchema,
 } from './auth.schemas.js';
 import {
 	type ApiApp,
@@ -212,10 +214,52 @@ export function registerAuthRoutes(app: ApiApp, apiConfig: ApiConfig): void {
 					email: invitation.email,
 					role: invitation.role,
 					expires_at: invitation.expiresAt.toISOString(),
+					invitation_url: invitation.invitationUrl,
+					delivery_provider: invitation.deliveryProvider,
+					delivery_status: invitation.deliveryStatus,
 				},
 			};
 			CreateInvitationResponseSchema.parse(response);
 			return c.json(response, 201);
+		},
+	);
+
+	registerOpenApiRoute(
+		app,
+		{
+			method: 'get',
+			path: '/api/auth/members-access',
+			operationId: 'getMembersAccess',
+			tags: ['Auth'],
+			security: AUTH_SECURITY,
+			responses: {
+				200: jsonResponse(MembersAccessResponseSchema, 'Members and invitations'),
+				...COMMON_ERROR_RESPONSES,
+			},
+		},
+		async (c) => {
+			const data = await listMembersAccess();
+			const response = {
+				data: {
+					members: data.members.map((member) => ({
+						id: member.id,
+						email: member.email,
+						role: member.role,
+						created_at: member.createdAt.toISOString(),
+						updated_at: member.updatedAt.toISOString(),
+					})),
+					pending_invitations: data.pendingInvitations.map((invitation) => ({
+						id: invitation.id,
+						email: invitation.email,
+						role: invitation.role,
+						invited_by: invitation.invitedBy,
+						expires_at: invitation.expiresAt.toISOString(),
+						created_at: invitation.createdAt.toISOString(),
+					})),
+				},
+			};
+			MembersAccessResponseSchema.parse(response);
+			return c.json(response, 200);
 		},
 	);
 }

@@ -13,6 +13,47 @@ export interface SessionResponse {
 	};
 }
 
+export interface MemberRecord {
+	id: string;
+	email: string;
+	role: UserRole;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface PendingInvitationRecord {
+	id: string;
+	email: string;
+	role: UserRole;
+	invited_by: Pick<UserSummary, 'id' | 'email'> | null;
+	expires_at: string;
+	created_at: string;
+}
+
+export interface MembersAccessResponse {
+	data: {
+		members: MemberRecord[];
+		pending_invitations: PendingInvitationRecord[];
+	};
+}
+
+export interface CreateInvitationRequest {
+	email: string;
+	role: UserRole;
+}
+
+export interface CreateInvitationResponse {
+	data: {
+		id: string;
+		email: string;
+		role: UserRole;
+		expires_at: string;
+		invitation_url: string;
+		delivery_provider: 'log' | 'resend';
+		delivery_status: 'link_created' | 'sent';
+	};
+}
+
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'dead_letter';
 
 export interface StatusResponse {

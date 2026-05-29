@@ -98,7 +98,7 @@ const navGroups: {
 		labelKey: 'navigation.admin',
 		items: [
 			{ labelKey: 'navigation.settings', icon: Settings, capability: 'settings.admin' },
-			{ labelKey: 'navigation.membersAndAccess', icon: KeyRound, capability: 'admin.members' },
+			{ to: '/admin/members', labelKey: 'navigation.membersAndAccess', icon: KeyRound, capability: 'admin.members' },
 			{ labelKey: 'navigation.policies', icon: ShieldCheck, capability: 'admin.policies' },
 			{ labelKey: 'navigation.integrations', icon: Network, capability: 'admin.integrations' },
 		],

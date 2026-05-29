@@ -62,6 +62,24 @@ interface InvitationRow {
 	role: BrowserUserRole;
 }
 
+interface MemberAccessUserRow {
+	id: string;
+	email: string;
+	role: BrowserUserRole;
+	created_at: Date;
+	updated_at: Date;
+}
+
+interface MemberAccessInvitationRow {
+	id: string;
+	email: string;
+	role: BrowserUserRole;
+	invited_by: string | null;
+	invited_by_email: string | null;
+	expires_at: Date;
+	created_at: Date;
+}
+
 type Queryable = pg.Pool | pg.PoolClient;
 
 type InviteDeliveryProvider = 'log' | 'resend';
@@ -244,7 +262,7 @@ async function deliverInvitation(input: {
 	role: BrowserUserRole;
 	token: string;
 	logger?: Logger;
-}): Promise<void> {
+}): Promise<{ invitationUrl: string; provider: InviteDeliveryProvider; status: 'link_created' | 'sent' }> {
 	const settings = getInviteDeliverySettings();
 	const invitationUrl = buildInvitationUrl(input.token);
 
@@ -257,7 +275,7 @@ async function deliverInvitation(input: {
 			},
 			'invitation link created',
 		);
-		return;
+		return { invitationUrl, provider: settings.provider, status: 'link_created' };
 	}
 
 	await sendResendInvitation({
@@ -275,6 +293,7 @@ async function deliverInvitation(input: {
 		},
 		'invitation email sent',
 	);
+	return { invitationUrl, provider: settings.provider, status: 'sent' };
 }
 
 async function createSessionForUser(
@@ -379,7 +398,15 @@ export async function createInvitation(input: {
 	invitedByUserId?: string | null;
 	apiConfig?: ApiConfig;
 	logger?: Logger;
-}): Promise<{ id: string; email: string; role: BrowserUserRole; expiresAt: Date }> {
+}): Promise<{
+	id: string;
+	email: string;
+	role: BrowserUserRole;
+	expiresAt: Date;
+	invitationUrl: string;
+	deliveryProvider: InviteDeliveryProvider;
+	deliveryStatus: 'link_created' | 'sent';
+}> {
 	const browser = getBrowserConfig(input.apiConfig);
 	const pool = getPool();
 	const token = randomBytes(32).toString('base64url');
@@ -400,8 +427,9 @@ export async function createInvitation(input: {
 	);
 
 	const row = result.rows[0];
+	let delivery: Awaited<ReturnType<typeof deliverInvitation>>;
 	try {
-		await deliverInvitation({
+		delivery = await deliverInvitation({
 			email: row.email,
 			role: row.role,
 			token,
@@ -417,6 +445,74 @@ export async function createInvitation(input: {
 		email: row.email,
 		role: row.role,
 		expiresAt: row.expires_at,
+		invitationUrl: delivery.invitationUrl,
+		deliveryProvider: delivery.provider,
+		deliveryStatus: delivery.status,
+	};
+}
+
+export async function listMembersAccess(): Promise<{
+	members: Array<{
+		id: string;
+		email: string;
+		role: BrowserUserRole;
+		createdAt: Date;
+		updatedAt: Date;
+	}>;
+	pendingInvitations: Array<{
+		id: string;
+		email: string;
+		role: BrowserUserRole;
+		invitedBy: { id: string; email: string } | null;
+		expiresAt: Date;
+		createdAt: Date;
+	}>;
+}> {
+	const pool = getPool();
+	const [membersResult, invitationsResult] = await Promise.all([
+		pool.query<MemberAccessUserRow>(
+			`
+				SELECT id, email, role, created_at, updated_at
+				FROM api_users
+				WHERE disabled_at IS NULL
+				ORDER BY created_at DESC
+			`,
+		),
+		pool.query<MemberAccessInvitationRow>(
+			`
+				SELECT
+					i.id,
+					i.email,
+					i.role,
+					i.invited_by,
+					u.email AS invited_by_email,
+					i.expires_at,
+					i.created_at
+				FROM api_invitations i
+				LEFT JOIN api_users u ON u.id = i.invited_by
+				WHERE i.accepted_at IS NULL
+					AND i.expires_at > now()
+				ORDER BY i.created_at DESC
+			`,
+		),
+	]);
+
+	return {
+		members: membersResult.rows.map((row) => ({
+			id: row.id,
+			email: row.email,
+			role: row.role,
+			createdAt: row.created_at,
+			updatedAt: row.updated_at,
+		})),
+		pendingInvitations: invitationsResult.rows.map((row) => ({
+			id: row.id,
+			email: row.email,
+			role: row.role,
+			invitedBy: row.invited_by && row.invited_by_email ? { id: row.invited_by, email: row.invited_by_email } : null,
+			expiresAt: row.expires_at,
+			createdAt: row.created_at,
+		})),
 	};
 }
 

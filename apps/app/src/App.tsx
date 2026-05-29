@@ -18,6 +18,9 @@ const EvidenceWorkspacePage = lazy(() =>
 	import('@/pages/EvidenceWorkspace').then((module) => ({ default: module.EvidenceWorkspacePage })),
 );
 const LoginPage = lazy(() => import('@/pages/Login').then((module) => ({ default: module.LoginPage })));
+const MembersAccessPage = lazy(() =>
+	import('@/pages/MembersAccess').then((module) => ({ default: module.MembersAccessPage })),
+);
 const OverviewPage = lazy(() => import('@/pages/Overview').then((module) => ({ default: module.OverviewPage })));
 const SourceReaderPage = lazy(() =>
 	import('@/pages/SourceReader').then((module) => ({ default: module.SourceReaderPage })),
@@ -120,6 +123,7 @@ function AppRoutes() {
 						<Route index element={withPageTransition(<OverviewPage />, location.pathname)} />
 						<Route path="/runs" element={withPageTransition(<AnalysisRunsPage />, location.pathname)} />
 						<Route path="/evidence" element={withPageTransition(<EvidenceWorkspacePage />, location.pathname)} />
+						<Route path="/admin/members" element={withPageTransition(<MembersAccessPage />, location.pathname)} />
 						<Route path="/sources" element={withPageTransition(<SourcesPage />, location.pathname)} />
 						<Route path="/sources/add" element={withPageTransition(<AddSourcesPage />, location.pathname)} />
 						<Route path="/sources/:sourceId" element={withPageTransition(<SourceReaderPage />, location.pathname)} />

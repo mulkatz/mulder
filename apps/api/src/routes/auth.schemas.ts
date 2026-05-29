@@ -36,6 +36,33 @@ export const CreateInvitationResponseSchema = z.object({
 		email: z.string().email(),
 		role: BrowserUserRoleSchema,
 		expires_at: z.string(),
+		invitation_url: z.string().min(1),
+		delivery_provider: z.enum(['log', 'resend']),
+		delivery_status: z.enum(['link_created', 'sent']),
+	}),
+});
+
+export const MembersAccessResponseSchema = z.object({
+	data: z.object({
+		members: z.array(
+			z.object({
+				id: z.string().uuid(),
+				email: z.string().email(),
+				role: BrowserUserRoleSchema,
+				created_at: z.string(),
+				updated_at: z.string(),
+			}),
+		),
+		pending_invitations: z.array(
+			z.object({
+				id: z.string().uuid(),
+				email: z.string().email(),
+				role: BrowserUserRoleSchema,
+				invited_by: AuthUserSchema.pick({ id: true, email: true }).nullable(),
+				expires_at: z.string(),
+				created_at: z.string(),
+			}),
+		),
 	}),
 });
 
