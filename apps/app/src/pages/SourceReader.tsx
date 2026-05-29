@@ -8,7 +8,6 @@ import {
 	Languages,
 	PanelLeft,
 	PanelRight,
-	Plus,
 	RefreshCcw,
 	SplitSquareHorizontal,
 	Trash2,
@@ -23,6 +22,7 @@ import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { AddSourcesButton } from '@/components/AddSourcesButton';
 import { CodeBlock } from '@/components/CodeBlock';
 import { InspectorPanel, InspectorSection } from '@/components/InspectorPanel';
 import { PageHeader } from '@/components/PageHeader';
@@ -1555,13 +1555,9 @@ export function SourceReaderPage() {
 							<ArrowLeft className="size-4" />
 							{t('reader.backToSources')}
 						</Link>
-						<Link
-							className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
-							to="/sources/add"
-						>
-							<Plus className="size-4" />
+						<AddSourcesButton className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field">
 							{t('reader.addSources')}
-						</Link>
+						</AddSourcesButton>
 						<button
 							className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"
 							onClick={() => {

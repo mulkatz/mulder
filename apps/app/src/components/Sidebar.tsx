@@ -21,7 +21,9 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { NavLink } from 'react-router-dom';
+import { canUploadSources } from '@/components/AddSourcesButton';
 import { IconButton } from '@/components/IconButton';
+import { useSession } from '@/features/auth/useSession';
 import type { CapabilityId } from '@/lib/capabilities';
 import { cn } from '@/lib/cn';
 
@@ -109,6 +111,8 @@ function capabilityNoteKey(capability: CapabilityId) {
 
 export function Sidebar({ onClose, mobile = false }: { onClose?: () => void; mobile?: boolean }) {
 	const { t } = useTranslation();
+	const sessionQuery = useSession();
+	const uploadAllowed = canUploadSources(sessionQuery.data?.data.user.role);
 
 	return (
 		<aside className="flex h-full w-[var(--sidebar-width)] flex-col border-r border-border bg-panel">
@@ -145,6 +149,22 @@ export function Sidebar({ onClose, mobile = false }: { onClose?: () => void; mob
 								{group.items.map((item) => {
 									const Icon = item.icon;
 									const label = t(item.labelKey);
+									const uploadItemDisabled = item.to === '/sources/add' && !uploadAllowed;
+									if (uploadItemDisabled) {
+										return (
+											<button
+												aria-disabled="true"
+												className="flex h-9 w-full cursor-not-allowed items-center gap-3 rounded-md px-3 text-left text-sm text-text-faint"
+												disabled
+												key={item.labelKey}
+												title={t('common.uploadUnavailableForRole')}
+												type="button"
+											>
+												<Icon className="size-4 shrink-0" />
+												<span className="truncate">{label}</span>
+											</button>
+										);
+									}
 									if (item.to) {
 										return (
 											<NavLink

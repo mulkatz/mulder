@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, FileUp, FolderPlus, RefreshCcw, ShieldChec
 import { type ChangeEvent, type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { canUploadSources } from '@/components/AddSourcesButton';
 import { PageHeader } from '@/components/PageHeader';
 import { StateNotice } from '@/components/StateNotice';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -142,6 +143,7 @@ export function AddSourcesPage() {
 	const createCollection = useCreateCollection();
 	const upload = useDocumentUpload();
 	const canManageCollections = ['owner', 'admin'].includes(sessionQuery.data?.data.user.role ?? '');
+	const canUpload = canUploadSources(sessionQuery.data?.data.user.role);
 	const collections = collectionsQuery.data?.data ?? [];
 	const [files, setFiles] = useState<File[]>([]);
 	const [fileSelectionId, setFileSelectionId] = useState(createClientId);
@@ -178,11 +180,11 @@ export function AddSourcesPage() {
 	const hasSuccessfulRows = upload.rows.some((row) => row.status === 'created' || row.status === 'duplicate');
 	const selectedFileSize = useMemo(() => files.reduce((total, file) => total + file.size, 0), [files]);
 	const collectionRequiredConfirmed = Boolean(collectionId) || noCollectionConfirmed;
-	const formIsReady = files.length > 0 && collectionRequiredConfirmed && provenanceConfirmed;
+	const formIsReady = canUpload && files.length > 0 && collectionRequiredConfirmed && provenanceConfirmed;
 	const isUploading = upload.rows.some((row) =>
 		['initiating', 'uploading', 'finalizing', 'processing'].includes(row.status),
 	);
-	const canAutofill = files.length > 0 && !isUploading && !autofillPending;
+	const canAutofill = canUpload && files.length > 0 && !isUploading && !autofillPending;
 
 	useEffect(() => {
 		if (!selectedCollection) return;
@@ -383,15 +385,17 @@ export function AddSourcesPage() {
 										{files.length > 1 ? t('addSources.autofillHelpFirstFile') : t('addSources.autofillHelp')}
 									</p>
 								</div>
-								<button
-									className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field disabled:text-text-faint"
-									disabled={!canAutofill}
-									onClick={handleAutofill}
-									type="button"
-								>
-									<Wand2 className="size-4" />
-									{autofillPending ? t('addSources.autofilling') : t('addSources.acceptSuggestions')}
-								</button>
+								<span title={!canUpload ? t('common.uploadUnavailableForRole') : undefined}>
+									<button
+										className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field disabled:cursor-not-allowed disabled:bg-field disabled:text-text-faint"
+										disabled={!canAutofill}
+										onClick={handleAutofill}
+										type="button"
+									>
+										<Wand2 className="size-4" />
+										{autofillPending ? t('addSources.autofilling') : t('addSources.acceptSuggestions')}
+									</button>
+								</span>
 								<button
 									className="inline-flex h-9 items-center rounded-md px-3 text-sm text-text-muted transition-colors hover:bg-field hover:text-text"
 									onClick={() => {
@@ -733,14 +737,16 @@ export function AddSourcesPage() {
 								/>
 								<span>{t('addSources.provenanceConfirmation')}</span>
 							</label>
-							<button
-								className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-text-inverse transition-colors hover:bg-accent-hover disabled:bg-field disabled:text-text-faint"
-								disabled={!formIsReady || isUploading}
-								type="submit"
-							>
-								<Upload className="size-4" />
-								{isUploading ? t('addSources.uploading') : t('addSources.startUpload')}
-							</button>
+							<span className="block" title={!canUpload ? t('common.uploadUnavailableForRole') : undefined}>
+								<button
+									className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-text-inverse transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-field disabled:text-text-faint"
+									disabled={!formIsReady || isUploading}
+									type="submit"
+								>
+									<Upload className="size-4" />
+									{isUploading ? t('addSources.uploading') : t('addSources.startUpload')}
+								</button>
+							</span>
 							{hasSuccessfulRows ? (
 								<Link
 									className="inline-flex h-9 w-full items-center justify-center rounded-md border border-border bg-panel px-3 text-sm text-text transition-colors hover:bg-field"

@@ -44,6 +44,17 @@ function readRouteOptions(c: Context) {
 	return { authPrincipal: c.get('authPrincipal') };
 }
 
+function requireUploadPermission(c: Context): void {
+	const principal = c.get('authPrincipal');
+	if (principal.type === 'api_key') {
+		return;
+	}
+	if (principal.role === 'owner' || principal.role === 'admin') {
+		return;
+	}
+	throw new MulderError('Your role is not enabled for uploads', 'AUTH_FORBIDDEN');
+}
+
 export function registerUploadRoutes(app: ApiApp): void {
 	registerOpenApiRoute(
 		app,
@@ -62,6 +73,7 @@ export function registerUploadRoutes(app: ApiApp): void {
 			},
 		},
 		async (c) => {
+			requireUploadPermission(c);
 			const body = InitiateDocumentUploadRequestSchema.parse(await readJsonBody(c));
 			const response = await initiateDocumentUpload(body, readRequestLogger(c));
 			InitiateDocumentUploadResponseSchema.parse(response);
@@ -86,6 +98,7 @@ export function registerUploadRoutes(app: ApiApp): void {
 			},
 		},
 		async (c) => {
+			requireUploadPermission(c);
 			const body = EnrichUploadProvenanceRequestSchema.parse(await readJsonBody(c));
 			const response = await enrichUploadProvenance(body, readRequestLogger(c), readRouteOptions(c));
 			EnrichUploadProvenanceResponseSchema.parse(response);
@@ -134,6 +147,7 @@ export function registerUploadRoutes(app: ApiApp): void {
 			},
 		},
 		async (c) => {
+			requireUploadPermission(c);
 			const body = CompleteDocumentUploadRequestSchema.parse(await readJsonBody(c));
 			const response = await completeDocumentUpload(body, readRequestLogger(c), readRouteOptions(c));
 			CompleteDocumentUploadResponseSchema.parse(response);
@@ -158,6 +172,7 @@ export function registerUploadRoutes(app: ApiApp): void {
 			},
 		},
 		async (c) => {
+			requireUploadPermission(c);
 			const { storage_path } = DevUploadQuerySchema.parse({
 				storage_path: new URL(c.req.url).searchParams.get('storage_path') ?? '',
 			});

@@ -1,8 +1,9 @@
 import type { TFunction } from 'i18next';
-import { BookOpen, ChevronLeft, ChevronRight, FileText, Image, Plus, ShieldCheck } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, FileText, Image, ShieldCheck } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { AddSourcesButton } from '@/components/AddSourcesButton';
 import { type DataColumn, DataTable } from '@/components/DataTable';
 import { IconButton } from '@/components/IconButton';
 import { InspectorPanel, InspectorSection } from '@/components/InspectorPanel';
@@ -329,14 +330,12 @@ export function SourcesPage() {
 		<>
 			<PageHeader
 				actions={
-					<Link
+					<AddSourcesButton
 						className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm font-medium text-text transition-colors hover:bg-field"
 						title={t('sources.addSourcesTitle')}
-						to="/sources/add"
 					>
-						<Plus className="size-4" />
 						{t('common.addSources')}
-					</Link>
+					</AddSourcesButton>
 				}
 				description={t('sources.description')}
 				eyebrow={t('sources.eyebrow')}

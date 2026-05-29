@@ -1,7 +1,8 @@
 import type { TFunction } from 'i18next';
-import { AlertTriangle, Archive, Network, Plus, ShieldCheck, Workflow } from 'lucide-react';
+import { AlertTriangle, Archive, Network, ShieldCheck, Workflow } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { AddSourcesButton } from '@/components/AddSourcesButton';
 import { type DataColumn, DataTable } from '@/components/DataTable';
 import { InspectorPanel, InspectorSection } from '@/components/InspectorPanel';
 import { MetricCard } from '@/components/MetricCard';
@@ -183,14 +184,13 @@ export function OverviewPage() {
 								<Archive className="size-4" />
 								{t('overview.viewSources')}
 							</Link>
-							<Link
+							<AddSourcesButton
 								className="inline-flex h-9 items-center gap-2 rounded-md bg-accent px-3 text-sm font-medium text-text-inverse transition-colors hover:bg-accent-hover"
+								disabledClassName="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-field px-3 text-sm font-medium text-text-subtle opacity-70"
 								title={t('overview.startAnalysisTitle')}
-								to="/sources/add"
 							>
-								<Plus className="size-4" />
 								{t('overview.startAnalysis')}
-							</Link>
+							</AddSourcesButton>
 						</>
 					}
 					description={t('overview.description')}
@@ -226,14 +226,13 @@ export function OverviewPage() {
 							<Archive className="size-4" />
 							{t('overview.viewSources')}
 						</Link>
-						<Link
+						<AddSourcesButton
 							className="inline-flex h-9 items-center gap-2 rounded-md bg-accent px-3 text-sm font-medium text-text-inverse transition-colors hover:bg-accent-hover"
+							disabledClassName="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-field px-3 text-sm font-medium text-text-subtle opacity-70"
 							title={t('overview.startAnalysisTitle')}
-							to="/sources/add"
 						>
-							<Plus className="size-4" />
 							{t('overview.startAnalysis')}
-						</Link>
+						</AddSourcesButton>
 					</>
 				}
 				description={t('overview.description')}
